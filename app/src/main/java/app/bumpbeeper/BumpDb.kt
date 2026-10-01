@@ -15,7 +15,7 @@ import java.util.Locale
  *  events – everything that happened (new bump, hit, miss, beep, rejected jolt) → for tuning
  *  trips  – one row per Start…Stop
  */
-class BumpDb(ctx: Context) : SQLiteOpenHelper(ctx, "bumps.db", null, 1), BumpStore {
+class BumpDb(ctx: Context) : SQLiteOpenHelper(ctx, "bumps.db", null, 2), BumpStore {
 
     init {
         setWriteAheadLoggingEnabled(true)
@@ -28,7 +28,8 @@ class BumpDb(ctx: Context) : SQLiteOpenHelper(ctx, "bumps.db", null, 1), BumpSto
                 lat REAL NOT NULL, lon REAL NOT NULL, heading REAL NOT NULL,
                 hits INTEGER NOT NULL, passes INTEGER NOT NULL, misses INTEGER NOT NULL,
                 n_pos INTEGER NOT NULL, first_seen INTEGER NOT NULL, last_seen INTEGER NOT NULL,
-                user_muted INTEGER NOT NULL DEFAULT 0)"""
+                user_muted INTEGER NOT NULL DEFAULT 0,
+                kind_score REAL NOT NULL DEFAULT 0, kind_votes INTEGER NOT NULL DEFAULT 0)"""
         )
         db.execSQL(
             """CREATE TABLE events(
@@ -45,21 +46,28 @@ class BumpDb(ctx: Context) : SQLiteOpenHelper(ctx, "bumps.db", null, 1), BumpSto
         )
     }
 
-    override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {}
+    override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
+        if (oldVersion < 2) {
+            // Version 2: speed bump / pothole score. Existing bumps start as "unsure" and learn on the next pass.
+            db.execSQL("ALTER TABLE bumps ADD COLUMN kind_score REAL NOT NULL DEFAULT 0")
+            db.execSQL("ALTER TABLE bumps ADD COLUMN kind_votes INTEGER NOT NULL DEFAULT 0")
+        }
+    }
 
     // ---------------- BumpStore (used by the engine) ----------------
 
     override fun loadBumps(): List<Bump> {
         val out = ArrayList<Bump>()
         readableDatabase.rawQuery(
-            "SELECT id, lat, lon, heading, hits, passes, misses, n_pos, first_seen, last_seen, user_muted FROM bumps", null
+            "SELECT id, lat, lon, heading, hits, passes, misses, n_pos, first_seen, last_seen, user_muted, " +
+                "kind_score, kind_votes FROM bumps", null
         ).use { c ->
             while (c.moveToNext()) {
                 out.add(
                     Bump(
                         c.getLong(0), c.getDouble(1), c.getDouble(2), c.getDouble(3),
                         c.getInt(4), c.getInt(5), c.getInt(6), c.getInt(7), c.getLong(8), c.getLong(9),
-                        c.getInt(10) != 0,
+                        c.getInt(10) != 0, c.getDouble(11), c.getInt(12),
                     )
                 )
             }
@@ -73,11 +81,16 @@ class BumpDb(ctx: Context) : SQLiteOpenHelper(ctx, "bumps.db", null, 1), BumpSto
         writableDatabase.update("bumps", values(b), "id = ?", arrayOf(b.id.toString()))
     }
 
+    fun deleteBump(id: Long) {
+        writableDatabase.delete("bumps", "id = ?", arrayOf(id.toString()))
+    }
+
     private fun values(b: Bump) = ContentValues().apply {
         put("lat", b.lat); put("lon", b.lon); put("heading", b.heading)
         put("hits", b.hits); put("passes", b.passes); put("misses", b.misses)
         put("n_pos", b.nPos); put("first_seen", b.firstSeen); put("last_seen", b.lastSeen)
         put("user_muted", if (b.userMuted) 1 else 0)
+        put("kind_score", b.kindScore); put("kind_votes", b.kindVotes)
     }
 
     override fun logEvent(e: BumpEvent) {
@@ -125,19 +138,74 @@ class BumpDb(ctx: Context) : SQLiteOpenHelper(ctx, "bumps.db", null, 1), BumpSto
         }
     }
 
-    // ---------------- CSV export ----------------
+    // ---------------- CSV export / import ----------------
 
     fun bumpsCsv(cfg: EngineConfig = EngineConfig()): String {
-        val sb = StringBuilder("id,lat,lon,heading,hits,passes,misses,hit_rate,muted,first_seen,last_seen\n")
+        val sb = StringBuilder(
+            "id,lat,lon,heading,hits,passes,misses,hit_rate,muted,first_seen,last_seen,kind,kind_score,kind_votes,user_muted\n"
+        )
         for (b in loadBumps()) {
             sb.append(b.id).append(',')
                 .append(num(b.lat, 7)).append(',').append(num(b.lon, 7)).append(',')
                 .append(num(b.heading, 0)).append(',')
                 .append(b.hits).append(',').append(b.passes).append(',').append(b.misses).append(',')
                 .append(num(b.hitRate, 2)).append(',').append(if (b.isMuted(cfg)) 1 else 0).append(',')
-                .append(time(b.firstSeen)).append(',').append(time(b.lastSeen)).append('\n')
+                .append(time(b.firstSeen)).append(',').append(time(b.lastSeen)).append(',')
+                .append(b.kind.name.lowercase()).append(',').append(num(b.kindScore, 2)).append(',')
+                .append(b.kindVotes).append(',').append(if (b.userMuted) 1 else 0).append('\n')
         }
         return sb.toString()
+    }
+
+    /**
+     * Adds the bumps from a shared bumps CSV (this app's export, old or new format).
+     * A bump already on the map (within [EngineConfig.matchRadiusM], same direction) is kept as it is.
+     * Returns (added, already known, unreadable rows).
+     */
+    fun importBumpsCsv(text: String, cfg: EngineConfig = EngineConfig()): Triple<Int, Int, Int> {
+        val lines = text.lineSequence().map { it.trim().removePrefix("﻿") }.filter { it.isNotEmpty() }.toList()
+        if (lines.isEmpty()) return Triple(0, 0, 0)
+        val head = lines[0].split(',').map { it.trim().lowercase() }
+        fun idx(name: String) = head.indexOf(name)
+        val iLat = idx("lat"); val iLon = idx("lon"); val iHead = idx("heading")
+        if (iLat < 0 || iLon < 0 || iHead < 0) return Triple(0, 0, lines.size - 1)
+        val iHits = idx("hits"); val iPasses = idx("passes"); val iMisses = idx("misses")
+        val iScore = idx("kind_score"); val iVotes = idx("kind_votes"); val iUserMuted = idx("user_muted")
+
+        val known = loadBumps().toMutableList()
+        var added = 0; var dup = 0; var bad = 0
+        val now = System.currentTimeMillis()
+        val db = writableDatabase
+        db.beginTransaction()
+        try {
+            for (line in lines.drop(1)) {
+                val f = line.split(',')
+                fun d(i: Int) = if (i in f.indices) f[i].trim().toDoubleOrNull() else null
+                fun n(i: Int) = if (i in f.indices) f[i].trim().toIntOrNull() else null
+                val lat = d(iLat); val lon = d(iLon); val hd = d(iHead)
+                if (lat == null || lon == null || hd == null || lat !in -90.0..90.0 || lon !in -180.0..180.0) { bad++; continue }
+                val same = known.any {
+                    Geo.distance(lat, lon, it.lat, it.lon) <= cfg.matchRadiusM && Geo.angleDiff(hd, it.heading) <= cfg.headingTolDeg
+                }
+                if (same) { dup++; continue }
+                val hits = (n(iHits) ?: 1).coerceAtLeast(1)
+                val passes = (n(iPasses) ?: hits).coerceAtLeast(hits)
+                val misses = (n(iMisses) ?: (passes - hits)).coerceIn(0, passes)
+                val b = Bump(
+                    0, lat, lon, hd, hits, passes, misses, hits, now, now,
+                    userMuted = (n(iUserMuted) ?: 0) != 0,
+                    kindScore = (d(iScore) ?: 0.0).coerceIn(-1.0, 1.0),
+                    kindVotes = (n(iVotes) ?: 0).coerceAtLeast(0),
+                )
+                b.id = db.insert("bumps", null, values(b))
+                known.add(b)
+                added++
+            }
+            db.setTransactionSuccessful()
+        } finally {
+            db.endTransaction()
+        }
+        return Triple(added, dup, bad)
     }
 
     fun eventsCsv(): String {

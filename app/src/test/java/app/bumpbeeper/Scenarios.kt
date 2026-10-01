@@ -159,7 +159,113 @@ object Scenarios {
         check(r.knownHits == 2, "muted bump should still be recorded as hit")
     }
 
+    private fun nearest(store: MemoryStore, sim: Simulator, p: Double, westbound: Boolean = false): Bump {
+        val truth = sim.point(p, westbound)
+        return store.saved.minByOrNull { Geo.distance(it.lat, it.lon, truth[0], truth[1]) }!!
+    }
+
+    /** Speed bumps (car pitches, up first) and a pothole (car rolls, down first) are told apart and warned differently. */
+    fun potholeVsBump() {
+        log("potholeVsBump")
+        val sim = Simulator(21)
+        val store = MemoryStore()
+        val spec = DriveSpec(bumpsAt = listOf(400.0, 1500.0), potholesAt = listOf(900.0), cruiseKmh = 40.0)
+
+        val t1 = sim.drive(store, spec, tripId = 1)
+        describe("trip 1", t1)
+        check(t1.newBumps == 3, "trip 1 should record 2 bumps + 1 pothole, got ${t1.newBumps}")
+        for (p in listOf(400.0, 1500.0)) {
+            val b = nearest(store, sim, p)
+            log("  @${f1(p)}: ${b.kind} score ${String.format(Locale.US, "%.2f", b.kindScore)}")
+            check(b.kind == BumpKind.BUMP, "spot at $p should be a speed bump, got ${b.kind} (${b.kindScore})")
+        }
+        val hole = nearest(store, sim, 900.0)
+        log("  @900: ${hole.kind} score ${String.format(Locale.US, "%.2f", hole.kindScore)}")
+        check(hole.kind == BumpKind.POTHOLE, "spot at 900 should be a pothole, got ${hole.kind} (${hole.kindScore})")
+
+        val t2 = sim.drive(store, spec, tripId = 2)
+        describe("trip 2", t2)
+        check(t2.beepBumpIds.size == 3, "trip 2 should warn 3 times, got ${t2.beepBumpIds.size}")
+        check(t2.beepKinds.count { it == BumpKind.POTHOLE } == 1, "exactly one pothole warning expected: ${t2.beepKinds}")
+        check(t2.beepKinds.count { it == BumpKind.BUMP } == 2, "two speed bump warnings expected: ${t2.beepKinds}")
+
+        // "Warn for potholes" off: only the speed bumps warn.
+        val noHoles = EngineConfig().apply { warnPotholes = false }
+        val t3 = sim.drive(store, spec, noHoles, tripId = 3)
+        describe("trip 3 (no pothole warnings)", t3)
+        check(t3.beepBumpIds.size == 2 && BumpKind.POTHOLE !in t3.beepKinds, "only the 2 speed bumps should warn: ${t3.beepKinds}")
+    }
+
+    /** Without a gyroscope the up-first / down-first clue alone still separates them. */
+    fun potholeVsBumpNoGyro() {
+        log("potholeVsBumpNoGyro")
+        val sim = Simulator(22)
+        val store = MemoryStore()
+        val r = sim.drive(store, DriveSpec(bumpsAt = listOf(500.0), potholesAt = listOf(1100.0), cruiseKmh = 40.0, gyro = false))
+        describe("trip 1", r)
+        check(r.newBumps == 2, "expected 2 new spots, got ${r.newBumps}")
+        check(nearest(store, sim, 500.0).kind == BumpKind.BUMP, "500 should be a speed bump")
+        check(nearest(store, sim, 1100.0).kind == BumpKind.POTHOLE, "1100 should be a pothole")
+    }
+
+    /** At 70 km/h: a clear pothole is still recorded; an ordinary jolt is rejected as too fast for a speed bump. */
+    fun fastPothole() {
+        log("fastPothole")
+        val sim = Simulator(31)
+        val store = MemoryStore()
+        val spec1 = DriveSpec(potholesAt = listOf(1000.0), oneOffJoltsAt = listOf(600.0), cruiseKmh = 70.0)
+        val t1 = sim.drive(store, spec1, tripId = 1)
+        describe("trip 1", t1)
+        check(t1.newBumps == 1, "only the pothole should be recorded at 70 km/h, got ${t1.newBumps}")
+        check("too_fast" in t1.rejected, "the plain jolt at 70 km/h should be rejected as too_fast: ${t1.rejected}")
+        check(store.saved.single().kind == BumpKind.POTHOLE, "the recorded spot should be a pothole")
+
+        val t2 = sim.drive(store, DriveSpec(potholesAt = listOf(1000.0), cruiseKmh = 70.0), tripId = 2)
+        describe("trip 2", t2)
+        check(t2.beepKinds == listOf(BumpKind.POTHOLE), "trip 2 should give one pothole warning, got ${t2.beepKinds}")
+    }
+
+    /** Already driving slowly → no warning (logged as beep_quiet). With the setting at 0 it warns again. */
+    fun quietWhenSlow() {
+        log("quietWhenSlow")
+        val sim = Simulator(13)
+        val store = MemoryStore()
+        val spec = DriveSpec(bumpsAt = listOf(500.0, 1200.0), cruiseKmh = 18.0, bumpKmh = 10.0)
+        val t1 = sim.drive(store, spec, tripId = 1)
+        describe("trip 1", t1)
+        check(t1.newBumps == 2, "trip 1 should learn 2 bumps, got ${t1.newBumps}")
+
+        val t2 = sim.drive(store, spec, tripId = 2)
+        describe("trip 2 (quiet below 20)", t2)
+        check(t2.beepBumpIds.isEmpty(), "at 18 km/h nothing should warn, got ${t2.beepBumpIds.size}")
+        val quiet = store.events.count { it.tripId == 2L && it.type == "beep_quiet" }
+        check(quiet == 2, "expected 2 beep_quiet events, got $quiet")
+
+        val always = EngineConfig().apply { quietBelowKmh = 0.0 }
+        val t3 = sim.drive(store, spec, always, tripId = 3)
+        describe("trip 3 (always warn)", t3)
+        check(t3.beepBumpIds.size == 2, "with quiet off both bumps should warn, got ${t3.beepBumpIds.size}")
+    }
+
+    /** A miss records how strong the strongest nearby jolt was, so you can see if it was just below the trigger. */
+    fun missReportsNearbyJolt() {
+        log("missReportsNearbyJolt")
+        val sim = Simulator(17)
+        val store = MemoryStore()
+        sim.drive(store, DriveSpec(bumpsAt = listOf(800.0)), tripId = 1)
+        sim.drive(store, DriveSpec(silentBumpsAt = listOf(800.0)), tripId = 2)
+        val miss = store.events.firstOrNull { it.tripId == 2L && it.type == "miss" }
+        check(miss != null, "trip 2 should log a miss")
+        log("  miss note: ${miss!!.note}")
+        check(!miss.peak.isNaN() && miss.peak > 0.0 && miss.peak < 3.0, "miss should carry the nearby jolt (below trigger), got ${miss.peak}")
+    }
+
     fun all(): List<Pair<String, () -> Unit>> = listOf(
+        "potholeVsBump" to ::potholeVsBump,
+        "potholeVsBumpNoGyro" to ::potholeVsBumpNoGyro,
+        "fastPothole" to ::fastPothole,
+        "quietWhenSlow" to ::quietWhenSlow,
+        "missReportsNearbyJolt" to ::missReportsNearbyJolt,
         "learnThenBeep" to ::learnThenBeep,
         "otherDirection" to ::otherDirection,
         "handlingIgnored" to ::handlingIgnored,

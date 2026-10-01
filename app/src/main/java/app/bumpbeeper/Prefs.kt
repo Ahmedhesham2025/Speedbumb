@@ -8,6 +8,14 @@ object Prefs {
     const val SENSITIVITY = "sensitivity"   // 0 = low, 1 = normal, 2 = high
     const val LOUD = "loud"
     const val CLICK_ON_NEW = "click_on_new"
+    const val LEAD_SECONDS = "lead_seconds"
+    const val QUIET_BELOW_KMH = "quiet_below_kmh"
+    const val MAX_BUMP_KMH = "max_bump_kmh"
+    const val WARN_POTHOLES = "warn_potholes"
+    const val DEBUG_RECORDING = "debug_recording"
+    const val AUTO_START = "auto_start"
+    const val CAR_ADDRESS = "car_address"
+    const val CAR_NAME = "car_name"
 
     fun sp(ctx: Context): SharedPreferences = ctx.getSharedPreferences("settings", Context.MODE_PRIVATE)
 
@@ -24,4 +32,26 @@ object Prefs {
 
     fun loud(ctx: Context): Boolean = sp(ctx).getBoolean(LOUD, false)
     fun clickOnNew(ctx: Context): Boolean = sp(ctx).getBoolean(CLICK_ON_NEW, false)
+
+    /** Seconds of warning before a bump (4–12). */
+    fun leadSeconds(ctx: Context): Int = sp(ctx).getInt(LEAD_SECONDS, 7)
+    /** Don't beep when already slower than this, km/h (0 = always beep). */
+    fun quietBelowKmh(ctx: Context): Int = sp(ctx).getInt(QUIET_BELOW_KMH, 20)
+    /** Jolts above this speed aren't speed bumps (unless clearly a pothole), km/h. */
+    fun maxBumpKmh(ctx: Context): Int = sp(ctx).getInt(MAX_BUMP_KMH, 50)
+    fun warnPotholes(ctx: Context): Boolean = sp(ctx).getBoolean(WARN_POTHOLES, true)
+    fun debugRecording(ctx: Context): Boolean = sp(ctx).getBoolean(DEBUG_RECORDING, false)
+
+    fun autoStart(ctx: Context): Boolean = sp(ctx).getBoolean(AUTO_START, false)
+    fun carAddress(ctx: Context): String? = sp(ctx).getString(CAR_ADDRESS, null)
+    fun carName(ctx: Context): String? = sp(ctx).getString(CAR_NAME, null)
+
+    /** Copy the on-screen settings into the engine. */
+    fun applyTo(cfg: EngineConfig, ctx: Context) {
+        cfg.joltThreshold = threshold(ctx)
+        cfg.leadSeconds = leadSeconds(ctx).toDouble()
+        cfg.quietBelowKmh = quietBelowKmh(ctx).toDouble()
+        cfg.maxSpeedKmh = maxBumpKmh(ctx).toDouble()
+        cfg.warnPotholes = warnPotholes(ctx)
+    }
 }

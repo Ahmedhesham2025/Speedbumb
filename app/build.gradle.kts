@@ -5,6 +5,12 @@ plugins {
     id("org.jetbrains.kotlin.android")
 }
 
+// Fixed signing key, so a new version installs over the old one and keeps your bumps.
+// On GitHub it comes from the repository secrets (see .github/workflows/build.yml); never commit the key file.
+val releaseKeystore: String? = System.getenv("BUMP_KEYSTORE")
+val releaseKeystorePassword: String? = System.getenv("BUMP_KEYSTORE_PASSWORD")
+val hasReleaseKey = !releaseKeystore.isNullOrEmpty() && !releaseKeystorePassword.isNullOrEmpty()
+
 android {
     namespace = "app.bumpbeeper"
     compileSdk = 34
@@ -13,15 +19,29 @@ android {
         applicationId = "app.bumpbeeper"
         minSdk = 29          // Android 10+
         targetSdk = 34
-        versionCode = 1
-        versionName = "1.0"
+        // Every GitHub build gets a higher number, so Android accepts it as an update.
+        val build = System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull() ?: 1
+        versionCode = build
+        versionName = "1.1.$build"
+    }
+
+    signingConfigs {
+        if (hasReleaseKey) {
+            create("release") {
+                storeFile = file(releaseKeystore!!)
+                storePassword = releaseKeystorePassword
+                keyAlias = "bumpbeeper"
+                keyPassword = releaseKeystorePassword
+                storeType = "pkcs12"
+            }
+        }
     }
 
     buildTypes {
         release {
             isMinifyEnabled = false
-            // Signed with the debug key so a release build installs without setting up your own key.
-            signingConfig = signingConfigs.getByName("debug")
+            // Without the secret (e.g. building in Android Studio) fall back to the debug key.
+            signingConfig = if (hasReleaseKey) signingConfigs.getByName("release") else signingConfigs.getByName("debug")
         }
     }
 

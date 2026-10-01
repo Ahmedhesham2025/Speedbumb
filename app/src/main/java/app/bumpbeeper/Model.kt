@@ -1,6 +1,13 @@
 package app.bumpbeeper
 
-/** One speed bump on the map, learned from your own drives. */
+/** What a spot on the map is, judged from how the car moved each time it was hit. */
+enum class BumpKind(val label: String) {
+    BUMP("speed bump"),
+    POTHOLE("pothole"),
+    UNSURE("bump (unsure)"),
+}
+
+/** One speed bump (or pothole) on the map, learned from your own drives. */
 class Bump(
     var id: Long,
     var lat: Double,
@@ -19,8 +26,20 @@ class Bump(
     var lastSeen: Long,
     /** You pressed "Mute last beep" for this one. */
     var userMuted: Boolean = false,
+    /** Average pothole score of all hits: -1 = clearly a speed bump, +1 = clearly a pothole. */
+    var kindScore: Double = 0.0,
+    /** How many hits the score is averaged from. */
+    var kindVotes: Int = 0,
 ) {
     val hitRate: Double get() = if (passes <= 0) 1.0 else hits.toDouble() / passes
+
+    val kind: BumpKind
+        get() = when {
+            kindVotes == 0 -> BumpKind.UNSURE
+            kindScore >= KIND_MARGIN -> BumpKind.POTHOLE
+            kindScore <= -KIND_MARGIN -> BumpKind.BUMP
+            else -> BumpKind.UNSURE
+        }
 
     /**
      * Silent but kept on the map: either you muted it, or it is probably a false detection
@@ -29,7 +48,18 @@ class Bump(
     fun isMuted(cfg: EngineConfig): Boolean =
         userMuted || (passes >= cfg.muteAfterPasses && hitRate < cfg.muteBelowHitRate)
 
-    fun copy() = Bump(id, lat, lon, heading, hits, passes, misses, nPos, firstSeen, lastSeen, userMuted)
+    /** Add one hit's pothole score to the running average (recent hits keep at least 1/10 weight). */
+    fun addKindVote(score: Double) {
+        val w = 1.0 / (minOf(kindVotes, 9) + 1)
+        kindScore += (score - kindScore) * w
+        kindVotes++
+    }
+
+    fun copy() = Bump(id, lat, lon, heading, hits, passes, misses, nPos, firstSeen, lastSeen, userMuted, kindScore, kindVotes)
+
+    companion object {
+        const val KIND_MARGIN = 0.25
+    }
 }
 
 /** One GPS reading. [timeMs] is on the same monotonic clock as the accelerometer samples. */
@@ -48,14 +78,14 @@ class Fix(
 class BumpEvent(
     val wallTime: Long,
     val tripId: Long,
-    /** new_bump, hit, hit_repeat, miss, beep, rejected */
+    /** new_bump, hit, hit_repeat, miss, pass_slow, beep, beep_quiet, rejected, user_mute */
     val type: String,
     val bumpId: Long,
     val lat: Double,
     val lon: Double,
     val speedKmh: Double,
     val heading: Double,
-    /** Peak vertical jolt, m/s². */
+    /** Peak vertical jolt, m/s². For misses: the strongest jolt felt near the bump. */
     val peak: Double,
     /** How much you slowed down in the 10 s before the jolt, km/h. */
     val slowdownKmh: Double,

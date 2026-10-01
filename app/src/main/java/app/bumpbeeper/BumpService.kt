@@ -22,6 +22,7 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.HandlerThread
 import android.os.IBinder
+import android.os.Looper
 import android.os.PowerManager
 import android.os.SystemClock
 import android.util.Log
@@ -29,8 +30,8 @@ import java.util.Locale
 import kotlin.math.abs
 
 /**
- * Runs while you drive (screen can be off). Feeds the accelerometer (50×/s) and GPS (1×/s)
- * into [BumpEngine] on its own background thread, plays the beeps, and keeps the notification up to date.
+ * Runs while you drive (screen can be off). Feeds the accelerometer and gyroscope (50×/s) and GPS (1×/s)
+ * into [BumpEngine] on its own background thread, plays the warnings, and keeps the notification up to date.
  */
 class BumpService : Service(), SensorEventListener, LocationListener, EngineListener {
 
@@ -38,9 +39,15 @@ class BumpService : Service(), SensorEventListener, LocationListener, EngineList
         private const val ACTION_START = "app.bumpbeeper.START"
         private const val ACTION_STOP = "app.bumpbeeper.STOP"
         private const val ACTION_MUTE_LAST = "app.bumpbeeper.MUTE_LAST"
+        private const val ACTION_CAR_GONE = "app.bumpbeeper.CAR_GONE"
+        private const val EXTRA_AUTO = "auto"
         private const val CHANNEL_ID = "recording"
+        private const val CHANNEL_AUTO = "auto_start"
         private const val NOTIF_ID = 1
+        private const val NOTIF_AUTO_ID = 2
         private const val TAG = "BumpBeeper"
+        /** After the car's Bluetooth disconnects, keep recording this long in case it comes back. */
+        private const val CAR_GONE_GRACE_MS = 60_000L
 
         fun start(ctx: Context) {
             ctx.startForegroundService(Intent(ctx, BumpService::class.java).setAction(ACTION_START))
@@ -54,6 +61,48 @@ class BumpService : Service(), SensorEventListener, LocationListener, EngineList
         fun muteLastBeep(ctx: Context) {
             ctx.startService(Intent(ctx, BumpService::class.java).setAction(ACTION_MUTE_LAST))
         }
+
+        /** The car's Bluetooth connected. Start recording (or, if it was about to stop, keep going). */
+        fun startFromCar(ctx: Context) {
+            try {
+                ctx.startForegroundService(Intent(ctx, BumpService::class.java).setAction(ACTION_START).putExtra(EXTRA_AUTO, true))
+            } catch (e: Exception) {
+                // Android refused to start from the background (missing permission or battery restriction).
+                Log.w(TAG, "auto start refused", e)
+                notifyTapToStart(ctx, "Your car connected. Tap to start recording.")
+            }
+        }
+
+        fun carDisconnected(ctx: Context) {
+            try {
+                ctx.startService(Intent(ctx, BumpService::class.java).setAction(ACTION_CAR_GONE))
+            } catch (e: Exception) {
+                Log.w(TAG, "car-gone message refused", e)
+            }
+        }
+
+        /** Fallback when auto start isn't allowed: a notification that starts recording with one tap. */
+        fun notifyTapToStart(ctx: Context, text: String) {
+            val nm = ctx.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            nm.createNotificationChannel(
+                NotificationChannel(CHANNEL_AUTO, "Auto start", NotificationManager.IMPORTANCE_HIGH).apply {
+                    description = "Shown when your car connects but recording could not start by itself"
+                }
+            )
+            val open = PendingIntent.getActivity(
+                ctx, 2, Intent(ctx, MainActivity::class.java).putExtra(MainActivity.EXTRA_START, true)
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP),
+                PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+            )
+            val n = Notification.Builder(ctx, CHANNEL_AUTO)
+                .setSmallIcon(R.drawable.ic_stat_bump)
+                .setContentTitle("Bump Beeper")
+                .setContentText(text)
+                .setContentIntent(open)
+                .setAutoCancel(true)
+                .build()
+            try { nm.notify(NOTIF_AUTO_ID, n) } catch (_: SecurityException) {}
+        }
     }
 
     private var running = false
@@ -61,28 +110,46 @@ class BumpService : Service(), SensorEventListener, LocationListener, EngineList
     private lateinit var beeper: Beeper
     private var thread: HandlerThread? = null
     private var handler: Handler? = null
+    private val main = Handler(Looper.getMainLooper())
     @Volatile private var engine: BumpEngine? = null   // only used on the engine thread
+    private var trace: TraceWriter? = null              // only used on the engine thread
     private var wakeLock: PowerManager.WakeLock? = null
     private var tripId = 0L
     private var sensorOffsetMs: Long? = null
     private var graphMax = 0.0
     private var graphLastPushMs = 0L
     private var lastNotifMs = 0L
+    private var gx = 0.0
+    private var gy = 0.0
+    private var gz = 0.0
 
-    private val prefListener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
-        if (key == Prefs.SENSITIVITY) {
-            val th = Prefs.threshold(this)
-            handler?.post { engine?.cfg?.joltThreshold = th }
-        }
+    private val stopForCarGone = Runnable {
+        LiveState.lastEvent = "Car disconnected: stopped"
+        stopRecording()
+    }
+
+    private val prefListener = SharedPreferences.OnSharedPreferenceChangeListener { _, _ ->
+        handler?.post { engine?.cfg?.let { Prefs.applyTo(it, this) } }
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
-            ACTION_STOP -> stopRecording()
+            ACTION_STOP -> {
+                main.removeCallbacks(stopForCarGone)
+                stopRecording()
+            }
             ACTION_MUTE_LAST -> if (running) muteLast() else stopSelf()
-            else -> startRecording()
+            ACTION_CAR_GONE -> if (running) {
+                main.removeCallbacks(stopForCarGone)
+                main.postDelayed(stopForCarGone, CAR_GONE_GRACE_MS)
+                LiveState.lastEvent = "Car disconnected: stopping in ${CAR_GONE_GRACE_MS / 1000} s"
+            } else stopSelf()
+            else -> {
+                main.removeCallbacks(stopForCarGone)   // car came back (or Start pressed): keep going
+                startRecording(intent?.getBooleanExtra(EXTRA_AUTO, false) == true)
+            }
         }
         return START_NOT_STICKY
     }
@@ -91,20 +158,24 @@ class BumpService : Service(), SensorEventListener, LocationListener, EngineList
         handler?.post {
             val eng = engine ?: return@post
             val b = eng.muteBump(eng.lastBeepedId)
-            LiveState.lastEvent = if (b != null) "Muted bump #${b.id}. It won't beep again." else "Nothing has beeped yet on this trip"
+            LiveState.lastEvent = if (b != null) "Muted #${b.id}. It won't beep again." else "Nothing has beeped yet on this trip"
             publish(eng, force = true)
         }
     }
 
     override fun onDestroy() {
+        main.removeCallbacks(stopForCarGone)
         if (running) stopRecording()
         super.onDestroy()
     }
 
     // ---------------------------------------------------------------- start / stop
 
-    private fun startRecording() {
-        if (running) return
+    private fun startRecording(auto: Boolean) {
+        if (running) {
+            if (auto) LiveState.lastEvent = "Car reconnected: still recording"
+            return
+        }
         createChannel()
         try {
             startForeground(NOTIF_ID, buildNotification("Starting…"), ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION)
@@ -112,13 +183,14 @@ class BumpService : Service(), SensorEventListener, LocationListener, EngineList
             Log.e(TAG, "startForeground failed", e)
             LiveState.recording = false
             LiveState.lastEvent = "Could not start: ${e.message}"
+            if (auto) notifyTapToStart(this, "Your car connected, but recording couldn't start by itself. Tap to start.")
             stopSelf()
             return
         }
         running = true
         LiveState.resetTrip()
         LiveState.recording = true
-        LiveState.lastEvent = "Recording started"
+        LiveState.lastEvent = if (auto) "Car connected: recording started" else "Recording started"
 
         db = BumpDb(this)
         beeper = Beeper(this)
@@ -128,14 +200,26 @@ class BumpService : Service(), SensorEventListener, LocationListener, EngineList
         val h = Handler(t.looper)
         thread = t
         handler = h
-        val cfg = EngineConfig().apply { joltThreshold = Prefs.threshold(this@BumpService) }
+        val cfg = EngineConfig().also { Prefs.applyTo(it, this) }
+        val debug = Prefs.debugRecording(this)
         h.post {
-            val eng = BumpEngine(cfg, db, this, { System.currentTimeMillis() }, tripId)
+            var store: BumpStore = db
+            if (debug) {
+                try {
+                    TraceWriter.prune(this)
+                    val tw = TraceWriter(TraceWriter.dir(this))
+                    trace = tw
+                    store = TracingStore(db, tw)
+                } catch (e: Exception) {
+                    Log.w(TAG, "debug recording failed to start", e)
+                }
+            }
+            val eng = BumpEngine(cfg, store, this, { System.currentTimeMillis() }, tripId)
             engine = eng
             publish(eng, force = true)
         }
 
-        // Keep the CPU awake with the screen off, so the accelerometer keeps flowing.
+        // Keep the CPU awake with the screen off, so the sensors keep flowing.
         wakeLock = (getSystemService(Context.POWER_SERVICE) as PowerManager)
             .newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "BumpBeeper:recording")
             .apply {
@@ -150,6 +234,9 @@ class BumpService : Service(), SensorEventListener, LocationListener, EngineList
         } else {
             sm.registerListener(this, accel, 20_000 /* µs → 50 Hz */, h)
         }
+        // Optional: tells speed bumps (car pitches) from potholes (car rolls). Works without it, less surely.
+        sm.getDefaultSensor(Sensor.TYPE_GYROSCOPE)?.let { sm.registerListener(this, it, 20_000, h) }
+        LiveState.hasGyro = sm.getDefaultSensor(Sensor.TYPE_GYROSCOPE) != null
 
         val lm = getSystemService(Context.LOCATION_SERVICE) as LocationManager
         try {
@@ -179,6 +266,8 @@ class BumpService : Service(), SensorEventListener, LocationListener, EngineList
         h?.post {
             engine?.let { database.endTrip(tripId, System.currentTimeMillis(), it.trip) }
             engine = null
+            trace?.close()
+            trace = null
             database.close()
             // A GPS fix handled just before this runnable may have re-posted the notification. Remove it.
             (getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager).cancel(NOTIF_ID)
@@ -190,7 +279,7 @@ class BumpService : Service(), SensorEventListener, LocationListener, EngineList
         wakeLock?.let { if (it.isHeld) it.release() }
         wakeLock = null
         LiveState.recording = false
-        LiveState.lastEvent = "Stopped"
+        if (!LiveState.lastEvent.startsWith("Car disconnected")) LiveState.lastEvent = "Stopped"
         stopForeground(STOP_FOREGROUND_REMOVE)
         stopSelf()
     }
@@ -208,7 +297,18 @@ class BumpService : Service(), SensorEventListener, LocationListener, EngineList
             o
         }
         val tMs = event.timestamp / 1_000_000 + offset
-        eng.onAccel(tMs, event.values[0].toDouble(), event.values[1].toDouble(), event.values[2].toDouble())
+        val x = event.values[0].toDouble()
+        val y = event.values[1].toDouble()
+        val z = event.values[2].toDouble()
+
+        if (event.sensor.type == Sensor.TYPE_GYROSCOPE) {
+            gx = x; gy = y; gz = z
+            eng.onGyro(tMs, x, y, z)
+            return
+        }
+
+        eng.onAccel(tMs, x, y, z)
+        trace?.accel(tMs, x, y, z, gx, gy, gz, eng.lastVertical)
 
         val v = abs(eng.lastVertical)
         if (v > graphMax) graphMax = v
@@ -231,7 +331,9 @@ class BumpService : Service(), SensorEventListener, LocationListener, EngineList
             if (location.hasBearing()) location.bearing.toDouble() else Double.NaN,
             if (location.hasAccuracy()) location.accuracy.toDouble() else 99.0,
         )
+        trace?.gps(fix.timeMs, fix.lat, fix.lon, fix.speedMps * 3.6, fix.bearingDeg, fix.accuracyM)
         eng.onFix(fix)
+        LiveState.forwardKnown = eng.forwardKnown
         publish(eng, force = false)
     }
 
@@ -246,24 +348,24 @@ class BumpService : Service(), SensorEventListener, LocationListener, EngineList
     // ---------------------------------------------------------------- engine events (engine thread)
 
     override fun onNewBump(b: Bump) {
-        LiveState.lastEvent = "New bump recorded (#${b.id})"
+        LiveState.lastEvent = "New ${b.kind.label} recorded (#${b.id})"
         if (Prefs.clickOnNew(this)) beeper.click()
         engine?.let { publish(it, force = true) }
     }
 
     override fun onKnownBumpHit(b: Bump) {
-        LiveState.lastEvent = "Hit known bump #${b.id} (felt ${b.hits} of ${b.passes} times)"
+        LiveState.lastEvent = "Hit known ${b.kind.label} #${b.id} (felt ${b.hits} of ${b.passes} times)"
         engine?.let { publish(it, force = true) }
     }
 
     override fun onBeep(b: Bump, distanceM: Double, speedKmh: Double) {
-        beeper.beep(if (speedKmh >= 50) 3 else 2)
-        LiveState.lastEvent = String.format(Locale.US, "BEEP: bump #%d in %.0f m", b.id, distanceM)
+        beeper.warn(b, speedKmh)
+        LiveState.lastEvent = String.format(Locale.US, "WARNING: %s #%d in %.0f m", b.kind.label, b.id, distanceM)
         engine?.let { publish(it, force = true) }
     }
 
     override fun onPassed(b: Bump, felt: Boolean) {
-        if (!felt) LiveState.lastEvent = "Passed bump #${b.id} without feeling it"
+        if (!felt) LiveState.lastEvent = "Passed #${b.id} without feeling it"
     }
 
     override fun onJoltRejected(peak: Double, reason: String) {
@@ -272,7 +374,7 @@ class BumpService : Service(), SensorEventListener, LocationListener, EngineList
             "no_gps" -> "no GPS fix yet"
             "weak_gps" -> "GPS too inaccurate"
             "too_slow" -> "car (almost) stopped"
-            "too_fast" -> "too fast for a speed bump"
+            "too_fast" -> "too fast for a speed bump, and not clearly a pothole"
             "no_heading" -> "direction not known yet"
             else -> reason
         }
@@ -301,7 +403,7 @@ class BumpService : Service(), SensorEventListener, LocationListener, EngineList
         if (force || now - lastNotifMs > 5000) {
             lastNotifMs = now
             val text = String.format(
-                Locale.US, "%d bumps on map · this trip: %d hit, %d new, %d beeps",
+                Locale.US, "%d on map · this trip: %d hit, %d new, %d warnings",
                 eng.bumps.size, tr.hits, tr.newBumps, tr.beeps,
             )
             (getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager).notify(NOTIF_ID, buildNotification(text))

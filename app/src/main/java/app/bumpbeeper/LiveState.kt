@@ -15,6 +15,10 @@ object LiveState {
     @Volatile var tripKm = 0.0
     @Volatile var lastEvent = ""
     @Volatile var lastIgnored = ""
+    /** The phone has a gyroscope (needed to tell potholes from speed bumps reliably). */
+    @Volatile var hasGyro = false
+    /** The engine has learned which way the car's nose points (after a few speed-ups / brakings). */
+    @Volatile var forwardKnown = false
 
     // Last 30 s of jolt readings (one value per 100 ms) for the jolt meter.
     private val graph = FloatArray(300)
@@ -38,6 +42,7 @@ object LiveState {
         tripHits = 0; tripNew = 0; tripBeeps = 0; tripMisses = 0; tripKm = 0.0
         speedKmh = Double.NaN; accuracyM = Double.NaN; lastFixAtMs = 0L
         lastIgnored = ""
+        forwardKnown = false
     }
 
     const val GRAPH_POINTS = 300

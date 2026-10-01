@@ -5,3 +5,7 @@ local.properties
 *.iml
 .DS_Store
 captures/
+# Signing keys: never commit these (the repository is public)
+*.p12
+*.jks
+*.keystore

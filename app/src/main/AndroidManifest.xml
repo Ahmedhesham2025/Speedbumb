@@ -4,6 +4,11 @@
     <!-- Where you are (to place bumps and know when one is ahead) -->
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <!-- Auto start only: lets recording start while the app is closed, when the car's Bluetooth connects -->
+    <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" />
+    <!-- Auto start only: see which Bluetooth device connected (is it the car?) -->
+    <uses-permission android:name="android.permission.BLUETOOTH" android:maxSdkVersion="30" />
+    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
     <!-- Keep recording with the screen off -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
@@ -13,6 +18,8 @@
 
     <uses-feature android:name="android.hardware.sensor.accelerometer" android:required="true" />
     <uses-feature android:name="android.hardware.location.gps" android:required="true" />
+    <uses-feature android:name="android.hardware.sensor.gyroscope" android:required="false" />
+    <uses-feature android:name="android.hardware.bluetooth" android:required="false" />
 
     <application
         android:allowBackup="true"
@@ -30,9 +37,24 @@
             </intent-filter>
         </activity>
 
+        <activity
+            android:name=".BumpsActivity"
+            android:exported="false"
+            android:label="Your bumps" />
+
         <service
             android:name=".BumpService"
             android:exported="false"
             android:foregroundServiceType="location" />
+
+        <!-- Car Bluetooth connected / disconnected → auto start / stop. Only acts on the car picked in the app. -->
+        <receiver
+            android:name=".CarBluetoothReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.bluetooth.device.action.ACL_CONNECTED" />
+                <action android:name="android.bluetooth.device.action.ACL_DISCONNECTED" />
+            </intent-filter>
+        </receiver>
     </application>
 </manifest>

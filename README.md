@@ -4,7 +4,12 @@ Android app that learns the speed bumps on your routes and warns you about them.
 
 - **First pass over a bump:** the phone feels the jolt and saves the spot. No beep.
 - **Every pass after that:** 2 beeps about 6 seconds before you reach it (3 beeps above 50 km/h). It keeps recording while it beeps.
-- **Keeps improving:** each pass refines the bump's position. A spot you pass 3+ times but feel less than half the time is muted automatically, and **Mute last beep** silences a false alarm with one tap.
+- **Keeps improving:** each pass refines the bump's position. A spot you pass 3+ times but feel less than half the time is muted automatically, and **Mute last warning** silences a false alarm with one tap.
+- **Speed bump or pothole:** told apart from how the car moves (see *How it works*). Potholes get their own falling two-tone sound and can be switched off.
+- **Quiet when you're already slow:** no warning below 20 km/h (adjustable), since you've clearly seen it.
+- **Auto start/stop** when the phone connects to / disconnects from your car's Bluetooth.
+- **Your bumps:** offline map and list; open a spot in Google Maps, mute it, correct bump/pothole, delete it; **share** your map and **import** someone else's.
+- **Debug recording:** saves every sensor reading of a drive, to check afterwards what happened at a spot.
 
 Android 10 or newer. No internet, no account: everything stays on the phone.
 
@@ -21,8 +26,11 @@ To get an APK file instead: **Build → Build App Bundle(s) / APK(s) → Build A
 
 ### Option B: no Android Studio (GitHub builds it)
 1. Create an empty GitHub repository and push this folder to it.
-2. GitHub builds it automatically (**Actions** tab → *Build APK*). This takes about 5 minutes.
-3. Open the finished run → **Artifacts → BumpBeeper-apk**, unzip it, and install `app-debug.apk` on the phone.
+2. Add your signing key as two repository secrets (**Settings → Secrets and variables → Actions**): `KEYSTORE_BASE64` (the `.p12` key file, base64) and `KEYSTORE_PASSWORD`. The key alias must be `bumpbeeper`.
+3. GitHub builds it automatically (**Actions** tab → *Build APK*). This takes about 5 minutes.
+4. Open the finished run → **Artifacts → BumpBeeper-apk**, unzip it, and install `BumpBeeper-<number>.apk` on the phone.
+
+Every build is signed with the same key and gets a higher version number, so **a new version installs over the old one and keeps your bumps**. Keep a backup of the key: without it, updates can't be installed over the app.
 
 ---
 
@@ -66,7 +74,16 @@ GPS 1/s ────────────┘        │        known bump? +1
 - ahead of you (within 45° of your heading),
 - no more than 20 m sideways from your path, which ignores parallel service roads,
 - facing your direction of travel,
-- within `speed × 7 s` (at least 40 m, at most 250 m).
+- within `speed × 7 s` (at least 40 m, at most 250 m; the 7 s is a setting),
+- and you're not already slower than the "don't warn below" setting (20 km/h by default; logged as `beep_quiet`).
+
+**Speed bump or pothole?** Each hit is scored from −1 (speed bump) to +1 (pothole) from two clues:
+- *Which way the car moves first.* A speed bump pushes the car up first. A pothole drops a wheel down first, then slams it into the far edge.
+- *How the car rocks* (gyroscope). A speed bump spans the lane, so both front wheels rise together and the car pitches nose-up/nose-down. A pothole usually catches one wheel, so the car rolls sideways. To separate roll from pitch the engine needs to know which way the car's nose points in phone coordinates; it learns that by matching the accelerometer's horizontal push with GPS speed changes (speeding up and braking), so it's ready after a few of those. It re-learns if the phone is moved in its holder.
+
+Each spot keeps a running average of its hits' scores, so one odd reading doesn't flip it. Above the speed bump limit (50 km/h), a jolt is still recorded if it is clearly a pothole (score ≥ 0.6 with the gyroscope), up to 100 km/h. Without a gyroscope only the first clue is used. You can correct a spot by hand in *Your bumps*.
+
+**Auto start.** Android announces every Bluetooth connection, even to closed apps. When it's the car you picked, recording starts; when it disconnects, recording stops after 60 s (so a short drop doesn't end the trip). Starting from the background needs location *Allow all the time*; if Android still refuses, you get a notification that starts recording with one tap.
 
 **Counting passes.** When you come within 25 m of a bump and then move away, that's a pass: a *hit* if you felt it, a *miss* if not. A slow pass (under 12 km/h) with no jolt counts neither way. Otherwise the app would slowly mute real bumps *because* it warned you and you crawled over them.
 
@@ -75,22 +92,29 @@ Every number above is in `EngineConfig` at the top of `BumpEngine.kt`.
 ---
 
 ## Run the tests (no phone needed)
-In Android Studio, right-click `app/src/test/java/app/bumpbeeper/BumpEngineTest.kt` → **Run**. Six simulated scenarios:
+In Android Studio, right-click `app/src/test/java/app/bumpbeeper/BumpEngineTest.kt` → **Run**. GitHub also runs them on every build. Eleven simulated scenarios:
 
 - **learnThenBeep:** 4 drives over 3 bumps and one one-off pothole hit. The first drive is silent. Drives 2–4 beep about 65–95 m before each bump. After 4 passes each bump's position is within about 3 m, and the one-off spot is muted.
 - **otherDirection:** eastbound bumps don't beep westbound.
 - **handlingIgnored:** a passenger grabbing the phone isn't recorded as a bump.
 - **parkedAndNoGps:** a door slam while parked, or a jolt before the first GPS fix, is ignored.
 - **crawlVersusRemoved:** a crawled-over bump stays active; a removed bump gets muted.
-- **userMute:** after *Mute last beep*, that bump stays silent.
+- **userMute:** after *Mute last warning*, that bump stays silent.
+- **potholeVsBump:** two speed bumps and a pothole are classified correctly on the first drive, warn with the right sound on the second, and the pothole stays silent with *Warn for potholes* off.
+- **potholeVsBumpNoGyro:** same, on a phone without a gyroscope.
+- **fastPothole:** at 70 km/h a pothole is still recorded, an ordinary jolt is rejected.
+- **quietWhenSlow:** at 18 km/h there's no warning (logged as `beep_quiet`); with the setting at 0 it warns.
+- **missReportsNearbyJolt:** a miss records the strongest jolt felt near the bump.
 
 ---
 
 ## Tuning with your own data
 **Export CSV** writes two files to `Downloads/BumpBeeper`:
 
-- `bumps_….csv`: the map. It has `lat`, `lon`, `hits`, `passes`, `hit_rate` and `muted`. Import it into **Google My Maps** to see your bumps on a map.
-- `events_….csv`: one row per event: `new_bump`, `hit`, `miss`, `pass_slow`, `beep`, `rejected` (with the reason in `note`) and `user_mute`. Each row has `peak_ms2` (jolt size), `speed_kmh` and `slowdown_kmh` (how much you braked in the previous 10 s).
+- `bumps_….csv`: the map. It has `lat`, `lon`, `hits`, `passes`, `hit_rate`, `muted`, `kind` (speed bump / pothole / unsure) and `kind_score`. Import it into **Google My Maps** to see your bumps on a map, or into the app on another phone (*Your bumps → Import map*).
+- `events_….csv`: one row per event: `new_bump`, `hit`, `miss`, `pass_slow`, `beep`, `beep_quiet`, `rejected` (with the reason in `note`) and `user_mute`. Each row has `peak_ms2` (jolt size), `speed_kmh` and `slowdown_kmh` (how much you braked in the previous 10 s). Hits and new bumps carry the bump/pothole clues in `note` (`score`, `first=up/down`, `roll/pitch`). For a `miss`, `peak_ms2` is the strongest jolt felt near the bump: just under the trigger means *raise the sensitivity*.
+
+**Debug recording** (setting, off by default) writes one file per drive with every accelerometer and gyroscope sample, every GPS fix and every event (`type` = `accel` / `gps` / `event`). **Export recordings** copies them to `Downloads/BumpBeeper/recordings`. The last 20 drives are kept, about 12 MB per hour.
 
 Practice ideas:
 1. **Pick your threshold.** Load `events.csv` into pandas and plot a histogram of `peak_ms2` for `hit`/`new_bump` rows against `rejected` rows. Is 3.0 in the right place for your car?
@@ -101,5 +125,6 @@ Practice ideas:
 
 ## Known limits
 - Tested in simulation, not yet on a real road. The thresholds are sensible starting points; use the jolt meter and the export to tune them for your car and phone.
-- Potholes you hit every time will be learned too, and will beep. That's arguably useful; use *Mute last beep* if not.
+- Bump/pothole detection is also tested only in simulation. Speed bumps crossed at an angle, or potholes that span the whole lane, can look like the other kind; a spot gets surer with every pass, and you can correct it by hand.
+- The map in *Your bumps* has no streets, because the app has no internet access. Use *Open in Google Maps* for context.
 - GPS is weaker between tall buildings and under bridges. Beeps may come a little early or late there.

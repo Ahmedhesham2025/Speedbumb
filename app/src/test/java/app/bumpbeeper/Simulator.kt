@@ -46,10 +46,18 @@ class DriveSpec(
     val crawlAt: List<Double> = emptyList(),
     /** Speed the driver slows to for bumps. */
     val bumpKmh: Double = 15.0,
+    /** Potholes: the driver doesn't slow down; one wheel drops in (car rolls), down-first jolt. */
+    val potholesAt: List<Double> = emptyList(),
+    /** Cruising speed between bumps. */
+    val cruiseKmh: Double = 50.0,
+    /** Phone has a gyroscope. */
+    val gyro: Boolean = true,
 )
 
 class TripResult(
     val beepBumpIds: List<Long>,
+    /** What kind each warned-about spot was at the moment of the warning. */
+    val beepKinds: List<BumpKind>,
     /** Real distance from the car to the bump's stored position at the moment of each beep. */
     val beepTrueDistM: List<Double>,
     val newBumps: Int,
@@ -87,6 +95,18 @@ class Simulator(seed: Long) {
         }
     }
 
+    /** Pothole: the wheel drops (down) for 60 ms, then slams into the far edge (up). */
+    private fun potholePulse(tau: Double, amp: Double): Double = when {
+        tau < 0 -> 0.0
+        tau < 0.06 -> -0.6 * amp * sin(PI * tau / 0.06)
+        tau < 0.11 -> amp * sin(PI * (tau - 0.06) / 0.05)
+        else -> 0.0
+    }
+
+    /** One rocking swing (rad/s) lasting [len] seconds. */
+    private fun swing(tau: Double, peak: Double, len: Double): Double =
+        if (tau < 0 || tau >= len) 0.0 else peak * sin(2 * PI * tau / len)
+
     private fun bumpAmp(speedMps: Double) = 2.0 + 0.2 * speedMps * 3.6   // 5 m/s² at 15 km/h
 
     /** Rotation matrix for yaw/pitch/roll (radians). Columns = phone axes expressed in car axes (fwd, left, up). */
@@ -109,6 +129,7 @@ class Simulator(seed: Long) {
         val slowFor = (spec.bumpsAt + spec.silentBumpsAt).map { Pair(travel(it), spec.bumpKmh / 3.6) } +
             spec.crawlAt.map { Pair(travel(it), 8 / 3.6) }
         val jolts = spec.oneOffJoltsAt.map { travel(it) }
+        val potholes = spec.potholesAt.map { travel(it) }
         val zones = spec.slowZonesAt.map { travel(it) }
         val handling = spec.handlingAt?.let { travel(it) }
 
@@ -116,6 +137,7 @@ class Simulator(seed: Long) {
         var v = 0.0
         var t = 0.0
         val beepIds = ArrayList<Long>()
+        val beepKinds = ArrayList<BumpKind>()
         val beepTrue = ArrayList<Double>()
         var newBumps = 0
         var knownHits = 0
@@ -127,6 +149,7 @@ class Simulator(seed: Long) {
             override fun onBeep(b: Bump, distanceM: Double, speedKmh: Double) {
                 val car = point(travel(s), spec.westbound)
                 beepIds.add(b.id)
+                beepKinds.add(b.kind)
                 beepTrue.add(Geo.distance(car[0], car[1], b.lat, b.lon))
             }
             override fun onJoltRejected(peak: Double, reason: String) { rejected.add(reason) }
@@ -134,7 +157,7 @@ class Simulator(seed: Long) {
         val engine = BumpEngine(cfg, store, listener, { 1_700_000_000_000L + (t * 1000).toLong() }, tripId)
 
         val dt = 0.02
-        val cruise = 50 / 3.6
+        val cruise = spec.cruiseKmh / 3.6
         val zoneSpeed = 25 / 3.6
         val maxDecel = 3.5
         val maxAccel = 1.5
@@ -145,6 +168,7 @@ class Simulator(seed: Long) {
 
         val history = ArrayList<DoubleArray>()   // (t, s, v)
         val crossings = ArrayList<DoubleArray>() // (time, amplitude)
+        val holeHits = ArrayList<DoubleArray>()  // (time, amplitude)
         var lastFixT = -1.0
         var handlingStart = -1.0
 
@@ -170,6 +194,10 @@ class Simulator(seed: Long) {
                 if (s < sb + 2.6 && sNew >= sb + 2.6) crossings.add(doubleArrayOf(t, 0.8 * bumpAmp(vNew))) // rear axle
             }
             for (sj in jolts) if (s < sj && sNew >= sj) crossings.add(doubleArrayOf(t, 6.0))
+            for (sp in potholes) {
+                if (s < sp && sNew >= sp) holeHits.add(doubleArrayOf(t, 7.0))               // front wheel
+                if (s < sp + 2.6 && sNew >= sp + 2.6) holeHits.add(doubleArrayOf(t, 5.0))   // rear wheel, same side
+            }
             if (handling != null && handlingStart < 0 && s < handling && sNew >= handling) handlingStart = t
 
             s = sNew
@@ -181,7 +209,17 @@ class Simulator(seed: Long) {
             var av = gauss(0.35)
             if (rnd.nextDouble() < 0.002) av += if (rnd.nextBoolean()) 1.5 else -1.5
             for (c in crossings) av += pulse(t - c[0], c[1])
+            for (c in holeHits) av += potholePulse(t - c[0], c[1])
+
+            // Rotation (car axes: roll about forward, pitch about left, yaw about up), rad/s.
+            // Bumps tip the car nose-up/down (pitch); a pothole under one wheel rocks it sideways (roll).
+            var roll = gauss(0.02)
+            var pitch = gauss(0.02)
+            val yaw = gauss(0.01)
+            for (c in crossings) pitch += swing(t - c[0], 0.05 * c[1], 0.2)
+            for (c in holeHits) { roll += swing(t - c[0], 0.08 * c[1], 0.15); pitch += swing(t - c[0], 0.015 * c[1], 0.15) }
             crossings.removeAll { t - it[0] > 0.5 }
+            holeHits.removeAll { t - it[0] > 0.5 }
 
             // Passenger picks the phone up: it rotates 70° and gets shaken, is held 5 s, then put back.
             var extraTilt = 0.0
@@ -204,6 +242,15 @@ class Simulator(seed: Long) {
             val ay = r[0][1] * fv[0] + r[1][1] * fv[1] + r[2][1] * fv[2] + gauss(shake)
             val az = r[0][2] * fv[0] + r[1][2] * fv[1] + r[2][2] * fv[2] + gauss(shake)
             val tMs = (t * 1000).toLong()
+            if (spec.gyro) {
+                val w = doubleArrayOf(roll, pitch, yaw)
+                engine.onGyro(
+                    tMs,
+                    r[0][0] * w[0] + r[1][0] * w[1] + r[2][0] * w[2] + gauss(shake * 0.3),
+                    r[0][1] * w[0] + r[1][1] * w[1] + r[2][1] * w[2] + gauss(shake * 0.3),
+                    r[0][2] * w[0] + r[1][2] * w[1] + r[2][2] * w[2] + gauss(shake * 0.3),
+                )
+            }
             engine.onAccel(tMs, ax, ay, az)
 
             // GPS once a second, reporting where the car was 0.8 s ago, with ±3 m noise.
@@ -218,6 +265,6 @@ class Simulator(seed: Long) {
                 engine.onFix(Fix(tMs, n2[0], n2[1], speed, bearing, 5.0))
             }
         }
-        return TripResult(beepIds, beepTrue, newBumps, knownHits, rejected, engine.trip)
+        return TripResult(beepIds, beepKinds, beepTrue, newBumps, knownHits, rejected, engine.trip)
     }
 }

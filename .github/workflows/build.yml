@@ -1,5 +1,9 @@
 # Builds the APK on GitHub's servers every time you push (or when you press "Run workflow").
 # Download it from the run's page → Artifacts → BumpBeeper-apk.
+#
+# Signing: the APK is signed with your own fixed key, stored in the repository secrets
+# KEYSTORE_BASE64 and KEYSTORE_PASSWORD (Settings → Secrets and variables → Actions).
+# Same key every time = each new version installs over the old one and keeps your bumps.
 name: Build APK
 
 on:
@@ -22,10 +26,30 @@ jobs:
       - name: Simulated-drive tests
         run: chmod +x gradlew && ./gradlew testDebugUnitTest
 
+      - name: Signing key
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+        run: |
+          if [ -z "$KEYSTORE_BASE64" ]; then
+            echo "::error::The KEYSTORE_BASE64 secret is missing, so the APK can't be signed with your fixed key."
+            exit 1
+          fi
+          echo "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/release.p12"
+          echo "BUMP_KEYSTORE=$RUNNER_TEMP/release.p12" >> "$GITHUB_ENV"
+
       - name: Build APK
-        run: ./gradlew assembleDebug
+        env:
+          BUMP_KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+        run: ./gradlew assembleRelease
+
+      - name: Name the APK
+        run: cp app/build/outputs/apk/release/app-release.apk "BumpBeeper-${{ github.run_number }}.apk"
 
       - uses: actions/upload-artifact@v4
         with:
           name: BumpBeeper-apk
-          path: app/build/outputs/apk/debug/app-debug.apk
+          path: BumpBeeper-${{ github.run_number }}.apk
+
+      - name: Remove the key file
+        if: always()
+        run: rm -f "$RUNNER_TEMP/release.p12"
