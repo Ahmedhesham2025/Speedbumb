@@ -220,6 +220,7 @@ object Scenarios {
         val spec1 = DriveSpec(potholesAt = listOf(1000.0), oneOffJoltsAt = listOf(600.0), cruiseKmh = 70.0)
         val t1 = sim.drive(store, spec1, tripId = 1)
         describe("trip 1", t1)
+        t1.forwardTrace.forEach { log("    $it") }
         check(t1.newBumps == 1, "only the pothole should be recorded at 70 km/h, got ${t1.newBumps}")
         check("too_fast" in t1.rejected, "the plain jolt at 70 km/h should be rejected as too_fast: ${t1.rejected}")
         check(store.saved.single().kind == BumpKind.POTHOLE, "the recorded spot should be a pothole")

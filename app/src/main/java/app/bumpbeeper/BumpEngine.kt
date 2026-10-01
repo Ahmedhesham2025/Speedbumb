@@ -129,6 +129,16 @@ class BumpEngine(
     /** True once the engine knows which way the car's nose points in phone coordinates (needed to tell roll from pitch). */
     val forwardKnown: Boolean get() = forwardUnit() != null
 
+    /** For tests and tuning: how far forward-learning has got. */
+    val forwardDebug: String
+        get() {
+            val g = sqrt(gravX * gravX + gravY * gravY + gravZ * gravZ)
+            val d = if (g > 0) (fwdX * gravX + fwdY * gravY + fwdZ * gravZ) / g else 0.0
+            val n = sqrt(max(0.0, fwdX * fwdX + fwdY * fwdY + fwdZ * fwdZ - d * d))
+            val h = sqrt(horX * horX + horY * horY + horZ * horZ)
+            return String.format(Locale.US, "w=%.1f n=%.1f hor=%.2f", fwdWeight, n, h)
+        }
+
     // ---------- accelerometer state ----------
     // Two low-pass filtered copies of the raw accelerometer vector:
     //  slow (≈1 s): the direction of gravity in phone coordinates → tells us which way is "up"

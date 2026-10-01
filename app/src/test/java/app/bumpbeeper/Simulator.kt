@@ -64,6 +64,8 @@ class TripResult(
     val knownHits: Int,
     val rejected: List<String>,
     val stats: TripStats,
+    /** Snapshots of the engine's forward-direction learning (for debugging the bump/pothole tests). */
+    val forwardTrace: List<String> = emptyList(),
 )
 
 /**
@@ -171,6 +173,7 @@ class Simulator(seed: Long) {
         val holeHits = ArrayList<DoubleArray>()  // (time, amplitude)
         var lastFixT = -1.0
         var handlingStart = -1.0
+        val fwdTrace = ArrayList<String>()
 
         while (s < len) {
             // Driver: cruise at 50, brake (comfortably) for bumps and slow zones they can see.
@@ -263,8 +266,11 @@ class Simulator(seed: Long) {
                 val speed = max(0.0, past[2] + gauss(0.3))
                 val bearing = if (past[2] > 1.0) ((if (spec.westbound) 270.0 else 90.0) + gauss(3.0) + 360) % 360 else Double.NaN
                 engine.onFix(Fix(tMs, n2[0], n2[1], speed, bearing, 5.0))
+                if (fwdTrace.size < 12 && (t < 12 || ((t + 0.5).toInt() % 20 == 0))) {
+                    fwdTrace.add(String.format(java.util.Locale.US, "t=%.0f v=%.1f %s", t, v, engine.forwardDebug))
+                }
             }
         }
-        return TripResult(beepIds, beepKinds, beepTrue, newBumps, knownHits, rejected, engine.trip)
+        return TripResult(beepIds, beepKinds, beepTrue, newBumps, knownHits, rejected, engine.trip, fwdTrace)
     }
 }
