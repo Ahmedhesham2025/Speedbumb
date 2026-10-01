@@ -131,6 +131,11 @@ class DrivingMonitor(
     private var lastSeenUnstable = Long.MIN_VALUE / 4
     private var speedingRunS = 0.0
     private var speedingRunMaxKmh = 0.0
+    // For tests and tuning.
+    private var fwdSamples = 0
+    private var minLong = 0.0
+    private var maxLong = 0.0
+    val debug: String get() = String.format(Locale.US, "fwdSamples=%d longLp min=%.2f max=%.2f", fwdSamples, minLong, maxLong)
 
     fun onGyro(x: Double, y: Double, z: Double) {
         gx = x; gy = y; gz = z
@@ -168,6 +173,9 @@ class DrivingMonitor(
             val hx = x - along * up[0]; val hy = y - along * up[1]; val hz = z - along * up[2]
             val a = hx * fwd[0] + hy * fwd[1] + hz * fwd[2]
             longLp += dt / (0.5 + dt) * (a - longLp)
+            fwdSamples++
+            minLong = min(minLong, longLp)
+            maxLong = max(maxLong, longLp)
             checkLongitudinal(tMs, longLp, sustainMs = 400)
         }
     }

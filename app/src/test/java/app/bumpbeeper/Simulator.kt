@@ -310,6 +310,7 @@ class Simulator(seed: Long) {
             }
         }
         mon.finish()
+        fwdTrace.add("monitor: ${mon.debug}")
         return TripResult(beepIds, beepKinds, beepTrue, newBumps, knownHits, rejected, engine.trip, fwdTrace, mon.stats)
     }
 }
