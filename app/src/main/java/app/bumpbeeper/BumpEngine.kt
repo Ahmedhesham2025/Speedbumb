@@ -310,9 +310,10 @@ class BumpEngine(
 
     /** A big jolt happened at [tMs]. Is it a speed bump or pothole? */
     private fun decide(tMs: Long, peak: Double) {
-        val fix = fixes.lastOrNull()
+        // The decision comes 1.2 s after the jolt, so a newer fix may already be in. Use the one closest in time.
+        val fix = fixes.minByOrNull { abs(it.timeMs - tMs) }
         if (lastUnstableMs >= tMs - 1500) { reject(peak, "phone_moving", fix); return }
-        if (fix == null || tMs - fix.timeMs > cfg.maxFixAgeMs) { reject(peak, "no_gps", fix); return }
+        if (fix == null || abs(tMs - fix.timeMs) > cfg.maxFixAgeMs) { reject(peak, "no_gps", fix); return }
         if (fix.accuracyM > cfg.maxAccuracyM) { reject(peak, "weak_gps", fix); return }
         val speedKmh = fix.speedMps * 3.6
         if (speedKmh < cfg.minSpeedKmh) { reject(peak, "too_slow", fix); return }
@@ -325,8 +326,8 @@ class BumpEngine(
             if (!pothole) { reject(peak, "too_fast", fix, shape.describe()); return }
         }
 
-        // GPS comes once a second; move the last fix forward to where we were at the moment of the jolt.
-        val dtS = ((tMs - fix.timeMs) / 1000.0).coerceIn(0.0, 2.0)
+        // GPS comes once a second; move that fix forward (or back, if it came after) to the moment of the jolt.
+        val dtS = ((tMs - fix.timeMs) / 1000.0).coerceIn(-2.0, 2.0)
         val pos = Geo.move(fix.lat, fix.lon, heading, fix.speedMps * dtS)
 
         // Feature for later tuning: did we brake before it?
