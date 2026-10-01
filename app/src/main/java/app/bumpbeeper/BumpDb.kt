@@ -30,6 +30,7 @@ class BumpDb(ctx: Context) : SQLiteOpenHelper(ctx, "bumps.db", null, 3), BumpSto
                 n_pos INTEGER NOT NULL, first_seen INTEGER NOT NULL, last_seen INTEGER NOT NULL,
                 user_muted INTEGER NOT NULL DEFAULT 0,
                 kind_score REAL NOT NULL DEFAULT 0, kind_votes INTEGER NOT NULL DEFAULT 0,
+                side_score REAL NOT NULL DEFAULT 0, side_votes INTEGER NOT NULL DEFAULT 0, peak_avg REAL NOT NULL DEFAULT 0)"""
         )
         db.execSQL(
             """CREATE TABLE events(
@@ -97,6 +98,7 @@ class BumpDb(ctx: Context) : SQLiteOpenHelper(ctx, "bumps.db", null, 3), BumpSto
         put("n_pos", b.nPos); put("first_seen", b.firstSeen); put("last_seen", b.lastSeen)
         put("user_muted", if (b.userMuted) 1 else 0)
         put("kind_score", b.kindScore); put("kind_votes", b.kindVotes)
+        put("side_score", b.sideScore); put("side_votes", b.sideVotes); put("peak_avg", b.peakAvg)
     }
 
     override fun logEvent(e: BumpEvent) {
@@ -184,6 +186,7 @@ class BumpDb(ctx: Context) : SQLiteOpenHelper(ctx, "bumps.db", null, 3), BumpSto
         if (iLat < 0 || iLon < 0 || iHead < 0) return Triple(0, 0, lines.size - 1)
         val iHits = idx("hits"); val iPasses = idx("passes"); val iMisses = idx("misses")
         val iScore = idx("kind_score"); val iVotes = idx("kind_votes"); val iUserMuted = idx("user_muted")
+        val iSide = idx("side_score"); val iSideVotes = idx("side_votes"); val iPeak = idx("peak_avg_ms2")
 
         val known = loadBumps().toMutableList()
         var added = 0; var dup = 0; var bad = 0
@@ -209,6 +212,9 @@ class BumpDb(ctx: Context) : SQLiteOpenHelper(ctx, "bumps.db", null, 3), BumpSto
                     userMuted = (n(iUserMuted) ?: 0) != 0,
                     kindScore = (d(iScore) ?: 0.0).coerceIn(-1.0, 1.0),
                     kindVotes = (n(iVotes) ?: 0).coerceAtLeast(0),
+                    sideScore = (d(iSide) ?: 0.0).coerceIn(-1.0, 1.0),
+                    sideVotes = (n(iSideVotes) ?: 0).coerceAtLeast(0),
+                    peakAvg = (d(iPeak) ?: 0.0).coerceIn(0.0, 50.0),
                 )
                 b.id = db.insert("bumps", null, values(b))
                 known.add(b)
