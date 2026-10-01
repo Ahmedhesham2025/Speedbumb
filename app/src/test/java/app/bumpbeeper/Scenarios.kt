@@ -216,6 +216,8 @@ object Scenarios {
         val t1 = sim.drive(store, spec, tripId = 1)
         describe("trip 1", t1)
         log("    potholes hit=${t1.stats.potholes} new=${t1.stats.newPotholes} harsh=${t1.stats.harshPotholes}")
+        store.events.filter { it.type == "new_bump" }.forEach { log("    new: ${it.note}") }
+        t1.forwardTrace.forEach { log("    $it") }
         check(t1.newBumps == 4, "trip 1 should record 1 bump + 3 potholes, got ${t1.newBumps}")
         check(t1.stats.potholes == 3 && t1.stats.newPotholes == 3, "all 3 potholes should be counted: ${t1.stats.potholes}/${t1.stats.newPotholes}")
         check(t1.stats.harshPotholes == 2, "2 of them are harsh, got ${t1.stats.harshPotholes}")

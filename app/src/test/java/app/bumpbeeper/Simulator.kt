@@ -274,7 +274,7 @@ class Simulator(seed: Long) {
                 val speed = max(0.0, past[2] + gauss(0.3))
                 val bearing = if (past[2] > 1.0) ((if (spec.westbound) 270.0 else 90.0) + gauss(3.0) + 360) % 360 else Double.NaN
                 engine.onFix(Fix(tMs, n2[0], n2[1], speed, bearing, 5.0))
-                if (fwdTrace.size < 12 && (t < 12 || ((t + 0.5).toInt() % 20 == 0))) {
+                if (fwdTrace.size < 24 && (t < 12 || ((t + 0.5).toInt() % 10 == 0))) {
                     fwdTrace.add(String.format(java.util.Locale.US, "t=%.0f v=%.1f %s", t, v, engine.forwardDebug))
                 }
             }
