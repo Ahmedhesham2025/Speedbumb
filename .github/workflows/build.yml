@@ -1,3 +1,5 @@
+# Builds the APK on GitHub's servers every time you push (or when you press "Run workflow").
+# Download it from the run's page → Artifacts → BumpBeeper-apk.
 name: Build APK
 
 on:
@@ -9,17 +11,20 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: 17
+
       - uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: 8.10.2
+
       - name: Simulated-drive tests
-        run: gradle testDebugUnitTest
+        run: chmod +x gradlew && ./gradlew testDebugUnitTest
+
       - name: Build APK
-        run: gradle assembleDebug
+        run: ./gradlew assembleDebug
+
       - uses: actions/upload-artifact@v4
         with:
           name: BumpBeeper-apk
