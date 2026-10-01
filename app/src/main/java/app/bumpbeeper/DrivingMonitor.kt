@@ -131,6 +131,9 @@ class DrivingMonitor(
     private var lastSeenUnstable = Long.MIN_VALUE / 4
     private var speedingRunS = 0.0
     private var speedingRunMaxKmh = 0.0
+    /** When the sensor-based braking check last ran, and since when it has been running without a break. */
+    private var lastFwdMs = Long.MIN_VALUE / 4
+    private var fwdSinceMs = -1L
     // For tests and tuning.
     private var fwdSamples = 0
     private var minLong = 0.0
@@ -172,7 +175,10 @@ class DrivingMonitor(
             val along = x * up[0] + y * up[1] + z * up[2]
             val hx = x - along * up[0]; val hy = y - along * up[1]; val hz = z - along * up[2]
             val a = hx * fwd[0] + hy * fwd[1] + hz * fwd[2]
+            if (tMs - lastFwdMs > 1000) longLp = a   // (re)starting: don't ramp up from an old value
             longLp += dt / (0.5 + dt) * (a - longLp)
+            if (fwdSinceMs < 0 || tMs - lastFwdMs > 1000) fwdSinceMs = tMs
+            lastFwdMs = tMs
             fwdSamples++
             minLong = min(minLong, longLp)
             maxLong = max(maxLong, longLp)
@@ -206,8 +212,11 @@ class DrivingMonitor(
             speedingRunMaxKmh = 0.0
         }
 
-        // Until the forward axis is known, judge braking / speeding up from GPS (a bit less exact, so a higher bar).
-        if (engine.forwardVector() == null && f.accuracyM <= 30 && !prev.speedMps.isNaN()) {
+        // Until the sensor-based check has been running for 2 s, judge braking / speeding up from GPS
+        // (a bit less exact, so a higher bar). The forward axis is often learned *during* a hard brake;
+        // without this hand-over, that brake would be missed by both checks.
+        val sensorReady = fwdSinceMs >= 0 && f.timeMs - lastFwdMs <= 1000 && lastFwdMs - fwdSinceMs >= 2000
+        if (!sensorReady && f.accuracyM <= 30 && !prev.speedMps.isNaN()) {
             val a = (speedMps - prev.speedMps) / dt
             checkLongitudinal(f.timeMs, if (a > 0) a - 0.5 else a + 0.5, sustainMs = 0)
         }
