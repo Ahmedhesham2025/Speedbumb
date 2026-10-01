@@ -11,6 +11,17 @@ Android app that learns the speed bumps on your routes and warns you about them.
 - **Auto start/stop** when the phone connects to / disconnects from your car's Bluetooth.
 - **Your bumps:** offline map and list; open a spot in Google Maps, mute it, correct bump/pothole, delete it; **share** your map and **import** someone else's.
 - **Debug recording:** saves every sensor reading of a drive, to check afterwards what happened at a spot.
+- **Driving score out of 100** for every trip and overall (Trips tab): speeding, harsh braking / acceleration, harsh cornering, swerving, speed bumps taken fast, and handling the phone while moving. With tips, a trend chart, and a shareable trip report.
+- **Four tabs:** Drive (big Start/Stop, live speed, trip tiles, setup checklist; the screen stays on while recording) · Map · Trips · Settings. Dark theme for night driving.
+
+## Sharing with others
+- **Share…** (Map tab or Settings → Your data) offers: *Bump file (CSV)* for another Bump Beeper or Excel, *Map file (KML)* for Google Earth / Google My Maps, and *Trips & scores (CSV)*. A trip's details have their own **Share** (text report).
+- **Receiving:** tap the bump file in WhatsApp / Gmail / Files / Drive and choose **Bump Beeper**, or use **Import a file**. The spots are merged into your map; spots you already have are kept as they are, so importing the same file twice does nothing.
+
+## Driving score
+Every trip starts at 100. Points come off for speeding (time above *your* limit in Settings, more the further over), harsh braking (> ≈0.35 g), harsh acceleration (> ≈0.3 g), harsh cornering (> ≈0.4 g sideways), swerves (a sudden left-right), speed bumps from your map taken above 25 km/h, and the phone being picked up while moving. Events count per 10 km (short trips count as 5 km); trips under 0.5 km aren't scored. Overall = distance-weighted average of the last 20 trips. 90+ Excellent · 75+ Good · 60+ Fair · below Needs work.
+
+Braking and acceleration come from the phone's sensors once it knows which way is forward, and from GPS speed until then. Sideways force = speed × turning rate (gyroscope, or GPS heading without one). Each trip's numbers are stored (`trips` table, *Trips & scores* CSV) in a form a fleet system could take in later. The app works offline, so it can't know real speed limits.
 
 Android 10 or newer. No internet, no account: everything stays on the phone.
 
@@ -95,7 +106,7 @@ Every number above is in `EngineConfig` at the top of `BumpEngine.kt`.
 ---
 
 ## Run the tests (no phone needed)
-In Android Studio, right-click `app/src/test/java/app/bumpbeeper/BumpEngineTest.kt` → **Run**. GitHub also runs them on every build. Twelve simulated scenarios:
+In Android Studio, right-click `app/src/test/java/app/bumpbeeper/BumpEngineTest.kt` → **Run**. GitHub also runs them on every build. Seventeen simulated scenarios (the driving-score ones: **calmDrivingScoresHigh**, **speedingAndHardBraking**, **swerving**, **speedBumpsTakenFast**, **phoneHandledWhileDriving**), including:
 
 - **learnThenBeep:** 4 drives over 3 bumps and one one-off pothole hit. The first drive is silent. Drives 2–4 beep about 65–95 m before each bump. After 4 passes each bump's position is within about 3 m, and the one-off spot is muted.
 - **otherDirection:** eastbound bumps don't beep westbound.
