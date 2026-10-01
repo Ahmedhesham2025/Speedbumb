@@ -234,6 +234,13 @@ object Scenarios {
 
         val t2 = sim.drive(store, spec, tripId = 2)
         describe("trip 2", t2)
+        store.events.filter { it.tripId == 2L && it.type in setOf("new_bump", "hit", "miss", "hit_repeat") }.forEach {
+            val truthDist = listOf(300.0, 700.0, 1100.0, 1500.0).minOf { p ->
+                val q = sim.point(p, false); Geo.distance(it.lat, it.lon, q[0], q[1])
+            }
+            log(String.format(Locale.US, "    %s #%d d=%.1f truth=%.1f speed=%.0f peak=%.1f %s", it.type, it.bumpId, it.distanceM, truthDist, it.speedKmh, it.peak, it.note))
+        }
+        check(t2.newBumps == 0, "trip 2 must not record anything new (all spots are known), got ${t2.newBumps}")
         check(t2.stats.potholes == 3, "trip 2 should count all 3 potholes again, got ${t2.stats.potholes}")
         check(t2.beepKinds == listOf(BumpKind.BUMP, BumpKind.POTHOLE, BumpKind.POTHOLE),
             "trip 2: bump beep + 2 harsh pothole warnings, small one silent; got ${t2.beepKinds}")
