@@ -1,0 +1,285 @@
+package app.bumpbeeper
+
+import java.util.Locale
+import kotlin.math.abs
+import kotlin.math.max
+import kotlin.math.min
+import kotlin.math.roundToInt
+import kotlin.math.sqrt
+
+/** Thresholds for the driving score. Units: m/s² (1 g = 9.81), km/h, seconds. */
+class DrivingConfig {
+    /** Your speed limit; time above it counts as speeding. (setting) The phone has no map, so it can't know the real limit. */
+    @Volatile var speedLimitKmh = 90.0
+    /** Braking harder than this (≈ 0.35 g) is a harsh brake. Normal firm braking is about 2–3 m/s². */
+    var harshBrakeMs2 = 3.5
+    /** Speeding up harder than this (≈ 0.3 g) is a harsh acceleration. */
+    var harshAccelMs2 = 3.0
+    /** Sideways force above this in a curve (≈ 0.4 g) is harsh cornering. */
+    var harshCornerMs2 = 4.0
+    /** A swerve: a sideways jerk one way, then the other, both above this, within [swerveWindowS]. */
+    var swerveMs2 = 2.5
+    var swerveWindowS = 2.5
+    var swerveMinKmh = 30.0
+    /** Driving over a known speed bump faster than this. */
+    var bumpFastKmh = 25.0
+}
+
+/** Everything measured on one trip, and the score made from it. */
+class DrivingStats {
+    var movingS = 0.0
+    var distanceM = 0.0
+    var maxSpeedKmh = 0.0
+    var speedingS = 0.0
+    /** Sum of (speed − limit) × seconds while speeding, for the average excess. */
+    var speedingExcess = 0.0
+    var harshBrakes = 0
+    var harshAccels = 0
+    var harshCorners = 0
+    var swerves = 0
+    var bumpsFast = 0
+    var phoneUse = 0
+
+    val speedingShare: Double get() = if (movingS > 0) speedingS / movingS else 0.0
+    val avgExcessKmh: Double get() = if (speedingS > 0) speedingExcess / speedingS else 0.0
+    val avgSpeedKmh: Double get() = if (movingS > 0) distanceM / movingS * 3.6 else 0.0
+
+    /** Short trips count as 5 km, so one event on a 1 km trip doesn't sink the score. */
+    private val per10km: Double get() = 10.0 / max(distanceM / 1000.0, 5.0)
+
+    private fun speedPenalty() = min(40.0, speedingShare * 60.0 + speedingShare * avgExcessKmh)
+    private fun brakePenalty() = (harshBrakes * 5.0 + harshAccels * 3.0) * per10km
+    private fun steerPenalty() = (harshCorners * 4.0 + swerves * 6.0) * per10km
+    private fun bumpPenalty() = bumpsFast * 4.0 * per10km
+    private fun phonePenalty() = phoneUse * 6.0 * per10km
+
+    /** 0–100, or -1 if the trip is too short to judge (under 0.5 km). */
+    fun score(): Int {
+        if (distanceM < 500) return -1
+        val s = 100.0 - speedPenalty() - brakePenalty() - steerPenalty() - bumpPenalty() - phonePenalty()
+        return s.coerceIn(0.0, 100.0).roundToInt()
+    }
+
+    /** Each area on its own scale of 0–100 (100 = nothing to improve). */
+    fun breakdown(): List<Pair<String, Int>> {
+        fun sub(p: Double, worst: Double) = (100.0 * (1.0 - min(1.0, p / worst))).roundToInt()
+        return listOf(
+            "Speed" to sub(speedPenalty(), 40.0),
+            "Braking & acceleration" to sub(brakePenalty(), 30.0),
+            "Steering & swerving" to sub(steerPenalty(), 30.0),
+            "Speed bumps" to sub(bumpPenalty(), 20.0),
+            "Phone use" to sub(phonePenalty(), 20.0),
+        )
+    }
+
+    fun copyFrom(o: DrivingStats) {
+        movingS = o.movingS; distanceM = o.distanceM; maxSpeedKmh = o.maxSpeedKmh
+        speedingS = o.speedingS; speedingExcess = o.speedingExcess
+        harshBrakes = o.harshBrakes; harshAccels = o.harshAccels; harshCorners = o.harshCorners
+        swerves = o.swerves; bumpsFast = o.bumpsFast; phoneUse = o.phoneUse
+    }
+
+    companion object {
+        fun grade(score: Int): String = when {
+            score < 0 -> "Too short to score"
+            score >= 90 -> "Excellent"
+            score >= 75 -> "Good"
+            score >= 60 -> "Fair"
+            else -> "Needs work"
+        }
+    }
+}
+
+/**
+ * Watches how you drive, from the same sensors the bump engine uses (pure Kotlin, tested with the simulator).
+ *
+ *  • Braking / speeding up: the push along the car's forward axis (known once [BumpEngine] has learned it),
+ *    or GPS speed changes until then.
+ *  • Cornering / swerving: sideways force = speed × turning rate (gyroscope around "up", or GPS heading changes).
+ *  • Speeding: time above your speed limit.
+ *  • Speed bumps taken too fast, and the phone being picked up while moving.
+ *
+ * Feed it from the engine thread, right after the engine got the same sample.
+ */
+class DrivingMonitor(
+    val cfg: DrivingConfig,
+    private val engine: BumpEngine,
+    private val log: (type: String, lat: Double, lon: Double, speedKmh: Double, value: Double, note: String) -> Unit,
+) {
+    val stats = DrivingStats()
+
+    private var gx = 0.0
+    private var gy = 0.0
+    private var gz = 0.0
+    private var gyroSeen = false
+    private var lastAccelMs = -1L
+    private var yawLp = 0.0          // turning rate, rad/s, ≈0.3 s average (positive = turning left)
+    private var longLp = 0.0         // forward push, m/s², ≈0.5 s average (positive = speeding up)
+    private var speedMps = 0.0
+    private var lastFix: Fix? = null
+    private var lastBearing = Double.NaN
+
+    private var cornerSinceMs = -1L
+    private var brakeSinceMs = -1L
+    private var accelSinceMs = -1L
+    private var lastLeftMs = Long.MIN_VALUE / 4      // last strong sideways push to the left
+    private var lastRightMs = Long.MIN_VALUE / 4
+    private var coolCornerUntil = Long.MIN_VALUE / 4
+    private var coolLongUntil = Long.MIN_VALUE / 4
+    private var coolSwerveUntil = Long.MIN_VALUE / 4
+    private var coolPhoneUntil = Long.MIN_VALUE / 4
+    private var lastSeenUnstable = Long.MIN_VALUE / 4
+    private var speedingRunS = 0.0
+    private var speedingRunMaxKmh = 0.0
+
+    fun onGyro(x: Double, y: Double, z: Double) {
+        gx = x; gy = y; gz = z
+        gyroSeen = true
+    }
+
+    fun onAccel(tMs: Long, x: Double, y: Double, z: Double) {
+        val dt = if (lastAccelMs < 0) 0.02 else ((tMs - lastAccelMs).coerceIn(1L, 200L) / 1000.0)
+        lastAccelMs = tMs
+        val up = engine.upVector() ?: return
+
+        // Phone picked up while moving → distraction.
+        val unstable = engine.lastUnstableMs
+        if (unstable != lastSeenUnstable) {
+            lastSeenUnstable = unstable
+            if (unstable == tMs && speedMps * 3.6 >= 10 && tMs >= coolPhoneUntil) {
+                stats.phoneUse++
+                coolPhoneUntil = tMs + 30_000
+                event("phone_use", 0.0, "phone moved while driving")
+            }
+        }
+        if (engine.lastUnstableMs >= tMs - 1500) return   // readings meaningless while the phone is handled
+
+        // Turning rate around "up" → sideways force = speed × turning rate.
+        if (gyroSeen) {
+            val yaw = gx * up[0] + gy * up[1] + gz * up[2]
+            yawLp += dt / (0.3 + dt) * (yaw - yawLp)
+            checkSideways(tMs, speedMps * yawLp)
+        }
+
+        // Push along the car's forward axis.
+        val fwd = engine.forwardVector()
+        if (fwd != null) {
+            val along = x * up[0] + y * up[1] + z * up[2]
+            val hx = x - along * up[0]; val hy = y - along * up[1]; val hz = z - along * up[2]
+            val a = hx * fwd[0] + hy * fwd[1] + hz * fwd[2]
+            longLp += dt / (0.5 + dt) * (a - longLp)
+            checkLongitudinal(tMs, longLp, sustainMs = 400)
+        }
+    }
+
+    fun onFix(f: Fix) {
+        val prev = lastFix
+        lastFix = f
+        speedMps = f.speedMps.takeIf { !it.isNaN() } ?: 0.0
+        val kmh = speedMps * 3.6
+        if (prev == null) return
+        val dt = (f.timeMs - prev.timeMs) / 1000.0
+        if (dt <= 0 || dt > 3.0) return
+
+        if (speedMps >= 2.0) {
+            stats.movingS += dt
+            stats.distanceM += speedMps * dt
+            stats.maxSpeedKmh = max(stats.maxSpeedKmh, kmh)
+        }
+        // Speeding: time above the limit; one logged episode per stretch of 10 s or more.
+        if (kmh > cfg.speedLimitKmh) {
+            stats.speedingS += dt
+            stats.speedingExcess += (kmh - cfg.speedLimitKmh) * dt
+            speedingRunS += dt
+            speedingRunMaxKmh = max(speedingRunMaxKmh, kmh)
+        } else {
+            if (speedingRunS >= 10) event("speeding", speedingRunMaxKmh, String.format(Locale.US, "%.0f s above %.0f km/h", speedingRunS, cfg.speedLimitKmh))
+            speedingRunS = 0.0
+            speedingRunMaxKmh = 0.0
+        }
+
+        // Until the forward axis is known, judge braking / speeding up from GPS (a bit less exact, so a higher bar).
+        if (engine.forwardVector() == null && f.accuracyM <= 30 && !prev.speedMps.isNaN()) {
+            val a = (speedMps - prev.speedMps) / dt
+            checkLongitudinal(f.timeMs, if (a > 0) a - 0.5 else a + 0.5, sustainMs = 0)
+        }
+        // Without a gyroscope, turning rate comes from the GPS heading.
+        if (!gyroSeen && !f.bearingDeg.isNaN() && speedMps >= 4.0) {
+            if (!lastBearing.isNaN()) {
+                var d = f.bearingDeg - lastBearing
+                if (d > 180) d -= 360
+                if (d < -180) d += 360
+                checkSideways(f.timeMs, speedMps * Math.toRadians(-d) / dt)   // bearing grows clockwise = turning right
+            }
+            lastBearing = f.bearingDeg
+        }
+    }
+
+    /** A known spot was hit at [speedKmh]. Speed bumps taken too fast count against the score. */
+    fun onBumpHit(b: Bump, speedKmh: Double) {
+        if (b.kind == BumpKind.BUMP && speedKmh > cfg.bumpFastKmh) {
+            stats.bumpsFast++
+            event("bump_fast", speedKmh, "speed bump #${b.id} at ${speedKmh.roundToInt()} km/h")
+        }
+    }
+
+    fun finish() {
+        if (speedingRunS >= 10) event("speeding", speedingRunMaxKmh, String.format(Locale.US, "%.0f s above %.0f km/h", speedingRunS, cfg.speedLimitKmh))
+        speedingRunS = 0.0
+    }
+
+    private fun checkLongitudinal(tMs: Long, a: Double, sustainMs: Long) {
+        if (tMs < coolLongUntil) return
+        if (a <= -cfg.harshBrakeMs2) {
+            if (brakeSinceMs < 0) brakeSinceMs = tMs
+            if (tMs - brakeSinceMs >= sustainMs) {
+                stats.harshBrakes++
+                coolLongUntil = tMs + 3000
+                brakeSinceMs = -1
+                event("harsh_brake", abs(a), String.format(Locale.US, "%.1f m/s²", abs(a)))
+            }
+        } else brakeSinceMs = -1
+        if (a >= cfg.harshAccelMs2) {
+            if (accelSinceMs < 0) accelSinceMs = tMs
+            if (tMs - accelSinceMs >= sustainMs) {
+                stats.harshAccels++
+                coolLongUntil = tMs + 3000
+                accelSinceMs = -1
+                event("harsh_accel", a, String.format(Locale.US, "%.1f m/s²", a))
+            }
+        } else accelSinceMs = -1
+    }
+
+    private fun checkSideways(tMs: Long, lat: Double) {
+        if (speedMps * 3.6 < 15) { cornerSinceMs = -1; return }
+        // Swerve: strong sideways push one way, then the other, within a couple of seconds.
+        if (lat >= cfg.swerveMs2) lastLeftMs = tMs
+        if (lat <= -cfg.swerveMs2) lastRightMs = tMs
+        if (speedMps * 3.6 >= cfg.swerveMinKmh && tMs >= coolSwerveUntil &&
+            abs(lastLeftMs - lastRightMs) <= (cfg.swerveWindowS * 1000).toLong() && min(lastLeftMs, lastRightMs) > tMs - 5000
+        ) {
+            stats.swerves++
+            coolSwerveUntil = tMs + 4000
+            lastLeftMs = Long.MIN_VALUE / 4; lastRightMs = Long.MIN_VALUE / 4
+            event("swerve", abs(lat), "sudden left-right")
+            return
+        }
+        // Harsh cornering: strong sideways force held for half a second.
+        if (abs(lat) >= cfg.harshCornerMs2) {
+            if (cornerSinceMs < 0) cornerSinceMs = tMs
+            if (tMs - cornerSinceMs >= 500 && tMs >= coolCornerUntil) {
+                stats.harshCorners++
+                coolCornerUntil = tMs + 4000
+                event("harsh_corner", abs(lat), String.format(Locale.US, "%.1f m/s² sideways", abs(lat)))
+            }
+        } else cornerSinceMs = -1
+    }
+
+    private fun event(type: String, value: Double, note: String) {
+        val f = lastFix
+        log(type, f?.lat ?: Double.NaN, f?.lon ?: Double.NaN, speedMps * 3.6, value, note)
+    }
+
+    @Suppress("unused")
+    private fun mag(x: Double, y: Double, z: Double) = sqrt(x * x + y * y + z * z)
+}

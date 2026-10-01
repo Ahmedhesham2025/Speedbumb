@@ -15,7 +15,7 @@ import java.util.Locale
  *  events – everything that happened (new bump, hit, miss, beep, rejected jolt) → for tuning
  *  trips  – one row per Start…Stop
  */
-class BumpDb(ctx: Context) : SQLiteOpenHelper(ctx, "bumps.db", null, 3), BumpStore {
+class BumpDb(ctx: Context) : SQLiteOpenHelper(ctx, "bumps.db", null, 4), BumpStore {
 
     init {
         setWriteAheadLoggingEnabled(true)
@@ -45,6 +45,16 @@ class BumpDb(ctx: Context) : SQLiteOpenHelper(ctx, "bumps.db", null, 3), BumpSto
                 start_ts INTEGER NOT NULL, end_ts INTEGER,
                 hits INTEGER, new_bumps INTEGER, beeps INTEGER, misses INTEGER, rejected INTEGER, distance_m REAL)"""
         )
+        addTripColumns(db)
+    }
+
+    /** Version 4: driving statistics and score per trip. */
+    private fun addTripColumns(db: SQLiteDatabase) {
+        for (c in listOf(
+            "moving_s REAL", "speeding_s REAL", "speeding_excess REAL", "max_speed REAL",
+            "harsh_brakes INTEGER", "harsh_accels INTEGER", "harsh_corners INTEGER", "swerves INTEGER",
+            "bumps_fast INTEGER", "phone_use INTEGER", "potholes INTEGER", "score INTEGER",
+        )) db.execSQL("ALTER TABLE trips ADD COLUMN $c")
     }
 
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
@@ -59,6 +69,7 @@ class BumpDb(ctx: Context) : SQLiteOpenHelper(ctx, "bumps.db", null, 3), BumpSto
             db.execSQL("ALTER TABLE bumps ADD COLUMN side_votes INTEGER NOT NULL DEFAULT 0")
             db.execSQL("ALTER TABLE bumps ADD COLUMN peak_avg REAL NOT NULL DEFAULT 0")
         }
+        if (oldVersion < 4) addTripColumns(db)
     }
 
     // ---------------- BumpStore (used by the engine) ----------------
@@ -122,12 +133,88 @@ class BumpDb(ctx: Context) : SQLiteOpenHelper(ctx, "bumps.db", null, 3), BumpSto
     fun startTrip(ts: Long): Long =
         writableDatabase.insert("trips", null, ContentValues().apply { put("start_ts", ts) })
 
-    fun endTrip(id: Long, ts: Long, s: TripStats) {
+    fun endTrip(id: Long, ts: Long, s: TripStats, d: DrivingStats? = null) {
         val v = ContentValues().apply {
             put("end_ts", ts); put("hits", s.hits); put("new_bumps", s.newBumps); put("beeps", s.beeps)
             put("misses", s.misses); put("rejected", s.rejected); put("distance_m", s.distanceM)
+            put("potholes", s.potholes)
+            if (d != null) {
+                put("moving_s", d.movingS); put("speeding_s", d.speedingS); put("speeding_excess", d.speedingExcess)
+                put("max_speed", d.maxSpeedKmh); put("harsh_brakes", d.harshBrakes); put("harsh_accels", d.harshAccels)
+                put("harsh_corners", d.harshCorners); put("swerves", d.swerves); put("bumps_fast", d.bumpsFast)
+                put("phone_use", d.phoneUse); put("score", d.score())
+                // The driving monitor measures distance the same way; prefer it when the bump engine had poor GPS.
+                if (d.distanceM > s.distanceM) put("distance_m", d.distanceM)
+            }
         }
         writableDatabase.update("trips", v, "id = ?", arrayOf(id.toString()))
+    }
+
+    /** One finished trip, for the Trips screen. */
+    class TripRow(
+        val id: Long, val startTs: Long, val endTs: Long, val hits: Int, val newBumps: Int, val beeps: Int,
+        val potholes: Int, val drive: DrivingStats, val score: Int,
+    ) {
+        val durationS: Long get() = ((endTs - startTs) / 1000).coerceAtLeast(0)
+    }
+
+    /** Finished trips, newest first. Trips shorter than 200 m (started by mistake) are left out. */
+    fun trips(limit: Int = 200): List<TripRow> {
+        val out = ArrayList<TripRow>()
+        readableDatabase.rawQuery(
+            "SELECT id, start_ts, end_ts, hits, new_bumps, beeps, potholes, distance_m, moving_s, speeding_s, speeding_excess, " +
+                "max_speed, harsh_brakes, harsh_accels, harsh_corners, swerves, bumps_fast, phone_use, score " +
+                "FROM trips WHERE end_ts IS NOT NULL AND distance_m >= 200 ORDER BY start_ts DESC LIMIT $limit", null
+        ).use { c ->
+            fun i(k: Int) = if (c.isNull(k)) 0 else c.getInt(k)
+            fun dd(k: Int) = if (c.isNull(k)) 0.0 else c.getDouble(k)
+            while (c.moveToNext()) {
+                val d = DrivingStats().apply {
+                    distanceM = dd(7); movingS = dd(8); speedingS = dd(9); speedingExcess = dd(10); maxSpeedKmh = dd(11)
+                    harshBrakes = i(12); harshAccels = i(13); harshCorners = i(14); swerves = i(15)
+                    bumpsFast = i(16); phoneUse = i(17)
+                }
+                // Trips recorded before driving scores existed have no score: leave them unscored.
+                val score = if (c.isNull(18)) -1 else c.getInt(18)
+                out.add(TripRow(c.getLong(0), c.getLong(1), c.getLong(2), i(3), i(4), i(5), i(6), d, score))
+            }
+        }
+        return out
+    }
+
+    /** Driving events (harsh braking etc.) of one trip, oldest first. */
+    fun tripEvents(tripId: Long): List<BumpEvent> {
+        val out = ArrayList<BumpEvent>()
+        readableDatabase.rawQuery(
+            "SELECT ts, type, lat, lon, speed_kmh, peak, note FROM events WHERE trip_id = ? AND type IN " +
+                "('harsh_brake','harsh_accel','harsh_corner','swerve','speeding','bump_fast','phone_use') ORDER BY id",
+            arrayOf(tripId.toString()),
+        ).use { c ->
+            fun dd(k: Int) = if (c.isNull(k)) Double.NaN else c.getDouble(k)
+            while (c.moveToNext()) {
+                out.add(BumpEvent(c.getLong(0), tripId, c.getString(1), -1, dd(2), dd(3), dd(4), Double.NaN, dd(5), Double.NaN, Double.NaN, c.getString(6) ?: ""))
+            }
+        }
+        return out
+    }
+
+    fun tripsCsv(): String {
+        val sb = StringBuilder(
+            "trip_id,start,end,duration_min,distance_km,avg_speed_kmh,max_speed_kmh,speeding_pct,avg_excess_kmh," +
+                "harsh_brakes,harsh_accels,harsh_corners,swerves,bumps_fast,phone_use,score,grade,bumps_hit,potholes_hit,warnings\n"
+        )
+        for (t in trips(10_000)) {
+            val d = t.drive
+            sb.append(t.id).append(',').append(time(t.startTs)).append(',').append(time(t.endTs)).append(',')
+                .append(num(t.durationS / 60.0, 1)).append(',').append(num(d.distanceM / 1000, 2)).append(',')
+                .append(num(d.avgSpeedKmh, 1)).append(',').append(num(d.maxSpeedKmh, 0)).append(',')
+                .append(num(d.speedingShare * 100, 1)).append(',').append(num(d.avgExcessKmh, 1)).append(',')
+                .append(d.harshBrakes).append(',').append(d.harshAccels).append(',').append(d.harshCorners).append(',')
+                .append(d.swerves).append(',').append(d.bumpsFast).append(',').append(d.phoneUse).append(',')
+                .append(if (t.score >= 0) t.score.toString() else "").append(',').append(DrivingStats.grade(t.score)).append(',')
+                .append(t.hits).append(',').append(t.potholes).append(',').append(t.beeps).append('\n')
+        }
+        return sb.toString()
     }
 
     // ---------------- screen helpers ----------------

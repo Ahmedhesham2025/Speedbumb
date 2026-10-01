@@ -56,6 +56,10 @@ class DriveSpec(
     val cruiseKmh: Double = 50.0,
     /** Phone has a gyroscope. */
     val gyro: Boolean = true,
+    /** Emergency stops: the driver brakes at 6.5 m/s² (≈ 0.66 g) for 1.5 s, then speeds up again normally. */
+    val hardBrakesAt: List<Double> = emptyList(),
+    /** Swerves: a sudden turn left, then right (0.7 s each), like dodging something. */
+    val swervesAt: List<Double> = emptyList(),
 )
 
 class TripResult(
@@ -70,6 +74,8 @@ class TripResult(
     val stats: TripStats,
     /** Snapshots of the engine's forward-direction learning (for debugging the bump/pothole tests). */
     val forwardTrace: List<String> = emptyList(),
+    /** How the simulated driver drove, as measured by [DrivingMonitor]. */
+    val driving: DrivingStats = DrivingStats(),
 )
 
 /**
@@ -127,7 +133,10 @@ class Simulator(seed: Long) {
         )
     }
 
-    fun drive(store: BumpStore, spec: DriveSpec, cfg: EngineConfig = EngineConfig(), tripId: Long = 1): TripResult {
+    fun drive(
+        store: BumpStore, spec: DriveSpec, cfg: EngineConfig = EngineConfig(), tripId: Long = 1,
+        drivingCfg: DrivingConfig = DrivingConfig(),
+    ): TripResult {
         val len = roadLen
         fun travel(p: Double) = if (spec.westbound) len - p else p   // road position ↔ distance travelled
         val bumps = spec.bumpsAt.map { travel(it) }
@@ -152,9 +161,10 @@ class Simulator(seed: Long) {
         var knownHits = 0
         val rejected = ArrayList<String>()
 
+        var monitor: DrivingMonitor? = null
         val listener = object : EngineListener {
-            override fun onNewBump(b: Bump) { newBumps++ }
-            override fun onKnownBumpHit(b: Bump) { knownHits++ }
+            override fun onNewBump(b: Bump) { newBumps++; monitor?.onBumpHit(b, v * 3.6) }
+            override fun onKnownBumpHit(b: Bump) { knownHits++; monitor?.onBumpHit(b, v * 3.6) }
             override fun onBeep(b: Bump, distanceM: Double, speedKmh: Double) {
                 val car = point(travel(s), spec.westbound)
                 beepIds.add(b.id)
@@ -164,6 +174,14 @@ class Simulator(seed: Long) {
             override fun onJoltRejected(peak: Double, reason: String) { rejected.add(reason) }
         }
         val engine = BumpEngine(cfg, store, listener, { 1_700_000_000_000L + (t * 1000).toLong() }, tripId)
+        monitor = DrivingMonitor(drivingCfg, engine) { type, lat, lon, kmh, value, note ->
+            store.logEvent(BumpEvent(1_700_000_000_000L + (t * 1000).toLong(), tripId, type, -1, lat, lon, kmh, Double.NaN, value, Double.NaN, Double.NaN, note))
+        }
+        val mon = monitor!!
+        val brakes = spec.hardBrakesAt.map { travel(it) }
+        val swerves = spec.swervesAt.map { travel(it) }
+        var forceBrakeUntil = -1.0
+        var swerveStart = -1.0
 
         val dt = 0.02
         val cruise = spec.cruiseKmh / 3.6
@@ -195,7 +213,13 @@ class Simulator(seed: Long) {
                     target = min(target, if (ds <= 60) zoneSpeed else sqrt(zoneSpeed * zoneSpeed + 2 * maxDecel * 0.8 * (ds - 60)))
                 }
             }
-            val vNew = if (target > v) min(target, v + maxAccel * dt) else max(target, v - maxDecel * dt)
+            for (sb in brakes) if (s < sb && s + v * dt >= sb) forceBrakeUntil = t + 1.5
+            for (sw in swerves) if (s < sw && s + v * dt >= sw) swerveStart = t
+            val vNew = when {
+                t < forceBrakeUntil -> max(0.5, v - 6.5 * dt)
+                target > v -> min(target, v + maxAccel * dt)
+                else -> max(target, v - maxDecel * dt)
+            }
             val aLong = (vNew - v) / dt
             val sNew = s + (v + vNew) / 2 * dt
 
@@ -226,7 +250,12 @@ class Simulator(seed: Long) {
             // Positive roll (about the forward axis) = left side up, right side down: a right-wheel pothole starts positive.
             var roll = gauss(0.02)
             var pitch = gauss(0.02)
-            val yaw = gauss(0.01)
+            var yaw = gauss(0.01)
+            if (swerveStart >= 0) {
+                val k = t - swerveStart
+                yaw += when { k < 0.7 -> 0.28; k < 1.4 -> -0.28; else -> 0.0 }   // left, then right
+            }
+            val lateral = v * (yaw)   // sideways (to the left) force from turning
             for (c in crossings) pitch += swing(t - c[0], 0.05 * c[1], 0.2)
             for (c in holeHits) { roll += c[2] * swing(t - c[0], 0.08 * c[1], 0.15); pitch += swing(t - c[0], 0.015 * c[1], 0.15) }
             crossings.removeAll { t - it[0] > 0.5 }
@@ -247,7 +276,7 @@ class Simulator(seed: Long) {
             }
 
             // Specific force in car axes (fwd, left, up), then into the tilted phone's axes.
-            val fv = doubleArrayOf(aLong + 0.3 * av + gauss(0.2), gauss(0.2), 9.81 + av)
+            val fv = doubleArrayOf(aLong + 0.3 * av + gauss(0.2), lateral + gauss(0.2), 9.81 + av)
             val r = rot(yaw0, pitch0 + extraTilt, roll0)   // pitch axis is horizontal → tilts the phone 70° relative to gravity
             val ax = r[0][0] * fv[0] + r[1][0] * fv[1] + r[2][0] * fv[2] + gauss(shake)
             val ay = r[0][1] * fv[0] + r[1][1] * fv[1] + r[2][1] * fv[2] + gauss(shake)
@@ -255,14 +284,14 @@ class Simulator(seed: Long) {
             val tMs = (t * 1000).toLong()
             if (spec.gyro) {
                 val w = doubleArrayOf(roll, pitch, yaw)
-                engine.onGyro(
-                    tMs,
-                    r[0][0] * w[0] + r[1][0] * w[1] + r[2][0] * w[2] + gauss(shake * 0.3),
-                    r[0][1] * w[0] + r[1][1] * w[1] + r[2][1] * w[2] + gauss(shake * 0.3),
-                    r[0][2] * w[0] + r[1][2] * w[1] + r[2][2] * w[2] + gauss(shake * 0.3),
-                )
+                val wx = r[0][0] * w[0] + r[1][0] * w[1] + r[2][0] * w[2] + gauss(shake * 0.3)
+                val wy = r[0][1] * w[0] + r[1][1] * w[1] + r[2][1] * w[2] + gauss(shake * 0.3)
+                val wz = r[0][2] * w[0] + r[1][2] * w[1] + r[2][2] * w[2] + gauss(shake * 0.3)
+                engine.onGyro(tMs, wx, wy, wz)
+                mon.onGyro(wx, wy, wz)
             }
             engine.onAccel(tMs, ax, ay, az)
+            mon.onAccel(tMs, ax, ay, az)
 
             // GPS once a second, reporting where the car was 0.8 s ago, with ±3 m noise.
             if (t - lastFixT >= 1.0 - 1e-9) {
@@ -274,11 +303,13 @@ class Simulator(seed: Long) {
                 val speed = max(0.0, past[2] + gauss(0.3))
                 val bearing = if (past[2] > 1.0) ((if (spec.westbound) 270.0 else 90.0) + gauss(3.0) + 360) % 360 else Double.NaN
                 engine.onFix(Fix(tMs, n2[0], n2[1], speed, bearing, 5.0))
+                mon.onFix(engine.lastFix!!)
                 if (fwdTrace.size < 24 && (t < 12 || ((t + 0.5).toInt() % 10 == 0))) {
                     fwdTrace.add(String.format(java.util.Locale.US, "t=%.0f v=%.1f %s", t, v, engine.forwardDebug))
                 }
             }
         }
-        return TripResult(beepIds, beepKinds, beepTrue, newBumps, knownHits, rejected, engine.trip, fwdTrace)
+        mon.finish()
+        return TripResult(beepIds, beepKinds, beepTrue, newBumps, knownHits, rejected, engine.trip, fwdTrace, mon.stats)
     }
 }

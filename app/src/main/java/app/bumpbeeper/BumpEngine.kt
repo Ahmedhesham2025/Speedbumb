@@ -134,6 +134,19 @@ class BumpEngine(
     /** True once the engine knows which way the car's nose points in phone coordinates (needed to tell roll from pitch). */
     val forwardKnown: Boolean get() = forwardUnit() != null
 
+    /** "Up" in phone axes (unit vector): long-term gravity once settled, the 1 s estimate before that. Null before any data. */
+    fun upVector(): DoubleArray? {
+        val useGrav = gravSettledS >= 3.0
+        val x = if (useGrav) gravX else slowX
+        val y = if (useGrav) gravY else slowY
+        val z = if (useGrav) gravZ else slowZ
+        val g = sqrt(x * x + y * y + z * z)
+        return if (!accelReady || g < 5.0) null else doubleArrayOf(x / g, y / g, z / g)
+    }
+
+    /** The car's forward direction in phone axes (unit vector), or null while still unknown. */
+    fun forwardVector(): DoubleArray? = forwardUnit()?.let { doubleArrayOf(it.first, it.second, it.third) }
+
     /** For tests and tuning: how far forward-learning has got. */
     val forwardDebug: String
         get() {
@@ -156,7 +169,9 @@ class BumpEngine(
     private var fastZ = 0.0
     private var accelReady = false
     private var lastAccelMs = 0L
-    private var lastUnstableMs = Long.MIN_VALUE / 4
+    /** Last time the phone was being moved (picked up, adjusted). */
+    var lastUnstableMs = Long.MIN_VALUE / 4
+        private set
     private var joltStartMs = -1L
     private var joltPeak = 0.0
     private var refractoryUntilMs = Long.MIN_VALUE / 4

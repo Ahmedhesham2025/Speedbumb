@@ -14,6 +14,7 @@ object Prefs {
     const val WARN_POTHOLES = "warn_potholes"
     const val HARSH_MS2 = "harsh_ms2"
     const val VOICE_LANG = "voice_lang"     // "en" or "ar"
+    const val SPEED_LIMIT = "speed_limit"
     const val DEBUG_RECORDING = "debug_recording"
     const val AUTO_START = "auto_start"
     const val CAR_ADDRESS = "car_address"
@@ -45,6 +46,12 @@ object Prefs {
     /** Potholes with an average jolt of at least this many m/s² get a voice warning (4–10). */
     fun harshMs2(ctx: Context): Int = sp(ctx).getInt(HARSH_MS2, 6)
     fun voiceLang(ctx: Context): String = sp(ctx).getString(VOICE_LANG, "en") ?: "en"
+    /** Speed above which time counts as speeding, for the driving score (km/h). */
+    fun speedLimit(ctx: Context): Int = sp(ctx).getInt(SPEED_LIMIT, 90)
+
+    fun applyTo(cfg: DrivingConfig, ctx: Context) {
+        cfg.speedLimitKmh = speedLimit(ctx).toDouble()
+    }
     fun debugRecording(ctx: Context): Boolean = sp(ctx).getBoolean(DEBUG_RECORDING, false)
 
     fun autoStart(ctx: Context): Boolean = sp(ctx).getBoolean(AUTO_START, false)

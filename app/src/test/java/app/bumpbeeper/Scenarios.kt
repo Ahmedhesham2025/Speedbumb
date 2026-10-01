@@ -317,7 +317,80 @@ object Scenarios {
         check(!miss.peak.isNaN() && miss.peak > 0.0 && miss.peak < 3.0, "miss should carry the nearby jolt (below trigger), got ${miss.peak}")
     }
 
+    private fun describeDriving(name: String, d: DrivingStats) {
+        log(String.format(Locale.US,
+            "  %s: score=%d km=%.1f speeding=%.0f%% brakes=%d accels=%d corners=%d swerves=%d bumpsFast=%d phone=%d",
+            name, d.score(), d.distanceM / 1000, d.speedingShare * 100, d.harshBrakes, d.harshAccels, d.harshCorners,
+            d.swerves, d.bumpsFast, d.phoneUse))
+    }
+
+    /** Calm driving (slowing for bumps and a junction, under the limit) scores high with no events. */
+    fun calmDrivingScoresHigh() {
+        log("calmDrivingScoresHigh")
+        val sim = Simulator(51)
+        val r = sim.drive(MemoryStore(), DriveSpec(bumpsAt = listOf(500.0, 1100.0, 1600.0), slowZonesAt = listOf(800.0)))
+        describeDriving("calm", r.driving)
+        val d = r.driving
+        check(d.harshBrakes + d.harshAccels + d.harshCorners + d.swerves + d.bumpsFast + d.phoneUse == 0, "calm driving should have no events")
+        check(d.speedingS == 0.0, "never above 90 km/h")
+        check(d.score() >= 95, "calm driving should score 95+, got ${d.score()}")
+        check(d.distanceM in 1800.0..2200.0, "distance should be about 2 km, got ${d.distanceM}")
+    }
+
+    /** Speeding at 100 in a 90 and two emergency stops: both stops counted, score drops a lot. */
+    fun speedingAndHardBraking() {
+        log("speedingAndHardBraking")
+        val sim = Simulator(52)
+        val store = MemoryStore()
+        val r = sim.drive(store, DriveSpec(cruiseKmh = 100.0, hardBrakesAt = listOf(900.0, 1600.0)))
+        describeDriving("aggressive", r.driving)
+        val d = r.driving
+        check(d.harshBrakes == 2, "expected 2 harsh brakes, got ${d.harshBrakes}")
+        check(d.harshAccels == 0, "speeding up again normally is not harsh, got ${d.harshAccels}")
+        check(d.speedingShare > 0.4, "most of the trip is above 90 km/h, got ${d.speedingShare}")
+        check(store.events.any { it.type == "speeding" }, "a speeding episode should be logged")
+        check(d.score() in 0..70, "this trip should score 70 or less, got ${d.score()}")
+    }
+
+    /** Two sudden left-right swerves at 50 km/h are counted as swerves (not as harsh cornering). */
+    fun swerving() {
+        log("swerving")
+        val sim = Simulator(53)
+        val r = sim.drive(MemoryStore(), DriveSpec(swervesAt = listOf(600.0, 1300.0)))
+        describeDriving("swerves", r.driving)
+        check(r.driving.swerves == 2, "expected 2 swerves, got ${r.driving.swerves}")
+        check(r.driving.harshCorners == 0, "swerves shouldn't also count as harsh cornering, got ${r.driving.harshCorners}")
+        check(r.driving.score() < 95, "swerving should cost points, got ${r.driving.score()}")
+    }
+
+    /** Taking known speed bumps at 40 km/h counts against the score; at 15 km/h it doesn't. */
+    fun speedBumpsTakenFast() {
+        log("speedBumpsTakenFast")
+        val sim = Simulator(54)
+        val store = MemoryStore()
+        val t1 = sim.drive(store, DriveSpec(bumpsAt = listOf(500.0, 1200.0)), tripId = 1)
+        describeDriving("slow over bumps", t1.driving)
+        check(t1.driving.bumpsFast == 0, "15 km/h over bumps is fine, got ${t1.driving.bumpsFast}")
+        val t2 = sim.drive(store, DriveSpec(bumpsAt = listOf(500.0, 1200.0), bumpKmh = 40.0), tripId = 2)
+        describeDriving("fast over bumps", t2.driving)
+        check(t2.driving.bumpsFast == 2, "both bumps at 40 km/h should count, got ${t2.driving.bumpsFast}")
+    }
+
+    /** A passenger (or driver) picking up the phone while moving counts as phone use. */
+    fun phoneHandledWhileDriving() {
+        log("phoneHandledWhileDriving")
+        val sim = Simulator(3)
+        val r = sim.drive(MemoryStore(), DriveSpec(slowZonesAt = listOf(600.0), handlingAt = 600.0))
+        describeDriving("phone", r.driving)
+        check(r.driving.phoneUse == 1, "expected 1 phone use, got ${r.driving.phoneUse}")
+    }
+
     fun all(): List<Pair<String, () -> Unit>> = listOf(
+        "calmDrivingScoresHigh" to ::calmDrivingScoresHigh,
+        "speedingAndHardBraking" to ::speedingAndHardBraking,
+        "swerving" to ::swerving,
+        "speedBumpsTakenFast" to ::speedBumpsTakenFast,
+        "phoneHandledWhileDriving" to ::phoneHandledWhileDriving,
         "potholeVsBump" to ::potholeVsBump,
         "potholeVsBumpNoGyro" to ::potholeVsBumpNoGyro,
         "fastPothole" to ::fastPothole,

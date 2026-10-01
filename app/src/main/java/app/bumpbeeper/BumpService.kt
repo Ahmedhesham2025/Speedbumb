@@ -113,6 +113,7 @@ class BumpService : Service(), SensorEventListener, LocationListener, EngineList
     private var handler: Handler? = null
     private val main = Handler(Looper.getMainLooper())
     @Volatile private var engine: BumpEngine? = null   // only used on the engine thread
+    private var monitor: DrivingMonitor? = null         // only used on the engine thread
     private var trace: TraceWriter? = null              // only used on the engine thread
     private var wakeLock: PowerManager.WakeLock? = null
     private var tripId = 0L
@@ -130,7 +131,10 @@ class BumpService : Service(), SensorEventListener, LocationListener, EngineList
     }
 
     private val prefListener = SharedPreferences.OnSharedPreferenceChangeListener { _, _ ->
-        handler?.post { engine?.cfg?.let { Prefs.applyTo(it, this) } }
+        handler?.post {
+            engine?.cfg?.let { Prefs.applyTo(it, this) }
+            monitor?.cfg?.let { Prefs.applyTo(it, this) }
+        }
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
@@ -218,6 +222,11 @@ class BumpService : Service(), SensorEventListener, LocationListener, EngineList
             }
             val eng = BumpEngine(cfg, store, this, { System.currentTimeMillis() }, tripId)
             engine = eng
+            val logStore = store
+            monitor = DrivingMonitor(DrivingConfig().also { Prefs.applyTo(it, this) }, eng) { type, lat, lon, kmh, value, note ->
+                logStore.logEvent(BumpEvent(System.currentTimeMillis(), tripId, type, -1, lat, lon, kmh, Double.NaN, value, Double.NaN, Double.NaN, note))
+                LiveState.lastDriveEvent = DriveText.event(type, note)
+            }
             publish(eng, force = true)
         }
 
@@ -266,8 +275,11 @@ class BumpService : Service(), SensorEventListener, LocationListener, EngineList
         val t = thread
         val database = db
         h?.post {
-            engine?.let { database.endTrip(tripId, System.currentTimeMillis(), it.trip) }
+            monitor?.finish()
+            engine?.let { database.endTrip(tripId, System.currentTimeMillis(), it.trip, monitor?.stats) }
+            monitor?.stats?.let { LiveState.lastTripScore = it.score() }
             engine = null
+            monitor = null
             trace?.close()
             trace = null
             database.close()
@@ -309,10 +321,12 @@ class BumpService : Service(), SensorEventListener, LocationListener, EngineList
         if (event.sensor.type == Sensor.TYPE_GYROSCOPE) {
             gx = x; gy = y; gz = z
             eng.onGyro(tMs, x, y, z)
+            monitor?.onGyro(x, y, z)
             return
         }
 
         eng.onAccel(tMs, x, y, z)
+        monitor?.onAccel(tMs, x, y, z)
         trace?.accel(tMs, x, y, z, gx, gy, gz, eng.lastVertical)
 
         val v = abs(eng.lastVertical)
@@ -338,6 +352,7 @@ class BumpService : Service(), SensorEventListener, LocationListener, EngineList
         )
         trace?.gps(fix.timeMs, fix.lat, fix.lon, fix.speedMps * 3.6, fix.bearingDeg, fix.accuracyM)
         eng.onFix(fix)
+        monitor?.onFix(eng.lastFix ?: fix)
         LiveState.forwardKnown = eng.forwardKnown
         publish(eng, force = false)
     }
@@ -360,12 +375,14 @@ class BumpService : Service(), SensorEventListener, LocationListener, EngineList
 
     override fun onNewBump(b: Bump) {
         LiveState.lastEvent = "New ${describe(b)} recorded (#${b.id})"
+        monitor?.onBumpHit(b, (engine?.lastFix?.speedMps ?: 0.0) * 3.6)
         if (Prefs.clickOnNew(this)) beeper.click()
         engine?.let { publish(it, force = true) }
     }
 
     override fun onKnownBumpHit(b: Bump) {
         LiveState.lastEvent = "Hit known ${describe(b)} #${b.id} (felt ${b.hits} of ${b.passes} times)"
+        monitor?.onBumpHit(b, (engine?.lastFix?.speedMps ?: 0.0) * 3.6)
         engine?.let { publish(it, force = true) }
     }
 
@@ -413,6 +430,12 @@ class BumpService : Service(), SensorEventListener, LocationListener, EngineList
         LiveState.tripHarshPotholes = tr.harshPotholes
         LiveState.potholesOnMap = eng.bumps.count { it.kind == BumpKind.POTHOLE }
         LiveState.harshOnMap = eng.bumps.count { it.isHarsh(eng.cfg) }
+        monitor?.stats?.let { d ->
+            LiveState.liveScore = d.score()
+            LiveState.tripMovingS = d.movingS
+            LiveState.tripEvents = d.harshBrakes + d.harshAccels + d.harshCorners + d.swerves + d.bumpsFast + d.phoneUse
+            LiveState.speedingPct = d.speedingShare * 100
+        }
 
         val now = SystemClock.elapsedRealtime()
         if (force || now - lastNotifMs > 5000) {

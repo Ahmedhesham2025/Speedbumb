@@ -16,4 +16,9 @@ class BumpEngineTest {
     @Test fun fastPothole() = Scenarios.fastPothole()
     @Test fun quietWhenSlow() = Scenarios.quietWhenSlow()
     @Test fun missReportsNearbyJolt() = Scenarios.missReportsNearbyJolt()
+    @Test fun calmDrivingScoresHigh() = Scenarios.calmDrivingScoresHigh()
+    @Test fun speedingAndHardBraking() = Scenarios.speedingAndHardBraking()
+    @Test fun swerving() = Scenarios.swerving()
+    @Test fun speedBumpsTakenFast() = Scenarios.speedBumpsTakenFast()
+    @Test fun phoneHandledWhileDriving() = Scenarios.phoneHandledWhileDriving()
 }

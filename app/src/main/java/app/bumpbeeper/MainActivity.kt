@@ -7,7 +7,7 @@ import android.app.AlertDialog
 import android.bluetooth.BluetoothManager
 import android.content.Intent
 import android.content.pm.PackageManager
-import android.graphics.Typeface
+import android.content.res.ColorStateList
 import android.location.LocationManager
 import android.net.Uri
 import android.os.Build
@@ -15,71 +15,83 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.os.PowerManager
-import android.os.SystemClock
 import android.provider.Settings
 import android.util.TypedValue
+import android.view.Gravity
 import android.view.View
-import android.widget.Button
-import android.widget.CheckBox
+import android.view.WindowManager
+import android.widget.FrameLayout
+import android.widget.ImageView
 import android.widget.LinearLayout
-import android.widget.RadioButton
-import android.widget.RadioGroup
-import android.widget.ScrollView
-import android.widget.SeekBar
 import android.widget.TextView
 import android.widget.Toast
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
 
-/** The main screen: Start/Stop, live numbers, jolt meter, settings, export. Built in code (no XML layouts). */
+/** One part of the app shown under the bottom tabs. */
+interface Page {
+    val view: View
+    /** Called when the tab is opened (refresh data here). */
+    fun onShow() {}
+    /** Called 4 times a second while the tab is visible. */
+    fun tick() {}
+}
+
+/**
+ * The app's single screen: four tabs at the bottom (Drive · Map · Trips · Settings).
+ * Also handles permissions, auto-start setup, and bump files opened from other apps.
+ */
 class MainActivity : Activity() {
 
-    private lateinit var status: TextView
-    private lateinit var startBtn: Button
-    private lateinit var stats: TextView
-    private lateinit var lastEvent: TextView
-    private lateinit var lastIgnored: TextView
-    private lateinit var graph: JoltGraphView
-    private lateinit var autoBox: CheckBox
-    private lateinit var traceInfo: TextView
-
     private val ui = Handler(Looper.getMainLooper())
-    private var counts: BumpDb.Counts? = null
-    private var wasRecording = false
-    private var voice: Voice? = null
+    private lateinit var content: FrameLayout
+    private val pages = arrayOfNulls<Page>(4)
+    private val tabs = ArrayList<Pair<ImageView, TextView>>()
+    private var current = -1
+    private var mapPage: MapPage? = null
 
     private val ticker = object : Runnable {
         override fun run() {
-            refresh()
+            pages.getOrNull(current)?.tick()
+            // Keep the screen on while recording with the Drive tab open (it's a dashboard).
+            if (LiveState.recording && current == TAB_DRIVE) window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+            else window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
             ui.postDelayed(this, 250)
         }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        setContentView(buildUi())
-        handleStartExtra(intent)
+        window.statusBarColor = Ui.BG
+        window.navigationBarColor = Ui.SURFACE
+        setContentView(buildShell())
+        select(savedInstanceState?.getInt("tab") ?: TAB_DRIVE)
+        handleIntent(intent)
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        outState.putInt("tab", current)
     }
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
-        handleStartExtra(intent)
+        handleIntent(intent)
     }
 
-    /** Opened from the "your car connected, tap to start" notification. */
-    private fun handleStartExtra(i: Intent?) {
-        if (i?.getBooleanExtra(EXTRA_START, false) == true && !LiveState.recording) {
+    private fun handleIntent(i: Intent?) {
+        // Opened from the "your car connected, tap to start" notification.
+        if (i?.getBooleanExtra(EXTRA_START, false) == true) {
             i.removeExtra(EXTRA_START)
-            toggle()
+            select(TAB_DRIVE)
+            if (!LiveState.recording) toggleRecording()
+            return
         }
+        // A bump file opened or shared from another app.
+        if (Sharing.handleIncoming(this, i) { refreshMap() }) select(TAB_MAP)
     }
 
     override fun onResume() {
         super.onResume()
-        loadMapCounts()
-        updateAutoBox()
-        updateTraceInfo()
+        pages.getOrNull(current)?.onShow()
         ui.post(ticker)
     }
 
@@ -89,284 +101,83 @@ class MainActivity : Activity() {
     }
 
     override fun onDestroy() {
-        voice?.shutdown()
+        (pages[TAB_SETTINGS] as? SettingsPage)?.release()
         super.onDestroy()
     }
 
-    /** "Test pothole voice": says the warning for a pothole on the right, in the chosen language. */
-    private fun testVoice() {
-        val first = voice == null
-        val v = voice ?: Voice(this) {
-            ui.post { toast("No text-to-speech voice ready on this phone: potholes will use the two-tone sound") }
-        }.also { voice = it }
-        // Speech takes a moment to start up the first time.
-        ui.postDelayed({ v.pothole(Side.RIGHT) }, if (first) 1500L else 0L)
-    }
+    // ---------------------------------------------------------------- tabs
 
-    // ---------------------------------------------------------------- layout
-
-    private fun dp(v: Int) = (v * resources.displayMetrics.density).toInt()
-
-    private fun label(sizeSp: Float, bold: Boolean = false, dim: Boolean = false) = TextView(this).apply {
-        setTextSize(TypedValue.COMPLEX_UNIT_SP, sizeSp)
-        if (bold) setTypeface(typeface, Typeface.BOLD)
-        if (dim) alpha = 0.72f
-    }
-
-    private fun button(text: String, onClick: () -> Unit) = Button(this).apply {
-        this.text = text
-        isAllCaps = false
-        setOnClickListener { onClick() }
-    }
-
-    private fun row(a: View, b: View) = LinearLayout(this).apply {
-        orientation = LinearLayout.HORIZONTAL
-        addView(a, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { marginEnd = dp(4) })
-        addView(b, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { marginStart = dp(4) })
-    }
-
-    private fun checkbox(text: String, key: String, value: Boolean) = CheckBox(this).apply {
-        this.text = text
-        isChecked = value
-        setOnCheckedChangeListener { _, on -> Prefs.sp(this@MainActivity).edit().putBoolean(key, on).apply() }
-    }
-
-    /** A labelled slider that saves to [key]. [format] turns the value into the text shown. */
-    private fun slider(key: String, min: Int, max: Int, step: Int, current: Int, format: (Int) -> String): View {
-        val title = label(14f).apply { text = format(current) }
-        val bar = SeekBar(this).apply {
-            this.max = (max - min) / step
-            progress = ((current - min) / step).coerceIn(0, this.max)
-            setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
-                override fun onProgressChanged(sb: SeekBar, p: Int, fromUser: Boolean) {
-                    val v = min + p * step
-                    title.text = format(v)
-                    if (fromUser) Prefs.sp(this@MainActivity).edit().putInt(key, v).apply()
-                }
-                override fun onStartTrackingTouch(sb: SeekBar) {}
-                override fun onStopTrackingTouch(sb: SeekBar) {}
-            })
+    private fun buildShell(): View {
+        content = FrameLayout(this)
+        val nav = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            setBackgroundColor(Ui.SURFACE)
+            setPadding(0, Ui.dp(this@MainActivity, 6), 0, Ui.dp(this@MainActivity, 6))
+        }
+        listOf(
+            "Drive" to R.drawable.ic_nav_drive, "Map" to R.drawable.ic_nav_map,
+            "Trips" to R.drawable.ic_nav_trips, "Settings" to R.drawable.ic_nav_settings,
+        ).forEachIndexed { i, (name, icon) ->
+            val img = ImageView(this).apply { setImageResource(icon) }
+            val label = TextView(this).apply {
+                text = name
+                setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
+                gravity = Gravity.CENTER
+            }
+            val item = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                gravity = Gravity.CENTER
+                isClickable = true
+                setOnClickListener { select(i) }
+                addView(img, LinearLayout.LayoutParams(Ui.dp(this@MainActivity, 24), Ui.dp(this@MainActivity, 24)))
+                addView(label)
+                contentDescription = name
+            }
+            tabs.add(img to label)
+            nav.addView(item, LinearLayout.LayoutParams(0, Ui.dp(this, 56), 1f))
         }
         return LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            addView(title)
-            addView(bar)
+            setBackgroundColor(Ui.BG)
+            addView(content, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f))
+            addView(nav, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT))
         }
     }
 
-    private fun buildUi(): View {
-        val col = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(20), dp(28), dp(20), dp(36))
+    fun select(tab: Int) {
+        val page = pages[tab] ?: when (tab) {
+            TAB_DRIVE -> DrivePage(this)
+            TAB_MAP -> MapPage(this).also { mapPage = it }
+            TAB_TRIPS -> TripsPage(this)
+            else -> SettingsPage(this)
+        }.also { pages[tab] = it }
+        if (current != tab) {
+            content.removeAllViews()
+            content.addView(page.view)
+            current = tab
         }
-        fun add(v: View, topDp: Int = 0, height: Int = LinearLayout.LayoutParams.WRAP_CONTENT) {
-            col.addView(v, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, height).apply { topMargin = dp(topDp) })
+        tabs.forEachIndexed { i, (img, label) ->
+            val c = if (i == tab) Ui.ACCENT else Ui.DIM
+            img.imageTintList = ColorStateList.valueOf(c)
+            label.setTextColor(c)
         }
-        fun section(name: String) = add(label(12f, bold = true, dim = true).apply { text = name }, 24)
-
-        add(label(26f, bold = true).apply { text = "Bump Beeper" })
-        add(label(14f, dim = true).apply {
-            text = "Records speed bumps and potholes while you drive. From the second time you pass one, it warns you before you reach it."
-        }, 4)
-
-        status = label(18f, bold = true)
-        add(status, 20)
-        startBtn = Button(this).apply {
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 18f)
-            isAllCaps = false
-            setOnClickListener { toggle() }
-        }
-        add(startBtn, 8, dp(64))
-
-        stats = label(15f).apply {
-            typeface = Typeface.MONOSPACE
-            setLineSpacing(0f, 1.25f)
-        }
-        add(stats, 12)
-        add(button("Your bumps: map & list") { startActivity(Intent(this, BumpsActivity::class.java)) }, 8)
-
-        add(label(12f, bold = true, dim = true).apply { text = "JOLT METER · LAST 30 SECONDS" }, 20)
-        graph = JoltGraphView(this)
-        add(graph, 6, dp(120))
-        lastEvent = label(15f, bold = true)
-        add(lastEvent, 10)
-        lastIgnored = label(13f, dim = true)
-        add(lastIgnored, 2)
-
-        // ---- sensitivity
-        section("SENSITIVITY")
-        val group = RadioGroup(this).apply { orientation = RadioGroup.HORIZONTAL }
-        val current = Prefs.sensitivity(this)
-        arrayOf("Low", "Normal", "High").forEachIndexed { i, name ->
-            val rb = RadioButton(this).apply {
-                text = name
-                id = View.generateViewId()
-                tag = i
-            }
-            group.addView(rb, RadioGroup.LayoutParams(0, RadioGroup.LayoutParams.WRAP_CONTENT, 1f))
-            if (i == current) rb.isChecked = true
-        }
-        group.setOnCheckedChangeListener { g, checkedId ->
-            val level = g.findViewById<RadioButton>(checkedId)?.tag as? Int ?: 1
-            Prefs.sp(this).edit().putInt(Prefs.SENSITIVITY, level).apply()
-        }
-        add(group, 4)
-        add(label(12f, dim = true).apply {
-            text = "Watch the jolt meter: bumps should poke above the dashed line, normal driving should stay below it. " +
-                "Low ignores rough roads; High also catches small bumps."
-        }, 2)
-
-        // ---- warnings
-        section("WARNINGS")
-        add(slider(Prefs.LEAD_SECONDS, 4, 12, 1, Prefs.leadSeconds(this)) { "Warn $it seconds before the bump" }, 4)
-        add(slider(Prefs.QUIET_BELOW_KMH, 0, 40, 5, Prefs.quietBelowKmh(this)) {
-            if (it == 0) "Always warn, even when driving slowly" else "Don't warn when I'm already below $it km/h"
-        }, 8)
-        add(slider(Prefs.MAX_BUMP_KMH, 30, 80, 5, Prefs.maxBumpKmh(this)) {
-            "Jolts above $it km/h aren't speed bumps (potholes still count)"
-        }, 8)
-        // ---- potholes
-        section("POTHOLES")
-        add(label(12f, dim = true).apply {
-            text = "Every pothole is recorded and counted. Only harsh ones get a voice warning that says which side it's on, " +
-                "e.g. \"Pothole on the right. Keep left.\" (keep left within your lane)."
-        }, 4)
-        add(checkbox("Voice warning for harsh potholes", Prefs.WARN_POTHOLES, Prefs.warnPotholes(this)), 4)
-        add(slider(Prefs.HARSH_MS2, 4, 10, 1, Prefs.harshMs2(this)) {
-            "Harsh = average jolt of $it m/s² or more (" + when {
-                it <= 5 -> "warns for most potholes)"
-                it <= 7 -> "the ones you really feel)"
-                else -> "only the worst ones)"
-            }
-        }, 8)
-        val langGroup = RadioGroup(this).apply { orientation = RadioGroup.HORIZONTAL }
-        listOf("en" to "English voice", "ar" to "صوت عربي").forEach { (code, name) ->
-            val rb = RadioButton(this).apply { text = name; id = View.generateViewId(); tag = code }
-            langGroup.addView(rb, RadioGroup.LayoutParams(0, RadioGroup.LayoutParams.WRAP_CONTENT, 1f))
-            if (code == Prefs.voiceLang(this)) rb.isChecked = true
-        }
-        langGroup.setOnCheckedChangeListener { g, checkedId ->
-            val code = g.findViewById<RadioButton>(checkedId)?.tag as? String ?: "en"
-            Prefs.sp(this).edit().putString(Prefs.VOICE_LANG, code).apply()
-        }
-        add(langGroup, 4)
-        add(button("Test pothole voice") { testVoice() }, 4)
-        add(checkbox("Loud beeps (alarm volume, phone speaker)", Prefs.LOUD, Prefs.loud(this)), 8)
-        add(checkbox("Soft tick when a new bump is recorded", Prefs.CLICK_ON_NEW, Prefs.clickOnNew(this)))
-
-        add(row(button("Test bump beep") { Beeper(this).beep(2) }, button("Mute last warning") { muteLast() }), 12)
-        add(label(12f, dim = true).apply {
-            text = "Warned for nothing? Tap Mute last warning and that spot stays silent from now on."
-        }, 2)
-
-        // ---- auto start
-        section("AUTO START")
-        autoBox = CheckBox(this).apply {
-            setOnClickListener {
-                if (isChecked) setupAuto() else {
-                    Prefs.sp(this@MainActivity).edit().putBoolean(Prefs.AUTO_START, false).apply()
-                    updateAutoBox()
-                }
-            }
-        }
-        add(autoBox, 4)
-        add(label(12f, dim = true).apply {
-            text = "Starts recording when your phone connects to the car's Bluetooth and stops a minute after it disconnects. " +
-                "Needs location \"Allow all the time\" so it can start while the app is closed."
-        }, 2)
-
-        // ---- data
-        section("YOUR DATA")
-        add(row(button("Export CSV") { export() }, button("Battery settings") { batterySettings() }), 4)
-        add(button("Clear map") { confirmClear() }, 8)
-
-        section("DEBUG RECORDING")
-        add(checkbox("Record raw sensor data while driving (about 12 MB per hour)", Prefs.DEBUG_RECORDING, Prefs.debugRecording(this)), 4)
-        traceInfo = label(12f, dim = true)
-        add(traceInfo, 2)
-        add(row(button("Export recordings") { exportTraces() }, button("Delete recordings") { deleteTraces() }), 4)
-
-        add(label(13f, dim = true).apply {
-            setLineSpacing(0f, 1.2f)
-            text = HELP
-        }, 24)
-
-        return ScrollView(this).apply { addView(col) }
+        page.onShow()
     }
 
-    // ---------------------------------------------------------------- live refresh
+    fun refreshMap() { mapPage?.onShow() }
 
-    private fun refresh() {
-        val rec = LiveState.recording
-        if (wasRecording != rec) { loadMapCounts(); updateTraceInfo() }
-        wasRecording = rec
+    fun toast(msg: String) = Toast.makeText(this, msg, Toast.LENGTH_LONG).show()
 
-        startBtn.text = if (rec) "Stop" else "Start recording"
-        if (rec) {
-            val fixAge = SystemClock.elapsedRealtime() - LiveState.lastFixAtMs
-            val gpsOk = LiveState.lastFixAtMs > 0 && fixAge < 5000
-            status.text = if (gpsOk) "● Recording" else "● Recording, waiting for GPS…"
-            status.setTextColor(if (gpsOk) GREEN else AMBER)
-            val speed = if (gpsOk) String.format(Locale.US, "%.0f km/h (GPS ±%.0f m)", LiveState.speedKmh, LiveState.accuracyM) else "–"
-            val holes = when {
-                !LiveState.hasGyro -> "no gyroscope: less sure"
-                LiveState.forwardKnown -> "ready"
-                else -> "learning (speed up / brake once)"
-            }
-            stats.text = String.format(
-                Locale.US,
-                "Speed      %s\nOn map     %d bumps · %d potholes (%d harsh)\n" +
-                    "This trip  %d hit · %d new · %d warnings\n           %d missed · %.1f km\n" +
-                    "Potholes   %d hit this trip (%d harsh)\nDetection  %s",
-                speed, LiveState.bumpsOnMap - LiveState.potholesOnMap, LiveState.potholesOnMap, LiveState.harshOnMap,
-                LiveState.tripHits, LiveState.tripNew, LiveState.tripBeeps, LiveState.tripMisses, LiveState.tripKm,
-                LiveState.tripPotholes, LiveState.tripHarshPotholes, holes,
-            )
-        } else {
-            status.text = "Stopped"
-            status.setTextColor(GRAY)
-            val c = counts
-            stats.text = if (c == null) "" else String.format(
-                Locale.US,
-                "Speed bumps  %d\nPotholes     %d (%d harsh)\nNot sure     %d\nMuted        %d",
-                c.bumps, c.potholes, c.harsh, c.unsure, c.muted,
-            )
-        }
-        lastEvent.text = LiveState.lastEvent
-        lastIgnored.text = LiveState.lastIgnored
-        graph.threshold = Prefs.thresholdFor(Prefs.sensitivity(this)).toFloat()
-        graph.invalidate()
-    }
-
-    private fun loadMapCounts() {
-        Thread {
-            val db = BumpDb(applicationContext)
-            try {
-                val c = db.counts(Prefs.engineConfig(this))
-                ui.post { counts = c }
-            } finally {
-                db.close()
-            }
-        }.start()
-    }
+    fun has(p: String) = checkSelfPermission(p) == PackageManager.PERMISSION_GRANTED
 
     // ---------------------------------------------------------------- start / stop
 
-    private fun toggle() {
+    fun toggleRecording() {
         if (LiveState.recording) {
             BumpService.stop(this)
             return
         }
-        val missing = ArrayList<String>()
-        if (checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
-            missing.add(Manifest.permission.ACCESS_FINE_LOCATION)
-            missing.add(Manifest.permission.ACCESS_COARSE_LOCATION)
-        }
-        if (Build.VERSION.SDK_INT >= 33 &&
-            checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
-        ) {
-            missing.add(Manifest.permission.POST_NOTIFICATIONS)
-        }
+        val missing = missingBasics()
         if (missing.isNotEmpty()) {
             requestPermissions(missing.toTypedArray(), REQ_PERMS)
             return
@@ -374,14 +185,30 @@ class MainActivity : Activity() {
         startRecording()
     }
 
+    /** Permissions recording can't do without: precise location, and (Android 13+) notifications. */
+    fun missingBasics(): List<String> {
+        val missing = ArrayList<String>()
+        if (!has(Manifest.permission.ACCESS_FINE_LOCATION)) {
+            missing.add(Manifest.permission.ACCESS_FINE_LOCATION)
+            missing.add(Manifest.permission.ACCESS_COARSE_LOCATION)
+        }
+        if (Build.VERSION.SDK_INT >= 33 && !has(Manifest.permission.POST_NOTIFICATIONS)) missing.add(Manifest.permission.POST_NOTIFICATIONS)
+        return missing
+    }
+
+    fun requestBasics() {
+        val missing = missingBasics()
+        if (missing.isNotEmpty()) requestPermissions(missing.toTypedArray(), REQ_BASICS)
+    }
+
+    fun batteryOk(): Boolean = (getSystemService(POWER_SERVICE) as PowerManager).isIgnoringBatteryOptimizations(packageName)
+
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
         when (requestCode) {
-            REQ_PERMS -> if (has(Manifest.permission.ACCESS_FINE_LOCATION)) {
-                startRecording()
-            } else {
-                toast("Bump Beeper needs precise location to know where the bumps are.")
-            }
+            REQ_PERMS -> if (has(Manifest.permission.ACCESS_FINE_LOCATION)) startRecording()
+                else toast("Bump Beeper needs precise location to know where the bumps are.")
+            REQ_BASICS -> pages.getOrNull(current)?.onShow()
             REQ_AUTO_FINE, REQ_AUTO_BT, REQ_AUTO_BG -> setupAuto(afterRequest = requestCode)
         }
     }
@@ -397,29 +224,45 @@ class MainActivity : Activity() {
         BumpService.start(this)
     }
 
+    fun muteLast() {
+        if (!LiveState.recording) { toast("Works while recording: it silences the spot that warned last."); return }
+        BumpService.muteLastBeep(this)
+    }
+
+    fun batterySettings() {
+        if (batteryOk()) {
+            toast("Already allowed. If recording still stops, check your phone's own battery / auto-launch settings for this app.")
+            return
+        }
+        try {
+            startActivity(Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, Uri.parse("package:$packageName")))
+        } catch (e: Exception) {
+            startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
+        }
+    }
+
     // ---------------------------------------------------------------- auto start with the car
 
-    private fun has(p: String) = checkSelfPermission(p) == PackageManager.PERMISSION_GRANTED
+    fun autoStartOn(): Boolean = Prefs.autoStart(this) && Prefs.carAddress(this) != null
 
-    private fun updateAutoBox() {
-        val car = Prefs.carName(this)
-        val on = Prefs.autoStart(this) && Prefs.carAddress(this) != null
-        autoBox.isChecked = on
-        autoBox.text = if (on) "Auto start with car Bluetooth: $car" else "Auto start with car Bluetooth"
+    private fun autoChanged() { pages.getOrNull(current)?.onShow() }
+
+    fun disableAuto() {
+        Prefs.sp(this).edit().putBoolean(Prefs.AUTO_START, false).apply()
+        autoChanged()
     }
 
     private fun cancelAuto(msg: String) {
         Prefs.sp(this).edit().putBoolean(Prefs.AUTO_START, false).apply()
-        updateAutoBox()
+        autoChanged()
         toast(msg)
     }
 
     /**
      * Walks through what auto start needs, one step at a time:
      * precise location → Bluetooth (Android 12+) → pick the car → location "all the time" → battery hint.
-     * Called again after each permission answer.
      */
-    private fun setupAuto(afterRequest: Int = 0) {
+    fun setupAuto(afterRequest: Int = 0) {
         if (!has(Manifest.permission.ACCESS_FINE_LOCATION)) {
             if (afterRequest == REQ_AUTO_FINE) return cancelAuto("Auto start needs precise location")
             requestPermissions(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION), REQ_AUTO_FINE)
@@ -441,7 +284,7 @@ class MainActivity : Activity() {
     @SuppressLint("MissingPermission")
     private fun pickCar() {
         val adapter = (getSystemService(BLUETOOTH_SERVICE) as? BluetoothManager)?.adapter
-        if (adapter == null) return cancelAuto("This phone has no Bluetooth")
+            ?: return cancelAuto("This phone has no Bluetooth")
         val devices = try { adapter.bondedDevices?.toList() ?: emptyList() } catch (e: SecurityException) { emptyList() }
         if (devices.isEmpty()) return cancelAuto("No paired Bluetooth devices. Pair the phone with your car first.")
         val names = devices.map { d -> (try { d.name } catch (e: SecurityException) { null }) ?: d.address }
@@ -477,9 +320,8 @@ class MainActivity : Activity() {
 
     private fun finishAuto() {
         Prefs.sp(this).edit().putBoolean(Prefs.AUTO_START, true).apply()
-        updateAutoBox()
-        val pm = getSystemService(POWER_SERVICE) as PowerManager
-        if (!pm.isIgnoringBatteryOptimizations(packageName)) {
+        autoChanged()
+        if (!batteryOk()) {
             AlertDialog.Builder(this)
                 .setTitle("Auto start is on")
                 .setMessage("For it to work reliably, also allow Bump Beeper to run in the background (no battery restrictions).")
@@ -491,122 +333,41 @@ class MainActivity : Activity() {
         }
     }
 
-    // ---------------------------------------------------------------- buttons
+    // ---------------------------------------------------------------- import from a file picker
 
-    private fun muteLast() {
-        if (!LiveState.recording) {
-            toast("Works while recording: it mutes the spot that warned last.")
-            return
-        }
-        BumpService.muteLastBeep(this)
-    }
-
-    private fun batterySettings() {
-        val pm = getSystemService(POWER_SERVICE) as PowerManager
-        if (pm.isIgnoringBatteryOptimizations(packageName)) {
-            toast("Already allowed. If recording still stops, check your phone's own battery / auto-launch settings for this app.")
-            return
+    fun pickImportFile() {
+        val pick = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+            addCategory(Intent.CATEGORY_OPENABLE)
+            type = "*/*"   // CSV files arrive with many different types (WhatsApp, email, Drive…)
         }
         try {
-            startActivity(Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, Uri.parse("package:$packageName")))
+            @Suppress("DEPRECATION")
+            startActivityForResult(pick, REQ_IMPORT)
         } catch (e: Exception) {
-            startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
+            toast("No file picker found")
         }
     }
 
-    private fun export() {
-        toast("Exporting…")
-        Thread {
-            val db = BumpDb(applicationContext)
-            val ok = try {
-                val stamp = SimpleDateFormat("yyyy-MM-dd_HHmm", Locale.US).format(Date())
-                CsvExport.save(this, "bumps_$stamp.csv", db.bumpsCsv(Prefs.engineConfig(this))) &&
-                    CsvExport.save(this, "events_$stamp.csv", db.eventsCsv())
-            } finally {
-                db.close()
-            }
-            ui.post { toast(if (ok) "Saved to Downloads/BumpBeeper" else "Export failed") }
-        }.start()
+    @Deprecated("Framework Activity result API")
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        @Suppress("DEPRECATION")
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode != REQ_IMPORT || resultCode != RESULT_OK) return
+        val uri = data?.data ?: return
+        Sharing.importUri(this, uri, confirm = false) { refreshMap() }
     }
-
-    private fun updateTraceInfo() {
-        val files = TraceWriter.list(this)
-        val mb = files.sumOf { it.length() } / 1_000_000.0
-        traceInfo.text = if (files.isEmpty()) "No recordings yet. Turn this on before a drive you want to check afterwards."
-        else String.format(Locale.US, "%d recording(s), %.1f MB. The last %d drives are kept.", files.size, mb, TraceWriter.KEEP)
-    }
-
-    private fun exportTraces() {
-        if (LiveState.recording) { toast("Stop recording first, so the last recording is complete"); return }
-        val files = TraceWriter.list(this)
-        if (files.isEmpty()) { toast("No recordings yet"); return }
-        toast("Exporting ${files.size} recording(s)…")
-        Thread {
-            val ok = files.count { CsvExport.saveFile(this, it.name, it, "recordings") }
-            ui.post { toast("Saved $ok of ${files.size} to Downloads/BumpBeeper/recordings") }
-        }.start()
-    }
-
-    private fun deleteTraces() {
-        if (LiveState.recording) { toast("Stop recording first"); return }
-        AlertDialog.Builder(this)
-            .setTitle("Delete all debug recordings?")
-            .setMessage("Exported copies in Downloads stay. The bump map is not affected.")
-            .setPositiveButton("Delete") { _, _ ->
-                TraceWriter.list(this).forEach { it.delete() }
-                updateTraceInfo()
-            }
-            .setNegativeButton("Cancel", null)
-            .show()
-    }
-
-    private fun confirmClear() {
-        if (LiveState.recording) {
-            toast("Stop recording first")
-            return
-        }
-        AlertDialog.Builder(this)
-            .setTitle("Clear the whole map?")
-            .setMessage("Deletes every recorded bump and the event log. This can't be undone.")
-            .setPositiveButton("Delete") { _, _ ->
-                Thread {
-                    val db = BumpDb(applicationContext)
-                    try { db.clearAll() } finally { db.close() }
-                    ui.post {
-                        loadMapCounts()
-                        LiveState.lastEvent = "Map cleared"
-                        toast("Map cleared")
-                    }
-                }.start()
-            }
-            .setNegativeButton("Cancel", null)
-            .show()
-    }
-
-    private fun toast(msg: String) = Toast.makeText(this, msg, Toast.LENGTH_LONG).show()
 
     companion object {
         const val EXTRA_START = "start_recording"
+        const val TAB_DRIVE = 0
+        const val TAB_MAP = 1
+        const val TAB_TRIPS = 2
+        const val TAB_SETTINGS = 3
         private const val REQ_PERMS = 1
         private const val REQ_AUTO_FINE = 2
         private const val REQ_AUTO_BT = 3
         private const val REQ_AUTO_BG = 4
-        private const val GREEN = 0xFF43A047.toInt()
-        private const val AMBER = 0xFFFB8C00.toInt()
-        private const val GRAY = 0xFF9E9E9E.toInt()
-
-        private const val HELP = "How to use\n" +
-            "• Put the phone in a holder. A loose phone gives noisy readings.\n" +
-            "• Tap Start before you drive (or turn on Auto start). It keeps running with the screen off.\n" +
-            "• First pass over a bump: recorded silently. Every pass after that: a warning before you reach it. " +
-            "Speed bumps: 2 high beeps (3 above 50 km/h). Potholes: a falling two-tone sound.\n" +
-            "• Bump or pothole is judged from how the car moves: a speed bump lifts the car and tips it nose-up; " +
-            "a pothole drops one wheel and rocks it sideways. Each pass makes it surer. You can correct it in Your bumps.\n" +
-            "• A spot you've passed 3+ times but felt less than half the time is muted automatically. " +
-            "Crawling over a bump without feeling it doesn't count against it.\n" +
-            "• Warnings use media volume and go through car Bluetooth like navigation voice. Use the Test buttons to check.\n" +
-            "• If recording stops by itself, tap Battery settings and allow the app to run in the background.\n" +
-            "• Export CSV saves the bump map and event log to Downloads/BumpBeeper. " +
-            "Debug recording saves every sensor reading of each drive, to check afterwards what happened at a spot."
+        private const val REQ_BASICS = 5
+        private const val REQ_IMPORT = 10
     }
 }

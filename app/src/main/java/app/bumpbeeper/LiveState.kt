@@ -17,6 +17,14 @@ object LiveState {
     @Volatile var tripHarshPotholes = 0
     @Volatile var potholesOnMap = 0
     @Volatile var harshOnMap = 0
+    /** Driving score so far this trip (-1 = too short yet), time moving, harsh events, % of time speeding. */
+    @Volatile var liveScore = -1
+    @Volatile var tripMovingS = 0.0
+    @Volatile var tripEvents = 0
+    @Volatile var speedingPct = 0.0
+    @Volatile var lastDriveEvent = ""
+    /** Score of the trip that just ended (shown after Stop). */
+    @Volatile var lastTripScore = -1
     @Volatile var lastEvent = ""
     @Volatile var lastIgnored = ""
     /** The phone has a gyroscope (needed to tell potholes from speed bumps reliably). */
@@ -45,6 +53,7 @@ object LiveState {
         head = 0; count = 0
         tripHits = 0; tripNew = 0; tripBeeps = 0; tripMisses = 0; tripKm = 0.0
         tripPotholes = 0; tripHarshPotholes = 0
+        liveScore = -1; tripMovingS = 0.0; tripEvents = 0; speedingPct = 0.0; lastDriveEvent = ""
         speedKmh = Double.NaN; accuracyM = Double.NaN; lastFixAtMs = 0L
         lastIgnored = ""
         forwardKnown = false
