@@ -136,7 +136,7 @@ class BumpEngine(
             val d = if (g > 0) (fwdX * gravX + fwdY * gravY + fwdZ * gravZ) / g else 0.0
             val n = sqrt(max(0.0, fwdX * fwdX + fwdY * fwdY + fwdZ * fwdZ - d * d))
             val h = sqrt(horX * horX + horY * horY + horZ * horZ)
-            return String.format(Locale.US, "w=%.1f n=%.1f hor=%.2f", fwdWeight, n, h)
+            return String.format(Locale.US, "w=%.1f n=%.1f hor=%.2f settled=%.0fs", fwdWeight, n, h, gravSettledS)
         }
 
     // ---------- accelerometer state ----------
@@ -173,11 +173,14 @@ class BumpEngine(
     private var bufCount = 0
 
     // ---------- which way is forward ----------
-    // Gravity alone (≈30 s average). The 1 s "slow" estimate above tilts along with a long speed-up or braking
-    // and would hide it; over 30 s speeding up and braking cancel out, leaving just gravity.
+    // Gravity alone. The 1 s "slow" estimate above tilts along with any speed-up or braking and would hide it,
+    // so this one only follows quickly while the car drives at a steady speed (GPS and accelerometer agree),
+    // and barely moves otherwise. "Forward" is only learned once it has settled.
     private var gravX = 0.0
     private var gravY = 0.0
     private var gravZ = 0.0
+    private var gravSettledS = 0.0
+    private var gpsSteadyFixes = 0
     // Horizontal part of the accelerometer (≈1 s average) and its correlation with GPS speed changes.
     // Speeding up pushes it forward, braking backward, so the sum points at the car's nose.
     private var horX = 0.0
@@ -252,7 +255,11 @@ class BumpEngine(
 
         // The rest, measured against gravity alone, is horizontal (speeding up, braking, cornering).
         // Averaged and matched with GPS speed changes, it shows which way is forward.
-        val aGrav = dt / (30.0 + dt)
+        val horNow = sqrt(horX * horX + horY * horY + horZ * horZ)
+        val steady = (gpsSteadyFixes >= 1 && horNow < 0.4) ||   // steady speed and nothing pushing sideways
+            (gravSettledS < 3.0 && gpsSteadyFixes >= 3)          // first time: trust a few seconds of steady GPS
+        val aGrav = dt / ((if (steady) 3.0 else 60.0) + dt)
+        if (steady) gravSettledS += dt
         gravX += aGrav * (x - gravX); gravY += aGrav * (y - gravY); gravZ += aGrav * (z - gravZ)
         val gg = sqrt(gravX * gravX + gravY * gravY + gravZ * gravZ)
         if (gg > 5.0) {
@@ -277,6 +284,7 @@ class BumpEngine(
             lastUnstableMs = tMs
             // It may sit differently when it is put back: learn gravity and "forward" again.
             gravX = slowX; gravY = slowY; gravZ = slowZ
+            gravSettledS = 0.0
             horX = 0.0; horY = 0.0; horZ = 0.0
             fwdX = 0.0; fwdY = 0.0; fwdZ = 0.0; fwdWeight = 0.0
         }
@@ -503,7 +511,8 @@ class BumpEngine(
             val dtS = (raw.timeMs - prev.timeMs) / 1000.0
             if (dtS in 0.5..2.0) {
                 val aLong = (speed - prev.speedMps) / dtS
-                if (abs(aLong) >= 0.6 && max(speed, prev.speedMps) > 2.0) {
+                if (abs(aLong) < 0.5) gpsSteadyFixes++ else gpsSteadyFixes = 0   // 0.5: GPS speed itself wobbles a little
+                if (gravSettledS >= 3.0 && abs(aLong) >= 0.6 && max(speed, prev.speedMps) > 2.0) {
                     val decay = 0.995
                     fwdX = fwdX * decay + horX * aLong
                     fwdY = fwdY * decay + horY * aLong

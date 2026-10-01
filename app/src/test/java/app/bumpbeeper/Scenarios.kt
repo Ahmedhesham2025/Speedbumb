@@ -212,12 +212,15 @@ object Scenarios {
         check(nearest(store, sim, 1100.0).kind == BumpKind.POTHOLE, "1100 should be a pothole")
     }
 
-    /** At 70 km/h: a clear pothole is still recorded; an ordinary jolt is rejected as too fast for a speed bump. */
+    /**
+     * At 70 km/h: a clear pothole is still recorded; an ordinary jolt is rejected as too fast for a speed bump.
+     * (The slow zone gives one braking + speeding up, which the engine needs to learn which way is forward.)
+     */
     fun fastPothole() {
         log("fastPothole")
         val sim = Simulator(31)
         val store = MemoryStore()
-        val spec1 = DriveSpec(potholesAt = listOf(1000.0), oneOffJoltsAt = listOf(600.0), cruiseKmh = 70.0)
+        val spec1 = DriveSpec(potholesAt = listOf(1100.0), oneOffJoltsAt = listOf(750.0), slowZonesAt = listOf(350.0), cruiseKmh = 70.0)
         val t1 = sim.drive(store, spec1, tripId = 1)
         describe("trip 1", t1)
         t1.forwardTrace.forEach { log("    $it") }
@@ -225,7 +228,7 @@ object Scenarios {
         check("too_fast" in t1.rejected, "the plain jolt at 70 km/h should be rejected as too_fast: ${t1.rejected}")
         check(store.saved.single().kind == BumpKind.POTHOLE, "the recorded spot should be a pothole")
 
-        val t2 = sim.drive(store, DriveSpec(potholesAt = listOf(1000.0), cruiseKmh = 70.0), tripId = 2)
+        val t2 = sim.drive(store, DriveSpec(potholesAt = listOf(1100.0), slowZonesAt = listOf(350.0), cruiseKmh = 70.0), tripId = 2)
         describe("trip 2", t2)
         check(t2.beepKinds == listOf(BumpKind.POTHOLE), "trip 2 should give one pothole warning, got ${t2.beepKinds}")
     }
