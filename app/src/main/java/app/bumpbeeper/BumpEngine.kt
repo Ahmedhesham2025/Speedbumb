@@ -431,8 +431,9 @@ class BumpEngine(
         val d = fwdX * ux + fwdY * uy + fwdZ * uz
         val x = fwdX - d * ux; val y = fwdY - d * uy; val z = fwdZ - d * uz
         val n = sqrt(x * x + y * y + z * z)
-        // If the samples agree, |sum| ≈ weight. Noise alone gives a much shorter vector.
-        if (n < 0.5 * fwdWeight) return null
+        // Weight = sum of |push| × |speed change|. If every push pointed the same way, |sum| ≈ weight;
+        // pushes in mixed directions (cornering, bumps) give a much shorter vector.
+        if (n < 0.6 * fwdWeight) return null
         return Triple(x / n, y / n, z / n)
     }
 
@@ -550,12 +551,15 @@ class BumpEngine(
             if (dtS in 0.5..2.0) {
                 val aLong = (speed - prev.speedMps) / dtS
                 if (abs(aLong) < 0.5) gpsSteadyFixes++ else gpsSteadyFixes = 0   // 0.5: GPS speed itself wobbles a little
-                if (gravSettledS >= 3.0 && abs(aLong) >= 0.6 && max(speed, prev.speedMps) > 2.0) {
+                // Only real speed changes: GPS says so AND the phone feels a push. GPS speed wobble at a steady
+                // speed must not count, or it slowly drowns out what was learned.
+                val horMag = sqrt(horX * horX + horY * horY + horZ * horZ)
+                if (gravSettledS >= 3.0 && abs(aLong) >= 0.6 && horMag >= 0.3 && max(speed, prev.speedMps) > 2.0) {
                     val decay = 0.995
                     fwdX = fwdX * decay + horX * aLong
                     fwdY = fwdY * decay + horY * aLong
                     fwdZ = fwdZ * decay + horZ * aLong
-                    fwdWeight = fwdWeight * decay + aLong * aLong
+                    fwdWeight = fwdWeight * decay + horMag * abs(aLong)
                 }
             }
         }
