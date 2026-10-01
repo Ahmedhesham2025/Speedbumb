@@ -13,6 +13,10 @@ object LiveState {
     @Volatile var tripBeeps = 0
     @Volatile var tripMisses = 0
     @Volatile var tripKm = 0.0
+    @Volatile var tripPotholes = 0
+    @Volatile var tripHarshPotholes = 0
+    @Volatile var potholesOnMap = 0
+    @Volatile var harshOnMap = 0
     @Volatile var lastEvent = ""
     @Volatile var lastIgnored = ""
     /** The phone has a gyroscope (needed to tell potholes from speed bumps reliably). */
@@ -40,6 +44,7 @@ object LiveState {
     @Synchronized fun resetTrip() {
         head = 0; count = 0
         tripHits = 0; tripNew = 0; tripBeeps = 0; tripMisses = 0; tripKm = 0.0
+        tripPotholes = 0; tripHarshPotholes = 0
         speedKmh = Double.NaN; accuracyM = Double.NaN; lastFixAtMs = 0L
         lastIgnored = ""
         forwardKnown = false

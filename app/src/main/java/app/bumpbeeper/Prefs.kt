@@ -12,6 +12,8 @@ object Prefs {
     const val QUIET_BELOW_KMH = "quiet_below_kmh"
     const val MAX_BUMP_KMH = "max_bump_kmh"
     const val WARN_POTHOLES = "warn_potholes"
+    const val HARSH_MS2 = "harsh_ms2"
+    const val VOICE_LANG = "voice_lang"     // "en" or "ar"
     const val DEBUG_RECORDING = "debug_recording"
     const val AUTO_START = "auto_start"
     const val CAR_ADDRESS = "car_address"
@@ -40,11 +42,17 @@ object Prefs {
     /** Jolts above this speed aren't speed bumps (unless clearly a pothole), km/h. */
     fun maxBumpKmh(ctx: Context): Int = sp(ctx).getInt(MAX_BUMP_KMH, 50)
     fun warnPotholes(ctx: Context): Boolean = sp(ctx).getBoolean(WARN_POTHOLES, true)
+    /** Potholes with an average jolt of at least this many m/s² get a voice warning (4–10). */
+    fun harshMs2(ctx: Context): Int = sp(ctx).getInt(HARSH_MS2, 6)
+    fun voiceLang(ctx: Context): String = sp(ctx).getString(VOICE_LANG, "en") ?: "en"
     fun debugRecording(ctx: Context): Boolean = sp(ctx).getBoolean(DEBUG_RECORDING, false)
 
     fun autoStart(ctx: Context): Boolean = sp(ctx).getBoolean(AUTO_START, false)
     fun carAddress(ctx: Context): String? = sp(ctx).getString(CAR_ADDRESS, null)
     fun carName(ctx: Context): String? = sp(ctx).getString(CAR_NAME, null)
+
+    /** Engine settings as chosen on screen (for counting harsh potholes etc. outside a trip). */
+    fun engineConfig(ctx: Context): EngineConfig = EngineConfig().also { applyTo(it, ctx) }
 
     /** Copy the on-screen settings into the engine. */
     fun applyTo(cfg: EngineConfig, ctx: Context) {
@@ -53,5 +61,6 @@ object Prefs {
         cfg.quietBelowKmh = quietBelowKmh(ctx).toDouble()
         cfg.maxSpeedKmh = maxBumpKmh(ctx).toDouble()
         cfg.warnPotholes = warnPotholes(ctx)
+        cfg.harshPotholeMs2 = harshMs2(ctx).toDouble()
     }
 }

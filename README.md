@@ -5,7 +5,8 @@ Android app that learns the speed bumps on your routes and warns you about them.
 - **First pass over a bump:** the phone feels the jolt and saves the spot. No beep.
 - **Every pass after that:** 2 beeps about 6 seconds before you reach it (3 beeps above 50 km/h). It keeps recording while it beeps.
 - **Keeps improving:** each pass refines the bump's position. A spot you pass 3+ times but feel less than half the time is muted automatically, and **Mute last warning** silences a false alarm with one tap.
-- **Speed bump or pothole:** told apart from how the car moves (see *How it works*). Potholes get their own falling two-tone sound and can be switched off.
+- **Speed bump or pothole:** told apart from how the car moves (see *How it works*). Every pothole is recorded and counted; it also learns **which side** it's on (which wheel hits it) and **how harsh** it is.
+- **Voice warning for harsh potholes only**, saying which way to go around it: *"Pothole on the right. Keep left."* (English or Egyptian Arabic, offline text-to-speech). Smaller potholes are counted but stay silent.
 - **Quiet when you're already slow:** no warning below 20 km/h (adjustable), since you've clearly seen it.
 - **Auto start/stop** when the phone connects to / disconnects from your car's Bluetooth.
 - **Your bumps:** offline map and list; open a spot in Google Maps, mute it, correct bump/pothole, delete it; **share** your map and **import** someone else's.
@@ -83,6 +84,8 @@ GPS 1/s ────────────┘        │        known bump? +1
 
 Each spot keeps a running average of its hits' scores, so one odd reading doesn't flip it. Above the speed bump limit (50 km/h), a jolt is still recorded if it is clearly a pothole (score ≥ 0.6 with the gyroscope), up to 100 km/h. Without a gyroscope only the first clue is used. You can correct a spot by hand in *Your bumps*.
 
+**Which side, and how harsh.** A pothole usually catches the wheels on one side, so the car first tips towards that side. With the forward direction known, the gyroscope's roll says which: right side dropping first = pothole on the right. Each spot keeps a running average of the sides seen, plus its average jolt; it is *harsh* when that average is at least 6 m/s² (setting). The phone can tell *which wheel* hit it, not its exact position across the lane (GPS is only good to a few metres), so "keep left" means move left within your lane.
+
 **Auto start.** Android announces every Bluetooth connection, even to closed apps. When it's the car you picked, recording starts; when it disconnects, recording stops after 60 s (so a short drop doesn't end the trip). Starting from the background needs location *Allow all the time*; if Android still refuses, you get a notification that starts recording with one tap.
 
 **Counting passes.** When you come within 25 m of a bump and then move away, that's a pass: a *hit* if you felt it, a *miss* if not. A slow pass (under 12 km/h) with no jolt counts neither way. Otherwise the app would slowly mute real bumps *because* it warned you and you crawled over them.
@@ -92,7 +95,7 @@ Every number above is in `EngineConfig` at the top of `BumpEngine.kt`.
 ---
 
 ## Run the tests (no phone needed)
-In Android Studio, right-click `app/src/test/java/app/bumpbeeper/BumpEngineTest.kt` → **Run**. GitHub also runs them on every build. Eleven simulated scenarios:
+In Android Studio, right-click `app/src/test/java/app/bumpbeeper/BumpEngineTest.kt` → **Run**. GitHub also runs them on every build. Twelve simulated scenarios:
 
 - **learnThenBeep:** 4 drives over 3 bumps and one one-off pothole hit. The first drive is silent. Drives 2–4 beep about 65–95 m before each bump. After 4 passes each bump's position is within about 3 m, and the one-off spot is muted.
 - **otherDirection:** eastbound bumps don't beep westbound.
@@ -101,6 +104,7 @@ In Android Studio, right-click `app/src/test/java/app/bumpbeeper/BumpEngineTest.
 - **crawlVersusRemoved:** a crawled-over bump stays active; a removed bump gets muted.
 - **userMute:** after *Mute last warning*, that bump stays silent.
 - **potholeVsBump:** two speed bumps and a pothole are classified correctly on the first drive, warn with the right sound on the second, and the pothole stays silent with *Warn for potholes* off.
+- **potholeSidesAndCounts:** a right-side and a left-side harsh pothole get the right side; a small pothole is counted but silent; trip counts are right.
 - **potholeVsBumpNoGyro:** same, on a phone without a gyroscope.
 - **fastPothole:** at 70 km/h a pothole is still recorded, an ordinary jolt is rejected.
 - **quietWhenSlow:** at 18 km/h there's no warning (logged as `beep_quiet`); with the setting at 0 it warns.

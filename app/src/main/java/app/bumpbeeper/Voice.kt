@@ -1,0 +1,80 @@
+package app.bumpbeeper
+
+import android.content.Context
+import android.media.AudioAttributes
+import android.media.AudioFocusRequest
+import android.media.AudioManager
+import android.speech.tts.TextToSpeech
+import android.speech.tts.UtteranceProgressListener
+import java.util.Locale
+
+/**
+ * Spoken pothole warnings ("Pothole on the right. Keep left."), using the phone's own text-to-speech
+ * (works offline once the voice is installed). Like the beeps, it plays as navigation voice: through the car's
+ * Bluetooth if connected, music ducks. [onUnavailable] is used if speech isn't ready (e.g. no voice installed).
+ */
+class Voice(ctx: Context, private val onUnavailable: () -> Unit) {
+    private val app = ctx.applicationContext
+    private val am = app.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+    private val attrs = AudioAttributes.Builder()
+        .setUsage(AudioAttributes.USAGE_ASSISTANCE_NAVIGATION_GUIDANCE)
+        .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+        .build()
+    private val focus = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK).setAudioAttributes(attrs).build()
+    @Volatile private var ready = false
+    private var lang = ""
+    private var n = 0
+    private val tts: TextToSpeech = TextToSpeech(app) { status -> ready = status == TextToSpeech.SUCCESS }
+
+    init {
+        tts.setAudioAttributes(attrs)
+        tts.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
+            override fun onStart(utteranceId: String?) {}
+            override fun onDone(utteranceId: String?) { am.abandonAudioFocusRequest(focus) }
+            @Deprecated("Deprecated in Android") override fun onError(utteranceId: String?) { am.abandonAudioFocusRequest(focus) }
+        })
+    }
+
+    /** Warn about a pothole ahead, telling which side it is on and which way to keep. */
+    fun pothole(side: Side) = say(Phrases.pothole(Prefs.voiceLang(app), side))
+
+    fun say(text: String) {
+        val code = Prefs.voiceLang(app)
+        if (!ready) { onUnavailable(); return }
+        if (code != lang) {
+            val r = tts.setLanguage(if (code == "ar") Locale("ar", "EG") else Locale.US)
+            if (r == TextToSpeech.LANG_MISSING_DATA || r == TextToSpeech.LANG_NOT_SUPPORTED) {
+                // Arabic voice not installed: fall back to English rather than staying silent.
+                if (code == "ar") tts.setLanguage(Locale.US) else { onUnavailable(); return }
+            }
+            lang = code
+        }
+        am.requestAudioFocus(focus)
+        if (tts.speak(text, TextToSpeech.QUEUE_FLUSH, null, "w${n++}") != TextToSpeech.SUCCESS) {
+            am.abandonAudioFocusRequest(focus)
+            onUnavailable()
+        }
+    }
+
+    fun shutdown() {
+        tts.stop()
+        tts.shutdown()
+    }
+}
+
+/** What the voice says. "Keep left" means: move to the left within your lane, around the pothole. */
+object Phrases {
+    fun pothole(lang: String, side: Side): String = if (lang == "ar") {
+        when (side) {
+            Side.RIGHT -> "حفرة على اليمين. خليك شمال."
+            Side.LEFT -> "حفرة على الشمال. خليك يمين."
+            Side.UNKNOWN -> "حفرة قدام."
+        }
+    } else {
+        when (side) {
+            Side.RIGHT -> "Pothole on the right. Keep left."
+            Side.LEFT -> "Pothole on the left. Keep right."
+            Side.UNKNOWN -> "Pothole ahead."
+        }
+    }
+}

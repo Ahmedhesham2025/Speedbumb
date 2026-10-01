@@ -45,9 +45,9 @@ class MainActivity : Activity() {
     private lateinit var traceInfo: TextView
 
     private val ui = Handler(Looper.getMainLooper())
-    private var mapCount = 0
-    private var mapMuted = 0
+    private var counts: BumpDb.Counts? = null
     private var wasRecording = false
+    private var voice: Voice? = null
 
     private val ticker = object : Runnable {
         override fun run() {
@@ -86,6 +86,21 @@ class MainActivity : Activity() {
     override fun onPause() {
         ui.removeCallbacks(ticker)
         super.onPause()
+    }
+
+    override fun onDestroy() {
+        voice?.shutdown()
+        super.onDestroy()
+    }
+
+    /** "Test pothole voice": says the warning for a pothole on the right, in the chosen language. */
+    private fun testVoice() {
+        val first = voice == null
+        val v = voice ?: Voice(this) {
+            ui.post { toast("No text-to-speech voice ready on this phone: potholes will use the two-tone sound") }
+        }.also { voice = it }
+        // Speech takes a moment to start up the first time.
+        ui.postDelayed({ v.pothole(Side.RIGHT) }, if (first) 1500L else 0L)
     }
 
     // ---------------------------------------------------------------- layout
@@ -210,12 +225,36 @@ class MainActivity : Activity() {
         add(slider(Prefs.MAX_BUMP_KMH, 30, 80, 5, Prefs.maxBumpKmh(this)) {
             "Jolts above $it km/h aren't speed bumps (potholes still count)"
         }, 8)
-        add(checkbox("Warn for potholes too (falling two-tone sound)", Prefs.WARN_POTHOLES, Prefs.warnPotholes(this)), 8)
-        add(checkbox("Loud warnings (alarm volume, phone speaker)", Prefs.LOUD, Prefs.loud(this)))
+        // ---- potholes
+        section("POTHOLES")
+        add(label(12f, dim = true).apply {
+            text = "Every pothole is recorded and counted. Only harsh ones get a voice warning that says which side it's on, " +
+                "e.g. \"Pothole on the right. Keep left.\" (keep left within your lane)."
+        }, 4)
+        add(checkbox("Voice warning for harsh potholes", Prefs.WARN_POTHOLES, Prefs.warnPotholes(this)), 4)
+        add(slider(Prefs.HARSH_MS2, 4, 10, 1, Prefs.harshMs2(this)) {
+            "Harsh = average jolt of $it m/s² or more (" + when {
+                it <= 5 -> "warns for most potholes)"
+                it <= 7 -> "the ones you really feel)"
+                else -> "only the worst ones)"
+            }
+        }, 8)
+        val langGroup = RadioGroup(this).apply { orientation = RadioGroup.HORIZONTAL }
+        listOf("en" to "English voice", "ar" to "صوت عربي").forEach { (code, name) ->
+            val rb = RadioButton(this).apply { text = name; id = View.generateViewId(); tag = code }
+            langGroup.addView(rb, RadioGroup.LayoutParams(0, RadioGroup.LayoutParams.WRAP_CONTENT, 1f))
+            if (code == Prefs.voiceLang(this)) rb.isChecked = true
+        }
+        langGroup.setOnCheckedChangeListener { g, checkedId ->
+            val code = g.findViewById<RadioButton>(checkedId)?.tag as? String ?: "en"
+            Prefs.sp(this).edit().putString(Prefs.VOICE_LANG, code).apply()
+        }
+        add(langGroup, 4)
+        add(button("Test pothole voice") { testVoice() }, 4)
+        add(checkbox("Loud beeps (alarm volume, phone speaker)", Prefs.LOUD, Prefs.loud(this)), 8)
         add(checkbox("Soft tick when a new bump is recorded", Prefs.CLICK_ON_NEW, Prefs.clickOnNew(this)))
 
-        add(row(button("Test bump beep") { Beeper(this).beep(2) }, button("Test pothole sound") { Beeper(this).pothole() }), 12)
-        add(button("Mute last warning") { muteLast() }, 4)
+        add(row(button("Test bump beep") { Beeper(this).beep(2) }, button("Mute last warning") { muteLast() }), 12)
         add(label(12f, dim = true).apply {
             text = "Warned for nothing? Tap Mute last warning and that spot stays silent from now on."
         }, 2)
@@ -259,7 +298,7 @@ class MainActivity : Activity() {
 
     private fun refresh() {
         val rec = LiveState.recording
-        if (wasRecording && !rec) { loadMapCounts(); updateTraceInfo() }
+        if (wasRecording != rec) { loadMapCounts(); updateTraceInfo() }
         wasRecording = rec
 
         startBtn.text = if (rec) "Stop" else "Start recording"
@@ -276,14 +315,22 @@ class MainActivity : Activity() {
             }
             stats.text = String.format(
                 Locale.US,
-                "Speed      %s\nOn map     %d (%d muted)\nThis trip  %d hit · %d new · %d warnings\n           %d missed · %.1f km\nPotholes   %s",
-                speed, LiveState.bumpsOnMap, LiveState.mutedBumps,
-                LiveState.tripHits, LiveState.tripNew, LiveState.tripBeeps, LiveState.tripMisses, LiveState.tripKm, holes,
+                "Speed      %s\nOn map     %d bumps · %d potholes (%d harsh)\n" +
+                    "This trip  %d hit · %d new · %d warnings\n           %d missed · %.1f km\n" +
+                    "Potholes   %d hit this trip (%d harsh)\nDetection  %s",
+                speed, LiveState.bumpsOnMap - LiveState.potholesOnMap, LiveState.potholesOnMap, LiveState.harshOnMap,
+                LiveState.tripHits, LiveState.tripNew, LiveState.tripBeeps, LiveState.tripMisses, LiveState.tripKm,
+                LiveState.tripPotholes, LiveState.tripHarshPotholes, holes,
             )
         } else {
             status.text = "Stopped"
             status.setTextColor(GRAY)
-            stats.text = String.format(Locale.US, "On map     %d (%d muted)", mapCount, mapMuted)
+            val c = counts
+            stats.text = if (c == null) "" else String.format(
+                Locale.US,
+                "Speed bumps  %d\nPotholes     %d (%d harsh)\nNot sure     %d\nMuted        %d",
+                c.bumps, c.potholes, c.harsh, c.unsure, c.muted,
+            )
         }
         lastEvent.text = LiveState.lastEvent
         lastIgnored.text = LiveState.lastIgnored
@@ -295,8 +342,8 @@ class MainActivity : Activity() {
         Thread {
             val db = BumpDb(applicationContext)
             try {
-                val (n, m) = db.counts()
-                ui.post { mapCount = n; mapMuted = m }
+                val c = db.counts(Prefs.engineConfig(this))
+                ui.post { counts = c }
             } finally {
                 db.close()
             }
@@ -473,7 +520,7 @@ class MainActivity : Activity() {
             val db = BumpDb(applicationContext)
             val ok = try {
                 val stamp = SimpleDateFormat("yyyy-MM-dd_HHmm", Locale.US).format(Date())
-                CsvExport.save(this, "bumps_$stamp.csv", db.bumpsCsv()) &&
+                CsvExport.save(this, "bumps_$stamp.csv", db.bumpsCsv(Prefs.engineConfig(this))) &&
                     CsvExport.save(this, "events_$stamp.csv", db.eventsCsv())
             } finally {
                 db.close()
@@ -526,8 +573,7 @@ class MainActivity : Activity() {
                     val db = BumpDb(applicationContext)
                     try { db.clearAll() } finally { db.close() }
                     ui.post {
-                        mapCount = 0
-                        mapMuted = 0
+                        loadMapCounts()
                         LiveState.lastEvent = "Map cleared"
                         toast("Map cleared")
                     }

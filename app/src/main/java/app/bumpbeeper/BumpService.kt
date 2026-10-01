@@ -108,6 +108,7 @@ class BumpService : Service(), SensorEventListener, LocationListener, EngineList
     private var running = false
     private lateinit var db: BumpDb
     private lateinit var beeper: Beeper
+    private var voice: Voice? = null
     private var thread: HandlerThread? = null
     private var handler: Handler? = null
     private val main = Handler(Looper.getMainLooper())
@@ -194,6 +195,7 @@ class BumpService : Service(), SensorEventListener, LocationListener, EngineList
 
         db = BumpDb(this)
         beeper = Beeper(this)
+        voice = Voice(this) { beeper.pothole() }   // no speech available → the two-tone pothole sound instead
         tripId = db.startTrip(System.currentTimeMillis())
 
         val t = HandlerThread("bump-engine").also { it.start() }
@@ -278,6 +280,9 @@ class BumpService : Service(), SensorEventListener, LocationListener, EngineList
 
         wakeLock?.let { if (it.isHeld) it.release() }
         wakeLock = null
+        // Let a warning that is still being spoken finish.
+        voice?.let { v -> main.postDelayed({ v.shutdown() }, 5000) }
+        voice = null
         LiveState.recording = false
         if (!LiveState.lastEvent.startsWith("Car disconnected")) LiveState.lastEvent = "Stopped"
         stopForeground(STOP_FOREGROUND_REMOVE)
@@ -347,20 +352,26 @@ class BumpService : Service(), SensorEventListener, LocationListener, EngineList
 
     // ---------------------------------------------------------------- engine events (engine thread)
 
+    private fun describe(b: Bump): String = when {
+        b.kind != BumpKind.POTHOLE -> b.kind.label
+        b.side == Side.UNKNOWN -> if (b.isHarsh(engine?.cfg ?: EngineConfig())) "harsh pothole" else "pothole"
+        else -> (if (b.isHarsh(engine?.cfg ?: EngineConfig())) "harsh pothole, " else "pothole, ") + b.side.label
+    }
+
     override fun onNewBump(b: Bump) {
-        LiveState.lastEvent = "New ${b.kind.label} recorded (#${b.id})"
+        LiveState.lastEvent = "New ${describe(b)} recorded (#${b.id})"
         if (Prefs.clickOnNew(this)) beeper.click()
         engine?.let { publish(it, force = true) }
     }
 
     override fun onKnownBumpHit(b: Bump) {
-        LiveState.lastEvent = "Hit known ${b.kind.label} #${b.id} (felt ${b.hits} of ${b.passes} times)"
+        LiveState.lastEvent = "Hit known ${describe(b)} #${b.id} (felt ${b.hits} of ${b.passes} times)"
         engine?.let { publish(it, force = true) }
     }
 
     override fun onBeep(b: Bump, distanceM: Double, speedKmh: Double) {
-        beeper.warn(b, speedKmh)
-        LiveState.lastEvent = String.format(Locale.US, "WARNING: %s #%d in %.0f m", b.kind.label, b.id, distanceM)
+        if (b.kind == BumpKind.POTHOLE) voice?.pothole(b.side) else beeper.warn(b, speedKmh)
+        LiveState.lastEvent = String.format(Locale.US, "WARNING: %s #%d in %.0f m", describe(b), b.id, distanceM)
         engine?.let { publish(it, force = true) }
     }
 
@@ -398,6 +409,10 @@ class BumpService : Service(), SensorEventListener, LocationListener, EngineList
         LiveState.tripBeeps = tr.beeps
         LiveState.tripMisses = tr.misses
         LiveState.tripKm = tr.distanceM / 1000.0
+        LiveState.tripPotholes = tr.potholes
+        LiveState.tripHarshPotholes = tr.harshPotholes
+        LiveState.potholesOnMap = eng.bumps.count { it.kind == BumpKind.POTHOLE }
+        LiveState.harshOnMap = eng.bumps.count { it.isHarsh(eng.cfg) }
 
         val now = SystemClock.elapsedRealtime()
         if (force || now - lastNotifMs > 5000) {

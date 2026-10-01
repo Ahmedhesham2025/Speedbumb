@@ -46,8 +46,12 @@ class DriveSpec(
     val crawlAt: List<Double> = emptyList(),
     /** Speed the driver slows to for bumps. */
     val bumpKmh: Double = 15.0,
-    /** Potholes: the driver doesn't slow down; one wheel drops in (car rolls), down-first jolt. */
+    /** Harsh potholes under the right wheels: the driver doesn't slow down; the car rolls, down-first jolt. */
     val potholesAt: List<Double> = emptyList(),
+    /** Harsh potholes under the left wheels. */
+    val potholesLeftAt: List<Double> = emptyList(),
+    /** Small potholes (right wheels): felt and recorded, but not harsh. */
+    val smallPotholesAt: List<Double> = emptyList(),
     /** Cruising speed between bumps. */
     val cruiseKmh: Double = 50.0,
     /** Phone has a gyroscope. */
@@ -131,7 +135,10 @@ class Simulator(seed: Long) {
         val slowFor = (spec.bumpsAt + spec.silentBumpsAt).map { Pair(travel(it), spec.bumpKmh / 3.6) } +
             spec.crawlAt.map { Pair(travel(it), 8 / 3.6) }
         val jolts = spec.oneOffJoltsAt.map { travel(it) }
-        val potholes = spec.potholesAt.map { travel(it) }
+        // (distance travelled, side: +1 right / -1 left, jolt size)
+        val potholes = spec.potholesAt.map { Triple(travel(it), 1.0, 7.0) } +
+            spec.potholesLeftAt.map { Triple(travel(it), -1.0, 7.0) } +
+            spec.smallPotholesAt.map { Triple(travel(it), 1.0, 4.2) }
         val zones = spec.slowZonesAt.map { travel(it) }
         val handling = spec.handlingAt?.let { travel(it) }
 
@@ -170,7 +177,7 @@ class Simulator(seed: Long) {
 
         val history = ArrayList<DoubleArray>()   // (t, s, v)
         val crossings = ArrayList<DoubleArray>() // (time, amplitude)
-        val holeHits = ArrayList<DoubleArray>()  // (time, amplitude)
+        val holeHits = ArrayList<DoubleArray>()  // (time, amplitude, side)
         var lastFixT = -1.0
         var handlingStart = -1.0
         val fwdTrace = ArrayList<String>()
@@ -197,9 +204,9 @@ class Simulator(seed: Long) {
                 if (s < sb + 2.6 && sNew >= sb + 2.6) crossings.add(doubleArrayOf(t, 0.8 * bumpAmp(vNew))) // rear axle
             }
             for (sj in jolts) if (s < sj && sNew >= sj) crossings.add(doubleArrayOf(t, 6.0))
-            for (sp in potholes) {
-                if (s < sp && sNew >= sp) holeHits.add(doubleArrayOf(t, 7.0))               // front wheel
-                if (s < sp + 2.6 && sNew >= sp + 2.6) holeHits.add(doubleArrayOf(t, 5.0))   // rear wheel, same side
+            for ((sp, side, amp) in potholes) {
+                if (s < sp && sNew >= sp) holeHits.add(doubleArrayOf(t, amp, side))                    // front wheel
+                if (s < sp + 2.6 && sNew >= sp + 2.6) holeHits.add(doubleArrayOf(t, 0.7 * amp, side))  // rear wheel, same side
             }
             if (handling != null && handlingStart < 0 && s < handling && sNew >= handling) handlingStart = t
 
@@ -216,11 +223,12 @@ class Simulator(seed: Long) {
 
             // Rotation (car axes: roll about forward, pitch about left, yaw about up), rad/s.
             // Bumps tip the car nose-up/down (pitch); a pothole under one wheel rocks it sideways (roll).
+            // Positive roll (about the forward axis) = left side up, right side down: a right-wheel pothole starts positive.
             var roll = gauss(0.02)
             var pitch = gauss(0.02)
             val yaw = gauss(0.01)
             for (c in crossings) pitch += swing(t - c[0], 0.05 * c[1], 0.2)
-            for (c in holeHits) { roll += swing(t - c[0], 0.08 * c[1], 0.15); pitch += swing(t - c[0], 0.015 * c[1], 0.15) }
+            for (c in holeHits) { roll += c[2] * swing(t - c[0], 0.08 * c[1], 0.15); pitch += swing(t - c[0], 0.015 * c[1], 0.15) }
             crossings.removeAll { t - it[0] > 0.5 }
             holeHits.removeAll { t - it[0] > 0.5 }
 

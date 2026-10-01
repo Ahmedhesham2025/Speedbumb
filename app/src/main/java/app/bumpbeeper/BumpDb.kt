@@ -15,7 +15,7 @@ import java.util.Locale
  *  events – everything that happened (new bump, hit, miss, beep, rejected jolt) → for tuning
  *  trips  – one row per Start…Stop
  */
-class BumpDb(ctx: Context) : SQLiteOpenHelper(ctx, "bumps.db", null, 2), BumpStore {
+class BumpDb(ctx: Context) : SQLiteOpenHelper(ctx, "bumps.db", null, 3), BumpStore {
 
     init {
         setWriteAheadLoggingEnabled(true)
@@ -29,7 +29,7 @@ class BumpDb(ctx: Context) : SQLiteOpenHelper(ctx, "bumps.db", null, 2), BumpSto
                 hits INTEGER NOT NULL, passes INTEGER NOT NULL, misses INTEGER NOT NULL,
                 n_pos INTEGER NOT NULL, first_seen INTEGER NOT NULL, last_seen INTEGER NOT NULL,
                 user_muted INTEGER NOT NULL DEFAULT 0,
-                kind_score REAL NOT NULL DEFAULT 0, kind_votes INTEGER NOT NULL DEFAULT 0)"""
+                kind_score REAL NOT NULL DEFAULT 0, kind_votes INTEGER NOT NULL DEFAULT 0,
         )
         db.execSQL(
             """CREATE TABLE events(
@@ -52,6 +52,12 @@ class BumpDb(ctx: Context) : SQLiteOpenHelper(ctx, "bumps.db", null, 2), BumpSto
             db.execSQL("ALTER TABLE bumps ADD COLUMN kind_score REAL NOT NULL DEFAULT 0")
             db.execSQL("ALTER TABLE bumps ADD COLUMN kind_votes INTEGER NOT NULL DEFAULT 0")
         }
+        if (oldVersion < 3) {
+            // Version 3: which side a pothole is on, and how harsh it is.
+            db.execSQL("ALTER TABLE bumps ADD COLUMN side_score REAL NOT NULL DEFAULT 0")
+            db.execSQL("ALTER TABLE bumps ADD COLUMN side_votes INTEGER NOT NULL DEFAULT 0")
+            db.execSQL("ALTER TABLE bumps ADD COLUMN peak_avg REAL NOT NULL DEFAULT 0")
+        }
     }
 
     // ---------------- BumpStore (used by the engine) ----------------
@@ -60,14 +66,14 @@ class BumpDb(ctx: Context) : SQLiteOpenHelper(ctx, "bumps.db", null, 2), BumpSto
         val out = ArrayList<Bump>()
         readableDatabase.rawQuery(
             "SELECT id, lat, lon, heading, hits, passes, misses, n_pos, first_seen, last_seen, user_muted, " +
-                "kind_score, kind_votes FROM bumps", null
+                "kind_score, kind_votes, side_score, side_votes, peak_avg FROM bumps", null
         ).use { c ->
             while (c.moveToNext()) {
                 out.add(
                     Bump(
                         c.getLong(0), c.getDouble(1), c.getDouble(2), c.getDouble(3),
                         c.getInt(4), c.getInt(5), c.getInt(6), c.getInt(7), c.getLong(8), c.getLong(9),
-                        c.getInt(10) != 0, c.getDouble(11), c.getInt(12),
+                        c.getInt(10) != 0, c.getDouble(11), c.getInt(12), c.getDouble(13), c.getInt(14), c.getDouble(15),
                     )
                 )
             }
@@ -124,10 +130,15 @@ class BumpDb(ctx: Context) : SQLiteOpenHelper(ctx, "bumps.db", null, 2), BumpSto
 
     // ---------------- screen helpers ----------------
 
-    /** (total bumps, muted bumps) */
-    fun counts(cfg: EngineConfig = EngineConfig()): Pair<Int, Int> {
-        val bumps = loadBumps()
-        return Pair(bumps.size, bumps.count { it.isMuted(cfg) })
+    class Counts(val total: Int, val muted: Int, val bumps: Int, val potholes: Int, val harsh: Int, val unsure: Int)
+
+    fun counts(cfg: EngineConfig = EngineConfig()): Counts {
+        val all = loadBumps()
+        return Counts(
+            all.size, all.count { it.isMuted(cfg) },
+            all.count { it.kind == BumpKind.BUMP }, all.count { it.kind == BumpKind.POTHOLE },
+            all.count { it.isHarsh(cfg) }, all.count { it.kind == BumpKind.UNSURE },
+        )
     }
 
     fun clearAll() {
@@ -142,7 +153,7 @@ class BumpDb(ctx: Context) : SQLiteOpenHelper(ctx, "bumps.db", null, 2), BumpSto
 
     fun bumpsCsv(cfg: EngineConfig = EngineConfig()): String {
         val sb = StringBuilder(
-            "id,lat,lon,heading,hits,passes,misses,hit_rate,muted,first_seen,last_seen,kind,kind_score,kind_votes,user_muted\n"
+            "id,lat,lon,heading,hits,passes,misses,hit_rate,muted,first_seen,last_seen,kind,kind_score,kind_votes,user_muted,harsh,side,side_score,side_votes,peak_avg_ms2\n"
         )
         for (b in loadBumps()) {
             sb.append(b.id).append(',')
@@ -152,7 +163,9 @@ class BumpDb(ctx: Context) : SQLiteOpenHelper(ctx, "bumps.db", null, 2), BumpSto
                 .append(num(b.hitRate, 2)).append(',').append(if (b.isMuted(cfg)) 1 else 0).append(',')
                 .append(time(b.firstSeen)).append(',').append(time(b.lastSeen)).append(',')
                 .append(b.kind.name.lowercase()).append(',').append(num(b.kindScore, 2)).append(',')
-                .append(b.kindVotes).append(',').append(if (b.userMuted) 1 else 0).append('\n')
+                .append(b.kindVotes).append(',').append(if (b.userMuted) 1 else 0).append(',')
+                .append(if (b.isHarsh(cfg)) 1 else 0).append(',').append(b.side.name.lowercase()).append(',')
+                .append(num(b.sideScore, 2)).append(',').append(b.sideVotes).append(',').append(num(b.peakAvg, 2)).append('\n')
         }
         return sb.toString()
     }

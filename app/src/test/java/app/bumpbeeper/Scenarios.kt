@@ -200,6 +200,46 @@ object Scenarios {
         check(t3.beepBumpIds.size == 2 && BumpKind.POTHOLE !in t3.beepKinds, "only the 2 speed bumps should warn: ${t3.beepKinds}")
     }
 
+    /**
+     * Potholes: which wheel hits them (left/right) is learned, every pothole is counted,
+     * and only the harsh ones warn (the small one is counted but silent).
+     */
+    fun potholeSidesAndCounts() {
+        log("potholeSidesAndCounts")
+        val sim = Simulator(41)
+        val store = MemoryStore()
+        val cfg = EngineConfig()
+        val spec = DriveSpec(
+            bumpsAt = listOf(300.0), potholesAt = listOf(700.0), potholesLeftAt = listOf(1100.0),
+            smallPotholesAt = listOf(1500.0), cruiseKmh = 40.0,
+        )
+        val t1 = sim.drive(store, spec, tripId = 1)
+        describe("trip 1", t1)
+        log("    potholes hit=${t1.stats.potholes} new=${t1.stats.newPotholes} harsh=${t1.stats.harshPotholes}")
+        check(t1.newBumps == 4, "trip 1 should record 1 bump + 3 potholes, got ${t1.newBumps}")
+        check(t1.stats.potholes == 3 && t1.stats.newPotholes == 3, "all 3 potholes should be counted: ${t1.stats.potholes}/${t1.stats.newPotholes}")
+        check(t1.stats.harshPotholes == 2, "2 of them are harsh, got ${t1.stats.harshPotholes}")
+
+        val right = nearest(store, sim, 700.0)
+        val left = nearest(store, sim, 1100.0)
+        val small = nearest(store, sim, 1500.0)
+        for ((name, b) in listOf("right@700" to right, "left@1100" to left, "small@1500" to small)) {
+            log(String.format(Locale.US, "  %s: %s side=%s (%.2f) peak=%.1f harsh=%b", name, b.kind, b.side, b.sideScore, b.peakAvg, b.isHarsh(cfg)))
+        }
+        check(right.kind == BumpKind.POTHOLE && right.side == Side.RIGHT && right.isHarsh(cfg), "700 should be a harsh pothole on the right")
+        check(left.kind == BumpKind.POTHOLE && left.side == Side.LEFT && left.isHarsh(cfg), "1100 should be a harsh pothole on the left")
+        check(small.kind == BumpKind.POTHOLE && !small.isHarsh(cfg), "1500 should be a small (not harsh) pothole")
+
+        val t2 = sim.drive(store, spec, tripId = 2)
+        describe("trip 2", t2)
+        check(t2.stats.potholes == 3, "trip 2 should count all 3 potholes again, got ${t2.stats.potholes}")
+        check(t2.beepKinds == listOf(BumpKind.BUMP, BumpKind.POTHOLE, BumpKind.POTHOLE),
+            "trip 2: bump beep + 2 harsh pothole warnings, small one silent; got ${t2.beepKinds}")
+        check(small.id !in t2.beepBumpIds, "the small pothole must not warn")
+        check(Phrases.pothole("en", right.side) == "Pothole on the right. Keep left.", "right-side phrase")
+        check(Phrases.pothole("en", left.side) == "Pothole on the left. Keep right.", "left-side phrase")
+    }
+
     /** Without a gyroscope the up-first / down-first clue alone still separates them. */
     fun potholeVsBumpNoGyro() {
         log("potholeVsBumpNoGyro")

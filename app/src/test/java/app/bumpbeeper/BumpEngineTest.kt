@@ -12,6 +12,7 @@ class BumpEngineTest {
     @Test fun userMute() = Scenarios.userMute()
     @Test fun potholeVsBump() = Scenarios.potholeVsBump()
     @Test fun potholeVsBumpNoGyro() = Scenarios.potholeVsBumpNoGyro()
+    @Test fun potholeSidesAndCounts() = Scenarios.potholeSidesAndCounts()
     @Test fun fastPothole() = Scenarios.fastPothole()
     @Test fun quietWhenSlow() = Scenarios.quietWhenSlow()
     @Test fun missReportsNearbyJolt() = Scenarios.missReportsNearbyJolt()

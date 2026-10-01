@@ -31,8 +31,14 @@ class BumpsActivity : Activity() {
     private lateinit var list: LinearLayout
     private val ui = Handler(Looper.getMainLooper())
     private var bumps: List<Bump> = emptyList()
-    private val cfg = EngineConfig()
+    private lateinit var cfg: EngineConfig
     private var firstLoad = true
+
+    private fun describe(b: Bump): String = when {
+        b.kind != BumpKind.POTHOLE -> b.kind.label
+        else -> (if (b.isHarsh(cfg)) "harsh pothole" else "pothole") +
+            (if (b.side != Side.UNKNOWN) ", ${b.side.label}" else "")
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -111,6 +117,7 @@ class BumpsActivity : Activity() {
     // ---------------------------------------------------------------- data
 
     private fun reload() {
+        cfg = Prefs.engineConfig(this)
         Thread {
             val db = BumpDb(applicationContext)
             val loaded = try { db.loadBumps() } finally { db.close() }
@@ -152,9 +159,13 @@ class BumpsActivity : Activity() {
 
         val nBump = loaded.count { it.kind == BumpKind.BUMP }
         val nHole = loaded.count { it.kind == BumpKind.POTHOLE }
+        val nHarsh = loaded.count { it.isHarsh(cfg) }
+        val nLeft = loaded.count { it.kind == BumpKind.POTHOLE && it.side == Side.LEFT }
+        val nRight = loaded.count { it.kind == BumpKind.POTHOLE && it.side == Side.RIGHT }
         val nUnsure = loaded.count { it.kind == BumpKind.UNSURE }
         val nMuted = loaded.count { it.isMuted(cfg) }
-        summary.text = "${loaded.size} on the map: $nBump speed bumps, $nHole potholes, $nUnsure not sure yet · $nMuted muted"
+        summary.text = "${loaded.size} on the map: $nBump speed bumps, $nHole potholes " +
+            "($nHarsh harsh · $nLeft on the left · $nRight on the right), $nUnsure not sure yet · $nMuted muted"
 
         list.removeAllViews()
         val refLat = me?.latitude ?: map.centerLat
@@ -166,7 +177,7 @@ class BumpsActivity : Activity() {
             val dist = if (d >= 1000) String.format(Locale.US, "%.1f km", d / 1000) else String.format(Locale.US, "%.0f m", d)
             val muted = if (b.isMuted(cfg)) " · muted" else ""
             list.addView(label(15f).apply {
-                text = "#${b.id}  ${b.kind.label} · $dist $dir · felt ${b.hits}/${b.passes}$muted"
+                text = "#${b.id}  ${describe(b)} · $dist $dir · felt ${b.hits}/${b.passes}$muted"
                 setTextColor(map.colorOf(b))
                 setPadding(0, dp(10), 0, dp(10))
                 setOnClickListener {
@@ -195,14 +206,17 @@ class BumpsActivity : Activity() {
     private fun showActions(b: Bump) {
         val date = SimpleDateFormat("d MMM yyyy", Locale.US).format(Date(b.firstSeen))
         val info = String.format(
-            Locale.US, "%s · felt %d of %d passes · first seen %s\nPothole score %.2f from %d hits (−1 bump … +1 pothole)",
-            b.kind.label, b.hits, b.passes, date, b.kindScore, b.kindVotes,
+            Locale.US, "%s · felt %d of %d passes · average jolt %.1f m/s² · first seen %s\n" +
+                "Pothole score %.2f from %d hits (−1 bump … +1 pothole)",
+            describe(b), b.hits, b.passes, b.peakAvg, date, b.kindScore, b.kindVotes,
         )
         val actions = arrayOf(
             "Open in Google Maps",
             if (b.userMuted) "Unmute" else "Mute (never warn here)",
             "It's a speed bump",
             "It's a pothole",
+            "Pothole is on the left",
+            "Pothole is on the right",
             "Delete",
         )
         AlertDialog.Builder(this)
@@ -213,7 +227,9 @@ class BumpsActivity : Activity() {
                     1 -> edit(b) { it.userMuted = !it.userMuted }
                     2 -> edit(b) { it.kindScore = -1.0; it.kindVotes = maxOf(it.kindVotes, 10) }
                     3 -> edit(b) { it.kindScore = 1.0; it.kindVotes = maxOf(it.kindVotes, 10) }
-                    4 -> confirmDelete(b)
+                    4 -> edit(b) { it.sideScore = -1.0; it.sideVotes = maxOf(it.sideVotes, 10) }
+                    5 -> edit(b) { it.sideScore = 1.0; it.sideVotes = maxOf(it.sideVotes, 10) }
+                    6 -> confirmDelete(b)
                 }
             }
             .setNegativeButton("Close", null)
@@ -221,7 +237,7 @@ class BumpsActivity : Activity() {
     }
 
     private fun openInMaps(b: Bump) {
-        val label = Uri.encode("Bump Beeper #${b.id} (${b.kind.label})")
+        val label = Uri.encode("Bump Beeper #${b.id} (${describe(b)})")
         val uri = Uri.parse(String.format(Locale.US, "geo:%.7f,%.7f?q=%.7f,%.7f(%s)", b.lat, b.lon, b.lat, b.lon, label))
         try {
             startActivity(Intent(Intent.ACTION_VIEW, uri))
@@ -269,7 +285,7 @@ class BumpsActivity : Activity() {
     private fun shareMap() {
         Thread {
             val db = BumpDb(applicationContext)
-            val csv = try { db.bumpsCsv() } finally { db.close() }
+            val csv = try { db.bumpsCsv(cfg) } finally { db.close() }
             val stamp = SimpleDateFormat("yyyy-MM-dd_HHmm", Locale.US).format(Date())
             val uri = CsvExport.saveUri(this, "bumps_shared_$stamp.csv", csv)
             ui.post {

@@ -49,8 +49,10 @@ class EngineConfig {
     var maxAlertDistM = 250.0
     /** Don't beep if you are already slower than this: you have clearly seen it. 0 = always beep. (setting) */
     @Volatile var quietBelowKmh = 20.0
-    /** Beep for spots that look like potholes. (setting) */
+    /** Voice warning for harsh potholes. Smaller potholes are recorded and counted, but stay silent. (setting) */
     @Volatile var warnPotholes = true
+    /** A pothole whose hits average at least this jolt is "harsh" (≈ 0.6 g). (setting) */
+    @Volatile var harshPotholeMs2 = 6.0
     /** Only beep for bumps within this sideways distance of your path (ignores parallel service roads). */
     var maxCrossTrackM = 20.0
     /** Start watching a bump when it is this close and ahead of you. */
@@ -84,6 +86,8 @@ class JoltShape(
     val firstDown: Boolean,
     /** Side-to-side rocking ÷ front-to-back rocking. NaN if the gyroscope or the car's forward direction is unknown. */
     val rollRatio: Double,
+    /** Which wheel hit it: -1 left, +1 right, 0 can't tell (no gyroscope, or the car didn't rock sideways). */
+    val side: Int = 0,
 ) {
     val usedGyro: Boolean get() = !rollRatio.isNaN()
 
@@ -94,7 +98,8 @@ class JoltShape(
             else -> "unsure"
         }
         val roll = if (usedGyro) String.format(Locale.US, " roll/pitch=%.2f", rollRatio) else " no-gyro"
-        return String.format(Locale.US, "looks=%s score=%.2f first=%s%s", kind, score, if (firstDown) "down" else "up", roll)
+        val s = when (side) { -1 -> " side=left"; 1 -> " side=right"; else -> "" }
+        return String.format(Locale.US, "looks=%s score=%.2f first=%s%s%s", kind, score, if (firstDown) "down" else "up", roll, s)
     }
 }
 
@@ -394,7 +399,27 @@ class BumpEngine(
         val ratio = rollRms / max(pitchRms, 0.03)
         val rollScore = (ln(max(ratio, 1e-3)) / ln(3.0)).coerceIn(-1.0, 1.0)   // 3× more roll → +1, 3× more pitch → -1
         val score = (signScore + 2.0 * rollScore) / 3.0
-        return JoltShape(score, firstDown, ratio)
+
+        // Which wheel? The car first tips towards the wheel that drops into the hole.
+        // Rotation about the forward axis is positive when the left side rises and the right side drops
+        // (right-hand rule: forward × left = up), so a positive first swing means the right wheel hit it.
+        var side = 0
+        if (ratio >= 1.5) {
+            val mean = sr / n
+            var maxDev = 0.0
+            for (i in 0 until bufCount) {
+                val k = (bufHead - bufCount + i + BUF) % BUF
+                if (bufT[k] < start - 100 || bufT[k] > start + 400) continue
+                maxDev = max(maxDev, abs(bufGx[k] * fx + bufGy[k] * fy + bufGz[k] * fz - mean))
+            }
+            for (i in 0 until bufCount) {
+                val k = (bufHead - bufCount + i + BUF) % BUF
+                if (bufT[k] < start - 100 || bufT[k] > start + 400) continue
+                val dev = bufGx[k] * fx + bufGy[k] * fy + bufGz[k] * fz - mean
+                if (abs(dev) >= 0.5 * maxDev) { side = if (dev > 0) 1 else -1; break }
+            }
+        }
+        return JoltShape(score, firstDown, ratio, side)
     }
 
     /** Unit vector of the car's forward direction in phone axes, or null while it is still unknown. */
@@ -435,7 +460,10 @@ class BumpEngine(
             // First time here → record it. No beep: we are already on top of it.
             val b = Bump(0, lat, lon, heading, hits = 1, passes = 1, misses = 0, nPos = 1, firstSeen = now, lastSeen = now)
             b.addKindVote(shape.score)
+            if (shape.side != 0) b.addSideVote(shape.side)
+            b.addPeak(peak, 0)
             b.id = store.insertBump(b)
+            if (b.kind == BumpKind.POTHOLE) countPothole(b, isNew = true)
             bumps.add(b)
             val a = Approach(tMs, 0.0)
             a.beeped = true; a.counted = true; a.hit = true
@@ -464,9 +492,12 @@ class BumpEngine(
         b.lon += (lon - b.lon) * w
         b.heading = Geo.blendAngle(b.heading, heading, w)
         b.nPos++
+        b.addPeak(peak, b.hits)
         b.hits++
         b.lastSeen = now
         b.addKindVote(shape.score)
+        if (shape.side != 0) b.addSideVote(shape.side)
+        if (b.kind == BumpKind.POTHOLE) countPothole(b, isNew = false)
 
         if (a != null) {
             a.hit = true
@@ -488,6 +519,13 @@ class BumpEngine(
             "hits ${b.hits}/${b.passes} now=${b.kind.name.lowercase()} ${shape.describe()}",
         )
         listener.onKnownBumpHit(b)
+    }
+
+    /** Every pothole driven into is counted, harsh or not. */
+    private fun countPothole(b: Bump, isNew: Boolean) {
+        trip.potholes++
+        if (isNew) trip.newPotholes++
+        if (b.isHarsh(cfg)) trip.harshPotholes++
     }
 
     // =====================================================================
@@ -577,7 +615,8 @@ class BumpEngine(
 
             // Beep: close enough for our speed, straight ahead, on our side of the road, not muted.
             val crossTrack = d * sin(Math.toRadians(aheadDiff))
-            val wanted = !b.isMuted(cfg) && (cfg.warnPotholes || b.kind != BumpKind.POTHOLE)
+            // Speed bumps always warn; potholes only when harsh (smaller ones are counted, but stay silent).
+            val wanted = !b.isMuted(cfg) && (b.kind != BumpKind.POTHOLE || (cfg.warnPotholes && b.isHarsh(cfg)))
             if (!a.beeped && moving && dirDiff <= cfg.headingTolDeg && d <= alertDist &&
                 aheadDiff <= 45.0 && crossTrack <= cfg.maxCrossTrackM && wanted
             ) {
