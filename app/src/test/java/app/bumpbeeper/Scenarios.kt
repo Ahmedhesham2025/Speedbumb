@@ -344,6 +344,10 @@ object Scenarios {
         val store = MemoryStore()
         val r = sim.drive(store, DriveSpec(cruiseKmh = 100.0, hardBrakesAt = listOf(900.0, 1600.0)))
         describeDriving("aggressive", r.driving)
+        store.events.filter { it.type in setOf("harsh_brake", "harsh_accel", "speeding") }.forEach {
+            log(String.format(Locale.US, "    %s at %.0f km/h: %s", it.type, it.speedKmh, it.note))
+        }
+        r.forwardTrace.forEach { log("    $it") }
         val d = r.driving
         check(d.harshBrakes == 2, "expected 2 harsh brakes, got ${d.harshBrakes}")
         check(d.harshAccels == 0, "speeding up again normally is not harsh, got ${d.harshAccels}")
