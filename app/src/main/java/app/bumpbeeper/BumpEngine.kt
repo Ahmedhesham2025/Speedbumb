@@ -163,6 +163,11 @@ class BumpEngine(
     private var bufCount = 0
 
     // ---------- which way is forward ----------
+    // Gravity alone (≈30 s average). The 1 s "slow" estimate above tilts along with a long speed-up or braking
+    // and would hide it; over 30 s speeding up and braking cancel out, leaving just gravity.
+    private var gravX = 0.0
+    private var gravY = 0.0
+    private var gravZ = 0.0
     // Horizontal part of the accelerometer (≈1 s average) and its correlation with GPS speed changes.
     // Speeding up pushes it forward, braking backward, so the sum points at the car's nose.
     private var horX = 0.0
@@ -211,6 +216,7 @@ class BumpEngine(
         if (!accelReady) {
             slowX = x; slowY = y; slowZ = z
             fastX = x; fastY = y; fastZ = z
+            gravX = x; gravY = y; gravZ = z
             accelReady = true
             lastAccelMs = tMs
             return
@@ -234,11 +240,18 @@ class BumpEngine(
         lastVertical = v
         if (abs(v) > maxVertSinceFix) maxVertSinceFix = abs(v)
 
-        // The rest is horizontal (speeding up, braking, cornering). Averaged, it shows which way is forward.
-        val hx = x - along * slowX / g
-        val hy = y - along * slowY / g
-        val hz = z - along * slowZ / g
-        horX += aSlow * (hx - horX); horY += aSlow * (hy - horY); horZ += aSlow * (hz - horZ)
+        // The rest, measured against gravity alone, is horizontal (speeding up, braking, cornering).
+        // Averaged and matched with GPS speed changes, it shows which way is forward.
+        val aGrav = dt / (30.0 + dt)
+        gravX += aGrav * (x - gravX); gravY += aGrav * (y - gravY); gravZ += aGrav * (z - gravZ)
+        val gg = sqrt(gravX * gravX + gravY * gravY + gravZ * gravZ)
+        if (gg > 5.0) {
+            val alongG = (x * gravX + y * gravY + z * gravZ) / gg
+            val hx = x - alongG * gravX / gg
+            val hy = y - alongG * gravY / gg
+            val hz = z - alongG * gravZ / gg
+            horX += aSlow * (hx - horX); horY += aSlow * (hy - horY); horZ += aSlow * (hz - horZ)
+        }
 
         bufT[bufHead] = tMs
         bufV[bufHead] = v
@@ -252,7 +265,9 @@ class BumpEngine(
         val cosTilt = ((slowX * fastX + slowY * fastY + slowZ * fastZ) / (g * f)).coerceIn(-1.0, 1.0)
         if (Math.toDegrees(acos(cosTilt)) > cfg.tiltRejectDeg) {
             lastUnstableMs = tMs
-            // It may sit differently when it is put back: learn "forward" again.
+            // It may sit differently when it is put back: learn gravity and "forward" again.
+            gravX = slowX; gravY = slowY; gravZ = slowZ
+            horX = 0.0; horY = 0.0; horZ = 0.0
             fwdX = 0.0; fwdY = 0.0; fwdZ = 0.0; fwdWeight = 0.0
         }
 
@@ -336,8 +351,8 @@ class BumpEngine(
         if (!gyroSeen || fwd == null) return JoltShape(signScore, firstDown, Double.NaN)
 
         // Roll axis = forward; pitch axis = up × forward (pointing left).
-        val g = sqrt(slowX * slowX + slowY * slowY + slowZ * slowZ)
-        val ux = slowX / g; val uy = slowY / g; val uz = slowZ / g
+        val g = sqrt(gravX * gravX + gravY * gravY + gravZ * gravZ)
+        val ux = gravX / g; val uy = gravY / g; val uz = gravZ / g
         val (fx, fy, fz) = fwd
         val lx = uy * fz - uz * fy
         val ly = uz * fx - ux * fz
@@ -367,9 +382,9 @@ class BumpEngine(
     /** Unit vector of the car's forward direction in phone axes, or null while it is still unknown. */
     private fun forwardUnit(): Triple<Double, Double, Double>? {
         if (fwdWeight < 6.0) return null
-        val g = sqrt(slowX * slowX + slowY * slowY + slowZ * slowZ)
+        val g = sqrt(gravX * gravX + gravY * gravY + gravZ * gravZ)
         if (g < 5.0) return null
-        val ux = slowX / g; val uy = slowY / g; val uz = slowZ / g
+        val ux = gravX / g; val uy = gravY / g; val uz = gravZ / g
         val d = fwdX * ux + fwdY * uy + fwdZ * uz
         val x = fwdX - d * ux; val y = fwdY - d * uy; val z = fwdZ - d * uz
         val n = sqrt(x * x + y * y + z * z)

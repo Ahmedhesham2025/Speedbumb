@@ -182,6 +182,10 @@ object Scenarios {
         val hole = nearest(store, sim, 900.0)
         log("  @900: ${hole.kind} score ${String.format(Locale.US, "%.2f", hole.kindScore)}")
         check(hole.kind == BumpKind.POTHOLE, "spot at 900 should be a pothole, got ${hole.kind} (${hole.kindScore})")
+        // The gyroscope clue must really have been used (not just up-first / down-first).
+        val notes = store.events.filter { it.type == "new_bump" }.map { it.note }
+        log("  notes: $notes")
+        check(notes.all { "roll/pitch" in it }, "every new spot should be judged with the gyroscope: $notes")
 
         val t2 = sim.drive(store, spec, tripId = 2)
         describe("trip 2", t2)
