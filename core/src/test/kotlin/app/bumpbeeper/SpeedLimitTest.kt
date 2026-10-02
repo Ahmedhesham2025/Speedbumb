@@ -86,8 +86,9 @@ class SpeedLimitTest {
         val c1 = RouteSampler.chunks(dense)
         assertEquals(listOf(5000, 5000, 2000), c1.map { it.size })
         assertChunksOk(dense, c1)
-        // 3000 points 80 m apart (240 km): split by distance.
+        // 3000 points 80 m apart (240 km): split by distance, 80 km each.
         val sparse = line(3000, 80.0)
+        assertEquals(80_000.0, RouteSampler.MAX_CHUNK_M, 0.0)
         val c2 = RouteSampler.chunks(sparse)
         assertEquals(3, c2.size)
         assertChunksOk(sparse, c2)

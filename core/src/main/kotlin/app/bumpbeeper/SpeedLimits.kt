@@ -43,7 +43,8 @@ object RouteSampler {
     const val SPACING_M = 50.0
     const val SPACING_MS = 5_000L
     const val MAX_POINTS = 5_000
-    const val MAX_CHUNK_M = 100_000.0
+    /** TomTom allows 100 km of road per request; the straight-line sum of our points can be shorter than the road. */
+    const val MAX_CHUNK_M = 80_000.0
     const val MAX_ACCURACY_M = 30.0
     const val MAX_GAP_M = 5_000.0
 
