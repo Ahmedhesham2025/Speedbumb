@@ -1,0 +1,129 @@
+# Checks every pull request and every push to main. No secrets here: signed builds only happen in release.yml.
+#
+# Only the jobs whose files changed run; `ci-gate` sums them up and is the single required check for merging.
+# Every PR that touches the app gets a debug APK (package app.bumpbeeper.dev) under the run's Artifacts:
+# it installs next to the real app, so testing it never touches your saved bumps.
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: read   # paths-filter reads the PR's changed files
+
+# A newer push to the same PR makes the older run pointless.
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      core: ${{ steps.filter.outputs.core }}
+      app: ${{ steps.filter.outputs.app }}
+      ci: ${{ steps.filter.outputs.ci }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            core:
+              - 'core/**'
+            app:
+              - 'app/**'
+              - '*.gradle.kts'
+              - 'gradle/**'
+              - 'gradle.properties'
+            ci:
+              - '.github/**'
+
+  core-test:
+    needs: changes
+    # Pushes to main and manual runs always test everything.
+    if: >-
+      github.event_name != 'pull_request' ||
+      needs.changes.outputs.core == 'true' ||
+      needs.changes.outputs.app == 'true' ||
+      needs.changes.outputs.ci == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Simulated-drive tests
+        run: chmod +x gradlew && ./gradlew :core:test
+      - name: Test count
+        if: always()
+        run: |
+          # Sum the JUnit XML results so the number of tests shows in the log and on the run page.
+          files=$(find core/build/test-results -name 'TEST-*.xml' 2>/dev/null)
+          if [ -z "$files" ]; then echo "No test results found."; exit 0; fi
+          sum() { grep -ho "<testsuite [^>]*" $files | grep -o " $1=\"[0-9]*\"" | grep -o '[0-9]*' | awk '{s+=$1} END {print s+0}'; }
+          line="core tests: $(sum tests) run, $(sum failures) failed, $(sum errors) errors, $(sum skipped) skipped"
+          echo "$line"
+          echo "### $line" >> "$GITHUB_STEP_SUMMARY"
+
+  app-build:
+    needs: changes
+    if: >-
+      github.event_name != 'pull_request' ||
+      needs.changes.outputs.core == 'true' ||
+      needs.changes.outputs.app == 'true' ||
+      needs.changes.outputs.ci == 'true'
+    runs-on: ubuntu-latest
+    env:
+      APK_NAME: BumpBeeper-dev-${{ github.event_name == 'pull_request' && format('pr{0}', github.event.pull_request.number) || github.sha }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Build debug APK and run app unit tests
+        run: chmod +x gradlew && ./gradlew assembleDebug testDebugUnitTest
+      # Lint reports existing issues without blocking merges yet; the report is uploaded below.
+      - name: Lint (not blocking yet)
+        continue-on-error: true
+        run: ./gradlew lintDebug
+      - name: Name the APK
+        run: cp app/build/outputs/apk/debug/app-debug.apk "$APK_NAME.apk"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.APK_NAME }}
+          path: ${{ env.APK_NAME }}.apk
+          retention-days: 30
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: lint-report
+          path: app/build/reports/lint-results-debug.html
+          if-no-files-found: ignore
+          retention-days: 14
+
+  # The one required check. Skipped jobs (nothing relevant changed) count as fine.
+  ci-gate:
+    needs: [changes, core-test, app-build]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: All needed jobs passed or were skipped
+        env:
+          RESULTS: ${{ needs.changes.result }} ${{ needs.core-test.result }} ${{ needs.app-build.result }}
+        run: |
+          echo "changes / core-test / app-build: $RESULTS"
+          for r in $RESULTS; do
+            if [ "$r" = "failure" ] || [ "$r" = "cancelled" ]; then
+              echo "::error::A required job ended with '$r'."
+              exit 1
+            fi
+          done
