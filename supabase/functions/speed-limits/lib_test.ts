@@ -153,8 +153,7 @@ Deno.test("no user is 401, bad input is 400, neither spends quota", async () => 
 Deno.test("a Content-Length over 1 MB is 400 before the body is read, auth or quota", async () => {
   let authed = 0;
   const { deps, calls } = fakeDeps({ userId: () => (authed++, Promise.resolve("user-1")) });
-  const req = new Request("http://x", { method: "POST", body: "{}", headers: { "Content-Length": "1000001" } });
-  const res = await handle(req, deps);
+  const res = await handle(new Request("http://x", { method: "POST", body: "{}", headers: { "Content-Length": "1000001" } }), deps);
   assertEquals(res.status, 400);
   assertEquals((await res.json()).message, "body too large");
   assertEquals([authed, calls.quota, calls.fetch], [0, 0, 0]);
@@ -188,10 +187,7 @@ Deno.test("missing key, quota failure, TomTom error, timeout or bad shape are 50
     assertEquals(JSON.parse(text), { error: "unavailable" });
     assert(!text.includes("TEST-KEY") && !text.includes("tomtom.com"));
   }
-});
-
-Deno.test("a missing key does not spend quota", async () => {
-  const { deps, calls } = fakeDeps({ apiKey: undefined });
-  await handle(post({ points: pts(2) }), deps);
-  assertEquals(calls.quota, 0);
+  const noKey = fakeDeps({ apiKey: undefined });
+  await handle(post({ points: pts(2) }), noKey.deps);
+  assertEquals(noKey.calls.quota, 0, "a missing key does not spend quota");
 });
