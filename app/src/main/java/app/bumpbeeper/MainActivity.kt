@@ -4,6 +4,7 @@ import android.Manifest
 import android.annotation.SuppressLint
 import android.app.Activity
 import android.app.AlertDialog
+import android.app.Dialog
 import android.bluetooth.BluetoothManager
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -26,7 +27,9 @@ import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
 import app.bumpbeeper.crash.CrashLog
+import app.bumpbeeper.sync.Sync
 import app.bumpbeeper.sync.UpdateCheck
+import app.bumpbeeper.ui.SyncChoice
 import java.net.URI
 import java.util.Locale
 
@@ -54,10 +57,14 @@ class MainActivity : Activity() {
     private var update: UpdateCheck.Update? = null
     private var updateAsked = false
     private var updateDismissed = false
+    private var syncDialog: Dialog? = null
 
     private val ticker = object : Runnable {
         override fun run() {
             pages.getOrNull(current)?.tick()
+            // Recording started (e.g. auto start with the car) while the question was open: get it out of the way.
+            // dismiss(), not cancel(), so it doesn't count as "Decide later" and is asked again on a later resume.
+            if (LiveState.recording) syncDialog?.let { it.dismiss(); syncDialog = null }
             // Keep the screen on while recording with the Drive tab open (it's a dashboard).
             if (LiveState.recording && current == TAB_DRIVE) window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
             else window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
@@ -68,6 +75,7 @@ class MainActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         CrashLog.install(this)   // first, so a crash while building the screen is kept too
+        Sync.onAppStart(this)    // no network until the user answered the shared-map question
         window.statusBarColor = Ui.BG
         window.navigationBarColor = Ui.SURFACE
         setContentView(buildShell())
@@ -106,6 +114,7 @@ class MainActivity : Activity() {
             updateAsked = true
             UpdateCheck.latest(this) { u -> update = u }
         }
+        askSyncChoice()
     }
 
     override fun onPause() {
@@ -114,6 +123,8 @@ class MainActivity : Activity() {
     }
 
     override fun onDestroy() {
+        syncDialog?.dismiss()
+        syncDialog = null
         (pages[TAB_SETTINGS] as? SettingsPage)?.release()
         super.onDestroy()
     }
@@ -179,6 +190,21 @@ class MainActivity : Activity() {
     }
 
     fun refreshMap() { mapPage?.onShow() }
+
+    // ---------------------------------------------------------------- shared map question
+
+    /** On every resume until it has been answered (SyncChoice decides when it is due; never while recording). */
+    private fun askSyncChoice() {
+        if (syncDialog != null) return
+        SyncChoice.maybeAsk(this) {
+            if (syncDialog == null && !isFinishing) {
+                syncDialog = SyncChoice.dialog(this) {
+                    syncDialog = null
+                    pages.getOrNull(current)?.onShow()
+                }.also { it.show() }
+            }
+        }
+    }
 
     // ---------------------------------------------------------------- update banner
 
