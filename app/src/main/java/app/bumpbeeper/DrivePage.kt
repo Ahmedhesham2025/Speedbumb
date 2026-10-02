@@ -14,6 +14,7 @@ import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
+import app.bumpbeeper.ui.SyncChoice
 import java.util.Locale
 
 /** The dashboard: one big Start/Stop button, speed, this trip's numbers and score, and what just happened. */
@@ -21,6 +22,7 @@ class DrivePage(private val a: MainActivity) : Page {
     private fun dp(v: Int) = Ui.dp(a, v)
 
     private lateinit var status: TextView
+    private lateinit var syncLine: TextView
     private lateinit var setupCard: LinearLayout
     private lateinit var startBtn: TextView
     private lateinit var speed: TextView
@@ -68,6 +70,15 @@ class DrivePage(private val a: MainActivity) : Page {
             addView(Ui.text(a, 22f, Ui.TEXT, bold = true, value = a.getString(R.string.app_name)), LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
             addView(status)
         })
+        // Shared map, one quiet line (never a popup here: this screen is used while driving).
+        syncLine = Ui.text(a, 12f, Ui.DIM).apply {
+            gravity = Gravity.END or Gravity.CENTER_VERTICAL
+            minHeight = dp(48)   // a real touch target, though the text stays small
+            setPadding(0, 0, dp(4), 0)
+            isClickable = true
+            setOnClickListener { if (!LiveState.recording) a.select(MainActivity.TAB_SETTINGS) }
+        }
+        add(syncLine)
 
         // "New version available" banner; filled in by tick() once MainActivity's update check answers.
         updateCard = Ui.card(a).apply {
@@ -284,6 +295,9 @@ class DrivePage(private val a: MainActivity) : Page {
             else -> a.getString(R.string.drive_status_waiting_gps)
         }
         status.setTextColor(when { !rec -> Ui.DIM; gpsOk -> Ui.GREEN; else -> Ui.ORANGE })
+        val line = SyncChoice.driveLine(a)
+        if (syncLine.text.toString() != line) syncLine.text = line
+        syncLine.visibility = if (line.isEmpty()) View.GONE else View.VISIBLE
 
         speed.text = if (gpsOk) a.getString(R.string.drive_speed_kmh, String.format(Locale.US, "%.0f", LiveState.speedKmh))
             else if (rec) a.getString(R.string.drive_speed_unknown) else ""
