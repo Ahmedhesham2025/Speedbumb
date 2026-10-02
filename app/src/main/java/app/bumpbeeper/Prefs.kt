@@ -19,6 +19,16 @@ object Prefs {
     const val AUTO_START = "auto_start"
     const val CAR_ADDRESS = "car_address"
     const val CAR_NAME = "car_name"
+    /** Label mode: the driver taps what they just drove over; forces a recording even with debug recording off. */
+    const val LABEL_MODE = "label_mode"
+    /** Where the phone sits in the car (written into recordings): mounted | cupholder | pocket | unknown. */
+    const val PLACEMENT = "placement"
+    val PLACEMENTS = listOf("mounted", "cupholder", "pocket", "unknown")
+    /** Update check: when it last asked GitHub, and the newer version it found (if any). */
+    const val UPDATE_CHECKED_AT = "update_checked_at"
+    const val UPDATE_VERSION = "update_version"
+    const val UPDATE_URL = "update_url"
+    const val UPDATE_HTML_URL = "update_html_url"
 
     fun sp(ctx: Context): SharedPreferences = ctx.getSharedPreferences("settings", Context.MODE_PRIVATE)
 
@@ -53,6 +63,15 @@ object Prefs {
         cfg.speedLimitKmh = speedLimit(ctx).toDouble()
     }
     fun debugRecording(ctx: Context): Boolean = sp(ctx).getBoolean(DEBUG_RECORDING, false)
+
+    fun labelMode(ctx: Context): Boolean = sp(ctx).getBoolean(LABEL_MODE, false)
+    fun setLabelMode(ctx: Context, on: Boolean) = sp(ctx).edit().putBoolean(LABEL_MODE, on).apply()
+    /** A recording file is written when debug recording or label mode is on. */
+    fun recordTrace(ctx: Context): Boolean = debugRecording(ctx) || labelMode(ctx)
+
+    fun placement(ctx: Context): String = sp(ctx).getString(PLACEMENT, "unknown")?.takeIf { it in PLACEMENTS } ?: "unknown"
+    fun setPlacement(ctx: Context, value: String) =
+        sp(ctx).edit().putString(PLACEMENT, if (value in PLACEMENTS) value else "unknown").apply()
 
     fun autoStart(ctx: Context): Boolean = sp(ctx).getBoolean(AUTO_START, false)
     fun carAddress(ctx: Context): String? = sp(ctx).getString(CAR_ADDRESS, null)
