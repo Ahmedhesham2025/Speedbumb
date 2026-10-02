@@ -106,6 +106,8 @@ object Metrics {
     const val MATCH_M = 15.0
     /** The distance gate grows by speed × time gap, with the time gap capped here. */
     const val MAX_GAP_S = 2.0
+    /** The engine logs a detection this long after the jolt it placed (EngineConfig.decideAfterMs). */
+    val DECIDE_MS = EngineConfig().decideAfterMs
     const val WARN_M = 30.0
     const val FAST_KMH = 25.0
     /** A label after the last GPS fix is moved on from that fix for at most this long. */
@@ -160,7 +162,7 @@ object Metrics {
         return if (abs(f.tMs - tMs) <= 3000) f.speedKmh else Double.NaN
     }
 
-    /** Distance gate for a label at [speedKmh] and a detection [dtMs] away: 15 m + speed × |dt| (dt ≤ 2 s). */
+    /** Distance gate for a label at [speedKmh] tapped [dtMs] from the detection's jolt: 15 m + speed × |dt| (dt ≤ 2 s). */
     fun gateM(speedKmh: Double, dtMs: Long): Double =
         MATCH_M + (if (speedKmh.isNaN()) 0.0 else speedKmh / 3.6) * min(abs(dtMs) / 1000.0, MAX_GAP_S)
 
@@ -174,8 +176,9 @@ object Metrics {
         for ((i, l) in labels.withIndex()) for ((j, d) in dets.withIndex()) {
             val dt = abs(d.tMs - l.tMs)
             if (dt > MATCH_MS) continue
-            // A label without GPS is matched on time alone.
-            val gate = gateM(speedsKmh.getOrElse(i) { Double.NaN }, dt)
+            // The detection is placed at the jolt but logged when the engine decides, DECIDE_MS later; the car moved
+            // on from the jolt for as long as the tap came after it. A label without GPS is matched on time alone.
+            val gate = gateM(speedsKmh.getOrElse(i) { Double.NaN }, l.tMs - (d.tMs - DECIDE_MS))
             if (l.lat.isNaN() || Geo.distance(l.lat, l.lon, d.lat, d.lon) <= gate) pairs.add(Triple(dt, i, j))
         }
         val out = HashMap<Int, Int>()

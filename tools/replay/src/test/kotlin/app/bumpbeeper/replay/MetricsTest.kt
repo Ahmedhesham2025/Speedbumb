@@ -88,9 +88,9 @@ class MetricsTest {
     }
 
     @Test fun fastHitsGetAWiderGate() {
-        // 54 km/h: tapped 1 s after the detection, 25 m further on. 15 m alone would call it a miss.
-        val lab = listOf(label(10_000, "bump", 125.0))
-        val det = listOf(Metrics.Detection(9_000, at(100.0)[0], at(100.0)[1], "bump", "unknown"))
+        // 54 km/h: the jolt at 10.0 s (logged 1.2 s later), tapped 1 s after it, 25 m further on. 15 m alone: a miss.
+        val lab = listOf(label(11_000, "bump", 125.0))
+        val det = listOf(Metrics.Detection(11_200, at(100.0)[0], at(100.0)[1], "bump", "unknown"))
         assertEquals(15.0 + 15.0, Metrics.gateM(54.0, 1000), 1e-9)
         assertEquals(15.0 + 30.0, Metrics.gateM(54.0, 5000), 1e-9)      // time gap capped at 2 s
         assertEquals(mapOf(0 to 0), Metrics.match(lab, det, listOf(54.0)))

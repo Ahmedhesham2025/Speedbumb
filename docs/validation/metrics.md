@@ -25,13 +25,13 @@ definition, and the code must match it. Targets are the P1 exit criteria from `R
 ## Match
 Labels and detections are matched within each run. A detection **matches** a label when it is within **±2 s** of it
 and within **15 m + speed × |Δt|** of it, where speed is the label's speed (0 if unknown) and Δt is the time between
-the detection and the label, capped at 2 s. The allowance is for fast hits: the tap comes after the wheels hit, so
-the car has already moved on (14 m per second at 50 km/h). A label without GPS is matched on time alone.
+the detection's jolt and the tap, capped at 2 s. The allowance is for fast hits: the tap comes after the wheels hit,
+so the car has already moved on (14 m per second at 50 km/h). A label without GPS is matched on time alone.
 Each label matches at most one detection and vice versa. Hazard labels are paired first, then `rough` ones (so a
 rough tap cannot take a detection away from a hazard); within each group, pairs closest in time go first.
 
-Note: a detection's time is the engine's decision, about 1.2 s after the jolt, so Δt is small when the tap came
-about 1.2 s after the hit; the allowance grows for taps much earlier or later than that.
+The detection's jolt time is its logged time minus the engine's decision delay (`EngineConfig.decideAfterMs`,
+1.2 s): the engine places a detection at the jolt but logs it when it decides. The ±2 s window uses the logged time.
 
 ## Metrics and targets
 

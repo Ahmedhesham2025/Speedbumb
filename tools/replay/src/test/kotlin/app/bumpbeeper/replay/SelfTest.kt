@@ -109,7 +109,8 @@ class SelfTest {
         val runs = replayRuns(listOf("sim-gyro" to simulatedRun(Simulator(41))))
         val r = Metrics.compute(runs)
         println(r.toMarkdown("simulated, gyroscope, potholes at 40 km/h"))
-        runs[0].result.events.filter { it.type == "new_bump" || it.type == "hit" }.forEach { println("  ${it.type} ${it.note}") }
+        val dets = Metrics.detections(runs[0].result.events)
+        for (l in runs[0].labels) for (d in dets) println(String.format(java.util.Locale.US, "  label %s t=%d  det %s t=%d  %.1f m", l.kind, l.tMs, d.kind, d.tMs, Geo.distance(l.lat, l.lon, d.lat, d.lon)))
         assertEquals(3, r.labels)
         assertEquals(3, r.detections)
         assertEquals(1.0, r.precision, 1e-9)
