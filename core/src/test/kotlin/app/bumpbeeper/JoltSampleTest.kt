@@ -71,7 +71,10 @@ class JoltSampleTest {
         // Muting a spot felt on this trip gives a user_mute sample at once, around that hit.
         eng2.muteBump(store.saved.first().id)
         assertEquals(listOf("hit", "user_mute"), s2.map { it.decision })
-        assertEquals(s2[0].window.accel.toList(), s2[1].window.accel.toList())
+        // Same moment (the hit), and by now the full 2 s after it is in the buffer.
+        assertEquals(s2[0].window.preMs, s2[1].window.preMs)
+        assertEquals(s2[0].window.accel.toList(), s2[1].window.accel.take(s2[0].window.accel.size))
+        assertEquals(4 * 50 + 1, s2[1].window.accel.size)
 
         val s3 = ArrayList<JoltSample>()
         drive(store, s3, 60, 8.33)
