@@ -141,6 +141,8 @@ class Simulator(seed: Long) {
         /** Shared-map spots and observation outbox (both off by default). */
         spotSource: SpotSource? = null,
         observationSink: ObservationSink? = null,
+        /** Press "Mute last beep" right after every beep (at the next GPS fix, like the app's button would). */
+        muteEveryBeep: Boolean = false,
     ): TripResult {
         val len = roadLen
         fun travel(p: Double) = if (spec.westbound) len - p else p   // road position ↔ distance travelled
@@ -165,6 +167,7 @@ class Simulator(seed: Long) {
         var newBumps = 0
         var knownHits = 0
         val rejected = ArrayList<String>()
+        var mutePending = false
 
         var recTMs = 0L
         val sink: BumpStore = if (recorder == null) store else object : BumpStore by store {
@@ -180,6 +183,7 @@ class Simulator(seed: Long) {
             override fun onBeep(b: Bump, distanceM: Double, speedKmh: Double) {
                 val car = point(travel(s), spec.westbound)
                 beepIds.add(b.id)
+                if (muteEveryBeep) mutePending = true
                 beepKinds.add(b.kind)
                 beepTrue.add(Geo.distance(car[0], car[1], b.lat, b.lon))
             }
@@ -320,6 +324,7 @@ class Simulator(seed: Long) {
                 val bearing = if (past[2] > 1.0) ((if (spec.westbound) 270.0 else 90.0) + gauss(3.0) + 360) % 360 else Double.NaN
                 recorder?.add(TraceSample.Gps(tMs, n2[0], n2[1], speed * 3.6, bearing, 5.0))
                 engine.onFix(Fix(tMs, n2[0], n2[1], speed, bearing, 5.0))
+                if (mutePending) { mutePending = false; engine.muteBump(engine.lastBeepedId) }
                 mon.onFix(engine.lastFix!!)
                 if (fwdTrace.size < 40 && (t < 12 || ((t + 0.5).toInt() % 5 == 0))) {
                     fwdTrace.add(String.format(java.util.Locale.US, "t=%.0f s=%.0f v=%.1f %s", t, s, v, engine.forwardDebug))

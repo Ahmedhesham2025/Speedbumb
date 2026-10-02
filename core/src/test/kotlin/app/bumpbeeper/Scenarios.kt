@@ -545,6 +545,57 @@ object Scenarios {
         )
     }
 
+    /**
+     * Your own spot and its shared twin can sit up to [EngineConfig.matchRadiusM] apart (GPS lag, jolt timing).
+     * 18 m apart at 24 km/h, two warnings would be 2.7 s apart (an audible double beep): there must be one,
+     * and muting your spot must silence the twin.
+     */
+    fun remoteTwin18m() {
+        log("remoteTwin18m")
+        val sim = Simulator(67)
+        val store = MemoryStore()
+        val spec = DriveSpec(bumpsAt = listOf(800.0), cruiseKmh = 24.0)
+        sim.drive(store, spec, tripId = 1)
+        val local = store.saved.single()
+        val q = Geo.move(local.lat, local.lon, 90.0, 18.0)
+        val source = ListSpotSource(listOf(RemoteSpot(4, q[0], q[1], 90.0, BumpKind.BUMP, Side.UNKNOWN, 5.0, 2)))
+
+        val t2 = sim.drive(store, spec, tripId = 2, spotSource = source)
+        describe("trip 2 (twin 18 m ahead)", t2)
+        check(t2.beepBumpIds == listOf(local.id), "exactly one warning, from your own spot: ${t2.beepBumpIds}")
+        check(remoteBeeps(store, 2).isEmpty(), "the shared twin must not warn")
+
+        BumpEngine(EngineConfig(), store, object : EngineListener {}, { 0L }).muteBump(local.id)
+        val t3 = sim.drive(store, spec, tripId = 3, spotSource = source)
+        describe("trip 3 (own spot muted)", t3)
+        check(t3.beepBumpIds.isEmpty() && remoteBeeps(store, 3).isEmpty(), "muted spot must silence its twin 18 m away: ${t3.beepBumpIds}")
+    }
+
+    /** "Mute last beep" after a shared warning stores a muted spot of your own there: silent from then on. */
+    fun muteSharedSpot() {
+        log("muteSharedSpot")
+        val sim = Simulator(68)
+        val store = MemoryStore()
+        val shared = remoteAt(sim, 5, 800.0)
+        val source = ListSpotSource(listOf(shared))
+
+        val t1 = sim.drive(store, DriveSpec(), tripId = 1, spotSource = source, muteEveryBeep = true)
+        describe("trip 1 (mute the shared beep)", t1)
+        check(t1.beepBumpIds.map { BumpEngine.remoteSpotId(it) } == listOf(5L), "trip 1 warns once for the shared spot: ${t1.beepBumpIds}")
+        val mine = store.saved.single()
+        check(mine.userMuted && mine.hits == 0, "a muted spot of your own is stored (hits ${mine.hits}, muted ${mine.userMuted})")
+        check(Geo.distance(mine.lat, mine.lon, shared.lat, shared.lon) < 0.5 && mine.kind == BumpKind.BUMP, "it sits on the shared spot, same kind")
+        val mute = store.events.single { it.type == "user_mute" }
+        check(mute.bumpId == mine.id && mute.note == "remote 5", "user_mute logged for the new spot: ${mute.bumpId} ${mute.note}")
+
+        for (trip in 2L..3L) {
+            val r = sim.drive(store, DriveSpec(), tripId = trip, spotSource = source)
+            describe("trip $trip", r)
+            check(r.beepBumpIds.isEmpty() && remoteBeeps(store, trip).isEmpty(), "trip $trip: the muted shared spot must stay silent: ${r.beepBumpIds}")
+        }
+        check(store.saved.size == 1, "no extra spots, got ${store.saved.size}")
+    }
+
     fun all(): List<Pair<String, () -> Unit>> = listOf(
         "calmDrivingScoresHigh" to ::calmDrivingScoresHigh,
         "speedingAndHardBraking" to ::speedingAndHardBraking,
@@ -566,5 +617,7 @@ object Scenarios {
         "localMuteSuppressesRemote" to ::localMuteSuppressesRemote,
         "remotePotholeRules" to ::remotePotholeRules,
         "observationsRecorded" to ::observationsRecorded,
+        "remoteTwin18m" to ::remoteTwin18m,
+        "muteSharedSpot" to ::muteSharedSpot,
     )
 }

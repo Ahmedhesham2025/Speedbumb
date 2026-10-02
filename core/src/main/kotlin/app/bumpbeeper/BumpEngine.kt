@@ -80,10 +80,11 @@ class EngineConfig {
     var remoteRefreshMs = 30_000L
     /** ...or after moving this far since the last time. */
     var remoteRefreshMoveM = 300.0
-    /** How far around the car to ask for shared-map spots. */
+    /**
+     * How far around the car to ask for shared-map spots. A spot of your own within [matchRadiusM] (same direction)
+     * replaces a shared one: the same radius that decides a jolt belongs to a known spot, so the two can't drift apart.
+     */
     var remoteRadiusM = 1500.0
-    /** A spot of your own this close (same direction) replaces the shared one: no double warning, and your mute wins. */
-    var remoteDedupRadiusM = 15.0
 }
 
 /**
@@ -125,9 +126,11 @@ class JoltShape(
  *
  * Shared map (both optional; null = behaves exactly as without them):
  *  - [spotSource]: confirmed spots from other phones warn like your own (same lead time, direction, quiet and
- *    harsh-pothole rules), logged as `beep` with a note starting with `remote`. They are never stored and never
- *    count passes. A spot of your own within [EngineConfig.remoteDedupRadiusM] and the same direction replaces
- *    its shared twin, so it warns once, and muting your spot silences the shared one too.
+ *    harsh-pothole rules), logged as `beep` / `beep_quiet` with a note starting with `remote`; in those rows `bumpId` is the
+ *    shared map's server id, not a local spot id. They are never stored and never count passes. A spot of your
+ *    own within [EngineConfig.matchRadiusM] and the same direction replaces its shared twin, so it warns once,
+ *    and muting your spot silences the shared one too. [muteBump] on a shared spot stores a muted spot of your
+ *    own in its place, which silences it for good.
  *    In [EngineListener.onBeep] a shared spot arrives as a stand-in [Bump] with a negative id, see [remoteSpotId].
  *  - [observationSink]: gets a `jolt` for every new spot, a `known_hit` for every hit on a known spot and a
  *    `pass_clear` for every pass that felt nothing at an informative speed (never for crawled-over passes).
@@ -649,7 +652,7 @@ class BumpEngine(
         } catch (e: Exception) {
             return   // a broken cache must not stop the engine; keep what we had
         }
-        remoteAll = spots.filter { it.id >= 0 }.map { r ->
+        remoteAll = spots.filter { it.id in 0 until Long.MAX_VALUE / 2 }.map { r ->
             Bump(
                 -2L - r.id, r.lat, r.lon, r.heading, hits = 0, passes = 0, misses = 0, nPos = 0, firstSeen = 0, lastSeen = 0,
                 kindScore = when (r.kind) { BumpKind.POTHOLE -> 1.0; BumpKind.BUMP -> -1.0; BumpKind.UNSURE -> 0.0 },
@@ -662,12 +665,12 @@ class BumpEngine(
         dedupRemote()
     }
 
-    /** Drop shared spots that have a spot of your own within [EngineConfig.remoteDedupRadiusM] going the same way. */
+    /** Drop shared spots that have a spot of your own within [EngineConfig.matchRadiusM] going the same way. */
     private fun dedupRemote() {
         remoteActive = remoteAll.filter { r ->
             bumps.none { b ->
                 abs(b.lat - r.lat) <= 0.0005 && abs(b.lon - r.lon) <= 0.0006 &&   // quick ~55 m box
-                    Geo.distance(b.lat, b.lon, r.lat, r.lon) <= cfg.remoteDedupRadiusM &&
+                    Geo.distance(b.lat, b.lon, r.lat, r.lon) <= cfg.matchRadiusM &&
                     Geo.angleDiff(b.heading, r.heading) <= cfg.headingTolDeg
             }
         }
@@ -675,10 +678,13 @@ class BumpEngine(
         approaches.keys.removeAll { it <= -2L && it !in keep }
     }
 
-    private fun observe(kind: String, lat: Double, lon: Double, speedKmh: Double, peak: Double, kindScore: Double, sideScore: Double, now: Long) {
+    private fun observe(
+        kind: String, lat: Double, lon: Double, speedKmh: Double, peak: Double, kindScore: Double, sideScore: Double, now: Long,
+        dir: Double = heading,
+    ) {
         val sink = observationSink ?: return
         try {
-            sink.record(Observation(UUID.randomUUID().toString(), kind, lat, lon, heading, speedKmh, peak, kindScore, sideScore, now))
+            sink.record(Observation(UUID.randomUUID().toString(), kind, lat, lon, dir, speedKmh, peak, kindScore, sideScore, now))
         } catch (e: Exception) {
             // A full or broken outbox must not stop detection.
         }
@@ -777,7 +783,7 @@ class BumpEngine(
                     "miss", b.id, f.lat, f.lon, f.speedMps * 3.6, a.maxJoltNear, Double.NaN, a.minDist,
                     "hits ${b.hits}/${b.passes}, $nearNote",
                 )
-                observe("pass_clear", b.lat, b.lon, a.minSpeedNearMps * 3.6, a.maxJoltNear, 0.0, 0.0, wallClock())
+                observe("pass_clear", b.lat, b.lon, a.minSpeedNearMps * 3.6, a.maxJoltNear, 0.0, 0.0, wallClock(), b.heading)
             }
             store.updateBump(b)
         }
@@ -790,15 +796,35 @@ class BumpEngine(
      */
     private fun finishRemotePass(b: Bump, a: Approach, f: Fix) {
         if (a.hit || a.minSpeedNearMps * 3.6 < cfg.minInformativeKmh) return
-        observe("pass_clear", b.lat, b.lon, a.minSpeedNearMps * 3.6, a.maxJoltNear, 0.0, 0.0, wallClock())
+        observe("pass_clear", b.lat, b.lon, a.minSpeedNearMps * 3.6, a.maxJoltNear, 0.0, 0.0, wallClock(), b.heading)
     }
 
-    /** "Mute last beep": silence this bump for good (it stays on the map and in the export). */
+    /**
+     * "Mute last beep": silence this bump for good (it stays on the map and in the export).
+     * For a shared spot (negative stand-in id) a muted spot of your own is stored at its place, so it stays
+     * silent on every later trip, whatever the shared-map cache says.
+     */
     fun muteBump(id: Long): Bump? {
+        if (remoteSpotId(id) != null) return muteRemote(id)
         val b = bumps.firstOrNull { it.id == id } ?: return null
         b.userMuted = true
         store.updateBump(b)
         log("user_mute", b.id, b.lat, b.lon, Double.NaN, Double.NaN, Double.NaN, Double.NaN, "")
+        return b
+    }
+
+    private fun muteRemote(id: Long): Bump? {
+        val r = remoteAll.firstOrNull { it.id == id } ?: return null
+        val now = wallClock()
+        val b = Bump(
+            0, r.lat, r.lon, r.heading, hits = 0, passes = 0, misses = 0, nPos = 1, firstSeen = now, lastSeen = now,
+            userMuted = true, kindScore = r.kindScore, kindVotes = r.kindVotes, sideScore = r.sideScore,
+            sideVotes = r.sideVotes, peakAvg = r.peakAvg,
+        )
+        b.id = store.insertBump(b)
+        bumps.add(b)
+        dedupRemote()   // your muted spot now replaces the shared one
+        log("user_mute", b.id, b.lat, b.lon, Double.NaN, Double.NaN, Double.NaN, Double.NaN, "remote ${remoteSpotId(id)}")
         return b
     }
 
@@ -814,7 +840,8 @@ class BumpEngine(
     companion object {
         /**
          * The shared-map server id behind a stand-in [Bump] handed to [EngineListener.onBeep], or null for a spot
-         * of your own. Shared spots are not in [bumps], so [muteBump] can't mute them (it returns null).
+         * of your own. Shared spots are not in [bumps]; [muteBump] with the stand-in id stores a muted spot of
+         * your own in their place. Server ids must be below Long.MAX_VALUE / 2 (larger ones are ignored).
          */
         fun remoteSpotId(bumpId: Long): Long? = if (bumpId <= -2L) -2L - bumpId else null
 
