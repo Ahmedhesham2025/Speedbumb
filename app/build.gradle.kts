@@ -33,6 +33,9 @@ android {
         versionCode = versionCodeFromTag
         versionName = versionNameFromTag ?: "0.0.0-local"
 
+        // Emulator tests (app/src/androidTest): only the screenshot run in .github/workflows/screenshots.yml so far.
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+
         // Hosted backend (Supabase). Both values are PUBLIC by design: the publishable key is meant to ship inside apps,
         // and Row Level Security protects the data. Never put a service-role/secret key here.
         buildConfigField("String", "SUPABASE_URL", "\"https://gpefcdyuipmspezbsano.supabase.co\"")
@@ -127,4 +130,10 @@ dependencies {
     testImplementation("org.robolectric:robolectric:4.13")
     // The real org.json, so JSON code runs in plain JVM tests (android.jar only has stubs).
     testImplementation("org.json:json:20240303")
+
+    // Emulator tests only (store screenshots), never shipped in the APK.
+    androidTestImplementation("androidx.test:core:1.6.1")
+    androidTestImplementation("androidx.test:runner:1.6.2")
+    androidTestImplementation("androidx.test:rules:1.6.1")
+    androidTestImplementation("androidx.test.ext:junit:1.2.1")
 }
