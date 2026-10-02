@@ -17,9 +17,9 @@ class SupabaseAuth(
     private val baseUrl: String,
     private val key: String,
     private val transport: Transport = UrlTransport,
-    private val now: () -> Long = System::currentTimeMillis,
     /** False for "forget me": a dead session must not quietly become a new device (the old one's data would stay). */
     private val mayCreate: Boolean = true,
+    private val now: () -> Long = System::currentTimeMillis,
 ) {
     private val sp: SharedPreferences = prefs(ctx)
 
