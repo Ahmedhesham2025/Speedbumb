@@ -32,6 +32,7 @@ import app.bumpbeeper.auto.AutoStop
 import app.bumpbeeper.auto.DriveWatcher
 import app.bumpbeeper.auto.PowerPolicy
 import app.bumpbeeper.auto.TripCheck
+import app.bumpbeeper.auto.TripHold
 import app.bumpbeeper.crash.CrashLog
 import app.bumpbeeper.sync.CachedSpotSource
 import app.bumpbeeper.sync.OutboxSink
@@ -604,6 +605,9 @@ class BumpService : Service(), SensorEventListener, LocationListener, EngineList
             monitor?.finish()
             engine?.let { database.endTrip(tripId, System.currentTimeMillis(), it.trip, monitor?.stats) }
             monitor?.stats?.let { LiveState.lastTripScore = it.score() }
+            // Started by itself and never confirmed: hold everything that would leave the phone (#49).
+            val ask = unconfirmed && engine != null
+            if (ask) TripHold.hold(this, tripId)
             // Privacy zone filter, then into the outbox; the upload runs later in the background.
             try {
                 sink?.flush(Prefs.shareBumps(this), System.currentTimeMillis())
@@ -611,7 +615,6 @@ class BumpService : Service(), SensorEventListener, LocationListener, EngineList
                 Log.w(TAG, "outbox not written", e)
             }
             sink = null
-            if (unconfirmed && engine != null) TripCheck.ask(this, tripId)
             unconfirmed = false
             // Speed-limit lookup (opt-in): the route waits on disk for a background job, then is deleted.
             try {
@@ -620,6 +623,7 @@ class BumpService : Service(), SensorEventListener, LocationListener, EngineList
                 Log.w(TAG, "speed-limit lookup not queued: ${e.javaClass.simpleName}")
             }
             route = null
+            if (ask) TripCheck.ask(this, tripId)
             val last = engine?.lastFix
             Sync.afterTrip(this, last?.lat ?: Double.NaN, last?.lon ?: Double.NaN)
             engine = null

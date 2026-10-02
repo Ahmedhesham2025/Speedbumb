@@ -20,7 +20,7 @@ import org.robolectric.RuntimeEnvironment
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 
-/** Trips that started by themselves (#49): their shared-map points wait for "Was this a drive?". */
+/** Trips that started by themselves (#49): their shared-map points wait for "Was this a drive?" (TripHold). */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34])
 class UnconfirmedTripTest {
@@ -28,7 +28,7 @@ class UnconfirmedTripTest {
     private val opened = ArrayList<BumpDb>()
     private val home = doubleArrayOf(30.0900, 31.3200)
     private val work = doubleArrayOf(30.0444, 31.2357)
-    private val day = SyncStore.HELD_MAX_AGE_MS
+    private val day = TripHold.MAX_AGE_MS
 
     @Before fun setUp() {
         ctx = RuntimeEnvironment.getApplication()
@@ -43,6 +43,7 @@ class UnconfirmedTripTest {
 
     /** A home → work trip with one point half-way (outside the privacy zone), flushed at [now]. */
     private fun trip(s: SyncStore, tripId: Long, held: Boolean, now: Long): Int {
+        if (held) TripHold.hold(ctx, tripId, now)   // what BumpService does at the end of an unconfirmed trip
         val sink = OutboxSink(s, tripId, held)
         sink.onFix(home[0], home[1], 5.0)
         sink.onFix(30.0670, 31.2780, 5.0)   // about 6 km driven before the point: outside the privacy zone
@@ -106,7 +107,7 @@ class UnconfirmedTripTest {
         val tripId = d.startTrip(1_000)
         trip(s, tripId, held = true, now = 10_000)
         trip(s, tripId + 1, held = true, now = 10_000 + day / 2)
-        assertEquals(1, s.heldExpire(10_000 + day, day))
+        assertEquals(1, TripHold.expire(ctx, 10_000 + day))
         assertEquals(listOf((tripId + 1) to (10_000 + day / 2)), s.heldTrips())
         assertEquals(0, s.outboxCount())
         assertNotNull(d.trip(tripId))

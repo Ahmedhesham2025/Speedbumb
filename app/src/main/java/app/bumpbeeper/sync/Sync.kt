@@ -13,6 +13,7 @@ import app.bumpbeeper.BuildConfig
 import app.bumpbeeper.BumpDb
 import app.bumpbeeper.LiveState
 import app.bumpbeeper.Prefs
+import app.bumpbeeper.auto.TripHold
 import app.bumpbeeper.TraceWriter
 import app.bumpbeeper.crash.CrashLog
 import org.json.JSONArray
@@ -220,8 +221,8 @@ object Sync {
         if (choice == Prefs.SYNC_UNSET) return false   // not answered yet: no sign-in, no calls at all
         withDb(ctx) { db ->
             val store = SyncStore(db)
-            // "Was this a drive?" unanswered for a day: those held points are never sent.
-            store.heldExpire(System.currentTimeMillis(), SyncStore.HELD_MAX_AGE_MS)
+            // "Was this a drive?" unanswered for a day: held points and routes are deleted unsent.
+            TripHold.expire(ctx)
             if (!lat.isNaN() && !lon.isNaN()) {
                 // Only a rounded position (about 1 km) is kept and sent: enough for a 10 km download circle.
                 store.put(POS_LAT, round2(lat))

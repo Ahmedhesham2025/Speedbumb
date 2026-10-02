@@ -88,7 +88,7 @@ class SyncStore(private val helper: SQLiteOpenHelper) {
         return items.size
     }
 
-    /** Not a drive (or not answered in time): its held elements are deleted, never sent. */
+    /** Not a drive (or not answered in time, [app.bumpbeeper.auto.TripHold]): deleted, never sent. */
     fun heldDrop(tripId: Long) = put("$HELD$tripId", null)
 
     /** Trips with held elements, oldest first: (trip id, held since). */
@@ -102,12 +102,6 @@ class SyncStore(private val helper: SQLiteOpenHelper) {
             out.sortedBy { it.second }
         }
 
-    /** Drops held elements older than [maxAgeMs] (unanswered); the trips themselves stay on the phone. */
-    fun heldExpire(now: Long, maxAgeMs: Long): Int {
-        val old = heldTrips().filter { now - it.second >= maxAgeMs }
-        old.forEach { heldDrop(it.first) }
-        return old.size
-    }
 
     // ---------------- remote spot cache
 
@@ -190,8 +184,6 @@ class SyncStore(private val helper: SQLiteOpenHelper) {
 
     companion object {
         private const val HELD = "held_trip_"
-        /** Unanswered "Was this a drive?": held elements are discarded after this long. */
-        const val HELD_MAX_AGE_MS = 24 * 60 * 60_000L
 
         /** Version 5: creates the sync tables (fresh install and upgrade alike). */
         fun createTables(db: SQLiteDatabase) {

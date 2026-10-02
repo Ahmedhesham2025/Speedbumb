@@ -9,17 +9,14 @@ import android.content.Context
 import android.content.Intent
 import android.graphics.drawable.Icon
 import android.util.Log
-import app.bumpbeeper.BumpDb
 import app.bumpbeeper.R
-import app.bumpbeeper.sync.Sync
-import app.bumpbeeper.sync.SyncStore
 
 /**
  * "Was this a drive?" after a trip that started by itself (motion detection or Google, #49): it may have been a bus,
- * a train or a bike. Until the user answers, the trip's shared-map points are held on the phone ([SyncStore.holdAdd]).
- *  - Yes, I drove: the held points go to the outbox and upload as usual.
- *  - No: the trip, its events and its held points are deleted.
- *  - No answer within 24 h: the held points are dropped (Sync), the trip stays on the phone; the question disappears.
+ * a train or a bike. Until the user answers, everything that would leave the phone is held ([TripHold]).
+ *  - Yes, I drove: the held data is sent as usual.
+ *  - No: the held data, the trip, its events and the spots only it found are deleted.
+ *  - No answer within 24 h: the held data is deleted unsent, the trip stays on the phone; the question disappears.
  * A trip during which the car's Bluetooth connected counts as confirmed and is never asked about.
  */
 object TripCheck {
@@ -50,26 +47,16 @@ object TripCheck {
             .setContentText("A trip was recorded by itself. Were you driving?")
             .addAction(Notification.Action.Builder(icon, "Yes, I drove", button(ACTION_YES, code)).build())
             .addAction(Notification.Action.Builder(icon, "No", button(ACTION_NO, code + 1)).build())
-            .setTimeoutAfter(SyncStore.HELD_MAX_AGE_MS)
+            .setTimeoutAfter(TripHold.MAX_AGE_MS)
             .setAutoCancel(true)
             .build()
         try { nm.notify(notificationId(tripId), n) } catch (_: SecurityException) {}
     }
 
-    /** Background thread: apply the answer. Internal for tests. */
+    /** Background thread: apply the answer ([TripHold]). Internal for tests. */
     internal fun answer(ctx: Context, tripId: Long, drove: Boolean) {
-        val db = BumpDb(ctx)
-        try {
-            val store = SyncStore(db)
-            if (drove) {
-                if (store.heldRelease(tripId) > 0) Sync.afterTrip(ctx, Double.NaN, Double.NaN)   // upload soon
-            } else {
-                store.heldDrop(tripId)
-                db.deleteTrip(tripId)
-            }
-        } finally {
-            db.close()
-        }
+        TripHold.installBuiltIns()
+        if (drove) TripHold.confirm(ctx, tripId) else TripHold.reject(ctx, tripId)
         (ctx.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager).cancel(notificationId(tripId))
     }
 
