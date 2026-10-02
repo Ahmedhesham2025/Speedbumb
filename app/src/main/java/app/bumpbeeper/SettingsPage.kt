@@ -121,6 +121,26 @@ class SettingsPage(private val a: MainActivity) : Page {
             Ui.button(a, "Clear the map", Ui.Style.DANGER) { confirmClear() },
         )
 
+        val place = RadioGroup(a).apply { orientation = RadioGroup.HORIZONTAL }
+        listOf("mounted" to "Mounted", "cupholder" to "Cup holder", "pocket" to "Pocket").forEach { (code, name) ->
+            val rb = RadioButton(a).apply {
+                text = name; tag = code; id = View.generateViewId()
+                setTextColor(Ui.TEXT); buttonTintList = ColorStateList.valueOf(Ui.ACCENT)
+            }
+            place.addView(rb, RadioGroup.LayoutParams(0, RadioGroup.LayoutParams.WRAP_CONTENT, 1f))
+            if (code == Prefs.placement(a)) rb.isChecked = true
+        }
+        place.setOnCheckedChangeListener { g, id -> Prefs.setPlacement(a, g.findViewById<RadioButton>(id)?.tag as? String ?: "unknown") }
+        card("Road testing",
+            Ui.toggle(a, "Label mode",
+                "For a passenger helping test the app: while recording, the Drive tab shows big buttons to mark each bump, " +
+                    "pothole (left / right) and rough patch as you drive over it. Saved with a sensor recording to tune detection.",
+                Prefs.labelMode(a)) { Prefs.setLabelMode(a, it) },
+            Ui.text(a, 15f, Ui.TEXT, value = "Where is the phone?"),
+            place,
+            hint("A phone in a holder feels the road differently from one in a cup holder or pocket. Saved with recordings."),
+        )
+
         traceInfo = hint("")
         card("Debug recording",
             Ui.toggle(a, "Record raw sensor data while driving", "About 12 MB per hour. The last ${TraceWriter.KEEP} drives are kept.", Prefs.debugRecording(a)) {

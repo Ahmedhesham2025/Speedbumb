@@ -97,6 +97,22 @@ object Ui {
         }
     }
 
+    /** An extra-large, high-contrast button for tapping while the car moves (label mode). */
+    fun bigButton(ctx: Context, label: String, bg: Int, fg: Int, onClick: (View) -> Unit): TextView = TextView(ctx).apply {
+        text = label
+        setTextColor(fg)
+        setTextSize(TypedValue.COMPLEX_UNIT_SP, 19f)
+        typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+        gravity = Gravity.CENTER
+        minHeight = dp(ctx, 76)
+        setPadding(dp(ctx, 8), dp(ctx, 10), dp(ctx, 8), dp(ctx, 10))
+        background = RippleDrawable(ColorStateList.valueOf(0x55FFFFFF), rounded(ctx, bg, 16), rounded(ctx, 0xFFFFFFFF.toInt(), 16))
+        isClickable = true
+        isFocusable = true
+        contentDescription = label
+        setOnClickListener { onClick(it) }
+    }
+
     /** Lays views side by side with equal width. */
     fun row(ctx: Context, vararg views: View, gapDp: Int = 8): LinearLayout = LinearLayout(ctx).apply {
         orientation = LinearLayout.HORIZONTAL
