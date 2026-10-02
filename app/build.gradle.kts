@@ -67,6 +67,14 @@ android {
     lint {
         checkReleaseBuilds = false
     }
+
+    // Robolectric needs the merged resources; unmocked android.* calls return defaults instead of throwing.
+    testOptions {
+        unitTests {
+            isIncludeAndroidResources = true
+            isReturnDefaultValues = true
+        }
+    }
 }
 
 kotlin {
@@ -75,7 +83,22 @@ kotlin {
     }
 }
 
+// Show why an app unit test failed, right in the build log.
+tasks.withType<Test>().configureEach {
+    testLogging {
+        events("passed", "skipped", "failed")
+        exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL
+        showStandardStreams = true
+    }
+}
+
 dependencies {
     // The engine lives in :core (pure Kotlin). No other libraries in the app itself.
     implementation(project(":core"))
+
+    // Test-only: never shipped in the APK.
+    testImplementation("junit:junit:4.13.2")
+    testImplementation("org.robolectric:robolectric:4.13")
+    // The real org.json, so JSON code runs in plain JVM tests (android.jar only has stubs).
+    testImplementation("org.json:json:20240303")
 }

@@ -65,7 +65,7 @@ class DrivePage(private val a: MainActivity) : Page {
         add(LinearLayout(a).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            addView(Ui.text(a, 22f, Ui.TEXT, bold = true, value = "Bump Beeper"), LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+            addView(Ui.text(a, 22f, Ui.TEXT, bold = true, value = a.getString(R.string.app_name)), LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
             addView(status)
         })
 
@@ -76,10 +76,10 @@ class DrivePage(private val a: MainActivity) : Page {
         }
         updateText = Ui.text(a, 16f, Ui.TEXT, bold = true)
         updateCard.addView(updateText)
-        updateCard.addView(Ui.text(a, 13f, Ui.DIM, value = "Opens the release page on GitHub. Install it over this app; your map and trips stay."))
+        updateCard.addView(Ui.text(a, 13f, Ui.DIM, value = a.getString(R.string.drive_update_hint)))
         updateCard.addView(Ui.row(a,
-            Ui.button(a, "Download", Ui.Style.PRIMARY) { a.openUpdate() },
-            Ui.button(a, "Not now", Ui.Style.QUIET) { a.dismissUpdate(); updateCard.visibility = View.GONE },
+            Ui.button(a, a.getString(R.string.drive_download), Ui.Style.PRIMARY) { a.openUpdate() },
+            Ui.button(a, a.getString(R.string.common_not_now), Ui.Style.QUIET) { a.dismissUpdate(); updateCard.visibility = View.GONE },
         ).apply { setPadding(0, dp(10), 0, 0) })
         add(updateCard, 12)
 
@@ -114,8 +114,11 @@ class DrivePage(private val a: MainActivity) : Page {
         add(buildLabelPanel(), 12)
 
         // This trip.
-        add(Ui.section(a, "This trip"))
-        val tiles = listOf("Distance", "Time", "Driving score", "Warnings", "Bumps hit", "Potholes").map { Ui.tile(a, it) }
+        add(Ui.section(a, a.getString(R.string.drive_section_this_trip)))
+        val tiles = listOf(
+            R.string.drive_tile_distance, R.string.drive_tile_time, R.string.drive_tile_score,
+            R.string.drive_tile_warnings, R.string.drive_tile_bumps, R.string.drive_tile_potholes,
+        ).map { Ui.tile(a, a.getString(it)) }
         tDist = tiles[0].second; tTime = tiles[1].second; tScore = tiles[2].second
         tWarn = tiles[3].second; tBumps = tiles[4].second; tHoles = tiles[5].second
         add(Ui.grid(a, tiles.map { it.first }, 3))
@@ -129,7 +132,7 @@ class DrivePage(private val a: MainActivity) : Page {
         ev.addView(driveEvent, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { topMargin = dp(4) })
         ev.addView(ignored, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { topMargin = dp(4) })
         add(ev, 12)
-        muteBtn = Ui.button(a, "Mute last warning (false alarm)", Ui.Style.SECONDARY) { a.muteLast() }
+        muteBtn = Ui.button(a, a.getString(R.string.drive_mute_last), Ui.Style.SECONDARY) { a.muteLast() }
         add(muteBtn, 8)
 
         // Jolt meter, folded away by default.
@@ -141,8 +144,7 @@ class DrivePage(private val a: MainActivity) : Page {
         graph = JoltGraphView(a)
         meterCard.addView(meterToggle)
         meterCard.addView(graph, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(120)).apply { topMargin = dp(10) })
-        meterCard.addView(Ui.text(a, 12f, Ui.DIM, value = "Bumps should poke above the dashed line; normal driving should stay below it. " +
-            "If not, change Sensitivity in Settings."))
+        meterCard.addView(Ui.text(a, 12f, Ui.DIM, value = a.getString(R.string.drive_meter_hint)))
         add(meterCard, 12)
         showMeter(Prefs.sp(a).getBoolean(KEY_METER, false))
 
@@ -160,10 +162,10 @@ class DrivePage(private val a: MainActivity) : Page {
             background = Ui.rounded(a, Ui.SURFACE, 18, Ui.LINE)
             visibility = View.GONE
         }
-        labelCard.addView(Ui.text(a, 12f, Ui.ACCENT, bold = true, value = "PASSENGER: TAP WHAT YOU JUST DROVE OVER").apply {
+        labelCard.addView(Ui.text(a, 12f, Ui.ACCENT, bold = true, value = a.getString(R.string.drive_label_header)).apply {
             setPadding(dp(4), 0, 0, 0)
         })
-        labelCard.addView(Ui.text(a, 12f, Ui.DIM, value = "Driver: keep your eyes on the road.").apply {
+        labelCard.addView(Ui.text(a, 12f, Ui.DIM, value = a.getString(R.string.drive_label_driver_note)).apply {
             setPadding(dp(4), dp(2), 0, dp(8))
         })
         fun btn(kind: String, bg: Int, fg: Int) = Ui.bigButton(a, labelName(kind), bg, fg) { v -> tapLabel(v, kind) }
@@ -177,7 +179,7 @@ class DrivePage(private val a: MainActivity) : Page {
         labelStatus = Ui.text(a, 15f, Ui.TEXT, bold = true).apply { setPadding(dp(4), dp(10), 0, 0) }
         labelCard.addView(labelStatus)
         // Turned on mid-trip: the service only accepts labels from the next recording on.
-        labelLater = Ui.text(a, 13f, Ui.DIM, value = "Label mode is on. It starts with the next recording: stop and start again.").apply {
+        labelLater = Ui.text(a, 13f, Ui.DIM, value = a.getString(R.string.drive_label_later)).apply {
             setPadding(dp(4), dp(4), 0, 0)
         }
         labelCard.addView(labelLater)
@@ -187,23 +189,24 @@ class DrivePage(private val a: MainActivity) : Page {
     private fun tapLabel(v: View, kind: String) {
         // A firm buzz, so the passenger knows the tap counted without looking.
         v.performHapticFeedback(if (Build.VERSION.SDK_INT >= 30) HapticFeedbackConstants.CONFIRM else HapticFeedbackConstants.LONG_PRESS)
-        if (!BumpService.label(a, kind)) Toast.makeText(a, "Label not saved: recording isn't in label mode", Toast.LENGTH_SHORT).show()
+        if (!BumpService.label(a, kind)) Toast.makeText(a, a.getString(R.string.drive_label_not_saved), Toast.LENGTH_SHORT).show()
         updateLabelStatus()
     }
 
     private fun updateLabelStatus() {
         val n = LiveState.labelCount
         val last = LiveState.lastLabel
-        val t = if (last.isEmpty()) "No labels yet" else "Last: ${labelName(last)} · $n label${if (n == 1) "" else "s"}"
+        val t = if (last.isEmpty()) a.getString(R.string.drive_label_none)
+            else a.getString(if (n == 1) R.string.drive_label_last_one else R.string.drive_label_last_many, labelName(last), n)
         if (labelStatus.text.toString() != t) labelStatus.text = t
     }
 
     private fun labelName(kind: String): String = when (kind) {
-        Labels.BUMP -> "Bump"
-        Labels.POTHOLE_LEFT -> "Pothole left"
-        Labels.POTHOLE_RIGHT -> "Pothole right"
-        Labels.ROUGH -> "Rough road"
-        Labels.UNDO -> "Undo"
+        Labels.BUMP -> a.getString(R.string.drive_label_bump)
+        Labels.POTHOLE_LEFT -> a.getString(R.string.drive_label_pothole_left)
+        Labels.POTHOLE_RIGHT -> a.getString(R.string.drive_label_pothole_right)
+        Labels.ROUGH -> a.getString(R.string.drive_label_rough)
+        Labels.UNDO -> a.getString(R.string.drive_label_undo)
         else -> kind
     }
 
@@ -214,7 +217,7 @@ class DrivePage(private val a: MainActivity) : Page {
     }
 
     private fun showMeter(on: Boolean) {
-        meterToggle.text = if (on) "Jolt meter  ▾" else "Jolt meter  ▸"
+        meterToggle.text = a.getString(if (on) R.string.drive_meter_open else R.string.drive_meter_closed)
         for (i in 1 until meterCard.childCount) meterCard.getChildAt(i).visibility = if (on) View.VISIBLE else View.GONE
     }
 
@@ -238,12 +241,12 @@ class DrivePage(private val a: MainActivity) : Page {
             })
             rows++
         }
-        setupCard.addView(Ui.text(a, 12f, Ui.ACCENT, bold = true, value = "FINISH SETTING UP").apply { setPadding(0, 0, 0, dp(8)) })
-        if (a.missingBasics().isNotEmpty()) item("Location & notifications", "Needed to know where bumps are and to keep running.", "Allow") { a.requestBasics() }
-        if (!a.batteryOk()) item("Run in the background", "So recording doesn't stop when the screen is off.", "Allow") { a.batterySettings() }
+        setupCard.addView(Ui.text(a, 12f, Ui.ACCENT, bold = true, value = a.getString(R.string.drive_setup_header)).apply { setPadding(0, 0, 0, dp(8)) })
+        if (a.missingBasics().isNotEmpty()) item(a.getString(R.string.drive_setup_location_title), a.getString(R.string.drive_setup_location_why), a.getString(R.string.common_allow)) { a.requestBasics() }
+        if (!a.batteryOk()) item(a.getString(R.string.drive_setup_background_title), a.getString(R.string.drive_setup_background_why), a.getString(R.string.common_allow)) { a.batterySettings() }
         if (!a.autoStartOn() && !Prefs.sp(a).getBoolean(KEY_HIDE_AUTO, false)) {
-            item("Auto start with your car", "Starts and stops by itself with the car's Bluetooth.", "Set up") { a.setupAuto() }
-            setupCard.addView(Ui.button(a, "Not now", Ui.Style.QUIET) {
+            item(a.getString(R.string.drive_setup_auto_title), a.getString(R.string.drive_setup_auto_why), a.getString(R.string.drive_setup_auto_action)) { a.setupAuto() }
+            setupCard.addView(Ui.button(a, a.getString(R.string.common_not_now), Ui.Style.QUIET) {
                 Prefs.sp(a).edit().putBoolean(KEY_HIDE_AUTO, true).apply()
                 onShow()
             })
@@ -263,9 +266,9 @@ class DrivePage(private val a: MainActivity) : Page {
         }
         val mask = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(0xFFFFFFFF.toInt()) }
         startBtn.background = RippleDrawable(ColorStateList.valueOf(0x44FFFFFF), face, mask)
-        startBtn.text = if (rec) "STOP" else "START"
+        startBtn.text = a.getString(if (rec) R.string.drive_stop else R.string.drive_start)
         startBtn.setTextColor(0xFFFFFFFF.toInt())
-        startBtn.contentDescription = if (rec) "Stop recording" else "Start recording"
+        startBtn.contentDescription = a.getString(if (rec) R.string.drive_stop_desc else R.string.drive_start_desc)
     }
 
     override fun tick() {
@@ -276,38 +279,39 @@ class DrivePage(private val a: MainActivity) : Page {
         }
         val gpsOk = rec && LiveState.lastFixAtMs > 0 && SystemClock.elapsedRealtime() - LiveState.lastFixAtMs < 5000
         status.text = when {
-            !rec -> "● Stopped"
-            gpsOk -> "● Recording"
-            else -> "● Waiting for GPS"
+            !rec -> a.getString(R.string.drive_status_stopped)
+            gpsOk -> a.getString(R.string.drive_status_recording)
+            else -> a.getString(R.string.drive_status_waiting_gps)
         }
         status.setTextColor(when { !rec -> Ui.DIM; gpsOk -> Ui.GREEN; else -> Ui.ORANGE })
 
-        speed.text = if (gpsOk) String.format(Locale.US, "%.0f", LiveState.speedKmh) + " km/h" else if (rec) "– km/h" else ""
+        speed.text = if (gpsOk) a.getString(R.string.drive_speed_kmh, String.format(Locale.US, "%.0f", LiveState.speedKmh))
+            else if (rec) a.getString(R.string.drive_speed_unknown) else ""
         speed.visibility = if (rec) View.VISIBLE else View.GONE
         gps.text = when {
-            !rec -> if (a.autoStartOn()) "Starts by itself when ${Prefs.carName(a)} connects" else "Tap START before you drive"
-            gpsOk -> String.format(Locale.US, "GPS ±%.0f m · %s", LiveState.accuracyM, detectionText())
-            else -> "Looking for GPS… (go outside or near a window)"
+            !rec -> if (a.autoStartOn()) a.getString(R.string.drive_gps_auto, Prefs.carName(a)) else a.getString(R.string.drive_gps_tap_start)
+            gpsOk -> a.getString(R.string.drive_gps_accuracy, String.format(Locale.US, "%.0f", LiveState.accuracyM), detectionText())
+            else -> a.getString(R.string.drive_gps_looking)
         }
 
         val last = LiveState.lastTripScore
         afterTrip.visibility = if (!rec && last >= 0) View.VISIBLE else View.GONE
         if (!rec && last >= 0) {
-            afterTrip.text = "Last trip: $last/100 · ${DrivingStats.grade(last)}  ›  see Trips"
+            afterTrip.text = a.getString(R.string.drive_last_trip, last, DrivingStats.grade(last))
             afterTrip.setTextColor(Ui.scoreColor(last))
         }
 
-        tDist.text = if (rec) String.format(Locale.US, "%.1f km", LiveState.tripKm) else "–"
+        tDist.text = if (rec) a.getString(R.string.drive_km, String.format(Locale.US, "%.1f", LiveState.tripKm)) else "–"
         tTime.text = if (rec) Ui.duration(LiveState.tripMovingS.toLong()) else "–"
         val s = LiveState.liveScore
         tScore.text = if (rec && s >= 0) s.toString() else "–"
         tScore.setTextColor(if (rec) Ui.scoreColor(s) else Ui.TEXT)
         tWarn.text = if (rec) LiveState.tripBeeps.toString() else "–"
         tBumps.text = if (rec) LiveState.tripHits.toString() else "–"
-        val harsh = if (LiveState.tripHarshPotholes > 0) " (${LiveState.tripHarshPotholes} harsh)" else ""
+        val harsh = if (LiveState.tripHarshPotholes > 0) a.getString(R.string.drive_potholes_harsh, LiveState.tripHarshPotholes) else ""
         tHoles.text = if (rec) "${LiveState.tripPotholes}$harsh" else "–"
 
-        lastEvent.text = LiveState.lastEvent.ifEmpty { "Nothing yet" }
+        lastEvent.text = LiveState.lastEvent.ifEmpty { a.getString(R.string.drive_nothing_yet) }
         driveEvent.text = LiveState.lastDriveEvent
         driveEvent.visibility = if (LiveState.lastDriveEvent.isEmpty()) View.GONE else View.VISIBLE
         ignored.text = LiveState.lastIgnored
@@ -327,7 +331,7 @@ class DrivePage(private val a: MainActivity) : Page {
             updateCard.visibility = View.GONE
         } else {
             if (updateShown != up.version) {
-                updateText.text = "New version ${up.version} available"
+                updateText.text = a.getString(R.string.drive_update_available, up.version)
                 updateShown = up.version
             }
             updateCard.visibility = View.VISIBLE
@@ -338,9 +342,9 @@ class DrivePage(private val a: MainActivity) : Page {
     }
 
     private fun detectionText(): String = when {
-        !LiveState.hasGyro -> "pothole sides: no gyroscope"
-        LiveState.forwardKnown -> "pothole detection ready"
-        else -> "learning (speed up / brake once)"
+        !LiveState.hasGyro -> a.getString(R.string.drive_detect_no_gyro)
+        LiveState.forwardKnown -> a.getString(R.string.drive_detect_ready)
+        else -> a.getString(R.string.drive_detect_learning)
     }
 
     companion object {
