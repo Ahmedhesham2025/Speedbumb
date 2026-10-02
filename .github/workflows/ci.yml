@@ -97,35 +97,67 @@ jobs:
           java-version: 17
       - uses: gradle/actions/setup-gradle@v4
       # Unit tests first: a failing test stops the job before an APK is built.
-      - name: App unit tests
-        run: chmod +x gradlew && ./gradlew testDebugUnitTest
+      # Both editions (#48): foss (no libraries) and play (+ Google Play services location).
+      - name: App unit tests (foss + play)
+        run: chmod +x gradlew && ./gradlew testFossDebugUnitTest testPlayDebugUnitTest
       - name: App test count
         if: always()
         run: |
-          files=$(find app/build/test-results -name 'TEST-*.xml' 2>/dev/null || true)
-          if [ -z "$files" ]; then echo "No app test results found (no tests yet?)."; exit 0; fi
-          sum() { grep -ho "<testsuite [^>]*" $files | grep -o " $1=\"[0-9]*\"" | grep -o '[0-9]*' | awk '{s+=$1} END {print s+0}'; }
-          line="app unit tests: $(sum tests) run, $(sum failures) failed, $(sum errors) errors, $(sum skipped) skipped"
-          echo "$line"
-          echo "### $line" >> "$GITHUB_STEP_SUMMARY"
-      - name: Build debug APK
-        run: ./gradlew assembleDebug
-      # Lint reports existing issues without blocking merges yet; the report is uploaded below.
+          for v in Foss Play; do
+            files=$(find "app/build/test-results/test${v}DebugUnitTest" -name 'TEST-*.xml' 2>/dev/null || true)
+            if [ -z "$files" ]; then echo "No $v app test results found (no tests yet?)."; continue; fi
+            sum() { grep -ho "<testsuite [^>]*" $files | grep -o " $1=\"[0-9]*\"" | grep -o '[0-9]*' | awk '{s+=$1} END {print s+0}'; }
+            line="app unit tests ($v): $(sum tests) run, $(sum failures) failed, $(sum errors) errors, $(sum skipped) skipped"
+            echo "$line"
+            echo "### $line" >> "$GITHUB_STEP_SUMMARY"
+          done
+      # Hard rule 2: the foss edition ships only Android APIs + :core (+ the Kotlin stdlib :core needs).
+      # Anything else on its release runtime classpath fails the job. The play edition may add Google Play services.
+      - name: No runtime libraries in the foss edition
+        run: |
+          ./gradlew -q :app:dependencies --configuration fossReleaseRuntimeClasspath > foss-deps.txt
+          cat foss-deps.txt
+          # Every resolved node: "project :core" or "group:artifact:version" (tree prefixes stripped).
+          nodes=$(grep -E '^[|+\\ ]*[+\\]--- ' foss-deps.txt | sed -E 's/^[|+\\ -]*//; s/ \(.*$//; s/ -> .*$//' | sort -u)
+          bad=$(echo "$nodes" | grep -vE '^project :core$|^org\.jetbrains\.kotlin:kotlin-stdlib(-jdk[78]|-common)?:|^org\.jetbrains:annotations:' || true)
+          if [ -z "$nodes" ] || ! echo "$nodes" | grep -q '^project :core$'; then
+            echo "::error::Could not read the foss runtime classpath (expected at least project :core)."
+            exit 1
+          fi
+          if [ -n "$bad" ]; then
+            echo "::error::The foss edition must not ship runtime libraries. Found:"
+            echo "$bad"
+            exit 1
+          fi
+          echo "foss runtime classpath OK: $(echo "$nodes" | tr '\n' ' ')" | tee -a "$GITHUB_STEP_SUMMARY"
+      - name: Build debug APKs (foss + play)
+        run: ./gradlew assembleFossDebug assemblePlayDebug
+      # Lint reports existing issues without blocking merges yet; the reports are uploaded below.
       - name: Lint (not blocking yet)
         continue-on-error: true
-        run: ./gradlew lintDebug
-      - name: Name the APK
-        run: cp app/build/outputs/apk/debug/app-debug.apk "$APK_NAME.apk"
+        run: ./gradlew lintFossDebug lintPlayDebug
+      - name: Name the APKs
+        run: |
+          cp app/build/outputs/apk/foss/debug/app-foss-debug.apk "$APK_NAME-foss.apk"
+          cp app/build/outputs/apk/play/debug/app-play-debug.apk "$APK_NAME-google.apk"
+          ls -l "$APK_NAME"-*.apk | tee -a "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@v4
         with:
-          name: ${{ env.APK_NAME }}
-          path: ${{ env.APK_NAME }}.apk
+          name: ${{ env.APK_NAME }}-foss
+          path: ${{ env.APK_NAME }}-foss.apk
+          retention-days: 30
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.APK_NAME }}-google
+          path: ${{ env.APK_NAME }}-google.apk
           retention-days: 30
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: lint-report
-          path: app/build/reports/lint-results-debug.html
+          path: |
+            app/build/reports/lint-results-fossDebug.html
+            app/build/reports/lint-results-playDebug.html
           if-no-files-found: ignore
           retention-days: 14
 
