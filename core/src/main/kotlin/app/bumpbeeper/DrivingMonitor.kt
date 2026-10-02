@@ -46,9 +46,7 @@ class DrivingStats {
     /** Seconds driven with a known limit (the base the limit-based penalty is normalised by). */
     var limitKnownS = 0.0
     /** Seconds over the limit by more than +10, +20 and +30 km/h (nested), and the most held for 3 s, km/h. */
-    var overLimit10S = 0.0
-    var overLimit20S = 0.0
-    var overLimit30S = 0.0
+    var overLimit10S = 0.0; var overLimit20S = 0.0; var overLimit30S = 0.0
     var maxOverLimitKmh = 0.0
 
     /** True when the speed part of the score comes from road limits (known for ≥ 50 % of the distance). */
