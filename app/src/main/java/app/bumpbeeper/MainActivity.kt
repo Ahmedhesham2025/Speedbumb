@@ -196,14 +196,16 @@ class MainActivity : Activity() {
     /** On every resume until it has been answered (SyncChoice decides when it is due; never while recording). */
     private fun askSyncChoice() {
         if (syncDialog != null) return
-        SyncChoice.maybeAsk(this) {
-            if (syncDialog == null && !isFinishing) {
-                syncDialog = SyncChoice.dialog(this) {
-                    syncDialog = null
-                    pages.getOrNull(current)?.onShow()
-                }.also { it.show() }
-            }
-        }
+        SyncChoice.maybeAsk(this) { showSyncChoice() }
+    }
+
+    /** The shared-map question now (also from Settings, e.g. before turning on road speed limits). */
+    fun showSyncChoice() {
+        if (syncDialog != null || isFinishing || LiveState.recording) return
+        syncDialog = SyncChoice.dialog(this) {
+            syncDialog = null
+            pages.getOrNull(current)?.onShow()
+        }.also { it.show() }
     }
 
     // ---------------------------------------------------------------- update banner

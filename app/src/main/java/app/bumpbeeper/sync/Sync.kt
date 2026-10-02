@@ -160,9 +160,18 @@ object Sync {
      * here, and sets the choice back to "unset" (no network until the user chooses again). [callback] runs on the main thread: true = server data deleted (or there
      * never was any), false = offline/server error (sharing is off and local data is gone; try again later).
      */
+    /**
+     * Forget me withdraws every online consent: the shared map goes back to "unset" and road speed limits are switched
+     * off (waiting routes deleted), so turning them on again asks for consent again under the new anonymous ID.
+     */
+    fun withdrawConsent(app: Context) {
+        setChoice(app, Prefs.SYNC_UNSET)
+        SpeedLimitSync.setEnabled(app, false)
+    }
+
     fun forgetMe(ctx: Context, callback: (Boolean) -> Unit) {
         val app = ctx.applicationContext ?: ctx
-        setChoice(app, Prefs.SYNC_UNSET)
+        withdrawConsent(app)
         Thread({
             val ok = try {
                 forgetNow(app)
