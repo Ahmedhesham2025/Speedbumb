@@ -27,12 +27,12 @@ object Sharing {
     /** Asks what to share, then opens Android's share sheet. */
     fun chooseAndShare(a: Activity) {
         val options = arrayOf(
-            "Bump file (CSV): for Bump Beeper on another phone, or Excel",
-            "Map file (KML): opens in Google Earth / Google My Maps",
-            "Trips & driving scores (CSV)",
+            a.getString(R.string.share_opt_bumps),
+            a.getString(R.string.share_opt_kml),
+            a.getString(R.string.share_opt_trips),
         )
         AlertDialog.Builder(a)
-            .setTitle("What do you want to share?")
+            .setTitle(a.getString(R.string.share_choose_title))
             .setItems(options) { _, i ->
                 when (i) {
                     0 -> shareBumpsCsv(a)
@@ -40,38 +40,38 @@ object Sharing {
                     2 -> shareTripsCsv(a)
                 }
             }
-            .setNegativeButton("Cancel", null)
+            .setNegativeButton(R.string.common_cancel, null)
             .show()
     }
 
-    fun shareBumpsCsv(a: Activity) = shareGenerated(a, "bumps_shared_${stamp()}.csv", "text/csv", "Bump Beeper map") { db ->
+    fun shareBumpsCsv(a: Activity) = shareGenerated(a, "bumps_shared_${stamp()}.csv", "text/csv", a.getString(R.string.share_subject_map)) { db ->
         db.bumpsCsv(Prefs.engineConfig(a))
     }
 
-    fun shareTripsCsv(a: Activity) = shareGenerated(a, "trips_${stamp()}.csv", "text/csv", "Bump Beeper trips") { db -> db.tripsCsv() }
+    fun shareTripsCsv(a: Activity) = shareGenerated(a, "trips_${stamp()}.csv", "text/csv", a.getString(R.string.share_subject_trips)) { db -> db.tripsCsv() }
 
     fun shareKml(a: Activity) = shareGenerated(
-        a, "bumps_map_${stamp()}.kml", "application/vnd.google-earth.kml+xml", "Bump Beeper map",
+        a, "bumps_map_${stamp()}.kml", "application/vnd.google-earth.kml+xml", a.getString(R.string.share_subject_map),
     ) { db -> kml(db.loadBumps(), Prefs.engineConfig(a)) }
 
     /** A short trip report as text (WhatsApp, email…). */
     fun shareTrip(a: Activity, t: BumpDb.TripRow) {
         val d = t.drive
         val date = SimpleDateFormat("EEE d MMM, HH:mm", Locale.US).format(Date(t.startTs))
-        val score = if (t.score >= 0) "${t.score}/100 (${DrivingStats.grade(t.score)})" else "not scored (short trip)"
+        val score = if (t.score >= 0) a.getString(R.string.share_trip_score_value, t.score, DrivingStats.grade(t.score)) else a.getString(R.string.share_trip_not_scored)
         val text = buildString {
-            append("Bump Beeper trip, $date\n")
-            append("Driving score: $score\n")
-            append("${Ui.km(d.distanceM)} in ${Ui.duration(t.durationS)}, avg ${d.avgSpeedKmh.toInt()} km/h, max ${d.maxSpeedKmh.toInt()} km/h\n")
-            append(String.format(Locale.US, "Speeding: %.0f%% of the time\n", d.speedingShare * 100))
-            append("Harsh braking ${d.harshBrakes} · acceleration ${d.harshAccels} · cornering ${d.harshCorners} · swerves ${d.swerves}\n")
-            append("Speed bumps taken fast ${d.bumpsFast} · phone handled ${d.phoneUse}\n")
-            append("Bumps hit ${t.hits} · potholes ${t.potholes} · warnings ${t.beeps}")
+            append(a.getString(R.string.share_trip_head, date)).append("\n")
+            append(a.getString(R.string.share_trip_score, score)).append("\n")
+            append(a.getString(R.string.share_trip_summary, Ui.km(d.distanceM), Ui.duration(t.durationS), d.avgSpeedKmh.toInt(), d.maxSpeedKmh.toInt())).append("\n")
+            append(a.getString(R.string.share_trip_speeding, String.format(Locale.US, "%.0f", d.speedingShare * 100))).append("\n")
+            append(a.getString(R.string.share_trip_harsh, d.harshBrakes, d.harshAccels, d.harshCorners, d.swerves)).append("\n")
+            append(a.getString(R.string.share_trip_bumps_fast, d.bumpsFast, d.phoneUse)).append("\n")
+            append(a.getString(R.string.share_trip_totals, t.hits, t.potholes, t.beeps))
         }
         a.startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).apply {
             type = "text/plain"
             putExtra(Intent.EXTRA_TEXT, text)
-        }, "Share trip"))
+        }, a.getString(R.string.share_trip_chooser)))
     }
 
     private fun shareGenerated(a: Activity, name: String, mime: String, subject: String, make: (BumpDb) -> String) {
@@ -80,15 +80,15 @@ object Sharing {
             val content = try { make(db) } finally { db.close() }
             val uri = CsvExport.saveUri(a, name, content, mime = mime)
             ui.post {
-                if (uri == null) { Toast.makeText(a, "Could not create the file", Toast.LENGTH_LONG).show(); return@post }
+                if (uri == null) { Toast.makeText(a, a.getString(R.string.share_file_failed), Toast.LENGTH_LONG).show(); return@post }
                 val send = Intent(Intent.ACTION_SEND).apply {
                     type = mime
                     putExtra(Intent.EXTRA_STREAM, uri)
                     putExtra(Intent.EXTRA_SUBJECT, subject)
                     addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                 }
-                a.startActivity(Intent.createChooser(send, "Share via"))
-                Toast.makeText(a, "A copy is also in Downloads/BumpBeeper", Toast.LENGTH_SHORT).show()
+                a.startActivity(Intent.createChooser(send, a.getString(R.string.share_via)))
+                Toast.makeText(a, a.getString(R.string.share_copy_saved), Toast.LENGTH_SHORT).show()
             }
         }.start()
     }
@@ -154,16 +154,16 @@ object Sharing {
             val rows = text.lineSequence().count { it.isNotBlank() } - 1
             ui.post {
                 if (!looksRight) {
-                    Toast.makeText(a, "That isn't a Bump Beeper bumps file. Ask for the \"Bump file (CSV)\" share.", Toast.LENGTH_LONG).show()
+                    Toast.makeText(a, a.getString(R.string.share_not_bump_file), Toast.LENGTH_LONG).show()
                     return@post
                 }
                 val go = { doImport(a, text, onImported) }
                 if (!confirm) { go(); return@post }
                 AlertDialog.Builder(a)
-                    .setTitle("Import shared bumps?")
-                    .setMessage("This file has $rows spots. They are added to your map; spots you already have are kept as they are.")
-                    .setPositiveButton("Import") { _, _ -> go() }
-                    .setNegativeButton("Cancel", null)
+                    .setTitle(a.getString(R.string.share_import_title))
+                    .setMessage(a.getString(R.string.share_import_msg, rows))
+                    .setPositiveButton(R.string.share_import_button) { _, _ -> go() }
+                    .setNegativeButton(R.string.common_cancel, null)
                     .show()
             }
         }.start()
@@ -174,9 +174,9 @@ object Sharing {
             val db = BumpDb(a.applicationContext)
             val (added, dup, bad) = try { db.importBumpsCsv(text) } finally { db.close() }
             ui.post {
-                val later = if (LiveState.recording) " They'll be used from your next trip." else ""
+                val later = if (LiveState.recording) a.getString(R.string.share_imported_later) else ""
                 Toast.makeText(
-                    a, "Added $added new spots · $dup already on your map" + (if (bad > 0) " · $bad unreadable rows" else "") + "." + later,
+                    a, a.getString(R.string.share_imported, added, dup) + (if (bad > 0) a.getString(R.string.share_imported_bad, bad) else "") + "." + later,
                     Toast.LENGTH_LONG,
                 ).show()
                 onImported()
