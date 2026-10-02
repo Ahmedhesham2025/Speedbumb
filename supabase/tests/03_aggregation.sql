@@ -1,7 +1,7 @@
 -- aggregate_observations: matching, confirmation thresholds, clears, cleanup.
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(12);
+select plan(14);
 
 insert into auth.users (id, aud, role, email)
 select ('d0000000-0000-0000-0000-00000000000' || i)::uuid, 'authenticated', 'authenticated', 'd' || i || '@test.local'
@@ -9,16 +9,14 @@ from generate_series(1, 5) i;
 insert into public.devices (id, share_enabled)
 select ('d0000000-0000-0000-0000-00000000000' || i)::uuid, true from generate_series(1, 5) i;
 
--- Device 5 is a fleet driver's phone.
-insert into public.fleets (id, name) overriding system value values (900001, 'Agg fleet');
-insert into public.drivers (fleet_id, display_name, device_id)
-values (900001, 'Driver', 'd0000000-0000-0000-0000-000000000005');
+-- The migration ships confirm_devices = 2 (pilot); start from that explicitly.
+update public.app_settings set value = '2' where key = 'confirm_devices';
 
 -- Places (all in empty desert, ~0.00003 deg = ~3 m apart):
 --   X 23.50,28.50  three devices, heading ~90         -> confirmed
 --   X  same spot, heading 270 from one device          -> separate candidate (other direction)
 --   Y 23.60,28.60  one device                          -> candidate
---   Z 23.70,28.70  two devices, one is a fleet driver  -> confirmed
+--   Z 23.70,28.70  two devices, confirm_devices = 2      -> confirmed
 --   W 23.80,28.80  three hits then four clears         -> stays candidate (hit ratio < 0.5)
 --   V 23.90,28.90  a clear with no spot nearby         -> no spot
 insert into public.observations (device_id, client_obs_id, kind, geom, heading, peak, observed_hour)
@@ -66,12 +64,32 @@ select is((select n_devices from near_spot where name = 'X' and heading = 90), 3
 select is((select status from near_spot where name = 'X' and heading = 270), 'candidate',
   'the opposite direction is a separate candidate');
 select is((select status from near_spot where name = 'Y'), 'candidate', 'one device leaves a candidate');
-select is((select status from near_spot where name = 'Z'), 'confirmed', 'two devices confirm when one is a fleet driver');
+select is((select status from near_spot where name = 'Z'), 'confirmed', 'two devices confirm when confirm_devices = 2');
 select results_eq($$ select status, n_hits, n_clear from near_spot where name = 'W' $$,
   $$ values ('candidate'::text, 3, 4) $$, 'more clears than hits keeps a spot unconfirmed');
 select is((select count(*) from near_spot where name = 'V'), 0::bigint, 'a clear with no spot creates nothing');
 
 select is(public.aggregate_observations(), 0, 'a second run has nothing to do');
+
+-- Raise the setting to 3 (public launch): two devices are no longer enough.
+update public.app_settings set value = '3' where key = 'confirm_devices';
+insert into public.observations (device_id, client_obs_id, kind, geom, heading, observed_hour)
+select ('d0000000-0000-0000-0000-00000000000' || d)::uuid, gen_random_uuid(), 'jolt', 'SRID=4326;POINT(28.4 23.4)', 0, date_trunc('hour', now())
+from generate_series(1, 2) d;
+do $$ begin perform public.aggregate_observations(); end $$;
+select is(
+  (select status from public.spots where extensions.st_dwithin(geom, 'SRID=4326;POINT(28.4 23.4)'::extensions.geography, 15)),
+  'candidate', 'with confirm_devices = 3 two devices stay a candidate');
+
+-- A missing setting falls back to 3.
+delete from public.app_settings where key = 'confirm_devices';
+insert into public.observations (device_id, client_obs_id, kind, geom, heading, observed_hour)
+select ('d0000000-0000-0000-0000-00000000000' || d)::uuid, gen_random_uuid(), 'jolt', 'SRID=4326;POINT(28.3 23.3)', 0, date_trunc('hour', now())
+from generate_series(1, 2) d;
+do $$ begin perform public.aggregate_observations(); end $$;
+select is(
+  (select status from public.spots where extensions.st_dwithin(geom, 'SRID=4326;POINT(28.3 23.3)'::extensions.geography, 15)),
+  'candidate', 'without the setting, two devices stay a candidate (default 3)');
 
 select * from finish();
 rollback;

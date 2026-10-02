@@ -1,7 +1,7 @@
 -- Row-level security role matrix: anon, device owner, other device, fleet admin, fleet viewer, other fleet.
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(35);
+select plan(36);
 
 -- ---------------------------------------------------------------- fixtures (as postgres)
 insert into auth.users (id, aud, role, email) values
@@ -62,6 +62,7 @@ set local request.jwt.claims = '{"sub":"11111111-1111-1111-1111-111111111111","r
 
 select throws_ok($$ select * from public.observations $$, '42501', null, 'device cannot read observations, not even its own');
 select throws_ok($$ select * from public.spot_contributors $$, '42501', null, 'device cannot read spot_contributors');
+select throws_ok($$ select * from public.app_settings $$, '42501', null, 'device cannot read app_settings');
 select is((select count(*) from public.spots where id = 900001), 1::bigint, 'device sees a confirmed spot');
 select is((select count(*) from public.spots where id = 900002), 0::bigint, 'device does not see a candidate spot');
 select throws_ok($$ insert into public.spots (geom) values ('SRID=4326;POINT(29 24)') $$, '42501', null, 'device cannot write spots');
