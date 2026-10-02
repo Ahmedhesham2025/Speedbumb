@@ -24,8 +24,22 @@ class AnonymizerTest {
         s.add(TraceSample.Event(250_200, "label", -1, Double.NaN, "bump"))
         s.add(TraceSample.Event(250_900, "label", -1, Double.NaN, "undo"))
         s.add(TraceSample.Event(320_000, "label", -1, Double.NaN, "rough"))
-        val meta = "# app_version=1.5.0\n# device=samsung/SM-A515F\n# android=33\n# placement=holder\n# gyro=yes\n"
-        return meta + TraceWriterCore.toCsv(s.sortedBy { it.tMs }, startMs = 0)
+        val meta = "# app_version=1.5.0\n# device=samsung/SM-A515F\n# android=33\n# placement=mounted\n# gyro=yes\n"
+        // The app's TraceWriter puts the car's position on engine event and label rows too (TraceWriterCore leaves it empty).
+        val located = PLACED.joinToString("") { (t, type, note) ->
+            listOf(t, "event", "", "", "", "", "", "", "", REAL_LAT, REAL_LON, "36.0", "40", "4.0", type, "", "", note).joinToString(",") + "\n"
+        }
+        return meta + TraceWriterCore.toCsv(s.sortedBy { it.tMs }, startMs = 0) + located
+    }
+
+    private companion object {
+        /** A real-looking position off the GPS track, so only these rows carry it. */
+        const val REAL_LAT = "30.0512345"
+        const val REAL_LON = "31.2423456"
+        val PLACED = listOf(
+            Triple("120.500", "new_bump", "bump looks=bump score=-1.00 first=up no-gyro"),
+            Triple("200.500", "label", "pothole_r"),
+        )
     }
 
     private val raw = rawTrace()
@@ -60,7 +74,7 @@ class AnonymizerTest {
         assertFalse(text.contains("device"))
         assertFalse(text.contains("samsung"))
         assertTrue(text.contains("# android=33"))
-        assertTrue(text.contains("# placement=holder"))
+        assertTrue(text.contains("# placement=mounted"))
         assertTrue(text.contains("# gyro=yes"))
         for (g in after.filterIsInstance<TraceSample.Gps>()) assertTrue(g.lat in 0.4..0.6 && g.lon in 0.4..0.6)
     }
@@ -71,7 +85,26 @@ class AnonymizerTest {
         for (i in before.indices) assertEquals(before[i].tMs - before[0].tMs, after[i].tMs)
         val l1 = TraceReader.labels(before)
         val l2 = TraceReader.labels(after)
-        assertEquals(listOf("pothole_l", "rough"), l2.map { it.kind })
+        assertEquals(listOf("pothole_l", "pothole_r", "rough"), l2.map { it.kind })
         assertEquals(l1.map { it.kind }, l2.map { it.kind })
+    }
+
+    @Test fun eventAndLabelRowsWithCoordinatesAreMoved() {
+        val text = anon.joinToString("\n")
+        assertFalse(text.contains(REAL_LAT))
+        assertFalse(text.contains(REAL_LON))
+        assertFalse(text.contains("30.05"))
+        assertFalse(text.contains("31.24"))
+        val rows = anon.map { it.split(',') }.filter { it.getOrNull(1) == "event" && it.getOrNull(9).orEmpty().isNotEmpty() }
+        assertEquals(PLACED.size, rows.size)
+        // Same distance from the first fix as before, now measured from the fake origin.
+        val first = before.filterIsInstance<TraceSample.Gps>().first()
+        val want = Geo.distance(first.lat, first.lon, REAL_LAT.toDouble(), REAL_LON.toDouble())
+        for (r in rows) {
+            val lat = r[9].toDouble()
+            val lon = r[10].toDouble()
+            assertTrue("$lat,$lon", lat in 0.4..0.6 && lon in 0.4..0.6)
+            assertEquals(want, Geo.distance(Anonymizer.FAKE_LAT, Anonymizer.FAKE_LON, lat, lon), 0.5)
+        }
     }
 }
