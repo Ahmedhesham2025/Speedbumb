@@ -30,8 +30,8 @@
     <string name="drive_label_pothole_right">Pothole right</string>
     <string name="drive_label_rough">Rough road</string>
     <string name="drive_label_undo">Undo</string>
-    <string name="drive_meter_open">Jolt meter  ▾</string>
-    <string name="drive_meter_closed">Jolt meter  ▸</string>
+    <string name="drive_meter_open">"Jolt meter  ▾"</string>
+    <string name="drive_meter_closed">"Jolt meter  ▸"</string>
     <string name="drive_setup_header">FINISH SETTING UP</string>
     <string name="drive_setup_location_title">Location &amp; notifications</string>
     <string name="drive_setup_location_why">Needed to know where bumps are and to keep running.</string>
@@ -53,9 +53,9 @@
     <string name="drive_gps_tap_start">Tap START before you drive</string>
     <string name="drive_gps_accuracy">GPS ±%1$s m · %2$s</string>
     <string name="drive_gps_looking">Looking for GPS… (go outside or near a window)</string>
-    <string name="drive_last_trip">Last trip: %1$d/100 · %2$s  ›  see Trips</string>
+    <string name="drive_last_trip">"Last trip: %1$d/100 · %2$s  ›  see Trips"</string>
     <string name="drive_km">%1$s km</string>
-    <string name="drive_potholes_harsh"> (%1$d harsh)</string>
+    <string name="drive_potholes_harsh">" (%1$d harsh)"</string>
     <string name="drive_nothing_yet">Nothing yet</string>
     <string name="drive_update_available">New version %1$s available</string>
     <string name="drive_detect_no_gyro">pothole sides: no gyroscope</string>
