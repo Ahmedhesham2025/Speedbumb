@@ -72,8 +72,9 @@ class DrivePage(private val a: MainActivity) : Page {
         })
         // Shared map, one quiet line (never a popup here: this screen is used while driving).
         syncLine = Ui.text(a, 12f, Ui.DIM).apply {
-            gravity = Gravity.END
-            setPadding(0, dp(4), dp(4), 0)
+            gravity = Gravity.END or Gravity.CENTER_VERTICAL
+            minHeight = dp(48)   // a real touch target, though the text stays small
+            setPadding(0, 0, dp(4), 0)
             isClickable = true
             setOnClickListener { if (!LiveState.recording) a.select(MainActivity.TAB_SETTINGS) }
         }

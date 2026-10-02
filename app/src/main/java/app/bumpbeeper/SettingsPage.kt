@@ -37,7 +37,13 @@ class SettingsPage(private val a: MainActivity) : Page {
 
     override val view: View = build()
 
-    fun release() { voice?.shutdown() }
+    private var forgetDialog: AlertDialog? = null
+
+    fun release() {
+        voice?.shutdown()
+        forgetDialog?.dismiss()
+        forgetDialog = null
+    }
 
     private fun build(): View {
         val col = LinearLayout(a).apply {
@@ -220,7 +226,8 @@ class SettingsPage(private val a: MainActivity) : Page {
     }
 
     private fun confirmForget() {
-        AlertDialog.Builder(a)
+        forgetDialog?.dismiss()
+        forgetDialog = AlertDialog.Builder(a)
             .setTitle(a.getString(R.string.settings_sync_delete_title))
             .setMessage(a.getString(R.string.settings_sync_delete_msg))
             .setPositiveButton(R.string.common_delete) { _, _ ->
@@ -231,6 +238,7 @@ class SettingsPage(private val a: MainActivity) : Page {
                 showSyncChoice(); tick()
             }
             .setNegativeButton(R.string.common_cancel, null)
+            .setOnDismissListener { forgetDialog = null }
             .show()
     }
 

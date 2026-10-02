@@ -57,12 +57,14 @@ class MainActivity : Activity() {
     private var update: UpdateCheck.Update? = null
     private var updateAsked = false
     private var updateDismissed = false
-    private var syncAsked = false
     private var syncDialog: Dialog? = null
 
     private val ticker = object : Runnable {
         override fun run() {
             pages.getOrNull(current)?.tick()
+            // Recording started (e.g. auto start with the car) while the question was open: get it out of the way.
+            // dismiss(), not cancel(), so it doesn't count as "Decide later" and is asked again on a later resume.
+            if (LiveState.recording) syncDialog?.let { it.dismiss(); syncDialog = null }
             // Keep the screen on while recording with the Drive tab open (it's a dashboard).
             if (LiveState.recording && current == TAB_DRIVE) window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
             else window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
@@ -191,10 +193,10 @@ class MainActivity : Activity() {
 
     // ---------------------------------------------------------------- shared map question
 
-    /** Once per run, when due and not recording (a recording run tries again on the next resume). */
+    /** On every resume until it has been answered (SyncChoice decides when it is due; never while recording). */
     private fun askSyncChoice() {
-        if (syncAsked || syncDialog != null) return
-        syncAsked = SyncChoice.maybeAsk(this) {
+        if (syncDialog != null) return
+        SyncChoice.maybeAsk(this) {
             if (syncDialog == null && !isFinishing) {
                 syncDialog = SyncChoice.dialog(this) {
                     syncDialog = null

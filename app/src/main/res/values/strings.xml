@@ -295,15 +295,20 @@
     <string name="sync_ask_title">Warnings from other drivers</string>
     <string name="sync_ask_intro">Get warned about bumps and potholes other drivers found, even on roads you haven\'t driven yet.</string>
     <string name="sync_ask_point_route">Only bump and pothole spots are shared, never your route.</string>
-    <string name="sync_ask_point_ends">Nothing near where your trips start or end.</string>
+    <string name="sync_ask_point_ends">No bump near where your trips start or end is shared.</string>
     <string name="sync_ask_point_identity">No name, email or phone number.</string>
     <string name="sync_ask_footer">You can change this any time in Settings → Shared map.</string>
+    <string name="sync_ask_point_area">To download spots near you, the app sends a rough area (about 1 km), never your exact position.</string>
+    <string name="sync_ask_what_sent">What exactly is sent?</string>
+    <string name="sync_ask_details">Both options: an anonymous phone ID (app and Android version) and a rough area (about 1 km) to download nearby spots.
+“Share and receive” also sends the bumps and potholes you find (place, time, direction, speed, how strong) and, if the app crashes, the crash report (app version, phone model, error details; no location).</string>
+    <string name="sync_error_other">Couldn't sync. Choose your option above again to retry.</string>
     <string name="sync_choice_share">Share and receive</string>
     <string name="sync_choice_receive">Receive only</string>
     <string name="sync_choice_later">Decide later</string>
     <string name="sync_choice_off">Off</string>
     <string name="sync_toast_sharing">Thanks! You\'ll get warnings from other drivers and help them too.</string>
-    <string name="sync_toast_receiving">You\'ll get warnings from other drivers. Nothing is sent from your drives.</string>
+    <string name="sync_toast_receiving">You'll get warnings from other drivers. Your bumps aren't shared.</string>
     <string name="sync_last_never">Last synced: never</string>
     <string name="sync_last_just_now">Last synced just now</string>
     <string name="sync_last_at">Last synced %1$s</string>
@@ -327,7 +332,7 @@
     <string name="settings_shared_map_hint">Warnings about bumps and potholes found by other drivers. Only spots are shared, never your route.</string>
     <string name="settings_sync_delete">Delete my shared data</string>
     <string name="settings_sync_delete_title">Delete your shared data?</string>
-    <string name="settings_sync_delete_msg">Removes the spots this phone shared from the server, clears downloaded warnings and turns the shared map off. Your own bump map and trips stay.</string>
+    <string name="settings_sync_delete_msg">Deletes everything this phone sent to the server. Spots already merged into the shared map stay, with nothing linking them to you. Also clears downloaded warnings and turns the shared map off. Your own bump map and trips stay.</string>
     <string name="settings_sync_deleted">Deleted</string>
     <string name="settings_sync_deleted_local">Deleted on this phone. Couldn\'t reach the server: tap Delete again when you\'re online to finish.</string>
 </resources>

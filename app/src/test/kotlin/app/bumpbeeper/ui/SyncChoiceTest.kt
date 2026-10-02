@@ -1,5 +1,6 @@
 package app.bumpbeeper.ui
 
+import app.bumpbeeper.LiveState
 import app.bumpbeeper.Prefs
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -36,6 +37,20 @@ class SyncChoiceTest {
         assertEquals("1 shared spot near you", SyncChoice.spots(ctx, 1))
         assertEquals("", SyncChoice.error(ctx, ""))
         assertEquals("Couldn't reach the server. Will retry automatically.", SyncChoice.error(ctx, "offline or server busy"))
+        assertFalse("only retryable errors promise a retry", SyncChoice.error(ctx, "sign-in failed").contains("automatically"))
+        assertTrue(SyncChoice.lastSynced(ctx, 1_000_000L, now = 1_000_000L + 5 * 60_000L).startsWith("Last synced 5 min"))
         assertTrue(SyncChoice.error(ctx, "daily upload limit reached").startsWith("Daily upload limit"))
+    }
+
+    @Test fun driveLine() {
+        Prefs.setSyncChoice(ctx, Prefs.SYNC_UNSET)
+        assertEquals("", SyncChoice.driveLine(ctx))
+        Prefs.setSyncChoice(ctx, Prefs.SYNC_RECEIVE)
+        LiveState.syncRemoteSpots = 0
+        assertEquals("Shared map: on", SyncChoice.driveLine(ctx))
+        LiveState.syncRemoteSpots = 1240
+        assertEquals("Shared map: 1,240 spots", SyncChoice.driveLine(ctx))
+        LiveState.syncRemoteSpots = 0
+        Prefs.setSyncChoice(ctx, Prefs.SYNC_UNSET)
     }
 }

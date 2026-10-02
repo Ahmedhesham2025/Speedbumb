@@ -296,15 +296,20 @@
     <string name="sync_ask_title">تحذيرات من سوّاقين تانيين</string>
     <string name="sync_ask_intro">اتنبّه للمطبّات والحفر اللي سوّاقين تانيين لقوها، حتى في طرق لسه ما مشيتش فيها.</string>
     <string name="sync_ask_point_route">بيتشارك بس أماكن المطبّات والحفر، عمره ما بيتشارك طريقك.</string>
-    <string name="sync_ask_point_ends">مفيش أي حاجة قريبة من مكان بداية أو نهاية رحلاتك.</string>
+    <string name="sync_ask_point_ends">مفيش مطبّ قريب من مكان بداية أو نهاية رحلاتك بيتشارك.</string>
     <string name="sync_ask_point_identity">من غير اسم ولا إيميل ولا رقم تليفون.</string>
     <string name="sync_ask_footer">تقدر تغيّر ده في أي وقت من الإعدادات ← الخريطة المتشاركة.</string>
+    <string name="sync_ask_point_area">عشان ننزّل الأماكن اللي جنبك، التطبيق بيبعت منطقة تقريبية (حوالي ١ كم)، عمره ما بيبعت مكانك بالظبط.</string>
+    <string name="sync_ask_what_sent">إيه اللي بيتبعت بالظبط؟</string>
+    <string name="sync_ask_details">في الاختيارين: رقم تعريف مجهول للتليفون (نسخة التطبيق والأندرويد) ومنطقة تقريبية (حوالي ١ كم) عشان ننزّل الأماكن اللي جنبك.
+«شارك واستقبل» كمان بيبعت المطبّات والحفر اللي بتلاقيها (المكان والوقت والاتجاه والسرعة وقد إيه قوية)، ولو التطبيق وقع، تقرير العطل (نسخة التطبيق وموديل التليفون وتفاصيل الغلطة، من غير مكان).</string>
+    <string name="sync_error_other">معرفناش نعمل مزامنة. اختار اختيارك اللي فوق تاني عشان نحاول.</string>
     <string name="sync_choice_share">شارك واستقبل</string>
     <string name="sync_choice_receive">استقبل بس</string>
     <string name="sync_choice_later">هقرّر بعدين</string>
     <string name="sync_choice_off">مقفولة</string>
     <string name="sync_toast_sharing">شكرًا! هتوصلك تحذيرات السوّاقين التانيين وهتساعدهم كمان.</string>
-    <string name="sync_toast_receiving">هتوصلك تحذيرات السوّاقين التانيين. مفيش حاجة هتتبعت من رحلاتك.</string>
+    <string name="sync_toast_receiving">هتوصلك تحذيرات السوّاقين التانيين. المطبّات اللي بتلاقيها مش هتتشارك.</string>
     <string name="sync_last_never">آخر مزامنة: لسه محصلتش</string>
     <string name="sync_last_just_now">آخر مزامنة: دلوقتي</string>
     <string name="sync_last_at">آخر مزامنة: %1$s</string>
@@ -340,7 +345,7 @@
     <string name="settings_shared_map_hint">تحذيرات عن مطبّات وحفر لقاها سوّاقين تانيين. بيتشارك الأماكن بس، عمره ما بيتشارك طريقك.</string>
     <string name="settings_sync_delete">امسح بياناتي المتشاركة</string>
     <string name="settings_sync_delete_title">تمسح بياناتك المتشاركة؟</string>
-    <string name="settings_sync_delete_msg">هيشيل الأماكن اللي التليفون ده شاركها من السيرفر، ويمسح التحذيرات اللي اتنزّلت، ويقفل الخريطة المتشاركة. خريطة مطبّاتك ورحلاتك هيفضلوا زي ما همّ.</string>
+    <string name="settings_sync_delete_msg">هيمسح كل حاجة التليفون ده بعتها للسيرفر. الأماكن اللي اتضمّت للخريطة المتشاركة هتفضل، من غير أي حاجة تربطها بيك. وكمان هيمسح التحذيرات اللي اتنزّلت ويقفل الخريطة المتشاركة. خريطة مطبّاتك ورحلاتك هيفضلوا زي ما همّ.</string>
     <string name="settings_sync_deleted">اتمسحت</string>
     <string name="settings_sync_deleted_local">اتمسحت من التليفون. معرفناش نوصل للسيرفر: دوس مسح تاني لما تكون أونلاين عشان نكمّل.</string>
 </resources>

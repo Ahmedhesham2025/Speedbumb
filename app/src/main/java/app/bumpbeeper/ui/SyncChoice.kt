@@ -45,15 +45,20 @@ object SyncChoice {
     /** The user chose in Settings: the first-run question is settled for good. */
     fun markAnswered(ctx: Context) = sp(ctx).edit().putInt(KEY_ANSWERS, MAX_ASKS).apply()
 
+    /** A trip count is being read (so resumes in quick succession don't start several). */
+    @Volatile private var checking = false
+
     /**
-     * Shows the question if it is due. The trip count is read off the main thread; [show] runs on the main thread.
-     * Returns false when nothing will be shown (so the caller may try again on a later resume).
+     * Shows the question if it is due; called on every resume. The trip count is read off the main thread;
+     * [show] runs on the main thread.
      */
-    fun maybeAsk(a: MainActivity, show: () -> Unit): Boolean {
+    fun maybeAsk(a: MainActivity, show: () -> Unit) {
         val answers = sp(a).getInt(KEY_ANSWERS, 0)
         val choice = Prefs.syncChoice(a)
-        if (!shouldAsk(choice, LiveState.recording, answers, if (answers > 0) TRIPS_BEFORE_ASKING_AGAIN else 0)) return false
-        if (answers <= 0) { show(); return true }
+        if (!shouldAsk(choice, LiveState.recording, answers, if (answers > 0) TRIPS_BEFORE_ASKING_AGAIN else 0)) return
+        if (answers <= 0) { show(); return }
+        if (checking) return
+        checking = true
         val since = sp(a).getLong(KEY_LATER_AT, 0L)
         val app = a.applicationContext
         Thread({
@@ -61,15 +66,18 @@ object SyncChoice {
                 val db = BumpDb(app)
                 try { db.trips(TRIPS_BEFORE_ASKING_AGAIN).count { it.startTs > since } } finally { db.close() }
             } catch (_: Exception) { 0 }
+            checking = false
             a.runOnUiThread {
                 if (!a.isFinishing && !a.isDestroyed &&
                     shouldAsk(Prefs.syncChoice(a), LiveState.recording, sp(a).getInt(KEY_ANSWERS, 0), trips)) show()
             }
         }, "sync-ask").start()
-        return true
     }
 
-    /** The full-screen question. Back counts as "Decide later". */
+    /**
+     * The full-screen question. Back counts as "Decide later"; a plain dismiss() (recording started, screen rotated)
+     * counts as nothing, so it is asked again later.
+     */
     fun dialog(a: MainActivity, onChosen: () -> Unit): Dialog {
         fun dp(v: Int) = Ui.dp(a, v)
         val d = Dialog(a, android.R.style.Theme_DeviceDefault_NoActionBar)
@@ -102,7 +110,8 @@ object SyncChoice {
         add(Ui.text(a, 16f, Ui.DIM, value = a.getString(R.string.sync_ask_intro)).apply { setLineSpacing(0f, 1.15f) }, 10)
 
         val bullets = Ui.card(a)
-        listOf(R.string.sync_ask_point_route, R.string.sync_ask_point_ends, R.string.sync_ask_point_identity).forEachIndexed { i, res ->
+        listOf(R.string.sync_ask_point_route, R.string.sync_ask_point_ends, R.string.sync_ask_point_identity,
+            R.string.sync_ask_point_area).forEachIndexed { i, res ->
             bullets.addView(LinearLayout(a).apply {
                 orientation = LinearLayout.HORIZONTAL
                 addView(Ui.text(a, 16f, Ui.GREEN, bold = true, value = "✓"), LinearLayout.LayoutParams(
@@ -113,6 +122,20 @@ object SyncChoice {
                 .apply { if (i > 0) topMargin = dp(12) })
         }
         add(bullets, 20)
+
+        // The exact list, folded away so the screen stays short.
+        val details = Ui.text(a, 14f, Ui.DIM, value = a.getString(R.string.sync_ask_details)).apply {
+            setLineSpacing(0f, 1.15f)
+            visibility = View.GONE
+        }
+        val more = Ui.text(a, 14f, Ui.ACCENT, bold = true, value = a.getString(R.string.sync_ask_what_sent)).apply {
+            minHeight = dp(48)
+            gravity = Gravity.CENTER_VERTICAL
+            isClickable = true
+            setOnClickListener { details.visibility = if (details.visibility == View.VISIBLE) View.GONE else View.VISIBLE }
+        }
+        add(more, 6)
+        add(details, 0)
 
         fun big(label: String, style: Ui.Style, onClick: () -> Unit) = Ui.button(a, label, style, onClick).apply {
             minHeight = dp(56)
@@ -158,7 +181,8 @@ object SyncChoice {
         e.isEmpty() -> ""
         e.contains("limit") -> ctx.getString(R.string.sync_error_limit)
         e.contains("delete") -> ctx.getString(R.string.sync_error_delete)
-        else -> ctx.getString(R.string.sync_error_offline)
+        e.contains("offline") -> ctx.getString(R.string.sync_error_offline)   // the only error that retries by itself
+        else -> ctx.getString(R.string.sync_error_other)
     }
 
     /** The small line on the Drive tab ("" when the shared map is off). */
