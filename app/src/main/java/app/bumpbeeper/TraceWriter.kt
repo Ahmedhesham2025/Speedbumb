@@ -7,9 +7,12 @@ import android.os.Build
 import java.io.BufferedWriter
 import java.io.File
 import java.io.FileWriter
+import java.io.OutputStream
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import java.util.zip.ZipEntry
+import java.util.zip.ZipOutputStream
 
 /**
  * Debug recording: every accelerometer sample (with the gyroscope next to it), every GPS fix and every
@@ -100,6 +103,23 @@ class TraceWriter(dir: File, meta: List<String> = emptyList()) {
         fun prune(ctx: Context) {
             val files = list(ctx)
             if (files.size > KEEP) files.take(files.size - KEEP).forEach { it.delete() }
+        }
+
+        /** One file name for "all my recordings", e.g. recordings_2026-10-02_1430.zip. */
+        fun zipName(now: Date): String = "recordings_" + SimpleDateFormat("yyyy-MM-dd_HHmm", Locale.US).format(now) + ".zip"
+
+        /**
+         * Packs [files] into one zip written to [out] (flat, one entry per file), so many recordings go to
+         * Google Drive / WhatsApp as a single attachment. CSV text shrinks to about a fifth.
+         */
+        fun zipTo(files: List<File>, out: OutputStream) {
+            val zip = ZipOutputStream(out)
+            for (f in files) {
+                zip.putNextEntry(ZipEntry(f.name).apply { time = f.lastModified() })
+                f.inputStream().use { it.copyTo(zip, 64 * 1024) }
+                zip.closeEntry()
+            }
+            zip.finish()   // the caller closes [out]
         }
 
         /** The `# key=value` lines at the top of a recording. Nothing that identifies the user. */
