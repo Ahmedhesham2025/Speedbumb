@@ -61,6 +61,16 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
       - name: Simulated-drive tests
         run: chmod +x gradlew && ./gradlew :core:test
+      - name: Test count
+        if: always()
+        run: |
+          # Sum the JUnit XML results so the number of tests shows in the log and on the run page.
+          files=$(find core/build/test-results -name 'TEST-*.xml' 2>/dev/null)
+          if [ -z "$files" ]; then echo "No test results found."; exit 0; fi
+          sum() { grep -ho "<testsuite [^>]*" $files | grep -o " $1=\"[0-9]*\"" | grep -o '[0-9]*' | awk '{s+=$1} END {print s+0}'; }
+          line="core tests: $(sum tests) run, $(sum failures) failed, $(sum errors) errors, $(sum skipped) skipped"
+          echo "$line"
+          echo "### $line" >> "$GITHUB_STEP_SUMMARY"
 
   app-build:
     needs: changes
