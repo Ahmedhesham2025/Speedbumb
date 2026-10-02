@@ -44,3 +44,7 @@ enable_anonymous_sign_ins = true
 [auth.email]
 enable_signup = true
 enable_confirmations = false
+
+# Road speed limits via TomTom Snap to Roads (see README). Callers must send a signed-in user's JWT.
+[functions.speed-limits]
+verify_jwt = true
