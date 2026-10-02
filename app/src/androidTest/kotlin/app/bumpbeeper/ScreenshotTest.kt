@@ -43,6 +43,7 @@ class ScreenshotTest {
         ActivityScenario.launch(MainActivity::class.java).use { scenario ->
             settle(2000)
             liveDemo(recording = true)   // GPS counts as live only for 5 s after the last fix
+            settle(800)                  // let the 4-per-second screen refresh pick it up
             shot(dir, "01-drive")
 
             // The rest are taken with recording stopped, as a parked phone would show them.
@@ -76,6 +77,8 @@ class ScreenshotTest {
         val perms = mutableListOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION)
         if (Build.VERSION.SDK_INT >= 33) perms.add(Manifest.permission.POST_NOTIFICATIONS)
         for (p in perms) instr.uiAutomation.grantRuntimePermission(ctx.packageName, p)
+        // "Run in the background" done too, so the Drive tab's setup checklist stays hidden.
+        instr.uiAutomation.executeShellCommand("dumpsys deviceidle whitelist +${ctx.packageName}").close()
     }
 
     /** Default settings, the given shared-map choice, and the jolt meter open on the Drive tab. */
@@ -83,6 +86,7 @@ class ScreenshotTest {
         Prefs.sp(ctx).edit().clear()
             .putString(Prefs.SYNC_CHOICE, choice)
             .putBoolean("ui_show_meter", true)
+            .putBoolean("ui_hide_auto_tip", true)   // DrivePage: "Auto start with your car" answered "Not now"
             .commit()
         // The first-run question's own bookkeeping (ui/SyncChoice.kt): never asked yet.
         ctx.getSharedPreferences("ui_state", Context.MODE_PRIVATE).edit().clear().commit()
