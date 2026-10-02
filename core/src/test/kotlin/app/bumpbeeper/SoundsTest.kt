@@ -56,4 +56,28 @@ class SoundsTest {
         l.onWarning(Warning(Bump(1, 0.0, 0.0, 0.0, 1, 1, 0, 1, 0, 0), 90.0, 50.0, WarnSound.BUMP, null))
         assertEquals(1, beeps)
     }
+
+    /** Grouping straight from GPS fixes (no simulator): 3 shared spots 60 m apart give one group warning. */
+    @Test fun groupFromFixes() {
+        val lat0 = 30.0444; val lon0 = 31.2357
+        fun at(p: Double) = Geo.move(lat0, lon0, 90.0, p)
+        val spots = listOf(800.0 to BumpKind.BUMP, 860.0 to BumpKind.POTHOLE, 920.0 to BumpKind.UNSURE).mapIndexed { i, (p, k) ->
+            val q = at(p); RemoteSpot(i + 1L, q[0], q[1], 90.0, k, Side.RIGHT, 7.0, 3)
+        }
+        val warnings = ArrayList<Warning>()
+        val store = MemoryStore()
+        val e = BumpEngine(EngineConfig(), store, object : EngineListener {
+            override fun onWarning(w: Warning) { warnings.add(w) }
+        }, { 0L }, spotSource = ListSpotSource(spots))
+        var p = 0.0
+        var t = 0L
+        while (p < 1200.0) {
+            val q = at(p)
+            e.onFix(Fix(t, q[0], q[1], 14.0, 90.0, 5.0))
+            p += 14.0; t += 1000
+        }
+        val log = store.events.map { "${it.type} ${it.bumpId} ${it.note} d=${it.distanceM.toInt()}" }
+        assertEquals("warnings: ${warnings.map { "${it.spot.id} ${it.cluster?.count}" }} events: $log", 1, warnings.size)
+        assertEquals(3, warnings[0].cluster?.count)
+    }
 }

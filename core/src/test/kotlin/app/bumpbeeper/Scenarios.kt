@@ -678,7 +678,8 @@ object Scenarios {
         val store = MemoryStore()
         val t1 = sim.drive(store, DriveSpec(cruiseKmh = 50.0), tripId = 1, spotSource = ListSpotSource(spots))
         describe("trip 1", t1)
-        check(t1.warnings.size == 1, "one group warning expected, got ${t1.warnings.size}")
+        check(t1.warnings.size == 1, "one group warning expected, got ${t1.warnings.size}: " +
+            store.events.filter { it.type.startsWith("beep") }.map { "${it.type} ${it.bumpId} ${it.note} d=${it.distanceM.toInt()}" })
         val g = t1.warnings[0].cluster
         check(g != null && g.count == 3 && g.kind == null && g.harshSide == Side.RIGHT, "mixed group of 3 with a harsh pothole on the right")
         check(t1.warnings[0].sound == WarnSound.BUMP, "the first spot's own sound stays a bump")
