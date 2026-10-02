@@ -8,6 +8,8 @@ import android.view.View
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
+import app.bumpbeeper.sync.SpeedLimitSync
+import app.bumpbeeper.ui.SpeedLimitText
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -22,10 +24,13 @@ class TripsPage(private val a: MainActivity) : Page {
     private lateinit var grade: TextView
     private lateinit var basis: TextView
     private lateinit var breakdown: LinearLayout
+    private lateinit var limitsNote: TextView
     private lateinit var tips: TextView
     private lateinit var trend: TrendChartView
     private lateinit var totals: List<TextView>
     private lateinit var list: LinearLayout
+    /** Trips whose route is waiting on the phone for a speed-limit lookup. */
+    private var waiting: Set<Long> = emptySet()
 
     override val view: View = build()
 
@@ -50,6 +55,8 @@ class TripsPage(private val a: MainActivity) : Page {
         card.addView(Ui.divider(a))
         breakdown = LinearLayout(a).apply { orientation = LinearLayout.VERTICAL }
         card.addView(breakdown)
+        limitsNote = Ui.text(a, 12f, Ui.DIM).apply { setPadding(0, dp(4), 0, 0) }
+        card.addView(limitsNote)
         card.addView(Ui.divider(a))
         tips = Ui.text(a, 14f, Ui.TEXT)
         card.addView(tips)
@@ -84,7 +91,11 @@ class TripsPage(private val a: MainActivity) : Page {
         Thread {
             val db = BumpDb(a.applicationContext)
             val (trips, counts) = try { db.trips() to db.counts(Prefs.engineConfig(a)) } finally { db.close() }
-            ui.post { show(trips, counts) }
+            val pending = if (SpeedLimitSync.allowed(a)) SpeedLimitSync.pendingFiles(a)
+                // A route older than SpeedLimitSync.MAX_AGE_MS is never sent (deleted on the next run): no "Looking up…".
+                .filter { System.currentTimeMillis() - it.lastModified() <= SpeedLimitSync.MAX_AGE_MS }
+                .mapNotNull { it.name.substringBefore('.').toLongOrNull() }.toSet() else emptySet()
+            ui.post { waiting = pending; show(trips, counts) }
         }.start()
     }
 
@@ -100,16 +111,13 @@ class TripsPage(private val a: MainActivity) : Page {
             else a.getString(if (scored.size > 1) R.string.trips_basis_many else R.string.trips_basis_one, scored.size, String.format(Locale.US, "%.0f", km))
 
         // Breakdown: combine the trips into one set of numbers.
-        val sum = DrivingStats()
-        for (tr in scored) {
-            val d = tr.drive
-            sum.movingS += d.movingS; sum.distanceM += d.distanceM; sum.speedingS += d.speedingS
-            sum.speedingExcess += d.speedingExcess; sum.maxSpeedKmh = maxOf(sum.maxSpeedKmh, d.maxSpeedKmh)
-            sum.harshBrakes += d.harshBrakes; sum.harshAccels += d.harshAccels; sum.harshCorners += d.harshCorners
-            sum.swerves += d.swerves; sum.bumpsFast += d.bumpsFast; sum.phoneUse += d.phoneUse
-        }
+        // Road limits count for the summary when they are known for most of these trips' distance.
+        val sum = SpeedLimitText.combine(scored.map { it.drive })
         breakdown.removeAllViews()
         for ((name, v) in sum.breakdown()) breakdown.addView(meterRow(name, if (scored.isEmpty()) -1 else v))
+        val note = SpeedLimitText.summaryLine(a, sum)
+        limitsNote.text = note ?: ""
+        limitsNote.visibility = if (note == null) View.GONE else View.VISIBLE
         tips.text = if (scored.isEmpty()) a.getString(R.string.trips_tips_none)
             else DriveText.tips(a, sum).joinToString("\n") { "• $it" }
 
@@ -139,6 +147,7 @@ class TripsPage(private val a: MainActivity) : Page {
                     val ev = tr.drive.let { it.harshBrakes + it.harshAccels + it.harshCorners + it.swerves + it.bumpsFast + it.phoneUse }
                     addView(Ui.text(a, 13f, Ui.DIM, value = "${Ui.km(tr.drive.distanceM)} · ${Ui.duration(tr.durationS)} · " +
                         (if (ev == 0) a.getString(R.string.trips_no_harsh) else a.getString(if (ev > 1) R.string.trips_events_many else R.string.trips_events_one, ev))))
+                    SpeedLimitText.tripLine(a, tr.drive, tr.id in waiting)?.let { addView(Ui.text(a, 12f, Ui.DIM, value = it)) }
                 }, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
                 addView(Ui.text(a, 20f, Ui.scoreColor(tr.score), bold = true, value = if (tr.score >= 0) tr.score.toString() else "–").apply {
                     gravity = Gravity.CENTER
@@ -155,8 +164,11 @@ class TripsPage(private val a: MainActivity) : Page {
         setPadding(0, dp(4), 0, dp(4))
         addView(LinearLayout(a).apply {
             orientation = LinearLayout.HORIZONTAL
-            addView(Ui.text(a, 14f, Ui.TEXT, value = name), LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
-            addView(Ui.text(a, 14f, Ui.scoreColor(v), bold = true, value = if (v >= 0) v.toString() else "–"))
+            // Aligned to the screen's start, not the text's: an English label in Arabic would sit against the number (#65).
+            addView(Ui.text(a, 14f, Ui.TEXT, value = name).apply { textAlignment = View.TEXT_ALIGNMENT_VIEW_START },
+                LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+            addView(Ui.text(a, 14f, Ui.scoreColor(v), bold = true, value = if (v >= 0) v.toString() else "–"),
+                LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { marginStart = dp(8) })
         })
         addView(MeterView(a).apply { value = maxOf(v, 0) }, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(6)).apply { topMargin = dp(4) })
     }
@@ -189,13 +201,19 @@ class TripsPage(private val a: MainActivity) : Page {
             a.getString(R.string.trips_fact_bumps_fast) to d.bumpsFast.toString(),
             a.getString(R.string.trips_fact_phone) to d.phoneUse.toString(),
             a.getString(R.string.trips_fact_totals) to "${tr.hits} · ${tr.potholes} · ${tr.beeps}",
-        )
+        ) + if (d.usesSpeedLimits) listOf(
+            a.getString(R.string.limits_fact_bands) to SpeedLimitText.bands(d),
+            a.getString(R.string.limits_fact_max_over) to SpeedLimitText.maxOver(a, d),
+        ) else emptyList()
         for ((k, v) in facts) box.addView(LinearLayout(a).apply {
             orientation = LinearLayout.HORIZONTAL
             setPadding(0, dp(3), 0, dp(3))
             addView(Ui.text(a, 14f, Ui.DIM, value = k), LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
             addView(Ui.text(a, 14f, Ui.TEXT, bold = true, value = v))
         })
+        SpeedLimitText.tripLine(a, d, tr.id in waiting)?.let {
+            box.addView(Ui.text(a, 13f, Ui.DIM, value = it).apply { setPadding(0, dp(6), 0, 0) })
+        }
         if (events.isNotEmpty()) {
             box.addView(Ui.section(a, a.getString(R.string.trips_section_happened)))
             val tf = SimpleDateFormat("HH:mm", Locale.US)

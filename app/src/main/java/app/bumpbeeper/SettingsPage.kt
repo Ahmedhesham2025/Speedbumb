@@ -13,7 +13,9 @@ import android.widget.RadioButton
 import android.widget.RadioGroup
 import android.widget.ScrollView
 import android.widget.TextView
+import app.bumpbeeper.sync.SpeedLimitSync
 import app.bumpbeeper.sync.Sync
+import app.bumpbeeper.ui.SpeedLimitText
 import app.bumpbeeper.ui.SyncChoice
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -30,6 +32,10 @@ class SettingsPage(private val a: MainActivity) : Page {
     private lateinit var autoBtn: TextView
     private lateinit var traceInfo: TextView
     private var debugBox: CheckBox? = null
+    private var limitsBox: CheckBox? = null
+    private lateinit var limitsStatus: TextView
+    /** True while the screen itself moves the speed-limit switch (so it isn't taken as the user's choice). */
+    private var settingLimits = false
     private lateinit var syncGroup: RadioGroup
     private lateinit var syncLast: TextView
     private lateinit var syncSpots: TextView
@@ -41,11 +47,14 @@ class SettingsPage(private val a: MainActivity) : Page {
     override val view: View = build()
 
     private var forgetDialog: AlertDialog? = null
+    private var limitsDialog: AlertDialog? = null
 
     fun release() {
         voice?.shutdown()
         forgetDialog?.dismiss()
         forgetDialog = null
+        limitsDialog?.dismiss()
+        limitsDialog = null
     }
 
     private fun build(): View {
@@ -100,6 +109,12 @@ class SettingsPage(private val a: MainActivity) : Page {
         card(a.getString(R.string.settings_section_score),
             Ui.slider(a, 50, 140, 10, Prefs.speedLimit(a), { a.getString(R.string.settings_speeding_above, it) }) { sp.edit().putInt(Prefs.SPEED_LIMIT, it).apply() },
             hint(a.getString(R.string.settings_speed_hint)),
+            Ui.toggle(a, a.getString(R.string.limits_switch), a.getString(R.string.limits_switch_hint), Prefs.speedLimits(a)) { on ->
+                if (settingLimits) return@toggle
+                if (on) { showLimitsSwitch(false); askLimits() }   // only the consent dialog turns it on
+                else { SpeedLimitSync.setEnabled(a, false); showLimitsSwitch(false) }
+            }.also { limitsBox = ((it as? ViewGroup)?.getChildAt(0) ?: it) as? CheckBox },
+            Ui.text(a, 13f, Ui.ORANGE).also { limitsStatus = it; it.setPadding(dp(32), 0, 0, dp(6)) },
         )
 
         val sens = RadioGroup(a).apply { orientation = RadioGroup.HORIZONTAL }
@@ -192,6 +207,7 @@ class SettingsPage(private val a: MainActivity) : Page {
             val choice = g.findViewById<RadioButton>(id)?.tag as? String ?: return@setOnCheckedChangeListener
             SyncChoice.markAnswered(a)
             Sync.setChoice(a, choice)
+            showLimitsSwitch()
             tick()
         }
         fun status(color: Int = Ui.DIM) = Ui.text(a, 14f, color).apply { setPadding(0, dp(2), 0, dp(2)) }
@@ -204,6 +220,38 @@ class SettingsPage(private val a: MainActivity) : Page {
                 (it.layoutParams as? LinearLayout.LayoutParams)?.topMargin = dp(8)
             },
         ))
+    }
+
+    /** Moves the switch to [on] without asking, and shows why it can't work yet if so. */
+    private fun showLimitsSwitch(on: Boolean = Prefs.speedLimits(a)) {
+        limitsBox?.let { if (it.isChecked != on) { settingLimits = true; it.isChecked = on; settingLimits = false } }
+        val why = SpeedLimitText.settingsStatus(a, Prefs.speedLimits(a), SpeedLimitSync.allowed(a))
+        limitsStatus.text = why
+        limitsStatus.visibility = if (why.isEmpty()) View.GONE else View.VISIBLE
+    }
+
+    /**
+     * Turning road speed limits on: the route leaves the phone, so the user agrees first. While the shared-map
+     * question is unanswered nothing goes to our server (only the GitHub update check runs), so that comes first.
+     */
+    private fun askLimits() {
+        limitsDialog?.dismiss()
+        val d = AlertDialog.Builder(a)
+        if (Prefs.syncChoice(a) == Prefs.SYNC_UNSET) {
+            d.setTitle(a.getString(R.string.limits_need_map_title))
+                .setMessage(a.getString(R.string.limits_need_map_msg))
+                .setPositiveButton(R.string.limits_need_map_open) { _, _ ->
+                    // The question is never shown during a trip (it would cover the Drive screen).
+                    if (LiveState.recording) a.toast(a.getString(R.string.limits_need_map_after_trip)) else a.showSyncChoice()
+                }
+                .setNegativeButton(R.string.common_not_now, null)
+        } else {
+            d.setTitle(a.getString(R.string.limits_consent_title))
+                .setMessage(a.getString(R.string.limits_consent_msg))
+                .setPositiveButton(R.string.limits_consent_on) { _, _ -> SpeedLimitSync.setEnabled(a, true); showLimitsSwitch() }
+                .setNegativeButton(R.string.common_cancel, null)
+        }
+        limitsDialog = d.setOnDismissListener { limitsDialog = null }.show()
     }
 
     private fun showSyncChoice() {
@@ -240,9 +288,9 @@ class SettingsPage(private val a: MainActivity) : Page {
             .setPositiveButton(R.string.common_delete) { _, _ ->
                 Sync.forgetMe(a) { ok ->
                     a.toast(a.getString(if (ok) R.string.settings_sync_deleted else R.string.settings_sync_deleted_local))
-                    showSyncChoice(); tick()
+                    showSyncChoice(); showLimitsSwitch(); tick()
                 }
-                showSyncChoice(); tick()
+                showSyncChoice(); showLimitsSwitch(); tick()
             }
             .setNegativeButton(R.string.common_cancel, null)
             .setOnDismissListener { forgetDialog = null }
@@ -251,6 +299,7 @@ class SettingsPage(private val a: MainActivity) : Page {
 
     override fun onShow() {
         showSyncChoice()
+        showLimitsSwitch()
         tick()
         val on = a.autoStartOn()
         autoText.text = if (on) a.getString(R.string.settings_auto_on, Prefs.carName(a)) else a.getString(R.string.settings_auto_off)
@@ -361,6 +410,7 @@ class SettingsPage(private val a: MainActivity) : Page {
                 Thread {
                     val db = BumpDb(a.applicationContext)
                     try { db.clearAll() } finally { db.close() }
+                    SpeedLimitSync.clearPending(a.applicationContext)   // routes waiting for a lookup go too
                     ui.post { LiveState.lastEvent = a.getString(R.string.settings_map_cleared); LiveState.lastTripScore = -1; a.toast(a.getString(R.string.settings_toast_cleared)) }
                 }.start()
             }

@@ -22,7 +22,7 @@ Roadmap: `ROADMAP.md`. Architecture: `docs/ARCHITECTURE.md`. Who owns which file
 
 ## Building and testing
 - There is no Android SDK on the owner's PC: **GitHub Actions is the build machine.** Push the branch, then
-  `gh run watch <id> -R Ahmedhesham2025/speedo --exit-status` and `gh run view <id> --log-failed` on failure.
+  `gh run watch <id> -R Ahmedhesham2025/Speedbumb --exit-status` and `gh run view <id> --log-failed` on failure.
 - `:core` (pure Kotlin) holds the engine, driving monitor, simulator and the simulated-drive scenarios: `./gradlew :core:test`.
 - New detection behaviour needs a scenario in `core/src/test/.../Scenarios.kt`, plus a replay check once `tools/replay` exists.
 

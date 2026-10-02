@@ -24,7 +24,7 @@ object UpdateCheck {
     data class Update(val version: String, val downloadUrl: String?, val htmlUrl: String)
 
     private const val TAG = "BumpBeeper"
-    private const val API = "https://api.github.com/repos/Ahmedhesham2025/speedo/releases/latest"
+    private const val API = "https://api.github.com/repos/Ahmedhesham2025/Speedbumb/releases/latest"
     private const val EVERY_MS = 24 * 60 * 60 * 1000L
     private const val TIMEOUT_MS = 10_000
 
@@ -75,7 +75,7 @@ object UpdateCheck {
             val body = conn.inputStream.bufferedReader().use { it.readText() }
             val json = JSONObject(body)
             val tag = json.optString("tag_name", "")
-            val html = json.optString("html_url", "https://github.com/Ahmedhesham2025/speedo/releases/latest")
+            val html = json.optString("html_url", "https://github.com/Ahmedhesham2025/Speedbumb/releases/latest")
             // Each release carries one APK per edition; offer the one matching this install (else the release page).
             val download = pickApk(json.optJSONArray("assets"), BuildConfig.FLAVOR)
             val version = tag.removePrefix("v").removePrefix("V")

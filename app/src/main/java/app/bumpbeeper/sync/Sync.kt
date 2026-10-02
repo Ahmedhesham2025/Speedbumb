@@ -52,8 +52,8 @@ object Sync {
     private const val POS_LAT = "pos_lat"
     private const val POS_LON = "pos_lon"
 
-    /** Runs never overlap (two parallel first runs would sign in as two devices). */
-    private val lock = Any()
+    /** Runs never overlap (two parallel first runs would sign in as two devices); [SpeedLimitSync] takes it too. */
+    internal val lock = Any()
 
     // ---------------------------------------------------------------- scheduling (any thread)
 
@@ -70,6 +70,7 @@ object Sync {
             } catch (e: Exception) {
                 Log.w(TAG, "sync status", e)
             }
+            SpeedLimitSync.onAppStart(app)
         }, "sync-status").start()
     }
 
@@ -94,6 +95,8 @@ object Sync {
      */
     fun setChoice(ctx: Context, choice: String) {
         Prefs.setSyncChoice(ctx, choice)
+        // No network any more: routes waiting for a speed-limit lookup are deleted, never sent.
+        if (!online(ctx)) SpeedLimitSync.clearPendingAsync(ctx)
         if (Prefs.syncChoice(ctx) != Prefs.SYNC_SHARE) {
             val app = ctx.applicationContext ?: ctx
             Thread({
@@ -157,9 +160,18 @@ object Sync {
      * here, and sets the choice back to "unset" (no network until the user chooses again). [callback] runs on the main thread: true = server data deleted (or there
      * never was any), false = offline/server error (sharing is off and local data is gone; try again later).
      */
+    /**
+     * Forget me withdraws every online consent: the shared map goes back to "unset" and road speed limits are switched
+     * off (waiting routes deleted), so turning them on again asks for consent again under the new anonymous ID.
+     */
+    fun withdrawConsent(app: Context) {
+        setChoice(app, Prefs.SYNC_UNSET)
+        SpeedLimitSync.setEnabled(app, false)
+    }
+
     fun forgetMe(ctx: Context, callback: (Boolean) -> Unit) {
         val app = ctx.applicationContext ?: ctx
-        setChoice(app, Prefs.SYNC_UNSET)
+        withdrawConsent(app)
         Thread({
             val ok = try {
                 forgetNow(app)
@@ -338,7 +350,7 @@ object Sync {
     private fun newAuth(ctx: Context, transport: Transport = UrlTransport) =
         SupabaseAuth(ctx, BuildConfig.SUPABASE_URL, BuildConfig.SUPABASE_KEY, transport)
 
-    private fun <T> withDb(ctx: Context, block: (BumpDb) -> T): T {
+    internal fun <T> withDb(ctx: Context, block: (BumpDb) -> T): T {
         val db = BumpDb(ctx)
         try {
             return block(db)

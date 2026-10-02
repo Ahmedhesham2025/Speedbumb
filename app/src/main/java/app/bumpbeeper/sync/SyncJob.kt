@@ -4,7 +4,7 @@ import android.app.job.JobParameters
 import android.app.job.JobService
 import android.util.Log
 
-/** Runs [Sync.run] on its own thread when JobScheduler says there is network. Scheduled by [Sync]. */
+/** Runs [Sync.run] (or [SpeedLimitSync.run]) on its own thread when JobScheduler says there is network. Scheduled by [Sync] and [SpeedLimitSync]. */
 class SyncJob : JobService() {
 
     override fun onStartJob(params: JobParameters): Boolean {
@@ -12,7 +12,8 @@ class SyncJob : JobService() {
         val app = applicationContext
         Thread({
             val retry = try {
-                Sync.run(
+                if (extras.getInt(SpeedLimitSync.EXTRA_JOB, 0) == 1) SpeedLimitSync.run(app)
+                else Sync.run(
                     app, extras.getInt(Sync.EXTRA_PULL_ONLY, 0) == 1,
                     extras.getDouble(Sync.EXTRA_LAT, Double.NaN), extras.getDouble(Sync.EXTRA_LON, Double.NaN),
                 )

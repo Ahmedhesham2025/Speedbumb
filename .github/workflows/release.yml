@@ -1,5 +1,5 @@
 # Builds, signs and publishes a release when the lead pushes a tag like v1.2.0.
-# Download it from the Releases page (https://github.com/Ahmedhesham2025/speedo/releases).
+# Download it from the Releases page (https://github.com/Ahmedhesham2025/Speedbumb/releases).
 #
 # Signing: the APK is signed with your own fixed key, stored in the repository secrets
 # KEYSTORE_BASE64 and KEYSTORE_PASSWORD (Settings → Secrets and variables → Actions).

@@ -21,9 +21,16 @@ Android app that learns the speed bumps on your routes and warns you about them.
 ## Driving score
 Every trip starts at 100. Points come off for speeding (time above *your* limit in Settings, more the further over), harsh braking (> ≈0.35 g), harsh acceleration (> ≈0.3 g), harsh cornering (> ≈0.4 g sideways), swerves (a sudden left-right), speed bumps from your map taken above 25 km/h, and the phone being picked up while moving. Events count per 10 km (short trips count as 5 km); trips under 0.5 km aren't scored. Overall = distance-weighted average of the last 20 trips. 90+ Excellent · 75+ Good · 60+ Fair · below Needs work.
 
-Braking and acceleration come from the phone's sensors once it knows which way is forward, and from GPS speed until then. Sideways force = speed × turning rate (gyroscope, or GPS heading without one). Each trip's numbers are stored (`trips` table, *Trips & scores* CSV) in a form a fleet system could take in later. The app works offline, so it can't know real speed limits.
+Braking and acceleration come from the phone's sensors once it knows which way is forward, and from GPS speed until then. Sideways force = speed × turning rate (gyroscope, or GPS heading without one). Each trip's numbers are stored (`trips` table, *Trips & scores* CSV) in a form a fleet system could take in later.
 
-Android 10 or newer. No internet, no account: everything stays on the phone.
+**Real speed limits (optional, off by default).** Without them, speeding means time above the limit you set. If you turn on *Settings → Driving score → Use real speed limits* (and agree to the notice), after each trip the app sends the route, minus its first and last 300 m, to our server, which asks TomTom for the legal limit of each road and keeps nothing except a daily count of lookups. When limits are known for at least half the trip, speeding is time over each road's limit by +10, +20 and +30 km/h instead; the trip then shows how much was known, the time in each band, and "© TomTom". The route waits on the phone until it is looked up; after about 2 days it is never sent, and it is deleted the next time the app runs. The lookup runs in Supabase's Frankfurt region.
+
+Android 10 or newer. No sign-up: online features use an anonymous ID, never your name, email or phone number. Your bump map, trips and scores are kept on the phone (and in your Google backup if Android backup is on). What goes online:
+- **Shared map (optional, asked once):** *Receive only* downloads confirmed bumps near you (the app sends a rough position, rounded to about 1 km, when a recording starts and when a trip ends). *Share and receive* also uploads the bump and pothole **points** you find (never your route, nothing near where trips start or end) and crash reports. Until you answer, nothing goes to our server.
+- **Real speed limits (optional, off by default):** see *Driving score* above. Only route stretches go out, and only via our server to TomTom.
+- **Update check (automatic, the only call before you choose):** at most once a day the app asks GitHub whether a newer version exists; nothing about you or your drives is sent.
+
+Details: [privacy policy](docs/privacy/privacy-policy.md).
 
 ---
 
@@ -141,5 +148,5 @@ Practice ideas:
 ## Known limits
 - Tested in simulation, not yet on a real road. The thresholds are sensible starting points; use the jolt meter and the export to tune them for your car and phone.
 - Bump/pothole detection is also tested only in simulation. Speed bumps crossed at an angle, or potholes that span the whole lane, can look like the other kind; a spot gets surer with every pass, and you can correct it by hand.
-- The map in *Your bumps* has no streets, because the app has no internet access. Use *Open in Google Maps* for context.
+- The map in *Your bumps* has no streets (the app downloads no map tiles). Use *Open in Google Maps* for context.
 - GPS is weaker between tall buildings and under bridges. Beeps may come a little early or late there.

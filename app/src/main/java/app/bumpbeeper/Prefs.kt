@@ -90,6 +90,14 @@ object Prefs {
     /** Upload hazard points (and crash reports): only when the user chose "share". */
     fun shareBumps(ctx: Context): Boolean = syncChoice(ctx) == SYNC_SHARE
 
+    /**
+     * Road speed limits for the driving score: after each trip a trimmed route goes through our server to TomTom.
+     * Opt-in (off by default), and only used while the network is allowed ([syncChoice] not "unset"); see
+     * [app.bumpbeeper.sync.SpeedLimitSync.allowed]. Screens switch it with [app.bumpbeeper.sync.SpeedLimitSync.setEnabled].
+     */
+    const val SPEED_LIMITS = "speed_limits"
+    fun speedLimits(ctx: Context): Boolean = sp(ctx).getBoolean(SPEED_LIMITS, false)
+
     fun autoStart(ctx: Context): Boolean = sp(ctx).getBoolean(AUTO_START, false)
     fun carAddress(ctx: Context): String? = sp(ctx).getString(CAR_ADDRESS, null)
     fun carName(ctx: Context): String? = sp(ctx).getString(CAR_NAME, null)
