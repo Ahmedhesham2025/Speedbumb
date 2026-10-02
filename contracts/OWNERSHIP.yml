@@ -1,0 +1,65 @@
+# Which agent may edit which files. Anything not listed belongs to the lead.
+# Enforced by review now; by the CI `ownership-check` job once devops adds it.
+lead:
+  - CLAUDE.md
+  - ROADMAP.md
+  - LICENSE
+  - docs/ARCHITECTURE.md
+  - docs/adr/**
+  - contracts/**
+  - .claude/**
+engine:
+  - core/**
+validation:
+  - tools/replay/**
+  - testdata/**          # except testdata/baseline.json (owner approval)
+  - docs/validation/**
+android-platform:
+  - app/src/main/java/app/bumpbeeper/BumpService.kt
+  - app/src/main/java/app/bumpbeeper/Voice.kt
+  - app/src/main/java/app/bumpbeeper/Beeper.kt
+  - app/src/main/java/app/bumpbeeper/CarBluetoothReceiver.kt
+  - app/src/main/java/app/bumpbeeper/TraceWriter.kt
+  - app/src/main/java/app/bumpbeeper/Prefs.kt
+  - app/src/main/java/app/bumpbeeper/BumpDb.kt
+  - app/src/main/java/app/bumpbeeper/LiveState.kt
+  - app/src/main/java/app/bumpbeeper/sync/**
+  - app/src/main/java/app/bumpbeeper/crash/**
+  - app/src/main/AndroidManifest.xml   # owner sees every change
+android-ui:
+  - app/src/main/java/app/bumpbeeper/MainActivity.kt
+  - app/src/main/java/app/bumpbeeper/*Page.kt
+  - app/src/main/java/app/bumpbeeper/Ui.kt
+  - app/src/main/java/app/bumpbeeper/Charts.kt
+  - app/src/main/java/app/bumpbeeper/BumpMapView.kt
+  - app/src/main/java/app/bumpbeeper/JoltGraphView.kt
+  - app/src/main/java/app/bumpbeeper/Sharing.kt
+  - app/src/main/java/app/bumpbeeper/CsvExport.kt
+  - app/src/main/java/app/bumpbeeper/ui/**
+  - app/src/main/res/**
+backend:
+  - supabase/**
+dashboard:
+  - dashboard/**
+devops:
+  - .github/**           # owner sees every change
+  - build.gradle.kts
+  - settings.gradle.kts
+  - app/build.gradle.kts
+  - gradle/**
+  - gradle.properties
+  - .gitattributes
+  - .gitignore
+qa:
+  - core/src/test/**/qa/**   # qa adds its own test files here; Simulator/Scenarios stay with engine
+  - app/src/test/**
+  - app/src/androidTest/**
+  - docs/test-plan.md
+security-privacy:
+  - docs/privacy/**
+store-docs:
+  - docs/store/**
+  - README.md
+  - fastlane/**          # store listing texts (F-Droid reads fastlane metadata)
+chore: []                # only the files named in its issue
+reviewer: []             # read-only
