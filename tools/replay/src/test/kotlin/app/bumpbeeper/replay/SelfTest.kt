@@ -50,7 +50,7 @@ class SelfTest {
     private fun metricsOf(csv: String): MetricsReport {
         val samples = TraceReader.read(csv.lineSequence())
         val result = Replayer.replay(samples, MemStore())
-        val report = Metrics.compute(TraceReader.labels(samples), result, samples)
+        val report = Metrics.compute(Metrics.labels(samples), result, samples)
         println(report.toMarkdown("synthetic"))
         return report
     }
@@ -76,5 +76,67 @@ class SelfTest {
         assertEquals(1.0, r.precision, 1e-9)
         assertEquals(1.0, r.recall, 1e-9)
         assertEquals(1.0, r.kindAccuracy, 1e-9)
+    }
+
+    // ---------- core's simulator: gyroscope, phone tilted in a holder, GPS 0.8 s late with ±3 m noise ----------
+
+    /** Bump at 300 m (driver slows to 15 km/h), harsh potholes at 700 m (right) and 1100 m (left) hit at 40 km/h. */
+    private val spec = DriveSpec(bumpsAt = listOf(300.0), potholesAt = listOf(700.0), potholesLeftAt = listOf(1100.0), cruiseKmh = 40.0)
+    private val truth = listOf(300.0 to "bump", 700.0 to "pothole_r", 1100.0 to "pothole_l")
+
+    /**
+     * Records one simulated drive (sensor rows only, like the app's recording) and adds the passenger's taps
+     * [tapDelayMs] after the front wheels hit each hazard. 0.9 s at 40 km/h puts the tap 10 m past the spot.
+     */
+    private fun simulatedRun(sim: Simulator, tapDelayMs: Long = 900): List<String> {
+        val rec = ArrayList<TraceSample>()
+        sim.drive(MemoryStore(), spec, recorder = rec)
+        val sensors = rec.filter { it !is TraceSample.Event }   // the simulator's own engine events are not replayed
+        val fixes = sensors.filterIsInstance<TraceSample.Gps>()
+        val accel = sensors.filterIsInstance<TraceSample.Accel>()
+        val start = sim.point(0.0, false)
+        val taps = truth.map { (pos, kind) ->
+            // The first fix past the spot comes 0.8–1.8 s after the wheels hit it; the hit is the strongest jolt around then.
+            val f = fixes.first { Geo.distance(start[0], start[1], it.lat, it.lon) >= pos }
+            val hit = accel.filter { it.tMs in f.tMs - 3000..f.tMs + 1000 }
+                .maxBy { abs(sqrt(it.ax * it.ax + it.ay * it.ay + it.az * it.az) - 9.81) }
+            TraceSample.Event(hit.tMs + tapDelayMs, "label", -1, Double.NaN, kind)
+        }
+        return TraceWriterCore.toCsv((sensors + taps).sortedBy { it.tMs }, startMs = 0).lines()
+    }
+
+    @Test fun gyroscopeAndFastHits() {
+        val runs = replayRuns(listOf("sim-gyro" to simulatedRun(Simulator(41))))
+        val r = Metrics.compute(runs)
+        println(r.toMarkdown("simulated, gyroscope, potholes at 40 km/h"))
+        val dets = Metrics.detections(runs[0].result.events)
+        for (l in runs[0].labels) for (d in dets) println(String.format(java.util.Locale.US, "  label %s t=%d  det %s t=%d  %.1f m", l.kind, l.tMs, d.kind, d.tMs, Geo.distance(l.lat, l.lon, d.lat, d.lon)))
+        assertEquals(3, r.labels)
+        assertEquals(3, r.detections)
+        assertEquals(1.0, r.precision, 1e-9)
+        assertEquals(1.0, r.recall, 1e-9)
+        assertEquals(2, r.labelsFast)                  // both potholes, hit at 40 km/h
+        assertEquals(1.0, r.recallFast, 1e-9)
+        assertEquals(1.0, r.kindAccuracy, 1e-9)
+        assertEquals(2, r.sideChecked)
+        assertEquals(1.0, r.sideAccuracy, 1e-9)        // left and right told apart by the gyroscope
+    }
+
+    @Test fun twoRunsOnOneMap() {
+        val sim = Simulator(41)
+        val runs = replayRuns(listOf("run1" to simulatedRun(sim), "run2" to simulatedRun(sim)))
+        val r = Metrics.compute(runs)
+        println(r.toMarkdown("simulated, 2 runs"))
+        println(r.toJson())
+        assertEquals(2, r.runs.size)
+        assertEquals(0, r.runs[0].beeps)               // empty map: nothing to warn about on the first run
+        assertTrue("run 2 should warn", r.runs[1].beeps > 0)
+        assertEquals(0, r.runs[1].falseWarnings)
+        assertEquals(0, r.falseWarnings)
+        assertEquals(3, r.spots)
+        assertEquals(1.0, r.learnedRate, 1e-9)
+        assertEquals(6, r.labels)
+        assertEquals(1.0, r.recall, 1e-9)
+        assertTrue(r.toJson().contains("\"runs\": ["))
     }
 }
