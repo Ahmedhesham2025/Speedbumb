@@ -5,6 +5,7 @@ import android.content.Context
 import android.database.Cursor
 import android.database.sqlite.SQLiteDatabase
 import android.database.sqlite.SQLiteOpenHelper
+import app.bumpbeeper.sync.SyncStore
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -14,8 +15,9 @@ import java.util.Locale
  *  bumps  – the learned map
  *  events – everything that happened (new bump, hit, miss, beep, rejected jolt) → for tuning
  *  trips  – one row per Start…Stop
+ * plus the shared-map sync tables (outbox, remote_spots, sync_state), see [SyncStore].
  */
-class BumpDb(ctx: Context) : SQLiteOpenHelper(ctx, "bumps.db", null, 4), BumpStore {
+class BumpDb(ctx: Context) : SQLiteOpenHelper(ctx, "bumps.db", null, 5), BumpStore {
 
     init {
         setWriteAheadLoggingEnabled(true)
@@ -46,6 +48,7 @@ class BumpDb(ctx: Context) : SQLiteOpenHelper(ctx, "bumps.db", null, 4), BumpSto
                 hits INTEGER, new_bumps INTEGER, beeps INTEGER, misses INTEGER, rejected INTEGER, distance_m REAL)"""
         )
         addTripColumns(db)
+        SyncStore.createTables(db)
     }
 
     /** Version 4: driving statistics and score per trip. */
@@ -70,6 +73,8 @@ class BumpDb(ctx: Context) : SQLiteOpenHelper(ctx, "bumps.db", null, 4), BumpSto
             db.execSQL("ALTER TABLE bumps ADD COLUMN peak_avg REAL NOT NULL DEFAULT 0")
         }
         if (oldVersion < 4) addTripColumns(db)
+        // Version 5: shared-map sync (outbox, remote spot cache, sync state). New tables only; nothing else changes.
+        if (oldVersion < 5) SyncStore.createTables(db)
     }
 
     // ---------------- BumpStore (used by the engine) ----------------
