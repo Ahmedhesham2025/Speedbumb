@@ -13,8 +13,8 @@ import org.robolectric.annotation.Config
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34])
 class UpdateAssetTest {
-    private val fossUrl = "https://github.com/Ahmedhesham2025/speedo/releases/download/v1.4.0/BumpBeeper-1.4.0.apk"
-    private val playUrl = "https://github.com/Ahmedhesham2025/speedo/releases/download/v1.4.0/BumpBeeper-1.4.0-google.apk"
+    private val fossUrl = "https://github.com/Ahmedhesham2025/Speedbumb/releases/download/v1.4.0/BumpBeeper-1.4.0.apk"
+    private val playUrl = "https://github.com/Ahmedhesham2025/Speedbumb/releases/download/v1.4.0/BumpBeeper-1.4.0-google.apk"
 
     private fun asset(name: String, url: String) = JSONObject().put("name", name).put("browser_download_url", url)
 
