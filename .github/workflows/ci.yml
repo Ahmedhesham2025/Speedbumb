@@ -30,8 +30,8 @@ jobs:
       replay: ${{ steps.filter.outputs.replay }}
       backend: ${{ steps.filter.outputs.backend }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: dorny/paths-filter@v3
+      - uses: actions/checkout@v7
+      - uses: dorny/paths-filter@v4
         id: filter
         with:
           filters: |
@@ -60,12 +60,12 @@ jobs:
       needs.changes.outputs.replay == 'true'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-java@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: 17
-      - uses: gradle/actions/setup-gradle@v4
+      - uses: gradle/actions/setup-gradle@v5
       - name: Simulated-drive and replay tests
         run: chmod +x gradlew && ./gradlew :core:test :tools:replay:test
       - name: Test count
@@ -90,12 +90,12 @@ jobs:
     env:
       APK_NAME: BumpBeeper-dev-${{ github.event_name == 'pull_request' && format('pr{0}', github.event.pull_request.number) || github.sha }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-java@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: 17
-      - uses: gradle/actions/setup-gradle@v4
+      - uses: gradle/actions/setup-gradle@v5
       # Unit tests first: a failing test stops the job before an APK is built.
       # Both editions (#48): foss (no libraries) and play (+ Google Play services location).
       - name: App unit tests (foss + play)
@@ -141,17 +141,17 @@ jobs:
           cp app/build/outputs/apk/foss/debug/app-foss-debug.apk "$APK_NAME-foss.apk"
           cp app/build/outputs/apk/play/debug/app-play-debug.apk "$APK_NAME-google.apk"
           ls -l "$APK_NAME"-*.apk | tee -a "$GITHUB_STEP_SUMMARY"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: ${{ env.APK_NAME }}-foss
           path: ${{ env.APK_NAME }}-foss.apk
           retention-days: 30
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: ${{ env.APK_NAME }}-google
           path: ${{ env.APK_NAME }}-google.apk
           retention-days: 30
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: lint-report
@@ -163,6 +163,7 @@ jobs:
 
   # Local Supabase (Docker on the runner, free): migrations must apply, lint clean at error level, pgTAP tests pass.
   # Expects supabase/config.toml, supabase/migrations/*.sql and supabase/tests/*.sql (pgTAP).
+  # Also runs the Edge Functions' Deno tests, type check and lint (supabase/functions/**, covered by the backend filter).
   backend:
     needs: changes
     if: >-
@@ -171,7 +172,17 @@ jobs:
       needs.changes.outputs.ci == 'true'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
+      # Edge Functions (supabase/functions/*): offline Deno unit tests, type check and lint. No secrets needed.
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+      - name: Edge Function tests (Deno)
+        run: deno test supabase/functions/
+      - name: Edge Function type check (Deno)
+        run: deno check supabase/functions/*/index.ts
+      - name: Edge Function lint (Deno)
+        run: deno lint supabase/functions/
       - name: Is there a backend yet?
         id: present
         run: |
@@ -181,7 +192,7 @@ jobs:
             echo "found=false" >> "$GITHUB_OUTPUT"
             echo "No supabase/config.toml yet: nothing to test, skipping." | tee -a "$GITHUB_STEP_SUMMARY"
           fi
-      - uses: supabase/setup-cli@v1
+      - uses: supabase/setup-cli@v3
         if: steps.present.outputs.found == 'true'
         with:
           version: 2.119.0
