@@ -126,6 +126,26 @@ class SpeedLimitDbTest {
         assertEquals(60, after.score)   // penalty min(40, 20 + 20)
     }
 
+    @Test fun rescoreChangesOnlyTheSpeedPart() {
+        val db = db()
+        // The bump engine measured 20 km, the monitor 10 km; one harsh brake (5 points per 10 km over 10 km).
+        val id = db.startTrip(1_000)
+        db.endTrip(id, 901_000, TripStats().apply { distanceM = 20_000.0 },
+            DrivingStats().apply { distanceM = 10_000.0; movingS = 900.0; harshBrakes = 1 })
+        assertEquals(95, db.trips().single().score)
+        // Speed penalty 0 → 40 (capped); the brake still costs 5, not the 2.5 a rescore over 20 km would give.
+        assertTrue(db.setTripSpeedLimits(id, result(0.9, 810.0, 270.0, 270.0)))
+        assertEquals(55, db.trips().single().score)
+    }
+
+    @Test fun speedPenaltyMatchesTheCoreScore() {
+        val db = db()
+        for (d in listOf(
+            DrivingStats().apply { distanceM = 20_000.0; movingS = 900.0; speedingS = 90.0; speedingExcess = 900.0 },
+            DrivingStats().apply { distanceM = 20_000.0; movingS = 900.0 }.withSpeedLimits(result(0.9, 810.0, 100.0, 20.0)),
+        )) assertEquals(100 - d.score(), Math.round(db.speedPenalty(d)).toInt())
+    }
+
     @Test fun limitsKnownForTooLittleKeepTheOldScore() {
         val db = db()
         val id = finishedTrip(db)

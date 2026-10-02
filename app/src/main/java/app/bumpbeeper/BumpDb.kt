@@ -9,6 +9,8 @@ import app.bumpbeeper.sync.SyncStore
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import kotlin.math.min
+import kotlin.math.roundToInt
 
 /**
  * SQLite database on the phone (file: bumps.db). Three tables:
@@ -174,19 +176,33 @@ class BumpDb(ctx: Context) : SQLiteOpenHelper(ctx, "bumps.db", null, 6), BumpSto
         put("max_over_limit_kmh", d.maxOverLimitKmh)
     }
 
+    /** One trip by id, finished or not (null if it is gone). */
+    fun trip(id: Long): TripRow? = tripRows("WHERE id = $id", 1).singleOrNull()
+
     /**
      * After the speed-limit lookup: stores [r] for a finished trip and, when the limits now drive the speed part
      * ([DrivingStats.usesSpeedLimits]), its new score. False when the trip is gone.
+     *
+     * Only the speed part of the score changes: new score = old score + old speed penalty − new speed penalty.
+     * Recomputing the whole score here would use the stored distance (the larger of engine and monitor), not the
+     * monitor's distance the trip-end score used, and move the other penalties too.
      */
     fun setTripSpeedLimits(id: Long, r: SpeedLimitResult): Boolean {
-        val row = tripRows("WHERE id = $id", 1).singleOrNull() ?: return false
+        val row = trip(id) ?: return false
         val d = row.drive.withSpeedLimits(r)
         val v = ContentValues().apply {
             putSpeedLimits(d)
-            if (d.usesSpeedLimits && row.score >= 0) put("score", d.score())
+            if (d.usesSpeedLimits && row.score >= 0) {
+                put("score", (row.score + speedPenalty(row.drive) - speedPenalty(d)).roundToInt().coerceIn(0, 100))
+            }
         }
         return writableDatabase.update("trips", v, "id = ?", arrayOf(id.toString())) > 0
     }
+
+    /** The speed part of [DrivingStats.score] (0..40): road limits when used, else the fixed threshold (same formula). */
+    internal fun speedPenalty(d: DrivingStats): Double =
+        if (d.usesSpeedLimits) SpeedLimitScoring.penalty(d.limitKnownS, d.overLimit10S, d.overLimit20S, d.overLimit30S)
+        else min(40.0, d.speedingShare * 60.0 + d.speedingShare * d.avgExcessKmh)
 
     /**
      * One finished trip, for the Trips screen. Road speed limits are in [drive]: [DrivingStats.limitKnownShare]

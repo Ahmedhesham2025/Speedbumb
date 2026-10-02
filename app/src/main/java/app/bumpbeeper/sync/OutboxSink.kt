@@ -36,7 +36,7 @@ class OutboxSink(private val store: SyncStore, private val tripId: Long) : Obser
         }
     }
 
-    /** A fix without time or speed: each step counts as its straight-line distance. */
+    /** Tests only: a fix without time or speed, so each step counts as its straight-line distance. */
     fun onFix(lat: Double, lon: Double, accuracyM: Double) =
         onFix(Fix((last?.timeMs ?: 0L) + 1000, lat, lon, Double.NaN, Double.NaN, accuracyM))
 
