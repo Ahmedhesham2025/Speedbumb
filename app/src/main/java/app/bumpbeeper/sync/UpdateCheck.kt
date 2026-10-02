@@ -51,6 +51,9 @@ object UpdateCheck {
         val now = System.currentTimeMillis()
         val last = sp.getLong(Prefs.UPDATE_CHECKED_AT, 0L)
         if (!force && (now - last) in 0L until EVERY_MS) return cached(ctx, current)
+        // Count this as a check whatever happens next (403 rate limit, 5xx, offline, bad JSON), so a
+        // failing check backs off for 24 h instead of retrying on every app start.
+        sp.edit().putLong(Prefs.UPDATE_CHECKED_AT, now).apply()
 
         val conn = URL(API).openConnection() as HttpURLConnection
         try {
@@ -62,7 +65,7 @@ object UpdateCheck {
             val code = conn.responseCode
             if (code == HttpURLConnection.HTTP_NOT_FOUND) {
                 // No release published yet.
-                sp.edit().putLong(Prefs.UPDATE_CHECKED_AT, now).remove(Prefs.UPDATE_VERSION).apply()
+                sp.edit().remove(Prefs.UPDATE_VERSION).apply()
                 return null
             }
             if (code != HttpURLConnection.HTTP_OK) return null
@@ -74,7 +77,9 @@ object UpdateCheck {
             val download = if (assets != null && assets.length() > 0)
                 assets.optJSONObject(0)?.optString("browser_download_url", "")?.takeIf { it.isNotEmpty() } else null
             val version = tag.removePrefix("v").removePrefix("V")
-            val edit = sp.edit().putLong(Prefs.UPDATE_CHECKED_AT, now)
+            // A pre-release (1.3.0-rc1) is never offered; keep whatever stable answer was saved before.
+            if (isPreRelease(version)) return cached(ctx, current)
+            val edit = sp.edit()
             if (version.isNotEmpty()) {
                 edit.putString(Prefs.UPDATE_VERSION, version).putString(Prefs.UPDATE_URL, download ?: "")
                     .putString(Prefs.UPDATE_HTML_URL, html)
@@ -102,8 +107,13 @@ object UpdateCheck {
     fun isDevBuild(version: String): Boolean =
         version.isEmpty() || version == "unknown" || version.contains("-local") || version.contains("-dev")
 
-    /** True when [candidate] (X.Y.Z) is a higher version than [current]. Unparseable → false. */
+    /** A pre-release tag such as 1.3.0-rc1 (anything after a '-' following X.Y.Z). Never offered as an update. */
+    fun isPreRelease(version: String): Boolean =
+        version.trim().removePrefix("v").removePrefix("V").substringBefore('+').contains('-')
+
+    /** True when [candidate] (X.Y.Z) is a higher version than [current]. Unparseable or pre-release → false. */
     fun isNewer(candidate: String, current: String): Boolean {
+        if (isPreRelease(candidate)) return false
         val a = parse(candidate) ?: return false
         val b = parse(current) ?: return false
         for (i in 0 until 3) {

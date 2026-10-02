@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Android 10-11 backup (android:fullBackupContent). The bump database and settings are backed up;
+     crash reports and drive recordings stay on the phone (they hold device details and GPS tracks). -->
+<full-backup-content>
+    <exclude domain="file" path="crash/" />
+    <exclude domain="file" path="traces/" />
+    <exclude domain="external" path="traces/" />
+</full-backup-content>
