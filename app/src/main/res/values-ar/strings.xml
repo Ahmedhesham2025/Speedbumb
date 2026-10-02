@@ -167,9 +167,9 @@
     <string name="map_chip_bumps">مطبّات</string>
     <string name="map_chip_potholes">حفر</string>
     <string name="map_chip_harsh">عنيفة</string>
-    <string name="map_zoom_out">−  بعّد</string>
-    <string name="map_zoom_in">+  قرّب</string>
-    <string name="map_me">◎  أنا</string>
+    <string name="map_zoom_out">"−  بعّد"</string>
+    <string name="map_zoom_in">"+  قرّب"</string>
+    <string name="map_me">"◎  أنا"</string>
     <string name="map_legend">● برتقالي مطبّ · ● أحمر حفرة · ● رمادي لسه مش متأكد · ○ فاضي مكتوم. العلامة بتوضّح الاتجاه اللي بيحذّر منه. اسحب عشان تحرّك؛ اضغط على نقطة عشان الخيارات. مفيش شوارع لأن التطبيق شغّال أوفلاين: استخدم افتح في Google Maps.</string>
     <string name="map_section_share">المشاركة والاستيراد</string>
     <string name="map_share_hint">عشان تدّي مطبّاتك لحد: شارك… ← ملف المطبّات، وابعته (واتساب، إيميل، Drive…). هو بيضغط على الملف ويختار Bump Beeper، أو يستخدم استيراد ملف. أماكنه بتفضل زي ما هي؛ وأماكنك بتتضاف.\nملف الخريطة (KML) بيتفتح في Google Earth وممكن يتستورد في Google My Maps.</string>
@@ -181,7 +181,7 @@
     <string name="map_dist_km">%1$s كم</string>
     <string name="map_dist_m">%1$s م</string>
     <string name="map_row_felt">%1$s %2$s · اتحسّ %3$d/%4$d</string>
-    <string name="map_row_muted"> · مكتوم</string>
+    <string name="map_row_muted">" · مكتوم"</string>
     <string name="map_more">…و%1$d كمان (شارك ← ملف المطبّات عشان تشوف الكل)</string>
     <string name="map_compass_n">ش</string>
     <string name="map_compass_ne">ش‌ق</string>
@@ -242,7 +242,7 @@
     <string name="trips_fact_phone">موبايل اتمسك أثناء السواقة</string>
     <string name="trips_fact_totals">مطبّات · حفر · تحذيرات</string>
     <string name="trips_section_happened">اللي حصل</string>
-    <string name="trips_event_speed"> (%1$d كم/س)</string>
+    <string name="trips_event_speed">" (%1$d كم/س)"</string>
     <string name="trips_section_tips">نصايح</string>
     <string name="trips_share">شارك</string>
     <string name="trips_explain_title">الدرجة بتتحسب إزاي</string>
@@ -288,6 +288,6 @@
     <string name="share_import_msg">الملف ده فيه %1$d مكان. هيتضافوا لخريطتك؛ والأماكن اللي عندك أصلًا بتفضل زي ما هي.</string>
     <string name="share_import_button">استيراد</string>
     <string name="share_imported">اتضاف %1$d مكان جديد · %2$d موجودين أصلًا على خريطتك</string>
-    <string name="share_imported_bad"> · %1$d صفوف مش مقروءة</string>
-    <string name="share_imported_later"> هيتستخدموا من رحلتك الجاية.</string>
+    <string name="share_imported_bad">" · %1$d صفوف مش مقروءة"</string>
+    <string name="share_imported_later">" هيتستخدموا من رحلتك الجاية."</string>
 </resources>

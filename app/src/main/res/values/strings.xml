@@ -166,9 +166,9 @@
     <string name="map_chip_bumps">Bumps</string>
     <string name="map_chip_potholes">Potholes</string>
     <string name="map_chip_harsh">Harsh</string>
-    <string name="map_zoom_out">−  Zoom out</string>
-    <string name="map_zoom_in">+  Zoom in</string>
-    <string name="map_me">◎  Me</string>
+    <string name="map_zoom_out">"−  Zoom out"</string>
+    <string name="map_zoom_in">"+  Zoom in"</string>
+    <string name="map_me">"◎  Me"</string>
     <string name="map_legend">● orange speed bump · ● red pothole · ● grey not sure yet · ○ hollow muted. The tick shows the direction it warns for. Drag to move; tap a dot for options. No streets because the app works offline: use Open in Google Maps.</string>
     <string name="map_section_share">Share &amp; import</string>
     <string name="map_share_hint">To give your bumps to someone: Share… → Bump file, and send it (WhatsApp, email, Drive…). They tap the file and choose Bump Beeper, or use Import a file. Their own spots are kept; yours are added.\nMap file (KML) opens in Google Earth and can be imported into Google My Maps.</string>
@@ -180,7 +180,7 @@
     <string name="map_dist_km">%1$s km</string>
     <string name="map_dist_m">%1$s m</string>
     <string name="map_row_felt">%1$s %2$s · felt %3$d/%4$d</string>
-    <string name="map_row_muted"> · muted</string>
+    <string name="map_row_muted">" · muted"</string>
     <string name="map_more">…and %1$d more (Share → Bump file to see all)</string>
     <string name="map_compass_n">N</string>
     <string name="map_compass_ne">NE</string>
@@ -241,7 +241,7 @@
     <string name="trips_fact_phone">Phone handled while driving</string>
     <string name="trips_fact_totals">Bumps hit · potholes · warnings</string>
     <string name="trips_section_happened">What happened</string>
-    <string name="trips_event_speed"> (%1$d km/h)</string>
+    <string name="trips_event_speed">" (%1$d km/h)"</string>
     <string name="trips_section_tips">Tips</string>
     <string name="trips_share">Share</string>
     <string name="trips_explain_title">How the score works</string>
@@ -287,6 +287,6 @@
     <string name="share_import_msg">This file has %1$d spots. They are added to your map; spots you already have are kept as they are.</string>
     <string name="share_import_button">Import</string>
     <string name="share_imported">Added %1$d new spots · %2$d already on your map</string>
-    <string name="share_imported_bad"> · %1$d unreadable rows</string>
-    <string name="share_imported_later"> They\'ll be used from your next trip.</string>
+    <string name="share_imported_bad">" · %1$d unreadable rows"</string>
+    <string name="share_imported_later">" They\'ll be used from your next trip."</string>
 </resources>
