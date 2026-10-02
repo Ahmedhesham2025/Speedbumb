@@ -2,11 +2,13 @@ package app.bumpbeeper
 
 import android.app.Activity
 import android.app.AlertDialog
+import android.content.ClipData
 import android.content.Intent
 import android.net.Uri
 import android.os.Handler
 import android.os.Looper
 import android.widget.Toast
+import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -72,6 +74,30 @@ object Sharing {
             type = "text/plain"
             putExtra(Intent.EXTRA_TEXT, text)
         }, a.getString(R.string.share_trip_chooser)))
+    }
+
+    /**
+     * Debug recordings as one zip (also kept in Downloads/BumpBeeper/recordings), through the share sheet:
+     * Google Drive, Gmail, WhatsApp… The zip goes through MediaStore, so no FileProvider (androidx) is needed.
+     */
+    fun shareRecordings(a: Activity, files: List<File>) {
+        Toast.makeText(a, a.getString(R.string.share_recordings_preparing, files.size), Toast.LENGTH_SHORT).show()
+        Thread {
+            val name = TraceWriter.zipName(Date())
+            val uri = CsvExport.saveStream(a, name, "recordings", "application/zip") { TraceWriter.zipTo(files, it) }
+            ui.post {
+                if (a.isFinishing) return@post
+                if (uri == null) { Toast.makeText(a, a.getString(R.string.share_file_failed), Toast.LENGTH_LONG).show(); return@post }
+                val send = Intent(Intent.ACTION_SEND).apply {
+                    type = "application/zip"
+                    putExtra(Intent.EXTRA_STREAM, uri)
+                    putExtra(Intent.EXTRA_SUBJECT, a.getString(R.string.share_subject_recordings))
+                    clipData = ClipData.newRawUri(name, uri)
+                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                }
+                a.startActivity(Intent.createChooser(send, a.getString(R.string.share_via)))
+            }
+        }.start()
     }
 
     private fun shareGenerated(a: Activity, name: String, mime: String, subject: String, make: (BumpDb) -> String) {

@@ -6,6 +6,8 @@ import android.os.Handler
 import android.os.Looper
 import android.util.TypedValue
 import android.view.View
+import android.view.ViewGroup
+import android.widget.CheckBox
 import android.widget.LinearLayout
 import android.widget.RadioButton
 import android.widget.RadioGroup
@@ -27,6 +29,7 @@ class SettingsPage(private val a: MainActivity) : Page {
     private lateinit var autoText: TextView
     private lateinit var autoBtn: TextView
     private lateinit var traceInfo: TextView
+    private var debugBox: CheckBox? = null
     private lateinit var syncGroup: RadioGroup
     private lateinit var syncLast: TextView
     private lateinit var syncSpots: TextView
@@ -160,9 +163,13 @@ class SettingsPage(private val a: MainActivity) : Page {
         card(a.getString(R.string.settings_section_debug),
             Ui.toggle(a, a.getString(R.string.settings_debug_title), a.getString(R.string.settings_debug_desc, TraceWriter.KEEP), Prefs.debugRecording(a)) {
                 sp.edit().putBoolean(Prefs.DEBUG_RECORDING, it).apply()
-            },
+                showTraces()
+            }.also { debugBox = ((it as? ViewGroup)?.getChildAt(0) ?: it) as? CheckBox },
             traceInfo,
-            Ui.row(a, Ui.button(a, a.getString(R.string.settings_export_recordings)) { exportTraces() }, Ui.button(a, a.getString(R.string.settings_delete_recordings)) { deleteTraces() }),
+            Ui.row(a, Ui.button(a, a.getString(R.string.settings_export_recordings)) { exportTraces() }, Ui.button(a, a.getString(R.string.settings_share_recordings)) { shareTraces() }),
+            Ui.button(a, a.getString(R.string.settings_delete_recordings), Ui.Style.QUIET) { deleteTraces() }.also {
+                (it.layoutParams as? LinearLayout.LayoutParams)?.topMargin = dp(8)
+            },
         )
 
         card(a.getString(R.string.settings_section_help), Ui.text(a, 14f, Ui.TEXT, value = a.getString(R.string.settings_help)).apply { setLineSpacing(0f, 1.2f) })
@@ -249,9 +256,19 @@ class SettingsPage(private val a: MainActivity) : Page {
         autoText.text = if (on) a.getString(R.string.settings_auto_on, Prefs.carName(a)) else a.getString(R.string.settings_auto_off)
         autoText.setTextColor(if (on) Ui.GREEN else Ui.TEXT)
         autoBtn.text = a.getString(if (on) R.string.settings_auto_turn_off else R.string.settings_auto_set_up)
+        showTraces()
+    }
+
+    /** How many recordings there are, and whether new drives get recorded at all (off by default). */
+    private fun showTraces() {
         val files = TraceWriter.list(a)
-        traceInfo.text = if (files.isEmpty()) a.getString(R.string.settings_traces_none)
-            else a.getString(R.string.settings_traces_info, files.size, String.format(Locale.US, "%.1f", files.sumOf { it.length() } / 1_000_000.0))
+        val on = Prefs.recordTrace(a)
+        traceInfo.text = when {
+            files.isEmpty() -> a.getString(if (on) R.string.settings_traces_none else R.string.settings_traces_none_off)
+            else -> a.getString(R.string.settings_traces_info, files.size, String.format(Locale.US, "%.1f", files.sumOf { it.length() } / 1_000_000.0)) +
+                if (on) "" else " " + a.getString(R.string.settings_traces_off)
+        }
+        traceInfo.setTextColor(if (on || files.isNotEmpty()) Ui.DIM else Ui.ORANGE)
     }
 
     private fun testVoice() {
@@ -275,15 +292,54 @@ class SettingsPage(private val a: MainActivity) : Page {
         }.start()
     }
 
-    private fun exportTraces() {
-        if (LiveState.recording) { a.toast(a.getString(R.string.settings_toast_stop_first_complete)); return }
+    /** The recordings to export or share, or null (after telling the user why) when there are none to give. */
+    private fun tracesToSend(): List<java.io.File>? {
+        if (LiveState.recording) { a.toast(a.getString(R.string.settings_toast_stop_first_complete)); return null }
         val files = TraceWriter.list(a)
-        if (files.isEmpty()) { a.toast(a.getString(R.string.settings_toast_no_recordings)); return }
+        if (files.isNotEmpty()) return files
+        // The usual reason for "nothing was exported": debug recording is off by default, so no drive was recorded.
+        val off = !Prefs.recordTrace(a)
+        val d = AlertDialog.Builder(a)
+            .setTitle(a.getString(R.string.settings_no_recordings_title))
+            .setMessage(a.getString(if (off) R.string.settings_no_recordings_off else R.string.settings_no_recordings_on))
+        if (off) {
+            d.setPositiveButton(R.string.settings_turn_on_recording) { _, _ ->
+                debugBox?.isChecked = true
+                sp.edit().putBoolean(Prefs.DEBUG_RECORDING, true).apply()
+                showTraces()
+            }.setNegativeButton(R.string.common_not_now, null)
+        } else {
+            d.setPositiveButton(R.string.common_ok, null)
+        }
+        d.show()
+        return null
+    }
+
+    private fun exportTraces() {
+        val files = tracesToSend() ?: return
         a.toast(a.getString(R.string.settings_toast_exporting, files.size))
         Thread {
-            val ok = files.count { CsvExport.saveFile(a, it.name, it, "recordings") }
-            ui.post { a.toast(a.getString(R.string.settings_toast_exported, ok, files.size)) }
+            val ok = files.count { CsvExport.saveFile(a, it.name, it, "recordings") != null }
+            ui.post {
+                if (a.isFinishing) return@post
+                // A dialog, not a toast: the result is easy to miss otherwise, and Share is the quickest way to Drive.
+                AlertDialog.Builder(a)
+                    .setTitle(a.getString(if (ok > 0) R.string.settings_export_done_title else R.string.settings_export_failed_title))
+                    .setMessage(when (ok) {
+                        files.size -> a.getString(R.string.settings_export_done_all, ok)
+                        0 -> a.getString(R.string.settings_export_failed)
+                        else -> a.getString(R.string.settings_export_done_some, ok, files.size)
+                    })
+                    .setPositiveButton(R.string.settings_share_recordings) { _, _ -> shareTraces() }
+                    .setNegativeButton(R.string.common_close, null)
+                    .show()
+            }
         }.start()
+    }
+
+    private fun shareTraces() {
+        val files = tracesToSend() ?: return
+        Sharing.shareRecordings(a, files)
     }
 
     private fun deleteTraces() {
@@ -291,7 +347,7 @@ class SettingsPage(private val a: MainActivity) : Page {
         AlertDialog.Builder(a)
             .setTitle(a.getString(R.string.settings_delete_traces_title))
             .setMessage(a.getString(R.string.settings_delete_traces_msg))
-            .setPositiveButton(R.string.common_delete) { _, _ -> TraceWriter.list(a).forEach { it.delete() }; onShow() }
+            .setPositiveButton(R.string.common_delete) { _, _ -> TraceWriter.list(a).forEach { it.delete() }; showTraces() }
             .setNegativeButton(R.string.common_cancel, null)
             .show()
     }
