@@ -27,6 +27,8 @@ import android.os.Looper
 import android.os.PowerManager
 import android.os.SystemClock
 import android.util.Log
+import app.bumpbeeper.auto.AutoStop
+import app.bumpbeeper.auto.PowerPolicy
 import app.bumpbeeper.crash.CrashLog
 import app.bumpbeeper.sync.CachedSpotSource
 import app.bumpbeeper.sync.OutboxSink
@@ -63,6 +65,8 @@ class BumpService : Service(), SensorEventListener, LocationListener, EngineList
         private const val CAR_GONE_GRACE_MS = 60_000L
         /** How often the battery level goes into the recording. */
         private const val BATTERY_EVERY_MS = 5 * 60_000L
+        /** How often the engine thread asks [AutoStop] whether the car is parked. */
+        private const val PARKED_CHECK_MS = 15_000L
 
         /** The running service, for [label]. Set in onCreate, cleared in onDestroy. */
         @Volatile private var instance: BumpService? = null
@@ -135,7 +139,7 @@ class BumpService : Service(), SensorEventListener, LocationListener, EngineList
         }
     }
 
-    private var running = false
+    @Volatile private var running = false
     private lateinit var db: BumpDb
     private lateinit var beeper: Beeper
     private var voice: Voice? = null
@@ -161,6 +165,29 @@ class BumpService : Service(), SensorEventListener, LocationListener, EngineList
     private var gz = 0.0
     /** No gyroscope reading yet this trip: the recording leaves gx/gy/gz empty instead of a fake 0. */
     private var gyroSeen = false
+    // Battery saving (#50) and auto-stop when parked: only used on the engine thread.
+    private var power = PowerPolicy()
+    private var autoStop: AutoStop? = null
+    private var gyroOn = false
+    private var stoppedMode = false
+
+    /** Engine thread, every [PARKED_CHECK_MS] while recording (the wake lock keeps it on time). */
+    private val parkedCheck = object : Runnable {
+        override fun run() {
+            val h = handler ?: return
+            if (autoStop?.shouldStop(SystemClock.elapsedRealtime()) == true) {
+                autoStop = null
+                main.post {
+                    if (running) {
+                        LiveState.lastEvent = "Parked: recording stopped"
+                        stopRecording()
+                    }
+                }
+                return
+            }
+            h.postDelayed(this, PARKED_CHECK_MS)
+        }
+    }
 
     private val stopForCarGone = Runnable {
         LiveState.lastEvent = "Car disconnected: stopped"
@@ -171,6 +198,10 @@ class BumpService : Service(), SensorEventListener, LocationListener, EngineList
         // Only settings that change detection or scoring touch the engine; others (update check,
         // voice, car…) are written often enough that re-applying on each one would be wasted work.
         val engineKey = key == null || key in ENGINE_KEYS   // null = all settings cleared
+        if (key == Prefs.AUTO_STOP_MIN || key == null) {
+            val ms = Prefs.autoStopMinutes(this) * 60_000L
+            handler?.post { autoStop?.stopAfterMs = ms }
+        }
         if (!engineKey && key != Prefs.LABEL_MODE) return@OnSharedPreferenceChangeListener
         handler?.post {
             if (engineKey) {
@@ -306,7 +337,13 @@ class BumpService : Service(), SensorEventListener, LocationListener, EngineList
         val record = Prefs.recordTrace(this)
         gx = 0.0; gy = 0.0; gz = 0.0
         gyroSeen = false
+        gyroOn = false
+        stoppedMode = false
+        power = PowerPolicy()
+        val stopAfterMs = Prefs.autoStopMinutes(this) * 60_000L
         h.post {
+            autoStop = AutoStop(stopAfterMs)
+            h.postDelayed(parkedCheck, PARKED_CHECK_MS)
             val store = TracingStore(db, null)
             tracingStore = store
             if (record) openTrace(store)
@@ -345,17 +382,10 @@ class BumpService : Service(), SensorEventListener, LocationListener, EngineList
             sm.registerListener(this, accel, 20_000 /* µs → 50 Hz */, h)
         }
         // Optional: tells speed bumps (car pitches) from potholes (car rolls). Works without it, less surely.
-        sm.getDefaultSensor(Sensor.TYPE_GYROSCOPE)?.let { sm.registerListener(this, it, 20_000, h) }
+        // Registered by applyPower() once the car moves (battery, #50), so not here.
         LiveState.hasGyro = sm.getDefaultSensor(Sensor.TYPE_GYROSCOPE) != null
 
-        val lm = getSystemService(Context.LOCATION_SERVICE) as LocationManager
-        try {
-            lm.requestLocationUpdates(LocationManager.GPS_PROVIDER, 1000L, 0f, this, t.looper)
-        } catch (e: SecurityException) {
-            LiveState.lastEvent = "No location permission"
-        } catch (e: IllegalArgumentException) {
-            LiveState.lastEvent = "This phone has no GPS"
-        }
+        requestGps(PowerPolicy.MOVING_GPS_MS, t.looper)
 
         Prefs.sp(this).registerOnSharedPreferenceChangeListener(prefListener)
     }
@@ -373,7 +403,13 @@ class BumpService : Service(), SensorEventListener, LocationListener, EngineList
         val h = handler
         val t = thread
         val database = db
+        h?.removeCallbacks(parkedCheck)
         h?.post {
+            autoStop = null
+            gyroOn = false
+            // Again on this thread: a fix handled just before stopRecording may have re-registered (applyPower).
+            (getSystemService(Context.SENSOR_SERVICE) as SensorManager).unregisterListener(this)
+            (getSystemService(Context.LOCATION_SERVICE) as LocationManager).removeUpdates(this)
             monitor?.finish()
             engine?.let { database.endTrip(tripId, System.currentTimeMillis(), it.trip, monitor?.stats) }
             monitor?.stats?.let { LiveState.lastTripScore = it.score() }
@@ -487,7 +523,49 @@ class BumpService : Service(), SensorEventListener, LocationListener, EngineList
         eng.onFix(fix)
         monitor?.onFix(eng.lastFix ?: fix)
         LiveState.forwardKnown = eng.forwardKnown
+        val kmh = fix.speedMps * 3.6
+        autoStop?.onFix(fix.timeMs, kmh)
+        power.onFix(fix.timeMs, kmh)?.let { applyPower(it) }
         publish(eng, force = false)
+    }
+
+    /** Engine thread. Stopped: slow GPS, batched sensors, no gyroscope. Moving: everything at full rate (#50). */
+    private fun applyPower(mode: PowerPolicy.Mode) {
+        val h = handler ?: return
+        if (!running) return
+        val sm = getSystemService(Context.SENSOR_SERVICE) as SensorManager
+        if (mode.stopped != stoppedMode) {
+            stoppedMode = mode.stopped
+            // Same 50 Hz accelerometer either way; only how often Android hands the samples over changes.
+            sm.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)?.let {
+                sm.unregisterListener(this, it)
+                sm.registerListener(this, it, 20_000, mode.sensorLatencyUs, h)
+            }
+            (getSystemService(Context.LOCATION_SERVICE) as LocationManager).removeUpdates(this)
+            requestGps(mode.gpsIntervalMs, h.looper)
+            trace?.power(mode.stopped)
+        }
+        val gyro = sm.getDefaultSensor(Sensor.TYPE_GYROSCOPE)
+        if (gyro != null && mode.gyro != gyroOn) {
+            if (mode.gyro) {
+                sm.registerListener(this, gyro, 20_000, h)
+            } else {
+                sm.unregisterListener(this, gyro)
+                gyroSeen = false   // the recording shows "no gyroscope" instead of a stale value
+            }
+            gyroOn = mode.gyro
+        }
+    }
+
+    private fun requestGps(intervalMs: Long, looper: Looper) {
+        try {
+            (getSystemService(Context.LOCATION_SERVICE) as LocationManager)
+                .requestLocationUpdates(LocationManager.GPS_PROVIDER, intervalMs, 0f, this, looper)
+        } catch (e: SecurityException) {
+            LiveState.lastEvent = "No location permission"
+        } catch (e: IllegalArgumentException) {
+            LiveState.lastEvent = "This phone has no GPS"
+        }
     }
 
     // Android 10 needs these three implemented explicitly.
