@@ -300,15 +300,14 @@
     <string name="sync_ask_footer">You can change this any time in Settings → Shared map.</string>
     <string name="sync_ask_point_area">To download spots near you, the app sends a rough area (about 1 km), never your exact position.</string>
     <string name="sync_ask_what_sent">What exactly is sent?</string>
-    <string name="sync_ask_details">Both options: an anonymous phone ID (app and Android version) and a rough area (about 1 km) to download nearby spots.
-“Share and receive” also sends the bumps and potholes you find (place, time, direction, speed, how strong) and, if the app crashes, the crash report (app version, phone model, error details; no location).</string>
-    <string name="sync_error_other">Couldn't sync. Choose your option above again to retry.</string>
+    <string name="sync_ask_details">Both options: an anonymous phone ID (app and Android version) and a rough area (about 1 km) to download nearby spots.\n“Share and receive” also sends the bumps and potholes you find (place, time, direction, speed, how strong) and, if the app crashes, the crash report (app version, phone model, error details; no location).</string>
+    <string name="sync_error_other">Couldn\'t sync. Choose your option above again to retry.</string>
     <string name="sync_choice_share">Share and receive</string>
     <string name="sync_choice_receive">Receive only</string>
     <string name="sync_choice_later">Decide later</string>
     <string name="sync_choice_off">Off</string>
     <string name="sync_toast_sharing">Thanks! You\'ll get warnings from other drivers and help them too.</string>
-    <string name="sync_toast_receiving">You'll get warnings from other drivers. Your bumps aren't shared.</string>
+    <string name="sync_toast_receiving">You\'ll get warnings from other drivers. Your bumps aren\'t shared.</string>
     <string name="sync_last_never">Last synced: never</string>
     <string name="sync_last_just_now">Last synced just now</string>
     <string name="sync_last_at">Last synced %1$s</string>
