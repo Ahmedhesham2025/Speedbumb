@@ -465,7 +465,7 @@ class BumpService : Service(), SensorEventListener, LocationListener, EngineList
             if (location.hasAccuracy()) location.accuracy.toDouble() else 99.0,
         )
         trace?.gps(fix.timeMs, fix.lat, fix.lon, fix.speedMps * 3.6, fix.bearingDeg, fix.accuracyM)
-        sink?.onFix(fix.lat, fix.lon, fix.accuracyM)
+        sink?.onFix(fix)
         if (!pulledThisTrip && fix.accuracyM <= 100.0) {
             // First usable position of the trip: refresh the shared spots around it (when there is network).
             pulledThisTrip = true

@@ -9,6 +9,8 @@ import app.bumpbeeper.sync.SyncStore
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import kotlin.math.min
+import kotlin.math.roundToInt
 
 /**
  * SQLite database on the phone (file: bumps.db). Three tables:
@@ -17,7 +19,7 @@ import java.util.Locale
  *  trips  – one row per Start…Stop
  * plus the shared-map sync tables (outbox, remote_spots, sync_state), see [SyncStore].
  */
-class BumpDb(ctx: Context) : SQLiteOpenHelper(ctx, "bumps.db", null, 5), BumpStore {
+class BumpDb(ctx: Context) : SQLiteOpenHelper(ctx, "bumps.db", null, 6), BumpStore {
 
     init {
         setWriteAheadLoggingEnabled(true)
@@ -49,6 +51,16 @@ class BumpDb(ctx: Context) : SQLiteOpenHelper(ctx, "bumps.db", null, 5), BumpSto
         )
         addTripColumns(db)
         SyncStore.createTables(db)
+        addSpeedLimitColumns(db)
+    }
+
+    /** Version 6: speeding against road limits ([DrivingStats.withSpeedLimits]); -1 = not looked up. */
+    private fun addSpeedLimitColumns(db: SQLiteDatabase) {
+        for (c in listOf(
+            "limit_known_share REAL NOT NULL DEFAULT -1", "limit_known_s REAL NOT NULL DEFAULT 0",
+            "over_limit_10_s REAL NOT NULL DEFAULT 0", "over_limit_20_s REAL NOT NULL DEFAULT 0",
+            "over_limit_30_s REAL NOT NULL DEFAULT 0", "max_over_limit_kmh REAL NOT NULL DEFAULT 0",
+        )) db.execSQL("ALTER TABLE trips ADD COLUMN $c")
     }
 
     /** Version 4: driving statistics and score per trip. */
@@ -75,6 +87,8 @@ class BumpDb(ctx: Context) : SQLiteOpenHelper(ctx, "bumps.db", null, 5), BumpSto
         if (oldVersion < 4) addTripColumns(db)
         // Version 5: shared-map sync (outbox, remote spot cache, sync state). New tables only; nothing else changes.
         if (oldVersion < 5) SyncStore.createTables(db)
+        // Version 6: road speed limit columns; existing trips read as "not looked up".
+        if (oldVersion < 6) addSpeedLimitColumns(db)
     }
 
     // ---------------- BumpStore (used by the engine) ----------------
@@ -148,6 +162,7 @@ class BumpDb(ctx: Context) : SQLiteOpenHelper(ctx, "bumps.db", null, 5), BumpSto
                 put("max_speed", d.maxSpeedKmh); put("harsh_brakes", d.harshBrakes); put("harsh_accels", d.harshAccels)
                 put("harsh_corners", d.harshCorners); put("swerves", d.swerves); put("bumps_fast", d.bumpsFast)
                 put("phone_use", d.phoneUse); put("score", d.score())
+                putSpeedLimits(d)
                 // The driving monitor measures distance the same way; prefer it when the bump engine had poor GPS.
                 if (d.distanceM > s.distanceM) put("distance_m", d.distanceM)
             }
@@ -155,21 +170,64 @@ class BumpDb(ctx: Context) : SQLiteOpenHelper(ctx, "bumps.db", null, 5), BumpSto
         writableDatabase.update("trips", v, "id = ?", arrayOf(id.toString()))
     }
 
-    /** One finished trip, for the Trips screen. */
+    private fun ContentValues.putSpeedLimits(d: DrivingStats) {
+        put("limit_known_share", d.limitKnownShare); put("limit_known_s", d.limitKnownS)
+        put("over_limit_10_s", d.overLimit10S); put("over_limit_20_s", d.overLimit20S); put("over_limit_30_s", d.overLimit30S)
+        put("max_over_limit_kmh", d.maxOverLimitKmh)
+    }
+
+    /** One trip by id, finished or not (null if it is gone). */
+    fun trip(id: Long): TripRow? = tripRows("WHERE id = $id", 1).singleOrNull()
+
+    /**
+     * After the speed-limit lookup: stores [r] for a finished trip and, when the limits now drive the speed part
+     * ([DrivingStats.usesSpeedLimits]), its new score. False when the trip is gone.
+     *
+     * Only the speed part of the score changes: new score = old score + old speed penalty − new speed penalty.
+     * Recomputing the whole score here would use the stored distance (the larger of engine and monitor), not the
+     * monitor's distance the trip-end score used, and move the other penalties too.
+     */
+    fun setTripSpeedLimits(id: Long, r: SpeedLimitResult): Boolean {
+        val row = trip(id) ?: return false
+        val d = row.drive.withSpeedLimits(r)
+        val v = ContentValues().apply {
+            putSpeedLimits(d)
+            if (d.usesSpeedLimits && row.score >= 0) {
+                put("score", (row.score + speedPenalty(row.drive) - speedPenalty(d)).roundToInt().coerceIn(0, 100))
+            }
+        }
+        return writableDatabase.update("trips", v, "id = ?", arrayOf(id.toString())) > 0
+    }
+
+    /** The speed part of [DrivingStats.score] (0..40): road limits when used, else the fixed threshold (same formula). */
+    internal fun speedPenalty(d: DrivingStats): Double =
+        if (d.usesSpeedLimits) SpeedLimitScoring.penalty(d.limitKnownS, d.overLimit10S, d.overLimit20S, d.overLimit30S)
+        else min(40.0, d.speedingShare * 60.0 + d.speedingShare * d.avgExcessKmh)
+
+    /**
+     * One finished trip, for the Trips screen. Road speed limits are in [drive]: [DrivingStats.limitKnownShare]
+     * (-1 = not looked up, see [limitsLookedUp]), [DrivingStats.limitKnownS], [DrivingStats.overLimit10S] /
+     * 20 / 30, [DrivingStats.maxOverLimitKmh], and [DrivingStats.usesSpeedLimits] (show "© TomTom" then).
+     */
     class TripRow(
         val id: Long, val startTs: Long, val endTs: Long, val hits: Int, val newBumps: Int, val beeps: Int,
         val potholes: Int, val drive: DrivingStats, val score: Int,
     ) {
         val durationS: Long get() = ((endTs - startTs) / 1000).coerceAtLeast(0)
+        val limitsLookedUp: Boolean get() = drive.limitKnownShare >= 0
     }
 
     /** Finished trips, newest first. Trips shorter than 200 m (started by mistake) are left out. */
-    fun trips(limit: Int = 200): List<TripRow> {
+    fun trips(limit: Int = 200): List<TripRow> =
+        tripRows("WHERE end_ts IS NOT NULL AND distance_m >= 200 ORDER BY start_ts DESC", limit)
+
+    private fun tripRows(where: String, limit: Int): List<TripRow> {
         val out = ArrayList<TripRow>()
         readableDatabase.rawQuery(
             "SELECT id, start_ts, end_ts, hits, new_bumps, beeps, potholes, distance_m, moving_s, speeding_s, speeding_excess, " +
-                "max_speed, harsh_brakes, harsh_accels, harsh_corners, swerves, bumps_fast, phone_use, score " +
-                "FROM trips WHERE end_ts IS NOT NULL AND distance_m >= 200 ORDER BY start_ts DESC LIMIT $limit", null
+                "max_speed, harsh_brakes, harsh_accels, harsh_corners, swerves, bumps_fast, phone_use, score, " +
+                "limit_known_share, limit_known_s, over_limit_10_s, over_limit_20_s, over_limit_30_s, max_over_limit_kmh " +
+                "FROM trips $where LIMIT $limit", null
         ).use { c ->
             fun i(k: Int) = if (c.isNull(k)) 0 else c.getInt(k)
             fun dd(k: Int) = if (c.isNull(k)) 0.0 else c.getDouble(k)
@@ -178,10 +236,12 @@ class BumpDb(ctx: Context) : SQLiteOpenHelper(ctx, "bumps.db", null, 5), BumpSto
                     distanceM = dd(7); movingS = dd(8); speedingS = dd(9); speedingExcess = dd(10); maxSpeedKmh = dd(11)
                     harshBrakes = i(12); harshAccels = i(13); harshCorners = i(14); swerves = i(15)
                     bumpsFast = i(16); phoneUse = i(17)
+                    limitKnownShare = if (c.isNull(19)) -1.0 else c.getDouble(19); limitKnownS = dd(20)
+                    overLimit10S = dd(21); overLimit20S = dd(22); overLimit30S = dd(23); maxOverLimitKmh = dd(24)
                 }
                 // Trips recorded before driving scores existed have no score: leave them unscored.
                 val score = if (c.isNull(18)) -1 else c.getInt(18)
-                out.add(TripRow(c.getLong(0), c.getLong(1), c.getLong(2), i(3), i(4), i(5), i(6), d, score))
+                out.add(TripRow(c.getLong(0), c.getLong(1), if (c.isNull(2)) 0L else c.getLong(2), i(3), i(4), i(5), i(6), d, score))
             }
         }
         return out
