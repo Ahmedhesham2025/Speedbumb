@@ -270,7 +270,7 @@ class BumpDb(ctx: Context) : SQLiteOpenHelper(ctx, "bumps.db", null, 5), BumpSto
      * Returns (added, already known, unreadable rows).
      */
     fun importBumpsCsv(text: String, cfg: EngineConfig = EngineConfig()): Triple<Int, Int, Int> {
-        val lines = text.lineSequence().map { it.trim().removePrefix("﻿") }.filter { it.isNotEmpty() }.toList()
+        val lines = text.lineSequence().map { it.trim().removePrefix("\uFEFF") }.filter { it.isNotEmpty() }.toList()
         if (lines.isEmpty()) return Triple(0, 0, 0)
         val head = lines[0].split(',').map { it.trim().lowercase() }
         fun idx(name: String) = head.indexOf(name)

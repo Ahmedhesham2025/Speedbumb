@@ -18,6 +18,8 @@ class SupabaseAuth(
     private val key: String,
     private val transport: Transport = UrlTransport,
     private val now: () -> Long = System::currentTimeMillis,
+    /** False for "forget me": a dead session must not quietly become a new device (the old one's data would stay). */
+    private val mayCreate: Boolean = true,
 ) {
     private val sp: SharedPreferences = prefs(ctx)
 
@@ -38,6 +40,7 @@ class SupabaseAuth(
             // the old device's data then expires on the server. Anything else (429, 5xx): try again later.
             if (r.code != 400 && r.code != 401) throw ApiException(Outcome.RETRY, "token refresh: HTTP ${r.code}")
         }
+        if (!mayCreate) throw ApiException(Outcome.AUTH, "session expired")
         return signUp()
     }
 
@@ -64,13 +67,13 @@ class SupabaseAuth(
             .putString(REFRESH, refresh)
             .putLong(EXPIRES_AT, now() + expiresIn * 1000)
             .putString(USER_ID, j.optJSONObject("user")?.optString("id", "")?.takeIf { it.isNotEmpty() } ?: userId)
-            .apply()
+            .commit()   // synchronous (background thread): refresh tokens rotate, losing the new one loses the device
         return access
     }
 
-    /** Forget the session; the next call signs in as a new anonymous device. */
+    /** Forget the session; the next call signs in as a new anonymous device. Background thread. */
     fun clear() {
-        sp.edit().clear().apply()
+        sp.edit().clear().commit()
     }
 
     companion object {

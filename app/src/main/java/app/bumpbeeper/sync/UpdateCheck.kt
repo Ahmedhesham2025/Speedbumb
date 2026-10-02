@@ -4,11 +4,14 @@ import android.content.Context
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
+import app.bumpbeeper.BuildConfig
 import app.bumpbeeper.Prefs
 import app.bumpbeeper.TraceWriter
+import org.json.JSONArray
 import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URL
+import java.util.Locale
 
 /**
  * "Is there a newer version?" — asks GitHub for the latest release of this app.
@@ -73,9 +76,8 @@ object UpdateCheck {
             val json = JSONObject(body)
             val tag = json.optString("tag_name", "")
             val html = json.optString("html_url", "https://github.com/Ahmedhesham2025/speedo/releases/latest")
-            val assets = json.optJSONArray("assets")
-            val download = if (assets != null && assets.length() > 0)
-                assets.optJSONObject(0)?.optString("browser_download_url", "")?.takeIf { it.isNotEmpty() } else null
+            // Each release carries one APK per edition; offer the one matching this install (else the release page).
+            val download = pickApk(json.optJSONArray("assets"), BuildConfig.FLAVOR)
             val version = tag.removePrefix("v").removePrefix("V")
             // A pre-release (1.3.0-rc1) is never offered; keep whatever stable answer was saved before.
             if (isPreRelease(version)) return cached(ctx, current)
@@ -101,6 +103,24 @@ object UpdateCheck {
         val html = sp.getString(Prefs.UPDATE_HTML_URL, null) ?: return null
         val download = sp.getString(Prefs.UPDATE_URL, null)?.takeIf { it.isNotEmpty() }
         return Update(version, download, html)
+    }
+
+    /**
+     * The download URL of this edition's APK among a release's [assets]: `BumpBeeper-<ver>-google.apk` for the
+     * play edition, `BumpBeeper-<ver>.apk` for foss. Null when the release has no matching APK (the caller then
+     * points at the release page), so a foss install is never offered the Google build or the other way round.
+     */
+    fun pickApk(assets: JSONArray?, flavor: String): String? {
+        if (assets == null) return null
+        val wantGoogle = flavor == "play"
+        for (i in 0 until assets.length()) {
+            val a = assets.optJSONObject(i) ?: continue
+            val name = a.optString("name", "").lowercase(Locale.US)
+            val url = a.optString("browser_download_url", "")
+            if (!name.endsWith(".apk") || url.isEmpty()) continue
+            if (name.contains("-google") == wantGoogle) return url
+        }
+        return null
     }
 
     /** Local and development builds never offer updates. */

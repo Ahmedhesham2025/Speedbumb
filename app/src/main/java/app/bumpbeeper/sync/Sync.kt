@@ -75,23 +75,35 @@ object Sync {
 
     /** Recording started and has a position: refresh the spot cache around it as soon as there is network. */
     fun pullAround(ctx: Context, lat: Double, lon: Double) {
-        if (online(ctx)) schedule(ctx, JOB_PULL, true, lat, lon)
+        if (online(ctx)) schedule(ctx, JOB_PULL, true, round2(lat), round2(lon))
     }
 
     /** Recording stopped (the outbox has this trip's observations): full sync when online. */
     fun afterTrip(ctx: Context, lat: Double, lon: Double) {
         if (!online(ctx)) return
         ensureDaily(ctx)
-        schedule(ctx, JOB_NOW, false, lat, lon)
+        // Rounded before it is stored anywhere (JobScheduler keeps job extras on disk): the trip's end is often home.
+        schedule(ctx, JOB_NOW, false, round2(lat), round2(lon))
     }
 
     /**
      * The first-run / settings answer: [Prefs.SYNC_RECEIVE] or [Prefs.SYNC_SHARE] start syncing (a run now tells the
-     * server, register_device); leaving "share" empties the outbox at that run, so nothing collected before is sent.
+     * server, register_device). Any answer other than "share" empties the outbox right away (background thread), so
+     * points collected before are never sent, even if sharing is switched on again later.
      * [Prefs.SYNC_UNSET] stops all sync jobs.
      */
     fun setChoice(ctx: Context, choice: String) {
         Prefs.setSyncChoice(ctx, choice)
+        if (Prefs.syncChoice(ctx) != Prefs.SYNC_SHARE) {
+            val app = ctx.applicationContext ?: ctx
+            Thread({
+                try {
+                    synchronized(lock) { withDb(app) { db -> SyncStore(db).outboxClear(); publishStatus(SyncStore(db)) } }
+                } catch (e: Exception) {
+                    Log.w(TAG, "outbox not cleared", e)
+                }
+            }, "sync-outbox-clear").start()
+        }
         if (online(ctx)) {
             ensureDaily(ctx)
             schedule(ctx, JOB_NOW, false, Double.NaN, Double.NaN)
@@ -150,31 +162,39 @@ object Sync {
         setChoice(app, Prefs.SYNC_UNSET)
         Thread({
             val ok = try {
-                synchronized(lock) {
-                    val auth = newAuth(app)
-                    val serverOk = !auth.signedIn || try {
-                        SupabaseApi(BuildConfig.SUPABASE_URL, BuildConfig.SUPABASE_KEY, auth).forgetMe()
-                        true
-                    } catch (e: ApiException) {
-                        Log.w(TAG, "forget_me failed: ${e.message}")
-                        false
-                    }
-                    withDb(app) { db ->
-                        val store = SyncStore(db)
-                        store.clearAll()
-                        if (!serverOk) store.put(LAST_ERROR, "could not reach the server to delete your data")
-                        publishStatus(store)
-                    }
-                    // Keep the sign-in when the server call failed, so a retry can still delete that device's data.
-                    if (serverOk) auth.clear()
-                    serverOk
-                }
+                forgetNow(app)
             } catch (e: Exception) {
                 Log.w(TAG, "forget me", e)
                 false
             }
             Handler(Looper.getMainLooper()).post { callback(ok) }
         }, "sync-forget").start()
+    }
+
+    /** The blocking part of [forgetMe] (background thread). [transport] is swapped for a fake in tests. */
+    fun forgetNow(app: Context, transport: Transport = UrlTransport): Boolean = synchronized(lock) {
+        // Never signs in as a new device here: with a dead session forget_me would delete the new, empty device
+        // and report success while the old device's data stays on the server. Report the failure instead.
+        val auth = SupabaseAuth(app, BuildConfig.SUPABASE_URL, BuildConfig.SUPABASE_KEY, transport, mayCreate = false)
+        var reason = ""
+        val serverOk = !auth.signedIn || try {
+            SupabaseApi(BuildConfig.SUPABASE_URL, BuildConfig.SUPABASE_KEY, auth, transport).forgetMe()
+            true
+        } catch (e: ApiException) {
+            Log.w(TAG, "forget_me failed: ${e.message}")
+            reason = if (e.outcome == Outcome.AUTH) "sign-in expired, could not delete your data on the server"
+            else "could not reach the server to delete your data"
+            false
+        }
+        withDb(app) { db ->
+            val store = SyncStore(db)
+            store.clearAll()
+            if (!serverOk) store.put(LAST_ERROR, reason)
+            publishStatus(store)
+        }
+        // Keep the sign-in when the server call failed, so a retry can still delete that device's data.
+        if (serverOk) auth.clear()
+        serverOk
     }
 
     // ---------------------------------------------------------------- one run (SyncJob thread)
@@ -193,7 +213,8 @@ object Sync {
                 store.put(POS_LAT, round2(lat))
                 store.put(POS_LON, round2(lon))
             }
-            val api = SupabaseApi(BuildConfig.SUPABASE_URL, BuildConfig.SUPABASE_KEY, newAuth(ctx, transport), transport)
+            val clock = ClockWatch(transport)
+            val api = SupabaseApi(BuildConfig.SUPABASE_URL, BuildConfig.SUPABASE_KEY, newAuth(ctx, clock), clock)
             val now = System.currentTimeMillis()
             var retry = false
             var error = ""
@@ -202,7 +223,7 @@ object Sync {
                     val share = choice == Prefs.SYNC_SHARE
                     api.registerDevice(TraceWriter.appVersion(ctx), Build.VERSION.SDK_INT, CONSENT_VERSION, share)
                     if (share) {
-                        error = upload(api, store, now, ctx)
+                        error = upload(api, store, now, ctx, clock)
                         if (error.isEmpty()) uploadCrashes(api, ctx)
                     } else {
                         store.outboxClear()
@@ -222,20 +243,24 @@ object Sync {
     }
 
     /** Uploads the outbox in batches. Returns "" or a short reason it stopped without needing a retry. */
-    private fun upload(api: SupabaseApi, store: SyncStore, now: Long, ctx: Context): String {
+    private fun upload(api: SupabaseApi, store: SyncStore, now: Long, ctx: Context, clock: ClockWatch): String {
         store.outboxPrune(now - KEEP_DAYS * DAY_MS, MAX_ATTEMPTS)
         if (now < store.getLong(UPLOAD_PAUSED_UNTIL)) return ApiErrors.describe(Outcome.LIMIT)
         var reRegistered = false
         var batches = 0
         while (batches < MAX_BATCHES_PER_RUN) {
+            // Sharing switched off while this run was going: stop before the next batch (setChoice empties the outbox).
+            if (Prefs.syncChoice(ctx) != Prefs.SYNC_SHARE) break
             val batch = store.outboxBatch(BATCH)
             if (batch.isEmpty()) break
+            // The server's clock (Date header of the calls so far) wins when the phone's runs more than 1 h ahead.
+            val shift = clock.correctionMs()
             val arr = JSONArray()
             val ids = ArrayList<String>()
             val broken = ArrayList<String>()
             for ((id, json) in batch) {
                 try {
-                    arr.put(JSONObject(json)); ids.add(id)
+                    arr.put(ObservationJson.shiftObservedAt(JSONObject(json), shift)); ids.add(id)
                 } catch (_: Exception) {
                     broken.add(id)
                 }
@@ -283,7 +308,7 @@ object Sync {
             }
             fun field(name: String) = text.lineSequence().firstOrNull { it.startsWith("$name=") }?.substringAfter('=') ?: ""
             try {
-                api.submitCrashReport(field("app_version"), field("device"), text)
+                api.submitCrashReport(field("app_version"), field("device"), CrashLog.scrub(text))
                 f.delete()
             } catch (e: ApiException) {
                 when (e.outcome) {
