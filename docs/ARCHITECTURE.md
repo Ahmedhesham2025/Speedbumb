@@ -36,7 +36,7 @@ DrivingMonitor ─► trips (local) ─► (fleet drivers on shift only) submit_
 
 ## Decisions
 - Zero cost; free stack only (see `ROADMAP.md`).
-- No runtime libraries in the app (smaller, fewer surprises, F-Droid friendly).
+- No runtime libraries in the app (smaller, fewer surprises, F-Droid friendly). Two editions: `foss` (none) and `play` (+ Google activity recognition only); both detect driving with built-in sensors, `play` adds Google's IN_VEHICLE detection.
 - Map merging in SQL (`pg_cron`) so it is testable with pgTAP and runs next to the data.
 - Repo is public under GPL-3.0; real recordings are anonymized before they enter `testdata/`.
 - Releases are tags `vX.Y.Z` → signed APK on GitHub Releases; `versionCode = X*10000 + Y*100 + Z`.
