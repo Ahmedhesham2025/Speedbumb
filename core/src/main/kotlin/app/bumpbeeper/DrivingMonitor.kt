@@ -40,6 +40,20 @@ class DrivingStats {
     var bumpsFast = 0
     var phoneUse = 0
 
+    // Speeding against real road limits (set by [withSpeedLimits] after the trip; see [SpeedLimitScoring]).
+    /** Share 0..1 of the distance with a known road limit (show with [SpeedLimitScoring.ATTRIBUTION]), -1 = not looked up. */
+    var limitKnownShare = -1.0
+    /** Seconds driven with a known limit (the base the limit-based penalty is normalised by). */
+    var limitKnownS = 0.0
+    /** Seconds over the limit by more than +10, +20 and +30 km/h (nested), and the most held for 3 s, km/h. */
+    var overLimit10S = 0.0
+    var overLimit20S = 0.0
+    var overLimit30S = 0.0
+    var maxOverLimitKmh = 0.0
+
+    /** True when the speed part of the score comes from road limits (known for ≥ 50 % of the distance). */
+    val usesSpeedLimits: Boolean get() = limitKnownShare >= SpeedLimitScoring.MIN_KNOWN_SHARE
+
     val speedingShare: Double get() = if (movingS > 0) speedingS / movingS else 0.0
     val avgExcessKmh: Double get() = if (speedingS > 0) speedingExcess / speedingS else 0.0
     val avgSpeedKmh: Double get() = if (movingS > 0) distanceM / movingS * 3.6 else 0.0
@@ -47,7 +61,21 @@ class DrivingStats {
     /** Short trips count as 5 km, so one event on a 1 km trip doesn't sink the score. */
     private val per10km: Double get() = 10.0 / max(distanceM / 1000.0, 5.0)
 
-    private fun speedPenalty() = min(40.0, speedingShare * 60.0 + speedingShare * avgExcessKmh)
+    /** Road limits when known for enough of the trip ([SpeedLimitScoring.penalty]), else the fixed threshold. Both 0..40. */
+    private fun speedPenalty() =
+        if (usesSpeedLimits) SpeedLimitScoring.penalty(limitKnownS, overLimit10S, overLimit20S, overLimit30S)
+        else min(40.0, speedingShare * 60.0 + speedingShare * avgExcessKmh)
+
+    /**
+     * A copy of these stats rescored with road speed limits ([SpeedLimitScoring.evaluate] of this trip).
+     * If limits are known for less than half the distance, the score keeps the fixed-threshold speed part.
+     */
+    fun withSpeedLimits(r: SpeedLimitResult): DrivingStats = DrivingStats().also {
+        it.copyFrom(this)
+        it.limitKnownShare = r.knownShare; it.limitKnownS = r.knownS
+        it.overLimit10S = r.over10S; it.overLimit20S = r.over20S; it.overLimit30S = r.over30S
+        it.maxOverLimitKmh = r.maxExcessKmh
+    }
     private fun brakePenalty() = (harshBrakes * 5.0 + harshAccels * 3.0) * per10km
     private fun steerPenalty() = (harshCorners * 4.0 + swerves * 6.0) * per10km
     private fun bumpPenalty() = bumpsFast * 4.0 * per10km
@@ -77,6 +105,9 @@ class DrivingStats {
         speedingS = o.speedingS; speedingExcess = o.speedingExcess
         harshBrakes = o.harshBrakes; harshAccels = o.harshAccels; harshCorners = o.harshCorners
         swerves = o.swerves; bumpsFast = o.bumpsFast; phoneUse = o.phoneUse
+        limitKnownShare = o.limitKnownShare; limitKnownS = o.limitKnownS
+        overLimit10S = o.overLimit10S; overLimit20S = o.overLimit20S; overLimit30S = o.overLimit30S
+        maxOverLimitKmh = o.maxOverLimitKmh
     }
 
     companion object {
