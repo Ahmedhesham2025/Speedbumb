@@ -202,7 +202,7 @@ class SpeedLimitTest {
         val off = chunks[0].size
         assertTrue(lim.limitsKmh.subList(off, off + chunks[1].size + chunks[2].size).all { it == null })
         assertTrue(lim.limitsKmh.takeLast(chunks.last().size).all { it == null })
-        val r = SpeedLimitScoring.evaluate(fixes, chunks, replies)
+        val r = SpeedLimitScoring.evaluateChunks(fixes, chunks, replies)
         assertTrue("known ${r.knownShare}", r.knownShare in 0.1..0.7)
         assertEquals(r.knownS, r.over20S, 10.0)   // every known second is over +20
         assertEquals(0.0, r.over30S, 0.0)

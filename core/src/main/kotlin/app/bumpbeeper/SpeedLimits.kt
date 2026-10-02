@@ -56,7 +56,7 @@ data class RoutePoint(val lat: Double, val lon: Double, val timeMs: Long, val ep
  * [TripPrivacy] zone, then keeps about one point per [SPACING_M] of travel or per [SPACING_MS], whichever comes
  * first. [chunks] splits them into requests of 2..[MAX_POINTS] points and at most [MAX_CHUNK_M] of route, and
  * also wherever two points are more than [MAX_GAP_M] apart (the server refuses gaps over 6 km, e.g. a tunnel).
- * Send each chunk as one request, then pass the chunks and replies to [SpeedLimitScoring.evaluate].
+ * Send each chunk as one request, then pass the chunks and replies to [SpeedLimitScoring.evaluateChunks].
  */
 object RouteSampler {
     const val SPACING_M = 50.0
@@ -210,7 +210,7 @@ object SpeedLimitScoring {
     }
 
     /** [evaluate] from the planned chunks and one reply per chunk (see [align]). */
-    fun evaluate(fixes: List<Fix>, chunks: List<List<RoutePoint>>, replies: List<List<Double?>?>): SpeedLimitResult =
+    fun evaluateChunks(fixes: List<Fix>, chunks: List<List<RoutePoint>>, replies: List<List<Double?>?>): SpeedLimitResult =
         align(chunks, replies).let { evaluate(fixes, it.points, it.limitsKmh) }
 
     /**
