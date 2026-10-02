@@ -42,13 +42,13 @@ class MapPage(private val a: MainActivity) : Page {
         fun add(v: View, top: Int = 0, h: Int = LinearLayout.LayoutParams.WRAP_CONTENT) =
             col.addView(v, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, h).apply { topMargin = dp(top) })
 
-        add(Ui.text(a, 22f, Ui.TEXT, bold = true, value = "Your map"))
-        val t = listOf("Speed bumps", "Potholes", "Harsh", "Muted").map { Ui.tile(a, it) }
+        add(Ui.text(a, 22f, Ui.TEXT, bold = true, value = a.getString(R.string.map_title)))
+        val t = listOf(R.string.map_tile_bumps, R.string.map_tile_potholes, R.string.map_tile_harsh, R.string.map_tile_muted).map { Ui.tile(a, a.getString(it)) }
         tiles = t.map { it.second }
         add(Ui.grid(a, t.map { it.first }, 4), 12)
 
         // Filter chips.
-        val names = listOf("All", "Bumps", "Potholes", "Harsh")
+        val names = listOf(R.string.map_chip_all, R.string.map_chip_bumps, R.string.map_chip_potholes, R.string.map_chip_harsh).map { a.getString(it) }
         chips = names.mapIndexed { i, n ->
             Ui.text(a, 14f, Ui.TEXT, bold = true, value = n).apply {
                 gravity = Gravity.CENTER
@@ -62,28 +62,23 @@ class MapPage(private val a: MainActivity) : Page {
         map = BumpMapView(a).apply { onSelect = { showActions(it) } }
         add(map, 10, dp(340))
         add(Ui.row(a,
-            Ui.button(a, "−  Zoom out") { map.radiusM *= 2 },
-            Ui.button(a, "+  Zoom in") { map.radiusM /= 2 },
-            Ui.button(a, "◎  Me") { centerOnMe() },
+            Ui.button(a, a.getString(R.string.map_zoom_out)) { map.radiusM *= 2 },
+            Ui.button(a, a.getString(R.string.map_zoom_in)) { map.radiusM /= 2 },
+            Ui.button(a, a.getString(R.string.map_me)) { centerOnMe() },
         ), 8)
-        add(Ui.text(a, 12f, Ui.DIM, value = "● orange speed bump · ● red pothole · ● grey not sure yet · ○ hollow muted. " +
-            "The tick shows the direction it warns for. Drag to move; tap a dot for options. " +
-            "No streets because the app works offline: use Open in Google Maps."), 6)
+        add(Ui.text(a, 12f, Ui.DIM, value = a.getString(R.string.map_legend)), 6)
 
-        add(Ui.section(a, "Share & import"))
+        add(Ui.section(a, a.getString(R.string.map_section_share)))
         val share = Ui.card(a)
         share.addView(Ui.row(a,
-            Ui.button(a, "Share…", Ui.Style.PRIMARY) { Sharing.chooseAndShare(a) },
-            Ui.button(a, "Import a file") { a.pickImportFile() },
+            Ui.button(a, a.getString(R.string.settings_share), Ui.Style.PRIMARY) { Sharing.chooseAndShare(a) },
+            Ui.button(a, a.getString(R.string.settings_import)) { a.pickImportFile() },
         ))
-        share.addView(Ui.text(a, 13f, Ui.DIM, value =
-            "To give your bumps to someone: Share… → Bump file, and send it (WhatsApp, email, Drive…). " +
-                "They tap the file and choose Bump Beeper, or use Import a file. Their own spots are kept; yours are added.\n" +
-                "Map file (KML) opens in Google Earth and can be imported into Google My Maps."
+        share.addView(Ui.text(a, 13f, Ui.DIM, value = a.getString(R.string.map_share_hint)
         ).apply { setPadding(0, dp(10), 0, 0) })
         add(share)
 
-        add(Ui.section(a, "Nearest first"))
+        add(Ui.section(a, a.getString(R.string.map_section_nearest)))
         list = LinearLayout(a).apply { orientation = LinearLayout.VERTICAL }
         add(list)
 
@@ -108,7 +103,7 @@ class MapPage(private val a: MainActivity) : Page {
 
     private fun describe(b: Bump): String = when {
         b.kind != BumpKind.POTHOLE -> b.kind.label
-        else -> (if (b.isHarsh(cfg)) "harsh pothole" else "pothole") + (if (b.side != Side.UNKNOWN) ", ${b.side.label}" else "")
+        else -> a.getString(if (b.isHarsh(cfg)) R.string.map_describe_harsh_pothole else R.string.map_describe_pothole) + (if (b.side != Side.UNKNOWN) ", ${b.side.label}" else "")
     }
 
     private fun lastLocation(): Location? {
@@ -146,7 +141,7 @@ class MapPage(private val a: MainActivity) : Page {
 
         list.removeAllViews()
         if (shown.isEmpty()) {
-            list.addView(Ui.text(a, 14f, Ui.DIM, value = if (all.isEmpty()) "Nothing yet. Bumps are recorded the first time you drive over them." else "Nothing in this filter."))
+            list.addView(Ui.text(a, 14f, Ui.DIM, value = a.getString(if (all.isEmpty()) R.string.map_nothing_yet else R.string.map_nothing_filter)))
             return
         }
         val refLat = me?.latitude ?: map.centerLat
@@ -155,7 +150,8 @@ class MapPage(private val a: MainActivity) : Page {
         for (b in sorted.take(200)) {
             val d = Geo.distance(refLat, refLon, b.lat, b.lon)
             val dir = compass(Geo.bearing(refLat, refLon, b.lat, b.lon))
-            val dist = if (d >= 1000) String.format(Locale.US, "%.1f km", d / 1000) else String.format(Locale.US, "%.0f m", d)
+            val dist = if (d >= 1000) a.getString(R.string.map_dist_km, String.format(Locale.US, "%.1f", d / 1000))
+                else a.getString(R.string.map_dist_m, String.format(Locale.US, "%.0f", d))
             val row = LinearLayout(a).apply {
                 orientation = LinearLayout.HORIZONTAL
                 gravity = Gravity.CENTER_VERTICAL
@@ -172,20 +168,20 @@ class MapPage(private val a: MainActivity) : Page {
                     orientation = LinearLayout.VERTICAL
                     setPadding(dp(12), 0, 0, 0)
                     addView(Ui.text(a, 15f, Ui.TEXT, bold = true, value = describe(b).replaceFirstChar { it.uppercase() }))
-                    addView(Ui.text(a, 13f, Ui.DIM, value = "$dist $dir · felt ${b.hits}/${b.passes}" + if (b.isMuted(cfg)) " · muted" else ""))
+                    addView(Ui.text(a, 13f, Ui.DIM, value = a.getString(R.string.map_row_felt, dist, dir, b.hits, b.passes) + if (b.isMuted(cfg)) a.getString(R.string.map_row_muted) else ""))
                 }, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
                 addView(Ui.text(a, 18f, Ui.DIM, value = "›"))
             }
             list.addView(row, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { bottomMargin = dp(6) })
         }
-        if (sorted.size > 200) list.addView(Ui.text(a, 13f, Ui.DIM, value = "…and ${sorted.size - 200} more (Share → Bump file to see all)"))
+        if (sorted.size > 200) list.addView(Ui.text(a, 13f, Ui.DIM, value = a.getString(R.string.map_more, sorted.size - 200)))
     }
 
     private fun compass(deg: Double): String =
-        arrayOf("N", "NE", "E", "SE", "S", "SW", "W", "NW")[(((deg + 22.5) % 360) / 45).toInt()]
+        a.getString(COMPASS[(((deg + 22.5) % 360) / 45).toInt()])
 
     private fun centerOnMe() {
-        val me = lastLocation() ?: return a.toast("Location not known yet")
+        val me = lastLocation() ?: return a.toast(a.getString(R.string.map_location_unknown))
         map.meLat = me.latitude; map.meLon = me.longitude
         map.centerLat = me.latitude; map.centerLon = me.longitude
         map.invalidate()
@@ -195,18 +191,15 @@ class MapPage(private val a: MainActivity) : Page {
 
     private fun showActions(b: Bump) {
         val date = SimpleDateFormat("d MMM yyyy", Locale.US).format(Date(b.firstSeen))
-        val info = String.format(
-            Locale.US, "Felt %d of %d passes · average jolt %.1f m/s² · first seen %s",
-            b.hits, b.passes, b.peakAvg, date,
-        )
+        val info = a.getString(R.string.map_spot_info, b.hits, b.passes, String.format(Locale.US, "%.1f", b.peakAvg), date)
         val actions = arrayOf(
-            "Open in Google Maps",
-            if (b.userMuted) "Unmute" else "Mute (never warn here)",
-            "It's a speed bump",
-            "It's a pothole",
-            "Pothole is on the left",
-            "Pothole is on the right",
-            "Delete",
+            a.getString(R.string.map_action_open_maps),
+            a.getString(if (b.userMuted) R.string.map_action_unmute else R.string.map_action_mute),
+            a.getString(R.string.map_action_is_bump),
+            a.getString(R.string.map_action_is_pothole),
+            a.getString(R.string.map_action_pothole_left),
+            a.getString(R.string.map_action_pothole_right),
+            a.getString(R.string.common_delete),
         )
         AlertDialog.Builder(a)
             .setTitle("#${b.id} · ${describe(b)}\n$info")
@@ -221,19 +214,19 @@ class MapPage(private val a: MainActivity) : Page {
                     6 -> confirmDelete(b)
                 }
             }
-            .setNegativeButton("Close", null)
+            .setNegativeButton(R.string.common_close, null)
             .show()
     }
 
     private fun openInMaps(b: Bump) {
-        val label = Uri.encode("Bump Beeper #${b.id} (${describe(b)})")
+        val label = Uri.encode(a.getString(R.string.map_maps_label, b.id, describe(b)))
         val uri = Uri.parse(String.format(Locale.US, "geo:%.7f,%.7f?q=%.7f,%.7f(%s)", b.lat, b.lon, b.lat, b.lon, label))
-        try { a.startActivity(Intent(Intent.ACTION_VIEW, uri)) } catch (e: Exception) { a.toast("No maps app found") }
+        try { a.startActivity(Intent(Intent.ACTION_VIEW, uri)) } catch (e: Exception) { a.toast(a.getString(R.string.map_no_maps_app)) }
     }
 
     /** Changes can't be made while recording: the running trip has its own copy of the map. */
     private fun editable(): Boolean {
-        if (LiveState.recording) a.toast("Stop recording first, then edit the map")
+        if (LiveState.recording) a.toast(a.getString(R.string.map_stop_first))
         return !LiveState.recording
     }
 
@@ -252,16 +245,23 @@ class MapPage(private val a: MainActivity) : Page {
     private fun confirmDelete(b: Bump) {
         if (!editable()) return
         AlertDialog.Builder(a)
-            .setTitle("Delete #${b.id}?")
-            .setMessage("It disappears from the map. If it's really there, it is learned again the next time you drive over it.")
-            .setPositiveButton("Delete") { _, _ ->
+            .setTitle(a.getString(R.string.map_delete_title, b.id))
+            .setMessage(a.getString(R.string.map_delete_msg))
+            .setPositiveButton(R.string.common_delete) { _, _ ->
                 Thread {
                     val db = BumpDb(a.applicationContext)
                     try { db.deleteBump(b.id) } finally { db.close() }
                     ui.post { onShow() }
                 }.start()
             }
-            .setNegativeButton("Cancel", null)
+            .setNegativeButton(R.string.common_cancel, null)
             .show()
+    }
+
+    private companion object {
+        val COMPASS = intArrayOf(
+            R.string.map_compass_n, R.string.map_compass_ne, R.string.map_compass_e, R.string.map_compass_se,
+            R.string.map_compass_s, R.string.map_compass_sw, R.string.map_compass_w, R.string.map_compass_nw,
+        )
     }
 }
