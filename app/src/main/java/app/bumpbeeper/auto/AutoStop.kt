@@ -15,6 +15,9 @@ import app.bumpbeeper.Geo
  *  - After the user was seen walking (Google, play edition, [leftVehicle]) [afterWalkingMs] is enough.
  *  - No fix at all for [noFixMs] (an underground car park) also stops. Losing the fix while moving (a tunnel)
  *    doesn't count as parked, because the last known speed was not low.
+ *  - A recording started by a guess (motion or Google's IN_VEHICLE, see [autoStarted]) that never reaches [armKmh]
+ *    stops after [notDrivingMs], whatever the parked setting (even "never"): someone sat in a parked car with the
+ *    engine on, or the guess was wrong. Without it a wrong guess would record (and hold a wake lock) for hours.
  */
 class AutoStop(
     var stopAfterMs: Long,
@@ -23,7 +26,9 @@ class AutoStop(
     val armKmh: Double = 15.0,
     val afterWalkingMs: Long = 60_000L,
     val noFixMs: Long = 15 * 60_000L,
+    val notDrivingMs: Long = 10 * 60_000L,
 ) {
+    private var autoStartMs = -1L
     /** The car's Bluetooth is connected: only its disconnect (with the usual grace) ends the trip. */
     var carConnected = false
 
@@ -53,6 +58,9 @@ class AutoStop(
         anchorLon = lon
     }
 
+    /** This recording started automatically at [nowMs] (motion or Google, not the user or the car's Bluetooth). */
+    fun autoStarted(nowMs: Long) { autoStartMs = nowMs }
+
     /** Google activity recognition saw the user walking: they left the car (play edition). */
     fun leftVehicle() { walking = true }
 
@@ -60,7 +68,9 @@ class AutoStop(
     fun backInVehicle() { walking = false }
 
     fun shouldStop(nowMs: Long): Boolean {
-        if (carConnected || stopAfterMs <= 0 || !armed) return false
+        if (carConnected) return false
+        if (!armed) return autoStartMs >= 0 && nowMs - autoStartMs >= notDrivingMs
+        if (stopAfterMs <= 0) return false
         if (nowMs - lastFixMs >= noFixMs) return true
         // Fixes stopped coming while the car was moving: a tunnel, not a car park.
         if (lastKmh >= movingKmh && nowMs - lastFixMs > STALE_FIX_MS) return false
