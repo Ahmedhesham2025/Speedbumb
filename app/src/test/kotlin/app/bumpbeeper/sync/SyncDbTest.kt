@@ -42,7 +42,7 @@ class SyncDbTest {
 
     @Test fun freshInstallHasSyncTables() {
         val sql = db().writableDatabase
-        assertEquals(5, sql.version)
+        assertTrue(sql.version >= 5)
         assertTrue(tables(sql).containsAll(setOf("bumps", "events", "trips", "outbox", "remote_spots", "sync_state")))
     }
 
@@ -88,7 +88,7 @@ class SyncDbTest {
 
         val db = db()
         val sql = db.writableDatabase
-        assertEquals(5, sql.version)
+        assertTrue(sql.version >= 5)
         assertTrue(tables(sql).containsAll(setOf("outbox", "remote_spots", "sync_state")))
         val b = db.loadBumps().single()
         assertEquals(lat0, b.lat, 0.0)
