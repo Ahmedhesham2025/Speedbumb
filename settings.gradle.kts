@@ -16,3 +16,4 @@ dependencyResolutionManagement {
 rootProject.name = "BumpBeeper"
 include(":app")
 include(":core")
+include(":tools:replay")
