@@ -42,7 +42,7 @@ Deno.test("error messages never contain coordinates", () => {
 
 // ---------------------------------------------------------------- TomTom request
 
-Deno.test("builds a POST with GeoJSON points [lon, lat], ISO timestamps and the speed-limit fields", () => {
+Deno.test("builds a POST with GeoJSON points [lon, lat], times rebased to 2000-01-01 and the speed-limit fields", () => {
   const { url, init } = buildTomTomRequest(pts(2), "TEST-KEY");
   const u = new URL(url);
   assertEquals(u.origin + u.pathname, "https://api.tomtom.com/snapToRoads/1");
@@ -53,11 +53,14 @@ Deno.test("builds a POST with GeoJSON points [lon, lat], ISO timestamps and the 
   );
   assertEquals(init.method, "POST");
   const body = JSON.parse(init.body as string);
+  assertEquals(body.points[0].properties, { timestamp: "2000-01-01T00:00:00.000Z" });
   assertEquals(body.points[1], {
     type: "Feature",
     geometry: { type: "Point", coordinates: [29, 24.001] },
-    properties: { timestamp: "2023-09-29T15:06:41.000Z" },
+    properties: { timestamp: "2000-01-01T00:00:01.000Z" },
   });
+  // The real drive time never reaches TomTom.
+  assert(!(init.body as string).includes("2023"));
 });
 
 // ---------------------------------------------------------------- response mapping
@@ -145,6 +148,16 @@ Deno.test("no user is 401, bad input is 400, neither spends quota", async () => 
   assertEquals((await handle(new Request("http://x", { method: "POST", body: "{" }), b.deps)).status, 400);
   assertEquals((await handle(new Request("http://x"), b.deps)).status, 405);
   assertEquals([a.calls.quota + b.calls.quota, a.calls.fetch + b.calls.fetch], [0, 0]);
+});
+
+Deno.test("a Content-Length over 1 MB is 400 before the body is read, auth or quota", async () => {
+  let authed = 0;
+  const { deps, calls } = fakeDeps({ userId: () => (authed++, Promise.resolve("user-1")) });
+  const req = new Request("http://x", { method: "POST", body: "{}", headers: { "Content-Length": "1000001" } });
+  const res = await handle(req, deps);
+  assertEquals(res.status, 400);
+  assertEquals((await res.json()).message, "body too large");
+  assertEquals([authed, calls.quota, calls.fetch], [0, 0, 0]);
 });
 
 Deno.test("over a quota is 429 and TomTom is not called", async () => {

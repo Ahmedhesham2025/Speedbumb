@@ -72,7 +72,7 @@ and returns that road's legal speed limit. Phones never hold the TomTom key: it 
   Body `{"points":[{"lat":30.05,"lon":31.23,"t":1696000000000}, ...]}`: 2 to 5000 points, `t` in epoch ms, in time order.
 - 400 `{"error":"invalid","message":...}` for bad input, a route over 100 km (TomTom Freemium limit per request)
   or two consecutive points more than 6 km apart in a straight line (TomTom allows at most 6 km of road between points:
-  split the drive there). Even under 6 km in a straight line a winding road can exceed TomTom's limit; that gives 503.
+  split the drive there). A body over 1 MB (Content-Length) is refused with 400 before it is read. Even under 6 km in a straight line a winding road can exceed TomTom's limit; that gives 503.
 - 200 `{"source":"tomtom","attribution":"© TomTom","limits":[{"i":0,"kmh":60},{"i":1,"kmh":null}, ...]}`: one entry
   per input point, in order. `kmh` is the snapped road's maximum speed (mph converted), or `null` when the point is off
   road, the road has no known limit, or TomTom gives only a *recommended* speed. Show "© TomTom" where limits are used.
@@ -92,13 +92,14 @@ Tests: `deno test supabase/functions/speed-limits/` (offline; TomTom, auth and t
 
 ## Privacy
 
-- Only hazard **points** are uploaded, never tracks or routes; observation time is rounded down to the hour.
+- Only hazard **points** are stored, never tracks or routes; observation time is rounded down to the hour. The one
+  exception is `speed-limits`: with the user's opt-in it sends a trimmed route through our server to TomTom (times
+  rebased to 2000-01-01, so TomTom never learns when the user drove) and keeps nothing except a daily call count.
 - Devices are anonymous auth users: no name, email or phone number.
 - Uploading needs `share_enabled = true` (the user's opt-in in the app).
 - Raw observations are deleted about a day after they are merged; contributor rows keep only counts, no times; `forget_me()` deletes a device's data at once.
 - Fleet trip data is visible only to that fleet's members; one fleet can never see another.
-- `speed-limits` sends drive points to TomTom only when the app asks for speed limits; the server keeps no coordinates,
-  only per-user daily call counts (deleted after 30 days, or at once with the auth user).
+- `speed-limits` keeps no coordinates, only per-user daily call counts (deleted after 30 days, or at once with the auth user).
 
 ## Tests
 

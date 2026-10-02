@@ -9,6 +9,9 @@ const TOMTOM_URL = "https://api.tomtom.com/snapToRoads/1";
 // Only what we need: one projected point per input point, and each road element's speed limit.
 const FIELDS = "{projectedPoints{properties{routeIndex,snapResult}},route{properties{speedLimits{value,unit,type}}}}";
 const MPH_TO_KMH = 1.609344;
+// Times sent to TomTom are rebased onto this fixed epoch (plus the offset from the first point), so TomTom
+// sees the pace of the drive but never when it happened.
+export const REBASE_EPOCH_MS = Date.UTC(2000, 0, 1);
 
 export interface Point {
   lat: number;
@@ -82,7 +85,7 @@ export function buildTomTomRequest(points: Point[], apiKey: string): { url: stri
     points: points.map((p) => ({
       type: "Feature",
       geometry: { type: "Point", coordinates: [p.lon, p.lat] },
-      properties: { timestamp: new Date(p.t).toISOString() },
+      properties: { timestamp: new Date(REBASE_EPOCH_MS + (p.t - points[0].t)).toISOString() },
     })),
   };
   return {
@@ -123,6 +126,13 @@ const json = (status: number, body: unknown) =>
 
 export async function handle(req: Request, deps: Deps): Promise<Response> {
   if (req.method !== "POST") return json(405, { error: "method" });
+
+  // Refuse an oversized body before reading it.
+  const declared = Number(req.headers.get("Content-Length"));
+  if (Number.isFinite(declared) && declared > MAX_BODY_BYTES) {
+    await req.body?.cancel();
+    return json(400, { error: "invalid", message: "body too large" });
+  }
 
   const uid = await deps.userId(req).catch(() => null);
   if (!uid) return json(401, { error: "auth" });
