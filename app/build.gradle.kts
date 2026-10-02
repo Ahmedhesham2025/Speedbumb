@@ -32,6 +32,15 @@ android {
         targetSdk = 34
         versionCode = versionCodeFromTag
         versionName = versionNameFromTag ?: "0.0.0-local"
+
+        // Hosted backend (Supabase). Both values are PUBLIC by design: the publishable key is meant to ship inside apps,
+        // and Row Level Security protects the data. Never put a service-role/secret key here.
+        buildConfigField("String", "SUPABASE_URL", "\"https://gpefcdyuipmspezbsano.supabase.co\"")
+        buildConfigField("String", "SUPABASE_KEY", "\"sb_publishable_Oo5L_qbPGCBzXVSlyFz5ow_I6vFuhRl\"")
+    }
+
+    buildFeatures {
+        buildConfig = true
     }
 
     signingConfigs {
