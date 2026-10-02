@@ -136,6 +136,8 @@ class Simulator(seed: Long) {
     fun drive(
         store: BumpStore, spec: DriveSpec, cfg: EngineConfig = EngineConfig(), tripId: Long = 1,
         drivingCfg: DrivingConfig = DrivingConfig(),
+        /** If given, every accelerometer sample, GPS fix and logged event is added here (for trace export). */
+        recorder: MutableList<TraceSample>? = null,
     ): TripResult {
         val len = roadLen
         fun travel(p: Double) = if (spec.westbound) len - p else p   // road position ↔ distance travelled
@@ -161,6 +163,13 @@ class Simulator(seed: Long) {
         var knownHits = 0
         val rejected = ArrayList<String>()
 
+        var recTMs = 0L
+        val sink: BumpStore = if (recorder == null) store else object : BumpStore by store {
+            override fun logEvent(e: BumpEvent) {
+                recorder.add(TraceSample.Event(recTMs, e.type, e.bumpId, e.peak, e.note))
+                store.logEvent(e)
+            }
+        }
         var monitor: DrivingMonitor? = null
         val listener = object : EngineListener {
             override fun onNewBump(b: Bump) { newBumps++; monitor?.onBumpHit(b, v * 3.6) }
@@ -173,9 +182,9 @@ class Simulator(seed: Long) {
             }
             override fun onJoltRejected(peak: Double, reason: String) { rejected.add(reason) }
         }
-        val engine = BumpEngine(cfg, store, listener, { 1_700_000_000_000L + (t * 1000).toLong() }, tripId)
+        val engine = BumpEngine(cfg, sink, listener, { 1_700_000_000_000L + (t * 1000).toLong() }, tripId)
         monitor = DrivingMonitor(drivingCfg, engine) { type, lat, lon, kmh, value, note ->
-            store.logEvent(BumpEvent(1_700_000_000_000L + (t * 1000).toLong(), tripId, type, -1, lat, lon, kmh, Double.NaN, value, Double.NaN, Double.NaN, note))
+            sink.logEvent(BumpEvent(1_700_000_000_000L + (t * 1000).toLong(), tripId, type, -1, lat, lon, kmh, Double.NaN, value, Double.NaN, Double.NaN, note))
         }
         val mon = monitor!!
         val brakes = spec.hardBrakesAt.map { travel(it) }
@@ -282,6 +291,8 @@ class Simulator(seed: Long) {
             val ay = r[0][1] * fv[0] + r[1][1] * fv[1] + r[2][1] * fv[2] + gauss(shake)
             val az = r[0][2] * fv[0] + r[1][2] * fv[1] + r[2][2] * fv[2] + gauss(shake)
             val tMs = (t * 1000).toLong()
+            recTMs = tMs
+            var rgx = Double.NaN; var rgy = Double.NaN; var rgz = Double.NaN
             if (spec.gyro) {
                 val w = doubleArrayOf(roll, pitch, yaw)
                 val wx = r[0][0] * w[0] + r[1][0] * w[1] + r[2][0] * w[2] + gauss(shake * 0.3)
@@ -289,9 +300,11 @@ class Simulator(seed: Long) {
                 val wz = r[0][2] * w[0] + r[1][2] * w[1] + r[2][2] * w[2] + gauss(shake * 0.3)
                 engine.onGyro(tMs, wx, wy, wz)
                 mon.onGyro(wx, wy, wz)
+                rgx = wx; rgy = wy; rgz = wz
             }
             engine.onAccel(tMs, ax, ay, az)
             mon.onAccel(tMs, ax, ay, az)
+            recorder?.add(TraceSample.Accel(tMs, ax, ay, az, rgx, rgy, rgz, engine.lastVertical))
 
             // GPS once a second, reporting where the car was 0.8 s ago, with ±3 m noise.
             if (t - lastFixT >= 1.0 - 1e-9) {
@@ -302,6 +315,7 @@ class Simulator(seed: Long) {
                 val n2 = Geo.move(n1[0], n1[1], 90.0, gauss(3.0))
                 val speed = max(0.0, past[2] + gauss(0.3))
                 val bearing = if (past[2] > 1.0) ((if (spec.westbound) 270.0 else 90.0) + gauss(3.0) + 360) % 360 else Double.NaN
+                recorder?.add(TraceSample.Gps(tMs, n2[0], n2[1], speed * 3.6, bearing, 5.0))
                 engine.onFix(Fix(tMs, n2[0], n2[1], speed, bearing, 5.0))
                 mon.onFix(engine.lastFix!!)
                 if (fwdTrace.size < 40 && (t < 12 || ((t + 0.5).toInt() % 5 == 0))) {
