@@ -119,7 +119,8 @@ dependencies {
     // The engine lives in :core (pure Kotlin). No other libraries in the app itself, except the play line below.
     implementation(project(":core"))
     // The ONE allowed library, play edition only (owner decision, #48). The foss edition must never get one.
-    "playImplementation"("com.google.android.gms:play-services-location:21.4.0")
+    // 21.4.0 ships Kotlin 2.3 metadata and doesn't compile with our Kotlin 2.0.21: bump both together.
+    "playImplementation"("com.google.android.gms:play-services-location:21.3.0")
 
     // Test-only: never shipped in the APK.
     testImplementation("junit:junit:4.13.2")
