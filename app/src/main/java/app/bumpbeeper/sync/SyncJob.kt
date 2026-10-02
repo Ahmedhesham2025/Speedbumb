@@ -13,6 +13,7 @@ class SyncJob : JobService() {
         Thread({
             val retry = try {
                 if (extras.getInt(SpeedLimitSync.EXTRA_JOB, 0) == 1) SpeedLimitSync.run(app)
+                else if (extras.getInt(TrainingConsent.EXTRA_JOB, 0) == 1) TrainingConsent.run(app)
                 else Sync.run(
                     app, extras.getInt(Sync.EXTRA_PULL_ONLY, 0) == 1,
                     extras.getDouble(Sync.EXTRA_LAT, Double.NaN), extras.getDouble(Sync.EXTRA_LON, Double.NaN),

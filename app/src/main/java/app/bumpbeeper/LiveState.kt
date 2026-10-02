@@ -23,6 +23,9 @@ object LiveState {
     @Volatile var tripEvents = 0
     @Volatile var speedingPct = 0.0
     @Volatile var lastDriveEvent = ""
+    /** "Help improve detection": elements waiting for upload, and why the last upload stopped ("" = fine). */
+    @Volatile var trainingQueued = 0
+    @Volatile var trainingLastError = ""
     /** Score of the trip that just ended (shown after Stop). */
     @Volatile var lastTripScore = -1
     @Volatile var lastEvent = ""
