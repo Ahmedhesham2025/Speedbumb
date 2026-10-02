@@ -11,6 +11,8 @@ import android.widget.RadioButton
 import android.widget.RadioGroup
 import android.widget.ScrollView
 import android.widget.TextView
+import app.bumpbeeper.sync.Sync
+import app.bumpbeeper.ui.SyncChoice
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -25,6 +27,13 @@ class SettingsPage(private val a: MainActivity) : Page {
     private lateinit var autoText: TextView
     private lateinit var autoBtn: TextView
     private lateinit var traceInfo: TextView
+    private lateinit var syncGroup: RadioGroup
+    private lateinit var syncLast: TextView
+    private lateinit var syncSpots: TextView
+    private lateinit var syncPending: TextView
+    private lateinit var syncError: TextView
+    /** True while the screen itself moves the radio (so it isn't taken as the user's choice). */
+    private var settingRadio = false
 
     override val view: View = build()
 
@@ -113,6 +122,8 @@ class SettingsPage(private val a: MainActivity) : Page {
             },
         )
 
+        buildSharedMap { title, items -> card(title, *items) }
+
         card(a.getString(R.string.settings_section_data),
             Ui.row(a, Ui.button(a, a.getString(R.string.settings_share), Ui.Style.PRIMARY) { Sharing.chooseAndShare(a) }, Ui.button(a, a.getString(R.string.settings_import)) { a.pickImportFile() }),
             hint(a.getString(R.string.settings_data_hint)),
@@ -152,7 +163,80 @@ class SettingsPage(private val a: MainActivity) : Page {
         return ScrollView(a).apply { addView(col) }
     }
 
+    /** Settings → Shared map: the choice, how the sync is doing, and "delete my shared data". */
+    private fun buildSharedMap(card: (String, Array<View>) -> Unit) {
+        syncGroup = RadioGroup(a).apply { orientation = RadioGroup.VERTICAL }
+        listOf(Prefs.SYNC_SHARE, Prefs.SYNC_RECEIVE, Prefs.SYNC_UNSET).forEach { choice ->
+            syncGroup.addView(RadioButton(a).apply {
+                text = SyncChoice.choiceName(a, choice); tag = choice; id = View.generateViewId()
+                minHeight = dp(48)
+                setTextColor(Ui.TEXT); buttonTintList = ColorStateList.valueOf(Ui.ACCENT)
+                setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
+            })
+        }
+        syncGroup.setOnCheckedChangeListener { g, id ->
+            if (settingRadio) return@setOnCheckedChangeListener
+            val choice = g.findViewById<RadioButton>(id)?.tag as? String ?: return@setOnCheckedChangeListener
+            SyncChoice.markAnswered(a)
+            Sync.setChoice(a, choice)
+            tick()
+        }
+        fun status(color: Int = Ui.DIM) = Ui.text(a, 14f, color).apply { setPadding(0, dp(2), 0, dp(2)) }
+        syncLast = status(); syncSpots = status(); syncPending = status(); syncError = status(Ui.ORANGE)
+        card(a.getString(R.string.settings_section_shared_map), arrayOf(
+            Ui.text(a, 13f, Ui.DIM, value = a.getString(R.string.settings_shared_map_hint)).apply { setPadding(0, dp(2), 0, dp(6)) },
+            syncGroup,
+            syncLast, syncSpots, syncPending, syncError,
+            Ui.button(a, a.getString(R.string.settings_sync_delete), Ui.Style.DANGER) { confirmForget() }.also {
+                (it.layoutParams as? LinearLayout.LayoutParams)?.topMargin = dp(8)
+            },
+        ))
+    }
+
+    private fun showSyncChoice() {
+        val choice = Prefs.syncChoice(a)
+        for (i in 0 until syncGroup.childCount) {
+            val rb = syncGroup.getChildAt(i) as RadioButton
+            if (rb.tag == choice && !rb.isChecked) {
+                settingRadio = true
+                rb.isChecked = true
+                settingRadio = false
+            }
+        }
+    }
+
+    /** Status lines from LiveState; cheap, so it runs with every tick while Settings is open. */
+    override fun tick() {
+        val choice = Prefs.syncChoice(a)
+        val on = choice != Prefs.SYNC_UNSET
+        fun set(v: TextView, s: String, show: Boolean = s.isNotEmpty()) {
+            if (v.text.toString() != s) v.text = s
+            v.visibility = if (show) View.VISIBLE else View.GONE
+        }
+        set(syncLast, SyncChoice.lastSynced(a, LiveState.syncLastAt), on)
+        set(syncSpots, SyncChoice.spots(a, LiveState.syncRemoteSpots), on)
+        set(syncPending, SyncChoice.pending(a, LiveState.syncPending), on && choice == Prefs.SYNC_SHARE && LiveState.syncPending > 0)
+        set(syncError, SyncChoice.error(a, LiveState.syncLastError), on && LiveState.syncLastError.isNotEmpty())
+    }
+
+    private fun confirmForget() {
+        AlertDialog.Builder(a)
+            .setTitle(a.getString(R.string.settings_sync_delete_title))
+            .setMessage(a.getString(R.string.settings_sync_delete_msg))
+            .setPositiveButton(R.string.common_delete) { _, _ ->
+                Sync.forgetMe(a) { ok ->
+                    a.toast(a.getString(if (ok) R.string.settings_sync_deleted else R.string.settings_sync_deleted_local))
+                    showSyncChoice(); tick()
+                }
+                showSyncChoice(); tick()
+            }
+            .setNegativeButton(R.string.common_cancel, null)
+            .show()
+    }
+
     override fun onShow() {
+        showSyncChoice()
+        tick()
         val on = a.autoStartOn()
         autoText.text = if (on) a.getString(R.string.settings_auto_on, Prefs.carName(a)) else a.getString(R.string.settings_auto_off)
         autoText.setTextColor(if (on) Ui.GREEN else Ui.TEXT)

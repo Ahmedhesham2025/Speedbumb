@@ -4,6 +4,7 @@ import android.Manifest
 import android.annotation.SuppressLint
 import android.app.Activity
 import android.app.AlertDialog
+import android.app.Dialog
 import android.bluetooth.BluetoothManager
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -26,7 +27,9 @@ import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
 import app.bumpbeeper.crash.CrashLog
+import app.bumpbeeper.sync.Sync
 import app.bumpbeeper.sync.UpdateCheck
+import app.bumpbeeper.ui.SyncChoice
 import java.net.URI
 import java.util.Locale
 
@@ -54,6 +57,8 @@ class MainActivity : Activity() {
     private var update: UpdateCheck.Update? = null
     private var updateAsked = false
     private var updateDismissed = false
+    private var syncAsked = false
+    private var syncDialog: Dialog? = null
 
     private val ticker = object : Runnable {
         override fun run() {
@@ -68,6 +73,7 @@ class MainActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         CrashLog.install(this)   // first, so a crash while building the screen is kept too
+        Sync.onAppStart(this)    // no network until the user answered the shared-map question
         window.statusBarColor = Ui.BG
         window.navigationBarColor = Ui.SURFACE
         setContentView(buildShell())
@@ -106,6 +112,7 @@ class MainActivity : Activity() {
             updateAsked = true
             UpdateCheck.latest(this) { u -> update = u }
         }
+        askSyncChoice()
     }
 
     override fun onPause() {
@@ -114,6 +121,8 @@ class MainActivity : Activity() {
     }
 
     override fun onDestroy() {
+        syncDialog?.dismiss()
+        syncDialog = null
         (pages[TAB_SETTINGS] as? SettingsPage)?.release()
         super.onDestroy()
     }
@@ -179,6 +188,21 @@ class MainActivity : Activity() {
     }
 
     fun refreshMap() { mapPage?.onShow() }
+
+    // ---------------------------------------------------------------- shared map question
+
+    /** Once per run, when due and not recording (a recording run tries again on the next resume). */
+    private fun askSyncChoice() {
+        if (syncAsked || syncDialog != null) return
+        syncAsked = SyncChoice.maybeAsk(this) {
+            if (syncDialog == null && !isFinishing) {
+                syncDialog = SyncChoice.dialog(this) {
+                    syncDialog = null
+                    pages.getOrNull(current)?.onShow()
+                }.also { it.show() }
+            }
+        }
+    }
 
     // ---------------------------------------------------------------- update banner
 
