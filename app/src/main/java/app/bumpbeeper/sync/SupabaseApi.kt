@@ -88,7 +88,12 @@ class SpotRow(
     val severity: Double?, val nDevices: Int,
 )
 
-/** The upload format of `submit_observations` (see supabase/migrations/20261005000001_core.sql). */
+/**
+ * The upload format of `submit_observations` (see supabase/migrations/20261005000001_core.sql).
+ *
+ * `kind_score`: the engine's [Observation.kindScore] runs -1 (speed bump) .. +1 (pothole), but the server column
+ * is `check (between 0 and 1)` and its aggregation calls `>= 0.5` a pothole, so the phone sends `(kindScore + 1) / 2`.
+ */
 object ObservationJson {
     /** Fields the server rejects a whole batch for (22023) are made to fit here instead. */
     fun toJson(o: Observation): JSONObject = JSONObject().apply {
