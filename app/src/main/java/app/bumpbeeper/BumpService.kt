@@ -46,6 +46,11 @@ class BumpService : Service(), SensorEventListener, LocationListener, EngineList
         private const val CHANNEL_ID = "recording"
         private const val CHANNEL_AUTO = "auto_start"
         private const val NOTIF_ID = 1
+        /** Settings that [Prefs.applyTo] copies into the engine or driving monitor. */
+        private val ENGINE_KEYS: Set<String?> = setOf(
+            Prefs.SENSITIVITY, Prefs.LEAD_SECONDS, Prefs.QUIET_BELOW_KMH, Prefs.MAX_BUMP_KMH,
+            Prefs.WARN_POTHOLES, Prefs.HARSH_MS2, Prefs.SPEED_LIMIT,
+        )
         private const val NOTIF_AUTO_ID = 2
         private const val TAG = "BumpBeeper"
         /** After the car's Bluetooth disconnects, keep recording this long in case it comes back. */
@@ -153,14 +158,21 @@ class BumpService : Service(), SensorEventListener, LocationListener, EngineList
         stopRecording()
     }
 
-    private val prefListener = SharedPreferences.OnSharedPreferenceChangeListener { _, _ ->
+    private val prefListener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+        // Only settings that change detection or scoring touch the engine; others (update check,
+        // voice, car…) are written often enough that re-applying on each one would be wasted work.
+        val engineKey = key == null || key in ENGINE_KEYS   // null = all settings cleared
+        if (!engineKey && key != Prefs.LABEL_MODE) return@OnSharedPreferenceChangeListener
         handler?.post {
-            engine?.cfg?.let { Prefs.applyTo(it, this) }
-            monitor?.cfg?.let { Prefs.applyTo(it, this) }
-            // Label mode switched on while driving: start a recording file now.
-            val labels = Prefs.labelMode(this)
-            if (labels && trace == null) tracingStore?.let { openTrace(it) }
-            LiveState.labelMode = labels && trace != null
+            if (engineKey) {
+                engine?.cfg?.let { Prefs.applyTo(it, this) }
+                monitor?.cfg?.let { Prefs.applyTo(it, this) }
+            } else {
+                // Label mode switched on while driving: start a recording file now.
+                val labels = Prefs.labelMode(this)
+                if (labels && trace == null) tracingStore?.let { openTrace(it) }
+                LiveState.labelMode = labels && trace != null
+            }
         }
     }
 
@@ -208,18 +220,23 @@ class BumpService : Service(), SensorEventListener, LocationListener, EngineList
         super.onDestroy()
     }
 
-    /** Any thread. Counts the label for the screen at once, writes it on the engine thread. */
+    /** Any thread. Writes the label on the engine thread; the on-screen count only moves once it is saved. */
     private fun postLabel(kind: String): Boolean {
         val h = handler ?: return false
         if (!LiveState.labelMode) return false
-        synchronized(Labels) {
-            LiveState.lastLabel = kind
-            LiveState.labelCount = if (kind == Labels.UNDO) maxOf(0, LiveState.labelCount - 1) else LiveState.labelCount + 1
-        }
         return h.post {
             val tw = trace ?: return@post
             val f = engine?.lastFix
-            tw.label(kind, f?.lat ?: Double.NaN, f?.lon ?: Double.NaN, (f?.speedMps ?: Double.NaN) * 3.6)
+            try {
+                tw.label(kind, f?.lat ?: Double.NaN, f?.lon ?: Double.NaN, (f?.speedMps ?: Double.NaN) * 3.6)
+            } catch (e: Exception) {
+                Log.w(TAG, "label not written", e)
+                return@post
+            }
+            synchronized(Labels) {
+                LiveState.lastLabel = kind
+                LiveState.labelCount = if (kind == Labels.UNDO) maxOf(0, LiveState.labelCount - 1) else LiveState.labelCount + 1
+            }
         }
     }
 
