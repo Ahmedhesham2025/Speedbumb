@@ -63,10 +63,13 @@ jobs:
             echo "::error::The KEYSTORE_PASSWORD secret is missing."
             exit 1
           fi
-          ./gradlew assembleRelease
+          ./gradlew assembleFossRelease assemblePlayRelease
 
-      - name: Name the APK
-        run: cp app/build/outputs/apk/release/app-release.apk "BumpBeeper-${VERSION_NAME}.apk"
+      # Two editions (#48), same key: foss = no libraries (also for F-Droid / AppGallery), -google = play edition.
+      - name: Name the APKs
+        run: |
+          cp app/build/outputs/apk/foss/release/app-foss-release.apk "BumpBeeper-${VERSION_NAME}.apk"
+          cp app/build/outputs/apk/play/release/app-play-release.apk "BumpBeeper-${VERSION_NAME}-google.apk"
 
       - name: Publish GitHub Release
         env:
