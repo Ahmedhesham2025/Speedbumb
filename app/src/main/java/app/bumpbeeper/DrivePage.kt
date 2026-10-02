@@ -7,10 +7,12 @@ import android.content.res.ColorStateList
 import android.os.SystemClock
 import android.util.TypedValue
 import android.view.Gravity
+import android.view.HapticFeedbackConstants
 import android.view.View
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
+import android.widget.Toast
 import java.util.Locale
 
 /** The dashboard: one big Start/Stop button, speed, this trip's numbers and score, and what just happened. */
@@ -36,7 +38,13 @@ class DrivePage(private val a: MainActivity) : Page {
     private lateinit var meterToggle: TextView
     private lateinit var graph: JoltGraphView
     private lateinit var afterTrip: TextView
+    private lateinit var updateCard: LinearLayout
+    private lateinit var updateText: TextView
+    private lateinit var labelCard: LinearLayout
+    private lateinit var labelStatus: TextView
+    private lateinit var labelLater: TextView
     private var wasRecording: Boolean? = null
+    private var updateShown: String? = null
 
     override val view: View = build()
 
@@ -59,6 +67,20 @@ class DrivePage(private val a: MainActivity) : Page {
             addView(Ui.text(a, 22f, Ui.TEXT, bold = true, value = "Bump Beeper"), LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
             addView(status)
         })
+
+        // "New version available" banner; filled in by tick() once MainActivity's update check answers.
+        updateCard = Ui.card(a).apply {
+            background = Ui.rounded(a, Ui.SURFACE, 18, Ui.ACCENT)
+            visibility = View.GONE
+        }
+        updateText = Ui.text(a, 16f, Ui.TEXT, bold = true)
+        updateCard.addView(updateText)
+        updateCard.addView(Ui.text(a, 13f, Ui.DIM, value = "Opens the release page on GitHub. Install it over this app; your map and trips stay."))
+        updateCard.addView(Ui.row(a,
+            Ui.button(a, "Download", Ui.Style.PRIMARY) { a.openUpdate() },
+            Ui.button(a, "Not now", Ui.Style.QUIET) { a.dismissUpdate(); updateCard.visibility = View.GONE },
+        ).apply { setPadding(0, dp(10), 0, 0) })
+        add(updateCard, 12)
 
         setupCard = Ui.card(a)
         add(setupCard, 12)
@@ -88,6 +110,7 @@ class DrivePage(private val a: MainActivity) : Page {
             setOnClickListener { a.select(MainActivity.TAB_TRIPS) }
         }
         add(afterTrip, 10)
+        add(buildLabelPanel(), 12)
 
         // This trip.
         add(Ui.section(a, "This trip"))
@@ -126,6 +149,57 @@ class DrivePage(private val a: MainActivity) : Page {
             isFillViewport = true
             addView(col)
         }
+    }
+
+    // ---------------------------------------------------------------- label mode
+
+    /** Big buttons for the passenger who marks what the car just drove over (Settings → Road testing). */
+    private fun buildLabelPanel(): View {
+        labelCard = Ui.card(a, 12).apply {
+            background = Ui.rounded(a, Ui.SURFACE, 18, Ui.LINE)
+            visibility = View.GONE
+        }
+        labelCard.addView(Ui.text(a, 12f, Ui.ACCENT, bold = true, value = "LABEL WHAT YOU JUST DROVE OVER").apply {
+            setPadding(dp(4), 0, 0, dp(8))
+        })
+        fun btn(kind: String, bg: Int, fg: Int) = Ui.bigButton(a, labelName(kind), bg, fg) { v -> tapLabel(v, kind) }
+        fun gap() = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
+            .apply { topMargin = dp(8) }
+        labelCard.addView(Ui.row(a, btn(Labels.BUMP, Ui.ACCENT, Ui.ON_ACCENT), btn(Labels.ROUGH, 0xFFB0BEC5.toInt(), 0xFF101418.toInt())))
+        labelCard.addView(Ui.row(a,
+            btn(Labels.POTHOLE_LEFT, Ui.BLUE, 0xFF06121F.toInt()), btn(Labels.POTHOLE_RIGHT, Ui.BLUE, 0xFF06121F.toInt()),
+        ), gap())
+        labelCard.addView(btn(Labels.UNDO, 0xFF3A1F22.toInt(), Ui.RED), gap())
+        labelStatus = Ui.text(a, 15f, Ui.TEXT, bold = true).apply { setPadding(dp(4), dp(10), 0, 0) }
+        labelCard.addView(labelStatus)
+        // Turned on mid-trip: the service only accepts labels from the next recording on.
+        labelLater = Ui.text(a, 13f, Ui.DIM, value = "Label mode is on. It starts with the next recording: stop and start again.").apply {
+            setPadding(dp(4), dp(4), 0, 0)
+        }
+        labelCard.addView(labelLater)
+        return labelCard
+    }
+
+    private fun tapLabel(v: View, kind: String) {
+        v.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
+        if (!BumpService.label(a, kind)) Toast.makeText(a, "Label not saved: recording isn't in label mode", Toast.LENGTH_SHORT).show()
+        updateLabelStatus()
+    }
+
+    private fun updateLabelStatus() {
+        val n = LiveState.labelCount
+        val last = LiveState.lastLabel
+        labelStatus.text = if (last.isEmpty()) "No labels yet"
+            else "Last: ${labelName(last)} · $n label${if (n == 1) "" else "s"}"
+    }
+
+    private fun labelName(kind: String): String = when (kind) {
+        Labels.BUMP -> "Bump"
+        Labels.POTHOLE_LEFT -> "Pothole left"
+        Labels.POTHOLE_RIGHT -> "Pothole right"
+        Labels.ROUGH -> "Rough road"
+        Labels.UNDO -> "Undo"
+        else -> kind
     }
 
     private fun toggleMeter() {
@@ -234,6 +308,24 @@ class DrivePage(private val a: MainActivity) : Page {
         ignored.text = LiveState.lastIgnored
         ignored.visibility = if (LiveState.lastIgnored.isEmpty()) View.GONE else View.VISIBLE
         muteBtn.visibility = if (rec) View.VISIBLE else View.GONE
+
+        val labelsLive = rec && LiveState.labelMode
+        val labelsPending = rec && !LiveState.labelMode && Prefs.labelMode(a)
+        labelCard.visibility = if (labelsLive || labelsPending) View.VISIBLE else View.GONE
+        for (i in 1 until labelCard.childCount - 1) labelCard.getChildAt(i).visibility = if (labelsLive) View.VISIBLE else View.GONE
+        labelLater.visibility = if (labelsPending) View.VISIBLE else View.GONE
+        if (labelsLive) updateLabelStatus()
+
+        val up = a.pendingUpdate()
+        if (up == null) {
+            updateCard.visibility = View.GONE
+        } else {
+            if (updateShown != up.version) {
+                updateText.text = "New version ${up.version} available"
+                updateShown = up.version
+            }
+            updateCard.visibility = View.VISIBLE
+        }
 
         graph.threshold = Prefs.thresholdFor(Prefs.sensitivity(a)).toFloat()
         if (graph.visibility == View.VISIBLE) graph.invalidate()
