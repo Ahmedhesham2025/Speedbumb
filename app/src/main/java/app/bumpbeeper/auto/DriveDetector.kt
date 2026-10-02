@@ -136,6 +136,8 @@ class DriveDetector(
         snoozeUntilMs = nowMs + ms
     }
 
+    fun snoozed(nowMs: Long): Boolean = nowMs < snoozeUntilMs
+
     private fun startCheck(nowMs: Long): Action {
         checking = true
         checkStartMs = nowMs
