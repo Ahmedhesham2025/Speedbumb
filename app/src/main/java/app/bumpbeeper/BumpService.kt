@@ -17,6 +17,7 @@ import android.hardware.SensorManager
 import android.location.Location
 import android.location.LocationListener
 import android.location.LocationManager
+import android.os.BatteryManager
 import android.os.Build
 import android.os.Bundle
 import android.os.Handler
@@ -26,6 +27,7 @@ import android.os.Looper
 import android.os.PowerManager
 import android.os.SystemClock
 import android.util.Log
+import app.bumpbeeper.crash.CrashLog
 import java.util.Locale
 import kotlin.math.abs
 
@@ -48,6 +50,11 @@ class BumpService : Service(), SensorEventListener, LocationListener, EngineList
         private const val TAG = "BumpBeeper"
         /** After the car's Bluetooth disconnects, keep recording this long in case it comes back. */
         private const val CAR_GONE_GRACE_MS = 60_000L
+        /** How often the battery level goes into the recording. */
+        private const val BATTERY_EVERY_MS = 5 * 60_000L
+
+        /** The running service, for [label]. Set in onCreate, cleared in onDestroy. */
+        @Volatile private var instance: BumpService? = null
 
         fun start(ctx: Context) {
             ctx.startForegroundService(Intent(ctx, BumpService::class.java).setAction(ACTION_START))
@@ -71,6 +78,18 @@ class BumpService : Service(), SensorEventListener, LocationListener, EngineList
                 Log.w(TAG, "auto start refused", e)
                 notifyTapToStart(ctx, "Your car connected. Tap to start recording.")
             }
+        }
+
+        /**
+         * Label what you just drove over (one of [Labels.ALL]); safe to call from any thread.
+         * Written to the recording on the engine thread within milliseconds, stamped with the latest sensor
+         * time and the last GPS position and speed. Returns false (nothing written) when not recording in
+         * label mode (see [Prefs.setLabelMode] / [LiveState.labelMode]) or when [kind] is unknown.
+         */
+        @Suppress("UNUSED_PARAMETER")
+        fun label(ctx: Context, kind: String): Boolean {
+            if (kind !in Labels.ALL) return false
+            return instance?.postLabel(kind) ?: false
         }
 
         fun carDisconnected(ctx: Context) {
@@ -110,11 +129,13 @@ class BumpService : Service(), SensorEventListener, LocationListener, EngineList
     private lateinit var beeper: Beeper
     private var voice: Voice? = null
     private var thread: HandlerThread? = null
-    private var handler: Handler? = null
+    @Volatile private var handler: Handler? = null
     private val main = Handler(Looper.getMainLooper())
     @Volatile private var engine: BumpEngine? = null   // only used on the engine thread
     private var monitor: DrivingMonitor? = null         // only used on the engine thread
     private var trace: TraceWriter? = null              // only used on the engine thread
+    private var tracingStore: TracingStore? = null      // only used on the engine thread
+    private var lastBatteryMs = -1L                     // only used on the engine thread
     private var wakeLock: PowerManager.WakeLock? = null
     private var tripId = 0L
     private var sensorOffsetMs: Long? = null
@@ -124,6 +145,8 @@ class BumpService : Service(), SensorEventListener, LocationListener, EngineList
     private var gx = 0.0
     private var gy = 0.0
     private var gz = 0.0
+    /** No gyroscope reading yet this trip: the recording leaves gx/gy/gz empty instead of a fake 0. */
+    private var gyroSeen = false
 
     private val stopForCarGone = Runnable {
         LiveState.lastEvent = "Car disconnected: stopped"
@@ -134,7 +157,17 @@ class BumpService : Service(), SensorEventListener, LocationListener, EngineList
         handler?.post {
             engine?.cfg?.let { Prefs.applyTo(it, this) }
             monitor?.cfg?.let { Prefs.applyTo(it, this) }
+            // Label mode switched on while driving: start a recording file now.
+            val labels = Prefs.labelMode(this)
+            if (labels && trace == null) tracingStore?.let { openTrace(it) }
+            LiveState.labelMode = labels && trace != null
         }
+    }
+
+    override fun onCreate() {
+        super.onCreate()
+        CrashLog.install(this)
+        instance = this
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
@@ -171,7 +204,42 @@ class BumpService : Service(), SensorEventListener, LocationListener, EngineList
     override fun onDestroy() {
         main.removeCallbacks(stopForCarGone)
         if (running) stopRecording()
+        if (instance === this) instance = null
         super.onDestroy()
+    }
+
+    /** Any thread. Counts the label for the screen at once, writes it on the engine thread. */
+    private fun postLabel(kind: String): Boolean {
+        val h = handler ?: return false
+        if (!LiveState.labelMode) return false
+        synchronized(Labels) {
+            LiveState.lastLabel = kind
+            LiveState.labelCount = if (kind == Labels.UNDO) maxOf(0, LiveState.labelCount - 1) else LiveState.labelCount + 1
+        }
+        return h.post {
+            val tw = trace ?: return@post
+            val f = engine?.lastFix
+            tw.label(kind, f?.lat ?: Double.NaN, f?.lon ?: Double.NaN, (f?.speedMps ?: Double.NaN) * 3.6)
+        }
+    }
+
+    /** Engine thread. Opens a recording file and starts copying engine events into it. */
+    private fun openTrace(store: TracingStore) {
+        try {
+            TraceWriter.prune(this)
+            val tw = TraceWriter(TraceWriter.dir(this), TraceWriter.meta(this))
+            trace = tw
+            store.trace = tw
+            lastBatteryMs = -1L
+        } catch (e: Exception) {
+            Log.w(TAG, "debug recording failed to start", e)
+        }
+    }
+
+    private fun batteryPercent(): Int = try {
+        (getSystemService(Context.BATTERY_SERVICE) as BatteryManager).getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY)
+    } catch (_: Exception) {
+        -1
     }
 
     // ---------------------------------------------------------------- start / stop
@@ -207,19 +275,15 @@ class BumpService : Service(), SensorEventListener, LocationListener, EngineList
         thread = t
         handler = h
         val cfg = EngineConfig().also { Prefs.applyTo(it, this) }
-        val debug = Prefs.debugRecording(this)
+        // Debug recording or label mode: write a recording file of this drive.
+        val record = Prefs.recordTrace(this)
+        gx = 0.0; gy = 0.0; gz = 0.0
+        gyroSeen = false
         h.post {
-            var store: BumpStore = db
-            if (debug) {
-                try {
-                    TraceWriter.prune(this)
-                    val tw = TraceWriter(TraceWriter.dir(this))
-                    trace = tw
-                    store = TracingStore(db, tw)
-                } catch (e: Exception) {
-                    Log.w(TAG, "debug recording failed to start", e)
-                }
-            }
+            val store = TracingStore(db, null)
+            tracingStore = store
+            if (record) openTrace(store)
+            LiveState.labelMode = trace != null && Prefs.labelMode(this)
             val eng = BumpEngine(cfg, store, this, { System.currentTimeMillis() }, tripId)
             engine = eng
             val logStore = store
@@ -282,6 +346,7 @@ class BumpService : Service(), SensorEventListener, LocationListener, EngineList
             monitor = null
             trace?.close()
             trace = null
+            tracingStore = null
             database.close()
             // A GPS fix handled just before this runnable may have re-posted the notification. Remove it.
             (getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager).cancel(NOTIF_ID)
@@ -296,6 +361,7 @@ class BumpService : Service(), SensorEventListener, LocationListener, EngineList
         voice?.let { v -> main.postDelayed({ v.shutdown() }, 5000) }
         voice = null
         LiveState.recording = false
+        LiveState.labelMode = false
         if (!LiveState.lastEvent.startsWith("Car disconnected")) LiveState.lastEvent = "Stopped"
         stopForeground(STOP_FOREGROUND_REMOVE)
         stopSelf()
@@ -320,6 +386,7 @@ class BumpService : Service(), SensorEventListener, LocationListener, EngineList
 
         if (event.sensor.type == Sensor.TYPE_GYROSCOPE) {
             gx = x; gy = y; gz = z
+            gyroSeen = true
             eng.onGyro(tMs, x, y, z)
             monitor?.onGyro(x, y, z)
             return
@@ -327,7 +394,15 @@ class BumpService : Service(), SensorEventListener, LocationListener, EngineList
 
         eng.onAccel(tMs, x, y, z)
         monitor?.onAccel(tMs, x, y, z)
-        trace?.accel(tMs, x, y, z, gx, gy, gz, eng.lastVertical)
+        trace?.let { tw ->
+            if (gyroSeen) tw.accel(tMs, x, y, z, gx, gy, gz, eng.lastVertical)
+            else tw.accel(tMs, x, y, z, Double.NaN, Double.NaN, Double.NaN, eng.lastVertical)
+            if (lastBatteryMs < 0 || tMs - lastBatteryMs >= BATTERY_EVERY_MS) {
+                lastBatteryMs = tMs
+                val pct = batteryPercent()
+                if (pct in 0..100) tw.battery(pct)
+            }
+        }
 
         val v = abs(eng.lastVertical)
         if (v > graphMax) graphMax = v

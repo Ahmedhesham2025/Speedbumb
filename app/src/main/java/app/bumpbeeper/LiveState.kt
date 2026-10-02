@@ -31,6 +31,11 @@ object LiveState {
     @Volatile var hasGyro = false
     /** The engine has learned which way the car's nose points (after a few speed-ups / brakings). */
     @Volatile var forwardKnown = false
+    /** The current recording accepts labels ([BumpService.label] will be written to a recording file). */
+    @Volatile var labelMode = false
+    /** Last label the driver tapped this trip ("" = none yet) and how many labels count (an undo takes one back). */
+    @Volatile var lastLabel = ""
+    @Volatile var labelCount = 0
 
     // Last 30 s of jolt readings (one value per 100 ms) for the jolt meter.
     private val graph = FloatArray(300)
@@ -57,7 +62,19 @@ object LiveState {
         speedKmh = Double.NaN; accuracyM = Double.NaN; lastFixAtMs = 0L
         lastIgnored = ""
         forwardKnown = false
+        lastLabel = ""; labelCount = 0
     }
 
     const val GRAPH_POINTS = 300
+}
+
+/** What the driver can tap while driving in label mode. Written as the `note` of `event=label` trace rows. */
+object Labels {
+    const val BUMP = "bump"
+    const val POTHOLE_LEFT = "pothole_l"
+    const val POTHOLE_RIGHT = "pothole_r"
+    const val ROUGH = "rough"
+    /** Takes back the previous label (the replay tool drops the label before an undo). */
+    const val UNDO = "undo"
+    val ALL = listOf(BUMP, POTHOLE_LEFT, POTHOLE_RIGHT, ROUGH, UNDO)
 }
