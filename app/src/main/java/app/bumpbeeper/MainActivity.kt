@@ -25,6 +25,10 @@ import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
+import app.bumpbeeper.crash.CrashLog
+import app.bumpbeeper.sync.UpdateCheck
+import java.net.URI
+import java.util.Locale
 
 /** One part of the app shown under the bottom tabs. */
 interface Page {
@@ -47,6 +51,9 @@ class MainActivity : Activity() {
     private val tabs = ArrayList<Pair<ImageView, TextView>>()
     private var current = -1
     private var mapPage: MapPage? = null
+    private var update: UpdateCheck.Update? = null
+    private var updateAsked = false
+    private var updateDismissed = false
 
     private val ticker = object : Runnable {
         override fun run() {
@@ -60,6 +67,7 @@ class MainActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        CrashLog.install(this)   // first, so a crash while building the screen is kept too
         window.statusBarColor = Ui.BG
         window.navigationBarColor = Ui.SURFACE
         setContentView(buildShell())
@@ -93,6 +101,11 @@ class MainActivity : Activity() {
         super.onResume()
         pages.getOrNull(current)?.onShow()
         ui.post(ticker)
+        // Once per run; UpdateCheck itself only goes online once a day.
+        if (!updateAsked) {
+            updateAsked = true
+            UpdateCheck.latest(this) { u -> update = u }
+        }
     }
 
     override fun onPause() {
@@ -165,6 +178,31 @@ class MainActivity : Activity() {
     }
 
     fun refreshMap() { mapPage?.onShow() }
+
+    // ---------------------------------------------------------------- update banner
+
+    /** The newer release to show on the Drive tab, or null (none, or the banner was dismissed). */
+    fun pendingUpdate(): UpdateCheck.Update? = if (updateDismissed) null else update
+
+    fun dismissUpdate() { updateDismissed = true }
+
+    /** Opens the release page (or the file) in the browser, but only if it really points at GitHub. */
+    fun openUpdate() {
+        val u = update ?: return
+        val url = listOfNotNull(u.htmlUrl, u.downloadUrl).firstOrNull { trustedUpdateUrl(it) } ?: return
+        try {
+            startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)).addCategory(Intent.CATEGORY_BROWSABLE))
+        } catch (e: Exception) {
+            toast("No browser found")
+        }
+    }
+
+    private fun trustedUpdateUrl(s: String): Boolean {
+        val uri = try { URI(s) } catch (e: Exception) { return false }
+        if (!"https".equals(uri.scheme, ignoreCase = true) || uri.userInfo != null) return false
+        val host = uri.host?.lowercase(Locale.US) ?: return false
+        return host == "github.com" || host.endsWith(".github.com") || host == "objects.githubusercontent.com"
+    }
 
     fun toast(msg: String) = Toast.makeText(this, msg, Toast.LENGTH_LONG).show()
 
