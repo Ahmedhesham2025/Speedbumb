@@ -29,6 +29,8 @@ object Prefs {
     const val UPDATE_VERSION = "update_version"
     const val UPDATE_URL = "update_url"
     const val UPDATE_HTML_URL = "update_html_url"
+    /** Opt-in: share hazard points with the online bump map (off until the user says yes). */
+    const val SHARE_BUMPS = "share_bumps"
 
     fun sp(ctx: Context): SharedPreferences = ctx.getSharedPreferences("settings", Context.MODE_PRIVATE)
 
@@ -72,6 +74,10 @@ object Prefs {
     fun placement(ctx: Context): String = sp(ctx).getString(PLACEMENT, "unknown")?.takeIf { it in PLACEMENTS } ?: "unknown"
     fun setPlacement(ctx: Context, value: String) =
         sp(ctx).edit().putString(PLACEMENT, if (value in PLACEMENTS) value else "unknown").apply()
+
+    fun shareBumps(ctx: Context): Boolean = sp(ctx).getBoolean(SHARE_BUMPS, false)
+    /** Use [app.bumpbeeper.sync.Sync.setShareBumps] from screens: it also tells the server. */
+    fun setShareBumps(ctx: Context, on: Boolean) = sp(ctx).edit().putBoolean(SHARE_BUMPS, on).apply()
 
     fun autoStart(ctx: Context): Boolean = sp(ctx).getBoolean(AUTO_START, false)
     fun carAddress(ctx: Context): String? = sp(ctx).getString(CAR_ADDRESS, null)

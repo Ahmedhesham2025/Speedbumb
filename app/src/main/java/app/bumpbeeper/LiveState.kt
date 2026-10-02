@@ -37,6 +37,13 @@ object LiveState {
     @Volatile var lastLabel = ""
     @Volatile var labelCount = 0
 
+    /** Online bump map: last finished sync (wall ms, 0 = never), cached shared spots, observations waiting
+     *  for upload, and the last problem in a few words ("" = none). Filled by app.bumpbeeper.sync.Sync. */
+    @Volatile var syncLastAt = 0L
+    @Volatile var syncRemoteSpots = 0
+    @Volatile var syncPending = 0
+    @Volatile var syncLastError = ""
+
     // Last 30 s of jolt readings (one value per 100 ms) for the jolt meter.
     private val graph = FloatArray(300)
     private var head = 0

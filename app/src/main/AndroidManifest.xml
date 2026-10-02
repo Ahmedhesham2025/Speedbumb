@@ -15,9 +15,13 @@
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
-    <!-- Only for the "update available" check: one GET of the latest GitHub release, at most once a day.
-         Nothing about you, your phone or your drives is sent. -->
+    <!-- The "update available" check (one GET of the latest GitHub release a day) and the online bump map:
+         an anonymous sign-in, a rough position (about 1 km) to download confirmed bumps nearby and, only if you
+         opt in to sharing, single bump/pothole points (never routes, never near where a trip starts or ends)
+         and crash reports. -->
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- Sync runs only when there is network (JobScheduler network constraint). -->
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
 
     <uses-feature android:name="android.hardware.sensor.accelerometer" android:required="true" />
     <uses-feature android:name="android.hardware.location.gps" android:required="true" />
@@ -65,6 +69,12 @@
             android:name=".BumpService"
             android:exported="false"
             android:foregroundServiceType="location" />
+
+        <!-- Online bump map sync (background, network required). -->
+        <service
+            android:name=".sync.SyncJob"
+            android:exported="false"
+            android:permission="android.permission.BIND_JOB_SERVICE" />
 
         <!-- Car Bluetooth connected / disconnected → auto start / stop. Only acts on the car picked in the app. -->
         <receiver
