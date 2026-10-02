@@ -24,10 +24,13 @@ fun main(args: Array<String>) {
     when (args.firstOrNull()) {
         "replay" -> {
             if (traces.isEmpty()) usage()
-            val report = Metrics.compute(replayRuns(traces.map { Pair(it.name, readLines(it)) }))
+            val runs = replayRuns(traces.map { Pair(it.name, readLines(it)) })
+            val report = Metrics.compute(runs)
             opts["out"]?.let { File(it).writeText(report.toJson()) }
             val title = if (traces.size == 1) traces[0].name else "${traces.size} runs (${traces.first().name} … ${traces.last().name})"
             println(report.toMarkdown(title))
+            // Unlabelled drives score nothing above; these counts still show what the engine did.
+            for (r in runs) println(DriveSummary.of(r.result).toMarkdown(r.name))
         }
         "anonymize" -> {
             val out = File(opts["out"] ?: usage())
