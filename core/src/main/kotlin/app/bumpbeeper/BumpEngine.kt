@@ -4,6 +4,7 @@ import java.util.Locale
 import java.util.UUID
 import kotlin.math.abs
 import kotlin.math.acos
+import kotlin.math.cos
 import kotlin.math.ln
 import kotlin.math.max
 import kotlin.math.min
@@ -50,10 +51,21 @@ class EngineConfig {
     var maxAlertDistM = 250.0
     /** Don't beep if you are already slower than this: you have clearly seen it. 0 = always beep. (setting) */
     @Volatile var quietBelowKmh = 20.0
-    /** Voice warning for harsh potholes. Smaller potholes are recorded and counted, but stay silent. (setting) */
+    /** Warn before potholes: low bongs, or the voice for harsh ones. Off = potholes are recorded and counted, but silent. (setting) */
     @Volatile var warnPotholes = true
-    /** A pothole whose hits average at least this jolt is "harsh" (≈ 0.6 g). (setting) */
-    @Volatile var harshPotholeMs2 = 6.0
+    /** A pothole whose hits average at least this jolt is "harsh" (≈ 0.5 g) and gets the voice. (setting) */
+    @Volatile var harshPotholeMs2 = 5.0
+    /** At most one "new spot recorded" tick per this long, so a bumpy stretch doesn't machine-gun. */
+    var tickGapMs = 1500L
+    /** When a warning fires, known spots up to this far beyond the warned one count as one group... */
+    var clusterRangeM = 150.0
+    /** ...if there are at least this many of them (besides the warned one). The group is announced once. */
+    var clusterMinExtra = 2
+    /**
+     * Groups are announced by voice, so the app turns this off while text-to-speech isn't working:
+     * then every spot warns with its own sound and none is silenced.
+     */
+    @Volatile var groupWarnings = true
     /** Only beep for bumps within this sideways distance of your path (ignores parallel service roads). */
     var maxCrossTrackM = 20.0
     /** Start watching a bump when it is this close and ahead of you. */
@@ -266,6 +278,9 @@ class BumpEngine(
     private val recentMissMs = HashMap<Long, Long>()
     private val lastHitMs = HashMap<Long, Long>()
     private var lastBeepMs = Long.MIN_VALUE / 4
+    private var lastTickMs = Long.MIN_VALUE / 4
+    /** Spots announced as part of a group ("3 bumps ahead"): they stay silent until this time (fix clock). */
+    private val grouped = HashMap<Long, Long>()
 
     // =====================================================================
     // 1. Accelerometer → jolt detection
@@ -506,9 +521,13 @@ class BumpEngine(
         }
         val now = wallClock()
         // A shared spot we are driving towards was felt: its pass must not report "pass_clear".
+        var sharedFelt = false
         for (r in remoteActive) {
             val ra = approaches[r.id] ?: continue
-            if (Geo.distance(lat, lon, r.lat, r.lon) <= cfg.matchRadiusM && Geo.angleDiff(heading, r.heading) <= cfg.headingTolDeg) ra.hit = true
+            if (Geo.distance(lat, lon, r.lat, r.lon) <= cfg.matchRadiusM && Geo.angleDiff(heading, r.heading) <= cfg.headingTolDeg) {
+                ra.hit = true
+                sharedFelt = true
+            }
         }
 
         if (best == null) {
@@ -530,6 +549,11 @@ class BumpEngine(
             observe("jolt", lat, lon, speedKmh, peak, shape.score, shape.side.toDouble(), now)
             if (remoteAll.isNotEmpty()) dedupRemote()   // the new spot of your own replaces its shared twin from now on
             listener.onNewBump(b)
+            // No tick when the shared map already knew it: confirming a known spot isn't news.
+            if (!sharedFelt && tMs - lastTickMs >= cfg.tickGapMs) {
+                lastTickMs = tMs
+                listener.onNewSpotTick(b)
+            }
             return
         }
 
@@ -676,6 +700,7 @@ class BumpEngine(
         }
         val keep = remoteActive.mapTo(HashSet()) { it.id }
         approaches.keys.removeAll { it <= -2L && it !in keep }
+        grouped.keys.removeAll { it <= -2L && it !in keep }
     }
 
     private fun observe(
@@ -702,11 +727,14 @@ class BumpEngine(
         var a = approaches[b.id]
         if (abs(b.lat - f.lat) > 0.006 || abs(b.lon - f.lon) > 0.007) {   // more than ~600 m away
             if (a != null) approaches.remove(b.id)
+            grouped.remove(b.id)
             return
         }
         val d = Geo.distance(f.lat, f.lon, b.lat, b.lon)
         val aheadDiff = Geo.angleDiff(heading, Geo.bearing(f.lat, f.lon, b.lat, b.lon))
         val dirDiff = Geo.angleDiff(heading, b.heading)
+        // Turned round (or onto another road): a group announced earlier no longer covers this spot.
+        if (moving && dirDiff > 70.0) grouped.remove(b.id)
 
         if (a == null) {
             // Start watching: same direction, ahead of us, within range.
@@ -723,6 +751,7 @@ class BumpEngine(
         if (passed) {
             if (remote) finishRemotePass(b, a, f) else finishPass(b, a, f)
             approaches.remove(b.id)
+            grouped.remove(b.id)
             return
         }
         // Turned off before reaching it.
@@ -731,15 +760,14 @@ class BumpEngine(
             (moving && dirDiff > 70.0 && d > 40.0)
         if (gaveUp) {
             approaches.remove(b.id)
+            grouped.remove(b.id)
             return
         }
 
         // Beep: close enough for our speed, straight ahead, on our side of the road, not muted.
         val crossTrack = d * sin(Math.toRadians(aheadDiff))
-        // Speed bumps always warn; potholes only when harsh (smaller ones are counted, but stay silent).
-        val wanted = !b.isMuted(cfg) && (b.kind != BumpKind.POTHOLE || (cfg.warnPotholes && b.isHarsh(cfg)))
         if (!a.beeped && moving && dirDiff <= cfg.headingTolDeg && d <= alertDist &&
-            aheadDiff <= 45.0 && crossTrack <= cfg.maxCrossTrackM && wanted
+            aheadDiff <= 45.0 && crossTrack <= cfg.maxCrossTrackM && warnable(b)
         ) {
             val speedKmh = f.speedMps * 3.6
             val logId = if (remote) remoteSpotId(b.id)!! else b.id   // shared spots are logged with their server id
@@ -753,15 +781,77 @@ class BumpEngine(
                 return
             }
             a.beeped = true
+            val groupedUntil = grouped[b.id]
+            if (groupedUntil != null && f.timeMs <= groupedUntil) {
+                // Already announced with the group in front of it ("3 bumps ahead"): stay silent.
+                log("beep_grouped", logId, f.lat, f.lon, speedKmh, Double.NaN, Double.NaN, d, if (remote) "remote" else "")
+                return
+            }
             if (f.timeMs - lastBeepMs >= cfg.minBeepGapMs) {
                 lastBeepMs = f.timeMs
+                // Only the spot that actually warned: "Mute last warning" after a group mutes the first spot,
+                // never the silenced ones behind it.
                 lastBeepedId = b.id
                 trip.beeps++
                 val kind = b.kind.name.lowercase()
-                log("beep", logId, f.lat, f.lon, speedKmh, Double.NaN, Double.NaN, d, if (remote) "remote $kind" else kind)
-                listener.onBeep(b, d, speedKmh)
+                val cluster = clusterAhead(b, d, f)
+                val note = (if (remote) "remote $kind" else kind) + (if (cluster != null) " group of ${cluster.count}" else "")
+                log("beep", logId, f.lat, f.lon, speedKmh, Double.NaN, Double.NaN, d, note)
+                listener.onWarning(Warning(b, d, speedKmh, soundFor(b), cluster))
             }
         }
+    }
+
+    /**
+     * The group line could not be spoken (text-to-speech failed): let the spots that were silenced for it warn
+     * on their own. Call on the engine thread, e.g. from [EngineListener.onWarning].
+     */
+    fun ungroup() = grouped.clear()
+
+    /** Should this spot warn at all? Not when muted; potholes only with pothole warnings on. */
+    private fun warnable(b: Bump): Boolean = !b.isMuted(cfg) && (b.kind != BumpKind.POTHOLE || cfg.warnPotholes)
+
+    private fun soundFor(b: Bump): WarnSound = when (b.kind) {
+        BumpKind.BUMP -> WarnSound.BUMP
+        BumpKind.POTHOLE -> if (b.isHarsh(cfg)) WarnSound.HARSH_POTHOLE else WarnSound.POTHOLE
+        BumpKind.UNSURE -> WarnSound.UNSURE
+    }
+
+    /**
+     * When [first] warns at [firstDist] m: the other warnable spots (your own and shared) that lie ahead in the same
+     * direction of travel, not yet warned for, no further than [EngineConfig.clusterRangeM] beyond it. With enough of
+     * them they form a group: announced once now, and each stays silent when its own turn comes.
+     */
+    private fun clusterAhead(first: Bump, firstDist: Double, f: Fix): HazardCluster? {
+        if (!cfg.groupWarnings) return null
+        val members = ArrayList<Pair<Bump, Double>>()
+        val maxDist = firstDist + cfg.clusterRangeM
+        for (s in bumps.asSequence() + remoteActive.asSequence()) {
+            if (s.id == first.id) continue
+            if (abs(s.lat - f.lat) > 0.006 || abs(s.lon - f.lon) > 0.007) continue   // more than ~600 m away
+            val ds = Geo.distance(f.lat, f.lon, s.lat, s.lon)
+            if (ds > maxDist || ds < 8.0) continue
+            if (approaches[s.id]?.beeped == true || !warnable(s)) continue
+            if (Geo.angleDiff(heading, s.heading) > cfg.headingTolDeg) continue
+            // "Further along the same road" is measured from the warned spot along its own direction of travel
+            // (averaged over its hits), not along the car's GPS heading: a few degrees of GPS wobble would
+            // otherwise throw a spot 200 m ahead off the path.
+            val gap = Geo.distance(first.lat, first.lon, s.lat, s.lon)
+            val off = Math.toRadians(Geo.angleDiff(first.heading, Geo.bearing(first.lat, first.lon, s.lat, s.lon)))
+            val along = gap * cos(off)
+            if (along < -cfg.matchRadiusM || along > cfg.clusterRangeM || gap * sin(off) > cfg.maxCrossTrackM) continue
+            members.add(s to ds)
+        }
+        if (members.size < cfg.clusterMinExtra) return null
+
+        // Silent until about when you get there (twice the time at today's speed, plus a margin); cleared
+        // earlier if you turn round or drive away from it.
+        for ((s, ds) in members) grouped[s.id] = f.timeMs + 2 * (ds / max(f.speedMps, 3.0) * 1000).toLong() + 30_000L
+        val all = listOf(first to firstDist) + members.sortedBy { it.second }
+        val kinds = all.mapTo(HashSet()) { it.first.kind }
+        val kind = kinds.singleOrNull()?.takeIf { it != BumpKind.UNSURE }
+        val harsh = all.firstOrNull { it.first.kind == BumpKind.POTHOLE && it.first.isHarsh(cfg) }?.first
+        return HazardCluster(all.size, kind, harsh?.side)
     }
 
     private fun finishPass(b: Bump, a: Approach, f: Fix) {

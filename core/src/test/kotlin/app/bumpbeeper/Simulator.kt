@@ -76,6 +76,10 @@ class TripResult(
     val forwardTrace: List<String> = emptyList(),
     /** How the simulated driver drove, as measured by [DrivingMonitor]. */
     val driving: DrivingStats = DrivingStats(),
+    /** Every warning as the engine handed it out (sound + group), in order. */
+    val warnings: List<Warning> = emptyList(),
+    /** "New spot recorded" ticks (rate-limited, one per new spot at most). */
+    val ticks: Int = 0,
 )
 
 /**
@@ -164,6 +168,8 @@ class Simulator(seed: Long) {
         val beepIds = ArrayList<Long>()
         val beepKinds = ArrayList<BumpKind>()
         val beepTrue = ArrayList<Double>()
+        val warnings = ArrayList<Warning>()
+        var ticks = 0
         var newBumps = 0
         var knownHits = 0
         val rejected = ArrayList<String>()
@@ -179,6 +185,8 @@ class Simulator(seed: Long) {
         var monitor: DrivingMonitor? = null
         val listener = object : EngineListener {
             override fun onNewBump(b: Bump) { newBumps++; monitor?.onBumpHit(b, v * 3.6) }
+            override fun onNewSpotTick(b: Bump) { ticks++ }
+            override fun onWarning(w: Warning) { warnings.add(w); super.onWarning(w) }
             override fun onKnownBumpHit(b: Bump) { knownHits++; monitor?.onBumpHit(b, v * 3.6) }
             override fun onBeep(b: Bump, distanceM: Double, speedKmh: Double) {
                 val car = point(travel(s), spec.westbound)
@@ -333,6 +341,6 @@ class Simulator(seed: Long) {
         }
         mon.finish()
         fwdTrace.add("monitor: ${mon.debug}")
-        return TripResult(beepIds, beepKinds, beepTrue, newBumps, knownHits, rejected, engine.trip, fwdTrace, mon.stats)
+        return TripResult(beepIds, beepKinds, beepTrue, newBumps, knownHits, rejected, engine.trip, fwdTrace, mon.stats, warnings, ticks)
     }
 }

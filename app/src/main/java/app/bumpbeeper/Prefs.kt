@@ -53,7 +53,8 @@ object Prefs {
     }
 
     fun loud(ctx: Context): Boolean = sp(ctx).getBoolean(LOUD, false)
-    fun clickOnNew(ctx: Context): Boolean = sp(ctx).getBoolean(CLICK_ON_NEW, false)
+    /** Soft tick when a new spot is recorded on the first pass (on unless switched off). */
+    fun clickOnNew(ctx: Context): Boolean = sp(ctx).getBoolean(CLICK_ON_NEW, true)
 
     /** Seconds of warning before a bump (4–12). */
     fun leadSeconds(ctx: Context): Int = sp(ctx).getInt(LEAD_SECONDS, 7)
@@ -62,8 +63,8 @@ object Prefs {
     /** Jolts above this speed aren't speed bumps (unless clearly a pothole), km/h. */
     fun maxBumpKmh(ctx: Context): Int = sp(ctx).getInt(MAX_BUMP_KMH, 50)
     fun warnPotholes(ctx: Context): Boolean = sp(ctx).getBoolean(WARN_POTHOLES, true)
-    /** Potholes with an average jolt of at least this many m/s² get a voice warning (4–10). */
-    fun harshMs2(ctx: Context): Int = sp(ctx).getInt(HARSH_MS2, 6)
+    /** Potholes with an average jolt of at least this many m/s² get a voice warning (4–10). Default = [EngineConfig.harshPotholeMs2]. */
+    fun harshMs2(ctx: Context): Int = sp(ctx).getInt(HARSH_MS2, 5)
     fun voiceLang(ctx: Context): String = sp(ctx).getString(VOICE_LANG, "en") ?: "en"
     /** Speed above which time counts as speeding, for the driving score (km/h). */
     fun speedLimit(ctx: Context): Int = sp(ctx).getInt(SPEED_LIMIT, 90)
