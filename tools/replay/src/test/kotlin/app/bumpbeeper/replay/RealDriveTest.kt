@@ -29,16 +29,12 @@ class RealDriveTest {
             if (run.labels.isNotEmpty()) println(Metrics.compute(listOf(run)).toMarkdown(f.name))
             println(summary.toMarkdown(f.name))
             val raw = RealDriveChecks.anonymizationProblems(lines)
-            assertTrue("${f.name} still looks raw:
-" + raw.joinToString("
-"), raw.isEmpty())
+            assertTrue("${f.name} still looks raw:\n" + raw.joinToString("\n"), raw.isEmpty())
             val exp = RealDriveChecks.expectedFile(f)
             if (exp.exists()) {
                 val want = Properties().apply { exp.reader(Charsets.UTF_8).use { load(it) } }
                 val bad = RealDriveChecks.outOfRange(want, summary)
-                assertTrue("${f.name} moved outside its expected range:
-" + bad.joinToString("
-"), bad.isEmpty())
+                assertTrue("${f.name} moved outside its expected range:\n" + bad.joinToString("\n"), bad.isEmpty())
             }
         }
     }
@@ -62,8 +58,7 @@ object RealDriveChecks {
         val offRows = ArrayList<Int>()
         val halfRows = ArrayList<Int>()
         for ((n, raw) in lines.withIndex()) {
-            val line = raw.trimEnd('', '
-')
+            val line = raw.trimEnd('\r', '\n')
             if (line.isBlank()) continue
             if (line.startsWith("#")) {
                 val key = line.removePrefix("#").trim().substringBefore('=').trim()
