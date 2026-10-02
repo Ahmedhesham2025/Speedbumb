@@ -53,6 +53,12 @@ jobs:
           adb wait-for-device
           adb shell input keyevent 82 || true
           adb shell wm dismiss-keyguard || true
+          # A freshly booted emulator often shows "Pixel Launcher isn't responding" over the app:
+          # never show crash/ANR dialogs, and give the launcher time to settle first.
+          adb shell settings put global hide_error_dialogs 1 || true
+          sleep 30
+          adb shell input keyevent KEYCODE_HOME || true
+          adb shell am broadcast -a android.intent.action.CLOSE_SYSTEM_DIALOGS >/dev/null || true
           # No network: the demo must not sign in to the real shared map, nor show an "update available" banner.
           adb shell svc wifi disable || true
           adb shell svc data disable || true
