@@ -494,8 +494,12 @@ class BumpService : Service(), SensorEventListener, LocationListener, EngineList
     override fun onNewBump(b: Bump) {
         LiveState.lastEvent = "New ${describe(b)} recorded (#${b.id})"
         monitor?.onBumpHit(b, (engine?.lastFix?.speedMps ?: 0.0) * 3.6)
-        if (Prefs.clickOnNew(this)) beeper.click()
         engine?.let { publish(it, force = true) }
+    }
+
+    /** First pass over a new spot: a soft tick (the engine rate-limits it). */
+    override fun onNewSpotTick(b: Bump) {
+        if (Prefs.clickOnNew(this)) beeper.click()
     }
 
     override fun onKnownBumpHit(b: Bump) {
@@ -504,9 +508,18 @@ class BumpService : Service(), SensorEventListener, LocationListener, EngineList
         engine?.let { publish(it, force = true) }
     }
 
-    override fun onBeep(b: Bump, distanceM: Double, speedKmh: Double) {
-        if (b.kind == BumpKind.POTHOLE) voice?.pothole(b.side) else beeper.warn(b, speedKmh)
-        LiveState.lastEvent = String.format(Locale.US, "WARNING: %s #%d in %.0f m", describe(b), b.id, distanceM)
+    override fun onWarning(w: Warning) {
+        val b = w.spot
+        val plain = { beeper.warn(w.sound, w.speedKmh) }
+        val v = voice
+        when {
+            // Several spots close together: say it once ("3 bumps ahead"); the ones after it stay silent.
+            w.cluster != null && v != null -> v.cluster(w.cluster!!, plain)
+            w.sound == WarnSound.HARSH_POTHOLE && v != null -> v.pothole(b.side)
+            else -> plain()
+        }
+        val group = w.cluster?.let { " (group of ${it.count})" } ?: ""
+        LiveState.lastEvent = String.format(Locale.US, "WARNING: %s #%d in %.0f m%s", describe(b), b.id, w.distanceM, group)
         engine?.let { publish(it, force = true) }
     }
 

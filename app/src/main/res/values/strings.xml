@@ -68,12 +68,12 @@
     <string name="settings_quiet_below">Stay quiet when I\'m already below %1$d km/h</string>
     <string name="settings_loud_title">Loud beeps</string>
     <string name="settings_loud_desc">Alarm volume through the phone speaker, instead of media volume / car audio.</string>
-    <string name="settings_click_new">Soft tick when a new bump is recorded</string>
+    <string name="settings_click_new">Tick when a new bump is recorded</string>
     <string name="settings_test_beep">Test beep</string>
     <string name="settings_test_voice">Test pothole voice</string>
     <string name="settings_section_potholes">Potholes</string>
-    <string name="settings_potholes_hint">Every pothole is recorded and counted. Only harsh ones get a voice warning that says which side it\'s on, e.g. \"Pothole on the right. Keep left.\" (keep left within your lane).</string>
-    <string name="settings_potholes_voice">Voice warning for harsh potholes</string>
+    <string name="settings_potholes_hint">Every pothole is recorded and counted. Before one: two low bongs. Harsh ones get a voice warning instead that says which side it\'s on, e.g. \"Pothole on the right. Keep left.\" (keep left within your lane).</string>
+    <string name="settings_potholes_voice">Warn before potholes (voice for harsh ones)</string>
     <string name="settings_harsh">Harsh = jolt of %1$d m/s² or more · %2$s</string>
     <string name="settings_harsh_most">most potholes</string>
     <string name="settings_harsh_feel">ones you really feel</string>
@@ -142,7 +142,7 @@
     <string name="settings_clear_msg">Deletes every recorded bump and pothole, the event log and all trips and scores. This can\'t be undone. Tip: Share… → Bump file first to keep a copy.</string>
     <string name="settings_map_cleared">Map cleared</string>
     <string name="settings_toast_cleared">Cleared</string>
-    <string name="settings_help">• Put the phone in a holder. A loose phone gives noisy readings.\n• Tap START before you drive (or set up Auto start). It keeps running with the screen off.\n• First pass over a bump: recorded silently. After that: 2 beeps before you reach it (3 above 50 km/h). Harsh potholes: a voice says which side they\'re on.\n• Bump or pothole is judged from how the car moves; each pass makes it surer. Correct any spot on the Map tab.\n• A spot you pass 3+ times but rarely feel is muted automatically. \"Mute last warning\" silences a false alarm.\n• Your driving score (Trips tab) looks at speeding, harsh braking, cornering, swerving, speed bumps taken fast and phone use.\n• Everything stays on your phone. Share only what you choose.</string>
+    <string name="settings_help">• Put the phone in a holder. A loose phone gives noisy readings.\n• Tap START before you drive (or set up Auto start). It keeps running with the screen off.\n• First pass over a bump: a soft tick as it is recorded. After that: 2 high beeps before you reach it (3 above 50 km/h). Potholes: 2 low bongs; harsh ones: a voice says which side they\'re on. Not sure yet what it is: 1 beep. Several close together: the voice says e.g. \"3 bumps ahead\".\n• Bump or pothole is judged from how the car moves; each pass makes it surer. Correct any spot on the Map tab.\n• A spot you pass 3+ times but rarely feel is muted automatically. \"Mute last warning\" silences a false alarm.\n• Your driving score (Trips tab) looks at speeding, harsh braking, cornering, swerving, speed bumps taken fast and phone use.\n• Everything stays on your phone. Share only what you choose.</string>
     <string name="tab_drive">Drive</string>
     <string name="tab_map">Map</string>
     <string name="tab_trips">Trips</string>

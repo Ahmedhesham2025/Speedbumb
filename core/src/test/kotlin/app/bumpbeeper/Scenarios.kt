@@ -202,7 +202,7 @@ object Scenarios {
 
     /**
      * Potholes: which wheel hits them (left/right) is learned, every pothole is counted,
-     * and only the harsh ones warn (the small one is counted but silent).
+     * the harsh ones warn by voice and the small one with the low pothole bongs.
      */
     fun potholeSidesAndCounts() {
         log("potholeSidesAndCounts")
@@ -242,9 +242,12 @@ object Scenarios {
         }
         check(t2.newBumps == 0, "trip 2 must not record anything new (all spots are known), got ${t2.newBumps}")
         check(t2.stats.potholes == 3, "trip 2 should count all 3 potholes again, got ${t2.stats.potholes}")
-        check(t2.beepKinds == listOf(BumpKind.BUMP, BumpKind.POTHOLE, BumpKind.POTHOLE),
-            "trip 2: bump beep + 2 harsh pothole warnings, small one silent; got ${t2.beepKinds}")
-        check(small.id !in t2.beepBumpIds, "the small pothole must not warn")
+        check(t2.beepKinds == listOf(BumpKind.BUMP, BumpKind.POTHOLE, BumpKind.POTHOLE, BumpKind.POTHOLE),
+            "trip 2: bump beep + 3 pothole warnings; got ${t2.beepKinds}")
+        val sounds = t2.warnings.map { it.sound }
+        check(sounds == listOf(WarnSound.BUMP, WarnSound.HARSH_POTHOLE, WarnSound.HARSH_POTHOLE, WarnSound.POTHOLE),
+            "trip 2: beeps, voice, voice, bongs for the small one; got $sounds")
+        check(t2.warnings.last().spot.id == small.id, "the last warning is the small pothole")
         check(Phrases.pothole("en", right.side) == "Pothole on the right. Keep left.", "right-side phrase")
         check(Phrases.pothole("en", left.side) == "Pothole on the left. Keep right.", "left-side phrase")
     }
@@ -463,7 +466,7 @@ object Scenarios {
         check(remoteBeeps(store, 5).isEmpty(), "muted spots must silence their shared twins")
     }
 
-    /** Shared potholes follow the same rules: only harsh ones warn, and none with pothole warnings off. */
+    /** Shared potholes follow the same rules: small ones bong, harsh ones get the voice, none with pothole warnings off. */
     fun remotePotholeRules() {
         log("remotePotholeRules")
         val sim = Simulator(63)
@@ -475,8 +478,9 @@ object Scenarios {
 
         val t1 = sim.drive(store, spec, tripId = 1, spotSource = source)
         describe("trip 1", t1)
-        check(t1.beepBumpIds.map { BumpEngine.remoteSpotId(it) } == listOf(8L), "only the harsh shared pothole should warn, got ${t1.beepBumpIds}")
-        check(t1.beepKinds == listOf(BumpKind.POTHOLE), "it warns as a pothole, got ${t1.beepKinds}")
+        check(t1.beepBumpIds.map { BumpEngine.remoteSpotId(it) } == listOf(7L, 8L), "both shared potholes should warn, got ${t1.beepBumpIds}")
+        check(t1.warnings.map { it.sound } == listOf(WarnSound.POTHOLE, WarnSound.HARSH_POTHOLE),
+            "small one bongs, harsh one gets the voice: ${t1.warnings.map { it.sound }}")
 
         val off = EngineConfig().apply { warnPotholes = false }
         val t2 = sim.drive(store, spec, off, tripId = 2, spotSource = source)
@@ -596,6 +600,100 @@ object Scenarios {
         check(store.saved.size == 1, "no extra spots, got ${store.saved.size}")
     }
 
+    // ---------- sounds: first-pass tick, distinct warnings, groups ----------
+
+    /** Every new spot gives a soft tick on the first pass, but never more than one per [EngineConfig.tickGapMs]. */
+    fun firstPassTick() {
+        log("firstPassTick")
+        val spec = DriveSpec(bumpsAt = listOf(500.0, 1100.0, 1600.0))
+        val t1 = Simulator(71).drive(MemoryStore(), spec, tripId = 1)
+        describe("trip 1", t1)
+        check(t1.newBumps == 3 && t1.ticks == 3, "3 new spots should tick 3 times, got new=${t1.newBumps} ticks=${t1.ticks}")
+        check(t1.warnings.isEmpty(), "nothing known yet: no warnings, got ${t1.warnings.size}")
+
+        val store = MemoryStore()
+        val slowTicks = EngineConfig().apply { tickGapMs = 10 * 60_000L }
+        val r = Simulator(71).drive(store, spec, slowTicks, tripId = 1)
+        check(r.newBumps == 3 && r.ticks == 1, "rate limit: 3 new spots but 1 tick expected, got new=${r.newBumps} ticks=${r.ticks}")
+        val t2 = Simulator(72).drive(store, spec, tripId = 2)
+        check(t2.newBumps == 0 && t2.ticks == 0, "known spots don't tick, got ${t2.ticks}")
+    }
+
+    /** Each kind of spot has its own sound: bump beeps, pothole bongs, harsh pothole voice, unsure single beep. */
+    fun warningSounds() {
+        log("warningSounds")
+        val sim = Simulator(73)
+        val source = ListSpotSource(
+            listOf(
+                remoteAt(sim, 1, 400.0, BumpKind.BUMP),
+                remoteAt(sim, 2, 800.0, BumpKind.POTHOLE, Side.RIGHT, severity = 4.2),
+                remoteAt(sim, 3, 1200.0, BumpKind.POTHOLE, Side.LEFT, severity = 5.2),
+                remoteAt(sim, 4, 1600.0, BumpKind.UNSURE),
+            )
+        )
+        val t1 = sim.drive(MemoryStore(), DriveSpec(cruiseKmh = 50.0), tripId = 1, spotSource = source)
+        describe("trip 1", t1)
+        val sounds = t1.warnings.map { it.sound }
+        check(sounds == listOf(WarnSound.BUMP, WarnSound.POTHOLE, WarnSound.HARSH_POTHOLE, WarnSound.UNSURE), "sounds: $sounds")
+        check(t1.warnings.all { it.cluster == null }, "spots 400 m apart are not a group")
+        check(t1.warnings[2].spot.side == Side.LEFT, "the harsh pothole keeps its side for the voice")
+    }
+
+    /** Three learned bumps 60 m apart: one "3 bumps ahead" instead of three warnings; a lone bump still beeps. */
+    fun groupOfBumps() {
+        log("groupOfBumps")
+        val sim = Simulator(74)
+        val store = MemoryStore()
+        val spec = DriveSpec(bumpsAt = listOf(600.0, 660.0, 720.0, 1400.0))
+        val t1 = sim.drive(store, spec, tripId = 1)
+        describe("trip 1", t1)
+        check(t1.newBumps == 4, "trip 1 should learn 4 bumps, got ${t1.newBumps}")
+
+        // Quiet-below off, so without grouping all 4 would warn even at bump speed.
+        val always = EngineConfig().apply { quietBelowKmh = 0.0 }
+        val t2 = sim.drive(store, spec, always, tripId = 2)
+        describe("trip 2", t2)
+        check(t2.warnings.size == 2, "a group warning + the lone bump expected, got ${t2.warnings.size}")
+        val g = t2.warnings[0].cluster
+        check(g != null && g.count == 3 && g.kind == BumpKind.BUMP && g.harshSide == null, "first warning should be a group of 3 bumps")
+        check(t2.warnings[1].cluster == null, "the lone bump is not a group")
+        val grouped = store.events.count { it.tripId == 2L && it.type == "beep_grouped" }
+        check(grouped == 2, "the 2 following bumps stay silent (beep_grouped), got $grouped")
+        check(Phrases.cluster("en", g!!.count, g.kind, g.harshSide) == "3 bumps ahead.", "group phrase")
+
+        val noGroups = EngineConfig().apply { quietBelowKmh = 0.0; clusterMinExtra = 99 }
+        val t3 = sim.drive(store, spec, noGroups, tripId = 3)
+        check(t3.warnings.size == 4, "without grouping every bump warns, got ${t3.warnings.size}")
+    }
+
+    /** A mixed group (shared spots) names the harsh pothole in it; muted spots don't count towards a group. */
+    fun mixedGroupNamesHarshPothole() {
+        log("mixedGroupNamesHarshPothole")
+        val sim = Simulator(75)
+        val spots = listOf(
+            remoteAt(sim, 1, 800.0, BumpKind.BUMP),
+            remoteAt(sim, 2, 860.0, BumpKind.POTHOLE, Side.RIGHT, severity = 7.0),
+            remoteAt(sim, 3, 920.0, BumpKind.UNSURE),
+        )
+        val store = MemoryStore()
+        val t1 = sim.drive(store, DriveSpec(cruiseKmh = 50.0), tripId = 1, spotSource = ListSpotSource(spots))
+        describe("trip 1", t1)
+        check(t1.warnings.size == 1, "one group warning expected, got ${t1.warnings.size}")
+        val g = t1.warnings[0].cluster
+        check(g != null && g.count == 3 && g.kind == null && g.harshSide == Side.RIGHT, "mixed group of 3 with a harsh pothole on the right")
+        check(t1.warnings[0].sound == WarnSound.BUMP, "the first spot's own sound stays a bump")
+        check(store.events.count { it.tripId == 1L && it.type == "beep_grouped" } == 2, "the other two stay silent")
+
+        // Mute the pothole: only 2 spots left, too few for a group, so both warn on their own.
+        val fresh = MemoryStore()
+        val e = BumpEngine(EngineConfig(), fresh, object : EngineListener {}, { 0L }, spotSource = ListSpotSource(spots))
+        e.onFix(Fix(0, spots[1].lat, spots[1].lon, 10.0, 90.0, 5.0))
+        check(e.muteBump(-2L - 2L) != null, "muting the shared pothole should store a muted spot")
+        val t2 = sim.drive(fresh, DriveSpec(cruiseKmh = 50.0), tripId = 2, spotSource = ListSpotSource(spots))
+        describe("trip 2", t2)
+        check(t2.warnings.size == 2 && t2.warnings.all { it.cluster == null }, "2 single warnings expected, got ${t2.warnings.map { it.cluster?.count }}")
+    }
+
     fun all(): List<Pair<String, () -> Unit>> = listOf(
         "calmDrivingScoresHigh" to ::calmDrivingScoresHigh,
         "speedingAndHardBraking" to ::speedingAndHardBraking,
@@ -619,5 +717,9 @@ object Scenarios {
         "observationsRecorded" to ::observationsRecorded,
         "remoteTwin18m" to ::remoteTwin18m,
         "muteSharedSpot" to ::muteSharedSpot,
+        "firstPassTick" to ::firstPassTick,
+        "warningSounds" to ::warningSounds,
+        "groupOfBumps" to ::groupOfBumps,
+        "mixedGroupNamesHarshPothole" to ::mixedGroupNamesHarshPothole,
     )
 }

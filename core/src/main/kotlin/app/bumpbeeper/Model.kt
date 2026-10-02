@@ -118,7 +118,7 @@ class Fix(
 class BumpEvent(
     val wallTime: Long,
     val tripId: Long,
-    /** new_bump, hit, hit_repeat, miss, pass_slow, beep, beep_quiet, rejected, user_mute */
+    /** new_bump, hit, hit_repeat, miss, pass_slow, beep, beep_quiet, beep_grouped, rejected, user_mute */
     val type: String,
     val bumpId: Long,
     val lat: Double,
@@ -155,10 +155,48 @@ interface BumpStore {
     fun logEvent(e: BumpEvent)
 }
 
+/** How a warning should sound. The engine picks it (so it can be tested); the app plays it. */
+enum class WarnSound {
+    /** Speed bump: two high beeps. */
+    BUMP,
+    /** Pothole that is not harsh: two low "bong"s. */
+    POTHOLE,
+    /** Harsh pothole: the voice says which side it is on. */
+    HARSH_POTHOLE,
+    /** Not sure yet what it is: one mid beep. */
+    UNSURE,
+}
+
+/** Several known spots close together ahead: announced once by voice ("3 bumps ahead") instead of one sound each. */
+class HazardCluster(
+    /** Spots in the group, the warned one included (at least 3). */
+    val count: Int,
+    /** What they all are, or null when mixed (or when any of them is unsure). */
+    val kind: BumpKind?,
+    /** Side of the nearest harsh pothole in the group, or null if there is none. */
+    val harshSide: Side?,
+)
+
+/** One warning ahead of a spot. [cluster] is set when more spots follow closely; they then stay silent. */
+class Warning(
+    val spot: Bump,
+    val distanceM: Double,
+    val speedKmh: Double,
+    val sound: WarnSound,
+    val cluster: HazardCluster?,
+)
+
 /** What the engine tells the outside world. All methods are optional. */
 interface EngineListener {
     fun onNewBump(b: Bump) {}
+    /**
+     * A new spot was just recorded (first pass): time for a soft tick. Called right after [onNewBump],
+     * at most once per [EngineConfig.tickGapMs], so a bumpy stretch doesn't machine-gun.
+     */
+    fun onNewSpotTick(b: Bump) {}
     fun onKnownBumpHit(b: Bump) {}
+    /** A warning ahead, with the sound to play. By default it is handed on to [onBeep]. */
+    fun onWarning(w: Warning) { onBeep(w.spot, w.distanceM, w.speedKmh) }
     fun onBeep(b: Bump, distanceM: Double, speedKmh: Double) {}
     fun onPassed(b: Bump, felt: Boolean) {}
     fun onJoltRejected(peak: Double, reason: String) {}

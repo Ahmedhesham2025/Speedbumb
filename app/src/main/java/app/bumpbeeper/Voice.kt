@@ -38,21 +38,25 @@ class Voice(ctx: Context, private val onUnavailable: () -> Unit) {
     /** Warn about a pothole ahead, telling which side it is on and which way to keep. */
     fun pothole(side: Side) = say(Phrases.pothole(Prefs.voiceLang(app), side))
 
-    fun say(text: String) {
+    /** Announce a group of spots ahead ("3 bumps ahead."); [fallback] plays instead if speech isn't available. */
+    fun cluster(c: HazardCluster, fallback: () -> Unit) =
+        say(Phrases.cluster(Prefs.voiceLang(app), c.count, c.kind, c.harshSide), fallback)
+
+    fun say(text: String, fallback: () -> Unit = onUnavailable) {
         val code = Prefs.voiceLang(app)
-        if (!ready) { onUnavailable(); return }
+        if (!ready) { fallback(); return }
         if (code != lang) {
             val r = tts.setLanguage(if (code == "ar") Locale("ar", "EG") else Locale.US)
             if (r == TextToSpeech.LANG_MISSING_DATA || r == TextToSpeech.LANG_NOT_SUPPORTED) {
                 // Arabic voice not installed: fall back to English rather than staying silent.
-                if (code == "ar") tts.setLanguage(Locale.US) else { onUnavailable(); return }
+                if (code == "ar") tts.setLanguage(Locale.US) else { fallback(); return }
             }
             lang = code
         }
         am.requestAudioFocus(focus)
         if (tts.speak(text, TextToSpeech.QUEUE_FLUSH, null, "w${n++}") != TextToSpeech.SUCCESS) {
             am.abandonAudioFocusRequest(focus)
-            onUnavailable()
+            fallback()
         }
     }
 
