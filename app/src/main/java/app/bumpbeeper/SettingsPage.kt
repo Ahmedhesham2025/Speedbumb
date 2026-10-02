@@ -13,6 +13,7 @@ import android.widget.RadioButton
 import android.widget.RadioGroup
 import android.widget.ScrollView
 import android.widget.TextView
+import app.bumpbeeper.sync.SpeedLimitSync
 import app.bumpbeeper.sync.Sync
 import app.bumpbeeper.ui.SyncChoice
 import java.text.SimpleDateFormat
@@ -361,6 +362,7 @@ class SettingsPage(private val a: MainActivity) : Page {
                 Thread {
                     val db = BumpDb(a.applicationContext)
                     try { db.clearAll() } finally { db.close() }
+                    SpeedLimitSync.clearPending(a.applicationContext)   // routes waiting for a lookup go too
                     ui.post { LiveState.lastEvent = a.getString(R.string.settings_map_cleared); LiveState.lastTripScore = -1; a.toast(a.getString(R.string.settings_toast_cleared)) }
                 }.start()
             }

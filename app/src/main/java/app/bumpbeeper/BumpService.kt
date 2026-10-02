@@ -30,8 +30,10 @@ import android.util.Log
 import app.bumpbeeper.crash.CrashLog
 import app.bumpbeeper.sync.CachedSpotSource
 import app.bumpbeeper.sync.OutboxSink
+import app.bumpbeeper.sync.SpeedLimitSync
 import app.bumpbeeper.sync.Sync
 import app.bumpbeeper.sync.SyncStore
+import app.bumpbeeper.sync.TripRoute
 import java.util.Locale
 import kotlin.math.abs
 
@@ -146,6 +148,7 @@ class BumpService : Service(), SensorEventListener, LocationListener, EngineList
     private var tracingStore: TracingStore? = null      // only used on the engine thread
     private var lastBatteryMs = -1L                     // only used on the engine thread
     private var sink: OutboxSink? = null                // only used on the engine thread; null = not sharing
+    private var route: TripRoute? = null                // only used on the engine thread; null = no speed-limit lookup
     private var pulledThisTrip = false                  // only used on the engine thread
     private var wakeLock: PowerManager.WakeLock? = null
     private var tripId = 0L
@@ -312,6 +315,8 @@ class BumpService : Service(), SensorEventListener, LocationListener, EngineList
             val syncStore = SyncStore(db)
             val outbox = if (Prefs.shareBumps(this)) OutboxSink(syncStore, tripId) else null
             sink = outbox
+            // Road speed limits (opt-in): the trip's fixes stay in memory until the trip ends.
+            route = if (SpeedLimitSync.allowed(this)) TripRoute() else null
             pulledThisTrip = false
             val eng = BumpEngine(cfg, store, this, { System.currentTimeMillis() }, tripId, CachedSpotSource(syncStore), outbox)
             eng.cfg.groupWarnings = voice?.speaks == true
@@ -379,6 +384,13 @@ class BumpService : Service(), SensorEventListener, LocationListener, EngineList
                 Log.w(TAG, "outbox not written", e)
             }
             sink = null
+            // Speed-limit lookup (opt-in): the route waits on disk for a background job, then is deleted.
+            try {
+                if (engine != null) route?.let { SpeedLimitSync.afterTrip(this, tripId, it) }
+            } catch (e: Exception) {
+                Log.w(TAG, "speed-limit lookup not queued: ${e.javaClass.simpleName}")
+            }
+            route = null
             val last = engine?.lastFix
             Sync.afterTrip(this, last?.lat ?: Double.NaN, last?.lon ?: Double.NaN)
             engine = null
@@ -466,6 +478,7 @@ class BumpService : Service(), SensorEventListener, LocationListener, EngineList
         )
         trace?.gps(fix.timeMs, fix.lat, fix.lon, fix.speedMps * 3.6, fix.bearingDeg, fix.accuracyM)
         sink?.onFix(fix)
+        route?.add(fix)
         if (!pulledThisTrip && fix.accuracyM <= 100.0) {
             // First usable position of the trip: refresh the shared spots around it (when there is network).
             pulledThisTrip = true

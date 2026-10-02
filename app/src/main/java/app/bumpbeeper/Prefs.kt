@@ -92,7 +92,8 @@ object Prefs {
 
     /**
      * Road speed limits for the driving score: after each trip a trimmed route goes through our server to TomTom.
-     * Opt-in (off by default), and only used while the network is allowed ([syncChoice] not "unset").
+     * Opt-in (off by default), and only used while the network is allowed ([syncChoice] not "unset"); see
+     * [app.bumpbeeper.sync.SpeedLimitSync.allowed]. Screens switch it with [app.bumpbeeper.sync.SpeedLimitSync.setEnabled].
      */
     const val SPEED_LIMITS = "speed_limits"
     fun speedLimits(ctx: Context): Boolean = sp(ctx).getBoolean(SPEED_LIMITS, false)
