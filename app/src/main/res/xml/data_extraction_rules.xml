@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Android 12+ (android:dataExtractionRules). Cloud backup keeps the bump database and settings but not
+     crash reports or drive recordings. A cable/Wi-Fi move to a new phone keeps the recordings too;
+     crash reports are about the old phone, so they never move. -->
+<data-extraction-rules>
+    <cloud-backup>
+        <exclude domain="file" path="crash/" />
+        <exclude domain="file" path="traces/" />
+        <exclude domain="external" path="traces/" />
+    </cloud-backup>
+    <device-transfer>
+        <exclude domain="file" path="crash/" />
+    </device-transfer>
+</data-extraction-rules>
