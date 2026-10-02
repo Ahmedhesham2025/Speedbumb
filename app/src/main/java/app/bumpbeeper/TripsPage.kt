@@ -37,11 +37,11 @@ class TripsPage(private val a: MainActivity) : Page {
         fun add(v: View, top: Int = 0, h: Int = LinearLayout.LayoutParams.WRAP_CONTENT) =
             col.addView(v, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, h).apply { topMargin = dp(top) })
 
-        add(Ui.text(a, 22f, Ui.TEXT, bold = true, value = "Your driving"))
+        add(Ui.text(a, 22f, Ui.TEXT, bold = true, value = a.getString(R.string.trips_title)))
 
         // Score card.
         val card = Ui.card(a)
-        ring = ScoreRingView(a).apply { caption = "out of 100" }
+        ring = ScoreRingView(a).apply { caption = a.getString(R.string.trips_out_of_100) }
         card.addView(ring, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(190)))
         grade = Ui.text(a, 20f, Ui.TEXT, bold = true).apply { gravity = Gravity.CENTER }
         basis = Ui.text(a, 13f, Ui.DIM).apply { gravity = Gravity.CENTER }
@@ -55,23 +55,26 @@ class TripsPage(private val a: MainActivity) : Page {
         card.addView(tips)
         add(card, 12)
 
-        add(Ui.section(a, "Score per trip"))
+        add(Ui.section(a, a.getString(R.string.trips_section_trend)))
         val tc = Ui.card(a)
         trend = TrendChartView(a)
         tc.addView(trend, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(120)))
         add(tc)
 
-        add(Ui.section(a, "All time"))
-        val t = listOf("Distance", "Driving time", "Trips", "Bumps found", "Potholes found", "Warnings given").map { Ui.tile(a, it) }
+        add(Ui.section(a, a.getString(R.string.trips_section_all_time)))
+        val t = listOf(
+            R.string.trips_tile_distance, R.string.trips_tile_time, R.string.trips_tile_trips,
+            R.string.trips_tile_bumps, R.string.trips_tile_potholes, R.string.trips_tile_warnings,
+        ).map { Ui.tile(a, a.getString(it)) }
         totals = t.map { it.second }
         add(Ui.grid(a, t.map { it.first }, 3))
 
-        add(Ui.section(a, "Trips"))
+        add(Ui.section(a, a.getString(R.string.trips_section_trips)))
         list = LinearLayout(a).apply { orientation = LinearLayout.VERTICAL }
         add(list)
         add(Ui.row(a,
-            Ui.button(a, "Share trips (CSV)") { Sharing.shareTripsCsv(a) },
-            Ui.button(a, "How it's scored") { explain() },
+            Ui.button(a, a.getString(R.string.trips_share_csv)) { Sharing.shareTripsCsv(a) },
+            Ui.button(a, a.getString(R.string.trips_how_scored)) { explain() },
         ), 12)
 
         return ScrollView(a).apply { addView(col) }
@@ -91,10 +94,10 @@ class TripsPage(private val a: MainActivity) : Page {
         val km = scored.sumOf { it.drive.distanceM } / 1000
         val overall = if (scored.isEmpty()) -1 else (scored.sumOf { it.score * it.drive.distanceM } / scored.sumOf { it.drive.distanceM }).roundToInt()
         ring.score = overall
-        grade.text = DrivingStats.grade(overall).let { if (overall < 0) "No score yet" else it }
+        grade.text = DrivingStats.grade(overall).let { if (overall < 0) a.getString(R.string.trips_no_score) else it }
         grade.setTextColor(Ui.scoreColor(overall))
-        basis.text = if (scored.isEmpty()) "Drive at least 0.5 km with recording on to get a score."
-            else String.format(Locale.US, "From your last %d trip%s (%.0f km)", scored.size, if (scored.size > 1) "s" else "", km)
+        basis.text = if (scored.isEmpty()) a.getString(R.string.trips_basis_none)
+            else a.getString(if (scored.size > 1) R.string.trips_basis_many else R.string.trips_basis_one, scored.size, String.format(Locale.US, "%.0f", km))
 
         // Breakdown: combine the trips into one set of numbers.
         val sum = DrivingStats()
@@ -107,9 +110,8 @@ class TripsPage(private val a: MainActivity) : Page {
         }
         breakdown.removeAllViews()
         for ((name, v) in sum.breakdown()) breakdown.addView(meterRow(name, if (scored.isEmpty()) -1 else v))
-        tips.text = if (scored.isEmpty()) "Your score looks at speeding, harsh braking and acceleration, harsh cornering, swerving, " +
-            "speed bumps taken fast, and handling the phone while driving."
-            else DriveText.tips(sum).joinToString("\n") { "• $it" }
+        tips.text = if (scored.isEmpty()) a.getString(R.string.trips_tips_none)
+            else DriveText.tips(a, sum).joinToString("\n") { "• $it" }
 
         trend.scores = trips.filter { it.score >= 0 }.take(20).map { it.score }.reversed()
 
@@ -121,7 +123,7 @@ class TripsPage(private val a: MainActivity) : Page {
         totals[5].text = trips.sumOf { it.beeps }.toString()
 
         list.removeAllViews()
-        if (trips.isEmpty()) list.addView(Ui.text(a, 14f, Ui.DIM, value = "No trips yet."))
+        if (trips.isEmpty()) list.addView(Ui.text(a, 14f, Ui.DIM, value = a.getString(R.string.trips_none_yet)))
         val fmt = SimpleDateFormat("EEE d MMM · HH:mm", Locale.US)
         for (tr in trips.take(50)) {
             val row = LinearLayout(a).apply {
@@ -136,7 +138,7 @@ class TripsPage(private val a: MainActivity) : Page {
                     addView(Ui.text(a, 15f, Ui.TEXT, bold = true, value = fmt.format(Date(tr.startTs))))
                     val ev = tr.drive.let { it.harshBrakes + it.harshAccels + it.harshCorners + it.swerves + it.bumpsFast + it.phoneUse }
                     addView(Ui.text(a, 13f, Ui.DIM, value = "${Ui.km(tr.drive.distanceM)} · ${Ui.duration(tr.durationS)} · " +
-                        (if (ev == 0) "no harsh events" else "$ev event${if (ev > 1) "s" else ""}")))
+                        (if (ev == 0) a.getString(R.string.trips_no_harsh) else a.getString(if (ev > 1) R.string.trips_events_many else R.string.trips_events_one, ev))))
                 }, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
                 addView(Ui.text(a, 20f, Ui.scoreColor(tr.score), bold = true, value = if (tr.score >= 0) tr.score.toString() else "–").apply {
                     gravity = Gravity.CENTER
@@ -176,17 +178,17 @@ class TripsPage(private val a: MainActivity) : Page {
         box.addView(ScoreRingView(a).apply { score = tr.score; caption = DrivingStats.grade(tr.score) },
             LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(150)))
         val facts = listOf(
-            "Distance" to Ui.km(d.distanceM),
-            "Time" to Ui.duration(tr.durationS),
-            "Average / top speed" to "${d.avgSpeedKmh.roundToInt()} / ${d.maxSpeedKmh.roundToInt()} km/h",
-            "Over your limit" to String.format(Locale.US, "%.0f%% of the time", d.speedingShare * 100),
-            "Harsh braking" to d.harshBrakes.toString(),
-            "Harsh acceleration" to d.harshAccels.toString(),
-            "Harsh cornering" to d.harshCorners.toString(),
-            "Swerves" to d.swerves.toString(),
-            "Speed bumps taken fast" to d.bumpsFast.toString(),
-            "Phone handled while driving" to d.phoneUse.toString(),
-            "Bumps hit · potholes · warnings" to "${tr.hits} · ${tr.potholes} · ${tr.beeps}",
+            a.getString(R.string.trips_fact_distance) to Ui.km(d.distanceM),
+            a.getString(R.string.trips_fact_time) to Ui.duration(tr.durationS),
+            a.getString(R.string.trips_fact_speed) to a.getString(R.string.trips_fact_speed_value, d.avgSpeedKmh.roundToInt(), d.maxSpeedKmh.roundToInt()),
+            a.getString(R.string.trips_fact_over_limit) to a.getString(R.string.trips_fact_over_limit_value, String.format(Locale.US, "%.0f", d.speedingShare * 100)),
+            a.getString(R.string.trips_fact_braking) to d.harshBrakes.toString(),
+            a.getString(R.string.trips_fact_accel) to d.harshAccels.toString(),
+            a.getString(R.string.trips_fact_cornering) to d.harshCorners.toString(),
+            a.getString(R.string.trips_fact_swerves) to d.swerves.toString(),
+            a.getString(R.string.trips_fact_bumps_fast) to d.bumpsFast.toString(),
+            a.getString(R.string.trips_fact_phone) to d.phoneUse.toString(),
+            a.getString(R.string.trips_fact_totals) to "${tr.hits} · ${tr.potholes} · ${tr.beeps}",
         )
         for ((k, v) in facts) box.addView(LinearLayout(a).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -195,38 +197,26 @@ class TripsPage(private val a: MainActivity) : Page {
             addView(Ui.text(a, 14f, Ui.TEXT, bold = true, value = v))
         })
         if (events.isNotEmpty()) {
-            box.addView(Ui.section(a, "What happened"))
+            box.addView(Ui.section(a, a.getString(R.string.trips_section_happened)))
             val tf = SimpleDateFormat("HH:mm", Locale.US)
             for (e in events.take(30)) box.addView(Ui.text(a, 13f, Ui.TEXT,
-                value = "${tf.format(Date(e.wallTime))}  ${DriveText.event(e.type, e.note)}" +
-                    if (!e.speedKmh.isNaN()) " (${e.speedKmh.roundToInt()} km/h)" else ""))
+                value = "${tf.format(Date(e.wallTime))}  ${DriveText.event(a, e.type, e.note)}" +
+                    if (!e.speedKmh.isNaN()) a.getString(R.string.trips_event_speed, e.speedKmh.roundToInt()) else ""))
         }
-        box.addView(Ui.section(a, "Tips"))
-        box.addView(Ui.text(a, 14f, Ui.TEXT, value = DriveText.tips(d).joinToString("\n") { "• $it" }))
+        box.addView(Ui.section(a, a.getString(R.string.trips_section_tips)))
+        box.addView(Ui.text(a, 14f, Ui.TEXT, value = DriveText.tips(a, d).joinToString("\n") { "• $it" }))
         AlertDialog.Builder(a)
             .setView(ScrollView(a).apply { addView(box) })
-            .setPositiveButton("Share") { _, _ -> Sharing.shareTrip(a, tr) }
-            .setNegativeButton("Close", null)
+            .setPositiveButton(R.string.trips_share) { _, _ -> Sharing.shareTrip(a, tr) }
+            .setNegativeButton(R.string.common_close, null)
             .show()
     }
 
     private fun explain() {
         AlertDialog.Builder(a)
-            .setTitle("How the score works")
-            .setMessage(
-                "Every trip starts at 100. Points come off for:\n\n" +
-                    "• Speeding: time above your limit (Settings → Driving score), more the further over.\n" +
-                    "• Harsh braking (over ≈0.35 g) and harsh acceleration (over ≈0.3 g).\n" +
-                    "• Harsh cornering (over ≈0.4 g sideways) and swerves (a sudden left-right).\n" +
-                    "• Speed bumps from your map taken faster than 25 km/h.\n" +
-                    "• Picking up the phone while moving.\n\n" +
-                    "Events are counted per 10 km, so long trips aren't punished for being long; trips under 5 km count as 5 km. " +
-                    "Trips under 0.5 km get no score. Your overall score is the distance-weighted average of your last 20 trips.\n\n" +
-                    "90+ Excellent · 75+ Good · 60+ Fair · below 60 Needs work.\n\n" +
-                    "Measured with the phone's sensors and GPS. The phone works offline and doesn't know real speed limits, " +
-                    "so set your usual limit in Settings."
-            )
-            .setPositiveButton("OK", null)
+            .setTitle(a.getString(R.string.trips_explain_title))
+            .setMessage(a.getString(R.string.trips_explain_msg))
+            .setPositiveButton(R.string.common_ok, null)
             .show()
     }
 }

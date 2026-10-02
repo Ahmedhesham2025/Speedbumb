@@ -6,23 +6,28 @@ import java.util.zip.*
 import kotlin.system.exitProcess
 
 private const val USAGE = """Usage:
-  replay --trace drive.csv[.gz] [--out metrics.json]   replay a labelled recording, print the accuracy table
+  replay --trace run1.csv[.gz] [--trace run2.csv …] [--out metrics.json]
+      replay labelled recordings (the runs of one route, oldest first) on one shared map, print the accuracy table
   anonymize --in raw.csv[.gz] --out anon.csv[.gz]      fake origin + clock at zero, before anything enters testdata/"""
 
 fun main(args: Array<String>) {
     val opts = HashMap<String, String>()
+    val traces = ArrayList<File>()
     var i = 1
     while (i < args.size) {
-        if (args[i].startsWith("--") && i + 1 < args.size) { opts[args[i].removePrefix("--")] = args[i + 1]; i += 2 } else usage()
+        if (args[i].startsWith("--") && i + 1 < args.size) {
+            val key = args[i].removePrefix("--")
+            if (key == "trace") traces.add(File(args[i + 1])) else opts[key] = args[i + 1]
+            i += 2
+        } else usage()
     }
     when (args.firstOrNull()) {
         "replay" -> {
-            val trace = File(opts["trace"] ?: usage())
-            val samples = TraceReader.read(readLines(trace).asSequence())
-            val result = Replayer.replay(samples, MemStore())
-            val report = Metrics.compute(TraceReader.labels(samples), result, samples)
+            if (traces.isEmpty()) usage()
+            val report = Metrics.compute(replayRuns(traces.map { Pair(it.name, readLines(it)) }))
             opts["out"]?.let { File(it).writeText(report.toJson()) }
-            println(report.toMarkdown(trace.name))
+            val title = if (traces.size == 1) traces[0].name else "${traces.size} runs (${traces.first().name} … ${traces.last().name})"
+            println(report.toMarkdown(title))
         }
         "anonymize" -> {
             val out = File(opts["out"] ?: usage())
@@ -45,7 +50,20 @@ fun readLines(f: File): List<String> {
     return stream.bufferedReader(Charsets.UTF_8).use { it.readLines() }
 }
 
-/** In-memory bump map for one replay (the engine starts with an empty map, like a fresh install). */
+/**
+ * Replays recordings (name, CSV lines) one after another on ONE map, like the same phone driving the route again:
+ * a fresh engine per recording (one trip each), sharing a store that starts empty, like a fresh install.
+ */
+fun replayRuns(recordings: List<Pair<String, List<String>>>): List<Run> {
+    val store = MemStore()
+    return recordings.mapIndexed { k, (name, lines) ->
+        val samples = TraceReader.read(lines.asSequence())
+        val result = Replayer.replay(samples, store, tripId = k + 1L)
+        Run(name, Metrics.labels(samples), result, samples)
+    }
+}
+
+/** In-memory bump map shared by the runs of one replay (starts empty, like a fresh install). */
 class MemStore : BumpStore {
     private val bumps = ArrayList<Bump>()
     private var nextId = 1L
