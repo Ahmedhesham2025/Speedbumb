@@ -1,6 +1,8 @@
 package app.bumpbeeper
 
 import android.content.Context
+import android.hardware.Sensor
+import android.hardware.SensorManager
 import android.os.Build
 import java.io.BufferedWriter
 import java.io.File
@@ -17,7 +19,7 @@ import java.util.Locale
  * Readers skip `#` lines and map columns by the header, so the header line itself never changes.
  *
  * Columns: t_s (seconds since start), type (accel | gps | event), the sensor values for that type,
- * and for events: event, bump_id, peak, note. Load it in pandas and filter on `type`.
+ * and for events: event, bump_id, peak, note. gx/gy/gz stay empty until the first gyroscope reading. Load it in pandas and filter on `type`.
  * Extra event rows: `event=label` (note = what the driver tapped: bump, pothole_l, pothole_r, rough, undo)
  * and `event=battery` (peak = battery percent, every 5 minutes).
  */
@@ -106,7 +108,11 @@ class TraceWriter(dir: File, meta: List<String> = emptyList()) {
             "device=${Build.MANUFACTURER}/${Build.MODEL}",
             "android=${Build.VERSION.SDK_INT}",
             "placement=${Prefs.placement(ctx)}",
+            "gyro=${if (hasGyro(ctx)) "yes" else "none"}",
         )
+
+        private fun hasGyro(ctx: Context): Boolean =
+            (ctx.getSystemService(Context.SENSOR_SERVICE) as? SensorManager)?.getDefaultSensor(Sensor.TYPE_GYROSCOPE) != null
 
         fun appVersion(ctx: Context): String = try {
             @Suppress("DEPRECATION")

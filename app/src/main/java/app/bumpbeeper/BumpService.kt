@@ -145,6 +145,8 @@ class BumpService : Service(), SensorEventListener, LocationListener, EngineList
     private var gx = 0.0
     private var gy = 0.0
     private var gz = 0.0
+    /** No gyroscope reading yet this trip: the recording leaves gx/gy/gz empty instead of a fake 0. */
+    private var gyroSeen = false
 
     private val stopForCarGone = Runnable {
         LiveState.lastEvent = "Car disconnected: stopped"
@@ -275,6 +277,8 @@ class BumpService : Service(), SensorEventListener, LocationListener, EngineList
         val cfg = EngineConfig().also { Prefs.applyTo(it, this) }
         // Debug recording or label mode: write a recording file of this drive.
         val record = Prefs.recordTrace(this)
+        gx = 0.0; gy = 0.0; gz = 0.0
+        gyroSeen = false
         h.post {
             val store = TracingStore(db, null)
             tracingStore = store
@@ -382,6 +386,7 @@ class BumpService : Service(), SensorEventListener, LocationListener, EngineList
 
         if (event.sensor.type == Sensor.TYPE_GYROSCOPE) {
             gx = x; gy = y; gz = z
+            gyroSeen = true
             eng.onGyro(tMs, x, y, z)
             monitor?.onGyro(x, y, z)
             return
@@ -390,7 +395,8 @@ class BumpService : Service(), SensorEventListener, LocationListener, EngineList
         eng.onAccel(tMs, x, y, z)
         monitor?.onAccel(tMs, x, y, z)
         trace?.let { tw ->
-            tw.accel(tMs, x, y, z, gx, gy, gz, eng.lastVertical)
+            if (gyroSeen) tw.accel(tMs, x, y, z, gx, gy, gz, eng.lastVertical)
+            else tw.accel(tMs, x, y, z, Double.NaN, Double.NaN, Double.NaN, eng.lastVertical)
             if (lastBatteryMs < 0 || tMs - lastBatteryMs >= BATTERY_EVERY_MS) {
                 lastBatteryMs = tMs
                 val pct = batteryPercent()
