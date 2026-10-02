@@ -1,7 +1,7 @@
 -- Row-level security role matrix: anon, device owner, other device, fleet admin, fleet viewer, other fleet.
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(32);
+select plan(35);
 
 -- ---------------------------------------------------------------- fixtures (as postgres)
 insert into auth.users (id, aud, role, email) values
@@ -31,7 +31,7 @@ insert into public.memberships (user_id, fleet_id, role) values
 insert into public.drivers (id, fleet_id, display_name) overriding system value values
   (900001, 900001, 'Driver A1'), (900002, 900002, 'Driver B1');
 insert into public.invites (code, fleet_id, driver_id) values
-  ('TEST-A', 900001, 900001), ('TEST-B', 900002, 900002);
+  ('TEST-A-0000000000', 900001, 900001), ('TEST-B-0000000000', 900002, 900002);
 insert into public.trips (id, device_id, fleet_id, driver_id, started_at) overriding system value values
   (900001, '11111111-1111-1111-1111-111111111111', 900001, 900001, now()),
   (900002, '22222222-2222-2222-2222-222222222222', 900002, 900002, now()),
@@ -68,16 +68,17 @@ select throws_ok($$ insert into public.spots (geom) values ('SRID=4326;POINT(29 
 select is((select count(*) from public.devices where id = '11111111-1111-1111-1111-111111111111'), 1::bigint, 'device sees its own row');
 select is((select count(*) from public.devices where id = '22222222-2222-2222-2222-222222222222'), 0::bigint, 'device cannot see another device');
 select throws_ok($$ update public.devices set trust = 99 $$, '42501', null, 'device cannot raise its own trust');
+select lives_ok($$ update public.devices set share_enabled = false $$, 'device can turn sharing off');
+select throws_ok($$ update public.devices set id = '22222222-2222-2222-2222-222222222222' $$, '42501', null, 'device cannot change its id');
 select is(
   (select array_agg(id order by id) from public.spots_near(24.0, 29.0, 1000000)), array[900001::bigint],
   'spots_near returns confirmed spots only and caps the radius at 10 km');
 select is((select array_agg(id order by id) from public.trips where id >= 900001), array[900001::bigint], 'device sees only its own trips');
-select lives_ok(
-  $$ insert into public.crash_reports (device_id, stack) values ('11111111-1111-1111-1111-111111111111', 'trace') $$,
-  'device can file a crash report for itself');
+select is((select array_agg(trip_id) from public.trip_events where trip_id >= 900001), array[900001::bigint], 'device sees the events of its own trip only');
+select lives_ok($$ select public.submit_crash_report('1.0', 'Pixel', 'trace') $$, 'device can file a crash report through the RPC');
 select throws_ok(
   $$ insert into public.crash_reports (device_id, stack) values ('22222222-2222-2222-2222-222222222222', 'trace') $$,
-  '42501', null, 'device cannot file a crash report for another device');
+  '42501', null, 'device cannot insert crash reports directly');
 select throws_ok($$ select * from public.crash_reports $$, '42501', null, 'device cannot read crash reports');
 select throws_ok($$ select public.aggregate_observations() $$, '42501', null, 'clients cannot run the aggregation');
 select is((select count(*) from public.fleets where id >= 900001), 0::bigint, 'a non-member sees no fleets');
@@ -89,7 +90,7 @@ select is((select array_agg(id) from public.fleets where id >= 900001), array[90
 select is((select array_agg(id) from public.drivers where id >= 900001), array[900001::bigint], 'admin A sees only fleet A drivers');
 select is((select array_agg(id order by id) from public.trips where id >= 900001), array[900001::bigint], 'admin A sees only fleet A trips');
 select is((select count(*) from public.trip_events where trip_id = 900002), 0::bigint, 'admin A cannot see fleet B trip events');
-select is((select array_agg(code) from public.invites where code like 'TEST-%'), array['TEST-A'], 'admin A sees only fleet A invites');
+select is((select array_agg(code) from public.invites where code like 'TEST-%'), array['TEST-A-0000000000'], 'admin A sees only fleet A invites');
 select lives_ok($$ insert into public.vehicles (fleet_id, label) values (900001, 'New van') $$, 'admin A can add a vehicle to fleet A');
 select throws_ok($$ insert into public.vehicles (fleet_id, label) values (900002, 'Sneaky') $$, '42501', null, 'admin A cannot add a vehicle to fleet B');
 select throws_ok(

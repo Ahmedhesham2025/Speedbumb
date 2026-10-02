@@ -1,7 +1,7 @@
 -- register_device + submit_observations: validation, duplicates, consent, daily cap.
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(14);
+select plan(18);
 
 insert into auth.users (id, aud, role, email) values
   ('11111111-1111-1111-1111-111111111111', 'authenticated', 'authenticated', 'a@test.local'),
@@ -57,6 +57,23 @@ select throws_ok(
   $$ select public.submit_observations((select jsonb_agg(jsonb_build_object(
        'client_obs_id', gen_random_uuid(), 'kind', 'jolt', 'lat', 24, 'lon', 29, 'observed_at', now())) from generate_series(1, 501))) $$,
   '22023', null, 'more than 500 rows is rejected');
+
+select throws_ok(
+  $$ select public.submit_observations(jsonb_build_array(jsonb_build_object(
+       'client_obs_id', 'not-a-uuid', 'kind', 'jolt', 'lat', 24, 'lon', 29, 'observed_at', now()))) $$,
+  '22023', null, 'a malformed uuid gives 22023');
+select throws_ok(
+  $$ select public.submit_observations(jsonb_build_array(jsonb_build_object(
+       'client_obs_id', gen_random_uuid(), 'kind', 'jolt', 'lat', 24, 'lon', 29, 'observed_at', 'last tuesday'))) $$,
+  '22023', null, 'a malformed timestamp gives 22023');
+select throws_ok(
+  $$ select public.submit_observations(jsonb_build_array(jsonb_build_object(
+       'client_obs_id', gen_random_uuid(), 'kind', 'jolt', 'lat', 24, 'lon', 29, 'heading', 400, 'observed_at', now()))) $$,
+  '22023', null, 'a heading outside 0..359 gives 22023');
+select throws_ok(
+  $$ select public.submit_observations(jsonb_build_array(jsonb_build_object(
+       'client_obs_id', gen_random_uuid(), 'kind', 'jolt', 'lat', 24, 'lon', 29, 'speed_kmh', 99999, 'observed_at', now()))) $$,
+  '22023', null, 'an impossible speed gives 22023');
 
 -- ---------------------------------------------------------------- not registered / not sharing / capped
 set local request.jwt.claims = '{"sub":"22222222-2222-2222-2222-222222222222","role":"authenticated"}';

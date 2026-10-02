@@ -1,7 +1,7 @@
 -- aggregate_observations: matching, confirmation thresholds, clears, cleanup.
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(11);
+select plan(12);
 
 insert into auth.users (id, aud, role, email)
 select ('d0000000-0000-0000-0000-00000000000' || i)::uuid, 'authenticated', 'authenticated', 'd' || i || '@test.local'
@@ -47,12 +47,13 @@ order by v.n;
 -- An old, already merged observation that must be cleaned up.
 insert into public.observations (device_id, client_obs_id, kind, geom, observed_hour, processed, created_at)
 values ('d0000000-0000-0000-0000-000000000001', gen_random_uuid(), 'jolt', 'SRID=4326;POINT(28.5 23.5)',
-        now() - interval '31 days', true, now() - interval '31 days');
+        now() - interval '2 days', true, now() - interval '2 days');
 
 select is(public.aggregate_observations(), 15, 'every new observation is processed');
 select is((select count(*) from public.observations where not processed), 0::bigint, 'nothing left unprocessed');
-select is((select count(*) from public.observations where created_at < now() - interval '30 days'), 0::bigint,
-  'processed observations older than 30 days are deleted');
+select is((select count(*) from public.observations where created_at < now() - interval '1 day'), 0::bigint,
+  'processed observations older than a day are deleted');
+select is((select count(*) from public.observations), 15::bigint, 'observations from the last day stay for the upload cap');
 
 create temp table near_spot on commit drop as
 select p.name, s.status, s.n_devices, s.n_hits, s.n_clear, s.heading
