@@ -295,6 +295,14 @@ class BumpDb(ctx: Context) : SQLiteOpenHelper(ctx, "bumps.db", null, 6), BumpSto
         )
     }
 
+    /** "Not a drive" (#49): the trip and its events go; learned spots stay (they merge with later passes). */
+    fun deleteTrip(id: Long) {
+        writableDatabase.apply {
+            delete("events", "trip_id = ?", arrayOf(id.toString()))
+            delete("trips", "id = ?", arrayOf(id.toString()))
+        }
+    }
+
     fun clearAll() {
         writableDatabase.apply {
             delete("bumps", null, null)

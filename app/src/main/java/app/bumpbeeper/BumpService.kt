@@ -31,6 +31,7 @@ import app.bumpbeeper.auto.AutoDetect
 import app.bumpbeeper.auto.AutoStop
 import app.bumpbeeper.auto.DriveWatcher
 import app.bumpbeeper.auto.PowerPolicy
+import app.bumpbeeper.auto.TripCheck
 import app.bumpbeeper.crash.CrashLog
 import app.bumpbeeper.sync.CachedSpotSource
 import app.bumpbeeper.sync.OutboxSink
@@ -218,6 +219,8 @@ class BumpService : Service(), SensorEventListener, LocationListener, EngineList
     private var tracingStore: TracingStore? = null      // only used on the engine thread
     private var lastBatteryMs = -1L                     // only used on the engine thread
     private var sink: OutboxSink? = null                // only used on the engine thread; null = not sharing
+    /** Started by a guess (motion / Google) and not confirmed by the car's Bluetooth yet: ask at the end (#49). */
+    @Volatile private var unconfirmed = false
     private var route: TripRoute? = null                // only used on the engine thread; null = no speed-limit lookup
     private var pulledThisTrip = false                  // only used on the engine thread
     private var wakeLock: PowerManager.WakeLock? = null
@@ -466,7 +469,12 @@ class BumpService : Service(), SensorEventListener, LocationListener, EngineList
         if (running) {
             if (source == SOURCE_CAR) {
                 LiveState.lastEvent = "Car reconnected: still recording"
-                handler?.post { autoStop?.carConnected = true }
+                handler?.post {
+                    autoStop?.carConnected = true
+                    // The car's Bluetooth confirms it was a drive: nothing to ask, nothing to hold.
+                    unconfirmed = false
+                    sink?.held = false
+                }
             }
             if (source == SOURCE_VEHICLE) handler?.post { autoStop?.backInVehicle() }
             return
@@ -532,7 +540,8 @@ class BumpService : Service(), SensorEventListener, LocationListener, EngineList
             LiveState.labelMode = trace != null && Prefs.labelMode(this)
             // Shared map: warn for cached confirmed spots; collect observations only if the user opted in.
             val syncStore = SyncStore(db)
-            val outbox = if (Prefs.shareBumps(this)) OutboxSink(syncStore, tripId) else null
+            unconfirmed = guessed
+            val outbox = if (Prefs.shareBumps(this)) OutboxSink(syncStore, tripId, held = guessed) else null
             sink = outbox
             // Road speed limits (opt-in): the trip's fixes stay in memory until the trip ends.
             route = if (SpeedLimitSync.allowed(this)) TripRoute() else null
@@ -602,6 +611,8 @@ class BumpService : Service(), SensorEventListener, LocationListener, EngineList
                 Log.w(TAG, "outbox not written", e)
             }
             sink = null
+            if (unconfirmed && engine != null) TripCheck.ask(this, tripId)
+            unconfirmed = false
             // Speed-limit lookup (opt-in): the route waits on disk for a background job, then is deleted.
             try {
                 if (engine != null) route?.let { SpeedLimitSync.afterTrip(this, tripId, it) }

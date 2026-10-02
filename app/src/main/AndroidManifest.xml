@@ -90,6 +90,11 @@
             </intent-filter>
         </receiver>
 
+        <!-- Auto-detect driving: the "Was this a drive?" answer after a trip that started by itself. -->
+        <receiver
+            android:name=".auto.TripCheck$Answer"
+            android:exported="false" />
+
         <!-- Auto-detect driving: after a reboot or an update, start detecting again (only when switched on). -->
         <receiver
             android:name=".auto.BootReceiver"
