@@ -21,15 +21,16 @@ fun interface Transport {
 }
 
 /** The real transport: HttpURLConnection, 10 s timeouts. Never call it on the main thread. */
-object UrlTransport : Transport {
-    private const val TIMEOUT_MS = 10_000
+object UrlTransport : Transport by HttpTransport(10_000)
 
+/** HttpURLConnection with [timeoutMs] to connect and to read. Never call it on the main thread. */
+class HttpTransport(private val timeoutMs: Int) : Transport {
     override fun post(url: String, headers: Map<String, String>, body: String): HttpResult {
         val conn = URL(url).openConnection() as HttpURLConnection
         try {
             conn.requestMethod = "POST"
-            conn.connectTimeout = TIMEOUT_MS
-            conn.readTimeout = TIMEOUT_MS
+            conn.connectTimeout = timeoutMs
+            conn.readTimeout = timeoutMs
             conn.doOutput = true
             for ((k, v) in headers) conn.setRequestProperty(k, v)
             conn.outputStream.use { it.write(body.toByteArray(Charsets.UTF_8)) }
