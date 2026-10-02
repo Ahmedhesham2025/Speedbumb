@@ -72,4 +72,35 @@ class MetricsTest {
         val empty = Metrics.compute(emptyList(), ReplayResult(emptyList(), TripStats(), DrivingStats()), emptyList())
         assertTrue(empty.toJson().contains("\"precision\": null"))
     }
+
+    @Test fun labelIsPlacedAtTheTapTime() {
+        val fixes = listOf(gps(10_000, 100.0, 36.0), gps(11_000, 110.0, 36.0))
+        val s: List<TraceSample> = fixes + listOf(TraceSample.Event(10_400, "label", -1, Double.NaN, "bump"),
+            TraceSample.Event(12_500, "label", -1, Double.NaN, "pothole_l"))   // the second one comes after the last fix
+        val l = Metrics.labels(s)
+        val p1 = at(104.0)
+        val p2 = at(125.0)                                                      // 10 m/s for 1.5 s past 110 m
+        assertEquals(0.0, Geo.distance(l[0].lat, l[0].lon, p1[0], p1[1]), 0.05)
+        assertEquals(0.0, Geo.distance(l[1].lat, l[1].lon, p2[0], p2[1]), 0.05)
+        // Far past the last fix, it stops moving on after 2 s.
+        val late = Metrics.positionAt(fixes, 20_000)!!
+        assertEquals(130.0, Geo.distance(30.0, 31.0, late[0], late[1]), 0.05)
+    }
+
+    @Test fun fastHitsGetAWiderGate() {
+        // 54 km/h: tapped 1 s after the detection, 25 m further on. 15 m alone would call it a miss.
+        val lab = listOf(label(10_000, "bump", 125.0))
+        val det = listOf(Metrics.Detection(9_000, at(100.0)[0], at(100.0)[1], "bump", "unknown"))
+        assertEquals(15.0 + 15.0, Metrics.gateM(54.0, 1000), 1e-9)
+        assertEquals(15.0 + 30.0, Metrics.gateM(54.0, 5000), 1e-9)      // time gap capped at 2 s
+        assertEquals(mapOf(0 to 0), Metrics.match(lab, det, listOf(54.0)))
+        assertTrue(Metrics.match(lab, det).isEmpty())                     // speed unknown: 15 m only
+    }
+
+    @Test fun hazardLabelsArePairedBeforeRough() {
+        // The rough tap is closer in time, but the detection belongs to the bump.
+        val lab = listOf(label(10_000, "bump", 100.0), label(10_900, "rough", 104.0))
+        val det = listOf(Metrics.Detection(11_000, at(101.0)[0], at(101.0)[1], "bump", "unknown"))
+        assertEquals(mapOf(0 to 0), Metrics.match(lab, det))
+    }
 }
