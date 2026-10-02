@@ -25,15 +25,19 @@ object TripPrivacy {
         anchors.isNotEmpty() && anchors.all { Geo.distance(lat, lon, it[0], it[1]) > radiusM }
 }
 
-/** One point sent for a speed-limit lookup. [timeMs] is the fix time (same clock as [Fix.timeMs]). */
-data class RoutePoint(val lat: Double, val lon: Double, val timeMs: Long)
+/**
+ * One point sent for a speed-limit lookup. [timeMs] is the fix time (same clock as [Fix.timeMs], used to match
+ * limits back to fixes); [epochMs] is the same moment in epoch milliseconds, the `t` sent to the server.
+ */
+data class RoutePoint(val lat: Double, val lon: Double, val timeMs: Long, val epochMs: Long = timeMs)
 
 /**
  * Picks the points of a finished trip to send for a speed-limit lookup (one limit comes back per point).
  *
  * Drops fixes worse than [MAX_ACCURACY_M] and everything inside the [TripPrivacy] zone, then keeps about one
- * point per [SPACING_M] of travel or per [SPACING_MS], whichever comes first. [chunks] splits the result into
- * requests of at most [MAX_POINTS] points and [MAX_CHUNK_M] of route each.
+ * point per [SPACING_M] of travel or per [SPACING_MS], whichever comes first; times never go backwards.
+ * [chunks] splits the result into requests of at most [MAX_POINTS] points and [MAX_CHUNK_M] of route each, and
+ * also wherever two points are more than [MAX_GAP_M] apart (the server refuses gaps over 6 km, e.g. a tunnel).
  */
 object RouteSampler {
     const val SPACING_M = 50.0
@@ -41,8 +45,10 @@ object RouteSampler {
     const val MAX_POINTS = 5_000
     const val MAX_CHUNK_M = 100_000.0
     const val MAX_ACCURACY_M = 30.0
+    const val MAX_GAP_M = 5_000.0
 
-    fun sample(fixes: List<Fix>): List<RoutePoint> {
+    /** [epochOffsetMs] turns a fix time into epoch milliseconds (wall clock minus fix clock at the same moment). */
+    fun sample(fixes: List<Fix>, epochOffsetMs: Long = 0L): List<RoutePoint> {
         val anchors = TripPrivacy.anchors(fixes)
         val out = ArrayList<RoutePoint>()
         var prev: Fix? = null
@@ -50,28 +56,34 @@ object RouteSampler {
         var lastCandidate: Fix? = null
         for (f in fixes) {
             if (f.accuracyM > MAX_ACCURACY_M || !TripPrivacy.outside(f.lat, f.lon, anchors)) continue
+            if (prev != null && f.timeMs < prev.timeMs) continue   // out of order: keep times non-decreasing
             prev?.let { travelled += Geo.distance(it.lat, it.lon, f.lat, f.lon) }
             prev = f
             val last = out.lastOrNull()
             if (last == null || travelled >= SPACING_M || f.timeMs - last.timeMs >= SPACING_MS) {
-                out.add(RoutePoint(f.lat, f.lon, f.timeMs))
+                out.add(RoutePoint(f.lat, f.lon, f.timeMs, f.timeMs + epochOffsetMs))
                 travelled = 0.0
                 lastCandidate = null
             } else lastCandidate = f
         }
         // Keep the end of the route too, so the last stretch gets a limit.
-        lastCandidate?.let { out.add(RoutePoint(it.lat, it.lon, it.timeMs)) }
+        lastCandidate?.let { out.add(RoutePoint(it.lat, it.lon, it.timeMs, it.timeMs + epochOffsetMs)) }
         return out
     }
 
-    /** Consecutive pieces of [points], each with ≤ [maxPoints] points and ≤ [maxM] metres between its own points. */
-    fun chunks(points: List<RoutePoint>, maxPoints: Int = MAX_POINTS, maxM: Double = MAX_CHUNK_M): List<List<RoutePoint>> {
+    /**
+     * Consecutive pieces of [points], each with ≤ [maxPoints] points, ≤ [maxM] metres between its own points and
+     * no step over [maxGapM] (a longer gap starts a new piece and is in neither).
+     */
+    fun chunks(
+        points: List<RoutePoint>, maxPoints: Int = MAX_POINTS, maxM: Double = MAX_CHUNK_M, maxGapM: Double = MAX_GAP_M,
+    ): List<List<RoutePoint>> {
         val out = ArrayList<List<RoutePoint>>()
         var cur = ArrayList<RoutePoint>()
         var len = 0.0
         for (p in points) {
             val step = cur.lastOrNull()?.let { Geo.distance(it.lat, it.lon, p.lat, p.lon) } ?: 0.0
-            if (cur.isNotEmpty() && (cur.size >= maxPoints || len + step > maxM)) {
+            if (cur.isNotEmpty() && (cur.size >= maxPoints || len + step > maxM || step > maxGapM)) {
                 out.add(cur); cur = ArrayList(); len = 0.0
             } else len += step
             cur.add(p)
@@ -81,7 +93,7 @@ object RouteSampler {
     }
 
     /** [sample] then [chunks]: the requests to send for one trip. */
-    fun plan(fixes: List<Fix>): List<List<RoutePoint>> = chunks(sample(fixes))
+    fun plan(fixes: List<Fix>, epochOffsetMs: Long = 0L): List<List<RoutePoint>> = chunks(sample(fixes, epochOffsetMs))
 }
 
 /** Speeding measured against the road's real limits, for one trip. Bands are nested (over +20 is also over +10). */

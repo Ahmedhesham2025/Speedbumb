@@ -68,6 +68,10 @@ class SpeedLimitTest {
             assertTrue(c.size <= RouteSampler.MAX_POINTS)
             val len = (1 until c.size).sumOf { Geo.distance(c[it - 1].lat, c[it - 1].lon, c[it].lat, c[it].lon) }
             assertTrue("chunk $len m", len <= RouteSampler.MAX_CHUNK_M)
+            for (i in 1 until c.size) {
+                assertTrue(Geo.distance(c[i - 1].lat, c[i - 1].lon, c[i].lat, c[i].lon) <= RouteSampler.MAX_GAP_M)
+                assertTrue(c[i].epochMs >= c[i - 1].epochMs)
+            }
         }
     }
 
@@ -92,6 +96,27 @@ class SpeedLimitTest {
         val plan = RouteSampler.plan(long)
         assertTrue(plan.size >= 5)
         assertChunksOk(RouteSampler.sample(long), plan)
+    }
+
+    @Test fun gpsGapSplitsChunkAndTimesGoForward() {
+        // 5 min at 72 km/h, then no GPS for 8 km (tunnel), then 5 min more; one fix arrives out of order.
+        val before = drive(300) { 72.0 }
+        val jump = Geo.move(before.last().lat, before.last().lon, 0.0, 8_000.0)
+        val after = (0 until 300).map { s ->
+            val p = Geo.move(jump[0], jump[1], 0.0, s * 20.0)
+            Fix(700_000L + s * 1000L, p[0], p[1], 20.0, 0.0, 5.0)
+        }
+        val late = before[150].let { Fix(710_500L - 400_000L, it.lat, it.lon, 20.0, 0.0, 5.0) }
+        val fixes = before + after.take(10) + late + after.drop(10)
+        val offset = 1_790_000_000_000L
+        val pts = RouteSampler.sample(fixes, epochOffsetMs = offset)
+        assertTrue(pts.none { it.timeMs == late.timeMs })
+        assertTrue((1 until pts.size).all { pts[it].epochMs >= pts[it - 1].epochMs })
+        assertEquals(pts.first().timeMs + offset, pts.first().epochMs)
+        val plan = RouteSampler.plan(fixes, epochOffsetMs = offset)
+        assertEquals(2, plan.size)
+        assertTrue(plan[0].last().timeMs < 700_000L && plan[1].first().timeMs >= 700_000L)
+        assertChunksOk(pts, plan)
     }
 
     @Test fun shortSpikeIgnoredSustainedExcessCounted() {
