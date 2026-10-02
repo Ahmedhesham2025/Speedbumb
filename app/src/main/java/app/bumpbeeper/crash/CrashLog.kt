@@ -44,6 +44,17 @@ object CrashLog {
 
     fun dir(ctx: Context): File = File(ctx.filesDir, "crash")
 
+    // A decimal with 4+ digits after the point (dot or comma) looks like a coordinate (4 decimals ≈ 11 m).
+    private val COORDINATE = Regex("""-?\d+[.,]\d{4,}""")
+    // Two or more /segments: a file path (it can carry a trace or export name, i.e. a date and place).
+    private val PATH = Regex("""(?:/[^\s/:()\[\]{}"',;<>]+){2,}/?""")
+
+    /**
+     * The crash text as it may leave the phone: anything that looks like a position or a file path is replaced,
+     * because exception messages can quote a GPS fix or a recording's file name. Class and method names stay.
+     */
+    fun scrub(text: String): String = text.replace(PATH, "<path>").replace(COORDINATE, "<num>")
+
     /** Saved crash files, newest first. */
     fun list(ctx: Context): List<File> =
         (dir(ctx).listFiles { f -> f.name.startsWith("crash_") && f.name.endsWith(".txt") } ?: emptyArray())

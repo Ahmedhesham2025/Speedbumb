@@ -12,8 +12,8 @@ import java.util.Locale
 import java.util.TimeZone
 import kotlin.math.roundToInt
 
-/** One HTTP answer: status code and body text. */
-class HttpResult(val code: Int, val body: String)
+/** One HTTP answer: status code, body text and the server's clock from the `Date` header (0 when missing). */
+class HttpResult(val code: Int, val body: String, val serverDateMs: Long = 0L)
 
 /** Sends one POST. Swapped for a fake in tests, so no test ever touches the network. Throws IOException when offline. */
 fun interface Transport {
@@ -36,10 +36,34 @@ object UrlTransport : Transport {
             val code = conn.responseCode
             val stream = if (code in 200..299) conn.inputStream else conn.errorStream
             val text = stream?.bufferedReader(Charsets.UTF_8)?.use { it.readText() } ?: ""
-            return HttpResult(code, text)
+            return HttpResult(code, text, conn.date)
         } finally {
             conn.disconnect()
         }
+    }
+}
+
+/**
+ * Wraps a [Transport] and remembers how far the phone's clock runs ahead of the server's (from the `Date`
+ * header of any answer). A phone clock set hours ahead would otherwise date observations in the future and
+ * the server would reject whole batches.
+ */
+class ClockWatch(private val inner: Transport, private val now: () -> Long = System::currentTimeMillis) : Transport {
+    /** Phone time minus server time at the last answer that had a `Date` header; 0 until then. */
+    @Volatile var aheadMs: Long = 0L
+        private set
+
+    override fun post(url: String, headers: Map<String, String>, body: String): HttpResult {
+        val r = inner.post(url, headers, body)
+        if (r.serverDateMs > 0) aheadMs = now() - r.serverDateMs
+        return r
+    }
+
+    /** How much to move observation times back: the skew when the phone is more than [TOLERANCE_MS] ahead, else 0. */
+    fun correctionMs(): Long = if (aheadMs > TOLERANCE_MS) aheadMs else 0L
+
+    companion object {
+        const val TOLERANCE_MS = 60 * 60 * 1000L
     }
 }
 
@@ -113,8 +137,17 @@ object ObservationJson {
     private fun fit(x: Double, lo: Double, hi: Double) = if (x.isNaN()) 0.0 else x.coerceIn(lo, hi)
 
     /** e.g. 2026-10-02T13:45:07Z (seconds; the server rounds down to the hour). */
-    fun isoUtc(ms: Long): String =
-        SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", Locale.US).apply { timeZone = TimeZone.getTimeZone("UTC") }.format(Date(ms))
+    fun isoUtc(ms: Long): String = isoFormat().format(Date(ms))
+
+    /** Moves `observed_at` of an outbox element [shiftMs] earlier (clock skew). Unreadable times stay as they are. */
+    fun shiftObservedAt(o: JSONObject, shiftMs: Long): JSONObject {
+        if (shiftMs == 0L) return o
+        val at = try { isoFormat().parse(o.optString("observed_at", "")) } catch (_: Exception) { null } ?: return o
+        return o.put("observed_at", isoUtc(at.time - shiftMs))
+    }
+
+    private fun isoFormat() =
+        SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", Locale.US).apply { timeZone = TimeZone.getTimeZone("UTC") }
 
     /** The server only takes points in this box (Egypt / MENA); anything outside would reject the whole batch. */
     fun inServiceArea(lat: Double, lon: Double) = lat in 12.0..38.0 && lon in 24.0..60.0
