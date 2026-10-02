@@ -43,6 +43,20 @@ android {
         buildConfig = true
     }
 
+    // Two editions from the same code (issue #48). Same applicationId and key: a user installs one or the other.
+    // foss: Android platform APIs + :core only (GitHub Releases, F-Droid, AppGallery); CI fails if it gains a library.
+    // play: adds Google Play services activity recognition, falling back to the foss detection without Google services.
+    flavorDimensions += "dist"
+    productFlavors {
+        create("foss") {
+            dimension = "dist"
+        }
+        create("play") {
+            dimension = "dist"
+            versionNameSuffix = "-google"
+        }
+    }
+
     signingConfigs {
         if (hasReleaseKey) {
             create("release") {
@@ -102,8 +116,10 @@ tasks.withType<Test>().configureEach {
 }
 
 dependencies {
-    // The engine lives in :core (pure Kotlin). No other libraries in the app itself.
+    // The engine lives in :core (pure Kotlin). No other libraries in the app itself, except the play line below.
     implementation(project(":core"))
+    // The ONE allowed library, play edition only (owner decision, #48). The foss edition must never get one.
+    "playImplementation"("com.google.android.gms:play-services-location:21.4.0")
 
     // Test-only: never shipped in the APK.
     testImplementation("junit:junit:4.13.2")
