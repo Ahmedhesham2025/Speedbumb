@@ -45,18 +45,18 @@ class SettingsPage(private val a: MainActivity) : Page {
         }
         fun hint(s: String) = Ui.text(a, 13f, Ui.DIM, value = s).apply { setPadding(0, dp(2), 0, dp(6)) }
 
-        add(Ui.text(a, 22f, Ui.TEXT, bold = true, value = "Settings"))
+        add(Ui.text(a, 22f, Ui.TEXT, bold = true, value = a.getString(R.string.settings_title)))
 
-        card("Warnings",
-            Ui.slider(a, 4, 12, 1, Prefs.leadSeconds(a), { "Warn $it seconds before a bump" }) { sp.edit().putInt(Prefs.LEAD_SECONDS, it).apply() },
+        card(a.getString(R.string.settings_section_warnings),
+            Ui.slider(a, 4, 12, 1, Prefs.leadSeconds(a), { a.getString(R.string.settings_warn_before, it) }) { sp.edit().putInt(Prefs.LEAD_SECONDS, it).apply() },
             Ui.slider(a, 0, 40, 5, Prefs.quietBelowKmh(a), {
-                if (it == 0) "Always warn, even when driving slowly" else "Stay quiet when I'm already below $it km/h"
+                if (it == 0) a.getString(R.string.settings_always_warn) else a.getString(R.string.settings_quiet_below, it)
             }) { sp.edit().putInt(Prefs.QUIET_BELOW_KMH, it).apply() },
-            Ui.toggle(a, "Loud beeps", "Alarm volume through the phone speaker, instead of media volume / car audio.", Prefs.loud(a)) {
+            Ui.toggle(a, a.getString(R.string.settings_loud_title), a.getString(R.string.settings_loud_desc), Prefs.loud(a)) {
                 sp.edit().putBoolean(Prefs.LOUD, it).apply()
             },
-            Ui.toggle(a, "Soft tick when a new bump is recorded", null, Prefs.clickOnNew(a)) { sp.edit().putBoolean(Prefs.CLICK_ON_NEW, it).apply() },
-            Ui.row(a, Ui.button(a, "Test beep") { Beeper(a).beep(2) }, Ui.button(a, "Test pothole voice") { testVoice() }),
+            Ui.toggle(a, a.getString(R.string.settings_click_new), null, Prefs.clickOnNew(a)) { sp.edit().putBoolean(Prefs.CLICK_ON_NEW, it).apply() },
+            Ui.row(a, Ui.button(a, a.getString(R.string.settings_test_beep)) { Beeper(a).beep(2) }, Ui.button(a, a.getString(R.string.settings_test_voice)) { testVoice() }),
         )
 
         val lang = RadioGroup(a).apply { orientation = RadioGroup.HORIZONTAL }
@@ -69,110 +69,108 @@ class SettingsPage(private val a: MainActivity) : Page {
             if (code == Prefs.voiceLang(a)) rb.isChecked = true
         }
         lang.setOnCheckedChangeListener { g, id -> sp.edit().putString(Prefs.VOICE_LANG, g.findViewById<RadioButton>(id)?.tag as? String ?: "en").apply() }
-        card("Potholes",
-            hint("Every pothole is recorded and counted. Only harsh ones get a voice warning that says which side it's on, " +
-                "e.g. \"Pothole on the right. Keep left.\" (keep left within your lane)."),
-            Ui.toggle(a, "Voice warning for harsh potholes", null, Prefs.warnPotholes(a)) { sp.edit().putBoolean(Prefs.WARN_POTHOLES, it).apply() },
+        card(a.getString(R.string.settings_section_potholes),
+            hint(a.getString(R.string.settings_potholes_hint)),
+            Ui.toggle(a, a.getString(R.string.settings_potholes_voice), null, Prefs.warnPotholes(a)) { sp.edit().putBoolean(Prefs.WARN_POTHOLES, it).apply() },
             Ui.slider(a, 4, 10, 1, Prefs.harshMs2(a), {
-                "Harsh = jolt of $it m/s² or more · " + when { it <= 5 -> "most potholes"; it <= 7 -> "ones you really feel"; else -> "only the worst" }
+                a.getString(R.string.settings_harsh, it, a.getString(when { it <= 5 -> R.string.settings_harsh_most; it <= 7 -> R.string.settings_harsh_feel; else -> R.string.settings_harsh_worst }))
             }) { sp.edit().putInt(Prefs.HARSH_MS2, it).apply() },
-            Ui.text(a, 15f, Ui.TEXT, value = "Voice language"),
+            Ui.text(a, 15f, Ui.TEXT, value = a.getString(R.string.settings_voice_language)),
             lang,
         )
 
-        card("Driving score",
-            Ui.slider(a, 50, 140, 10, Prefs.speedLimit(a), { "Count speeding above $it km/h" }) { sp.edit().putInt(Prefs.SPEED_LIMIT, it).apply() },
-            hint("The app works offline and can't see road signs, so set the limit you usually drive under (e.g. 60 in town, 90–120 on highways)."),
+        card(a.getString(R.string.settings_section_score),
+            Ui.slider(a, 50, 140, 10, Prefs.speedLimit(a), { a.getString(R.string.settings_speeding_above, it) }) { sp.edit().putInt(Prefs.SPEED_LIMIT, it).apply() },
+            hint(a.getString(R.string.settings_speed_hint)),
         )
 
         val sens = RadioGroup(a).apply { orientation = RadioGroup.HORIZONTAL }
-        listOf("Low", "Normal", "High").forEachIndexed { i, name ->
+        listOf(R.string.settings_sens_low, R.string.settings_sens_normal, R.string.settings_sens_high).forEachIndexed { i, nameRes ->
             val rb = RadioButton(a).apply {
-                text = name; tag = i; id = View.generateViewId()
+                text = a.getString(nameRes); tag = i; id = View.generateViewId()
                 setTextColor(Ui.TEXT); buttonTintList = ColorStateList.valueOf(Ui.ACCENT)
             }
             sens.addView(rb, RadioGroup.LayoutParams(0, RadioGroup.LayoutParams.WRAP_CONTENT, 1f))
             if (i == Prefs.sensitivity(a)) rb.isChecked = true
         }
         sens.setOnCheckedChangeListener { g, id -> sp.edit().putInt(Prefs.SENSITIVITY, g.findViewById<RadioButton>(id)?.tag as? Int ?: 1).apply() }
-        card("Detection",
+        card(a.getString(R.string.settings_section_detection),
             sens,
-            hint("Low ignores rough roads; High also catches small bumps. Check with the jolt meter on the Drive tab."),
-            Ui.slider(a, 30, 80, 5, Prefs.maxBumpKmh(a), { "Jolts above $it km/h aren't speed bumps (potholes still count)" }) {
+            hint(a.getString(R.string.settings_detection_hint)),
+            Ui.slider(a, 30, 80, 5, Prefs.maxBumpKmh(a), { a.getString(R.string.settings_max_bump, it) }) {
                 sp.edit().putInt(Prefs.MAX_BUMP_KMH, it).apply()
             },
         )
 
         autoText = Ui.text(a, 15f, Ui.TEXT)
         autoBtn = Ui.button(a, "", Ui.Style.PRIMARY) { if (a.autoStartOn()) a.disableAuto() else a.setupAuto() }
-        card("Auto start",
+        card(a.getString(R.string.settings_section_auto),
             autoText,
-            hint("Starts recording when the phone connects to your car's Bluetooth and stops a minute after it disconnects."),
+            hint(a.getString(R.string.settings_auto_hint)),
             autoBtn,
-            Ui.button(a, "Battery: allow running in the background") { a.batterySettings() }.also {
+            Ui.button(a, a.getString(R.string.settings_battery)) { a.batterySettings() }.also {
                 (it.layoutParams as? LinearLayout.LayoutParams)?.topMargin = dp(8)
             },
         )
 
-        card("Your data",
-            Ui.row(a, Ui.button(a, "Share…", Ui.Style.PRIMARY) { Sharing.chooseAndShare(a) }, Ui.button(a, "Import a file") { a.pickImportFile() }),
-            hint("Share your bump map with friends (they import it into theirs), open it in Google Earth / My Maps, or share your trips."),
-            Ui.button(a, "Save everything to Downloads") { exportAll() },
-            Ui.button(a, "Clear the map", Ui.Style.DANGER) { confirmClear() },
+        card(a.getString(R.string.settings_section_data),
+            Ui.row(a, Ui.button(a, a.getString(R.string.settings_share), Ui.Style.PRIMARY) { Sharing.chooseAndShare(a) }, Ui.button(a, a.getString(R.string.settings_import)) { a.pickImportFile() }),
+            hint(a.getString(R.string.settings_data_hint)),
+            Ui.button(a, a.getString(R.string.settings_save_all)) { exportAll() },
+            Ui.button(a, a.getString(R.string.settings_clear_map), Ui.Style.DANGER) { confirmClear() },
         )
 
         val place = RadioGroup(a).apply { orientation = RadioGroup.HORIZONTAL }
-        listOf("mounted" to "Mounted", "cupholder" to "Cup holder", "pocket" to "Pocket").forEach { (code, name) ->
+        listOf("mounted" to R.string.settings_place_mounted, "cupholder" to R.string.settings_place_cupholder, "pocket" to R.string.settings_place_pocket).forEach { (code, nameRes) ->
             val rb = RadioButton(a).apply {
-                text = name; tag = code; id = View.generateViewId()
+                text = a.getString(nameRes); tag = code; id = View.generateViewId()
                 setTextColor(Ui.TEXT); buttonTintList = ColorStateList.valueOf(Ui.ACCENT)
             }
             place.addView(rb, RadioGroup.LayoutParams(0, RadioGroup.LayoutParams.WRAP_CONTENT, 1f))
             if (code == Prefs.placement(a)) rb.isChecked = true
         }
         place.setOnCheckedChangeListener { g, id -> Prefs.setPlacement(a, g.findViewById<RadioButton>(id)?.tag as? String ?: "unknown") }
-        card("Road testing",
-            Ui.toggle(a, "Label mode",
-                "For a passenger helping test the app: while recording, the Drive tab shows big buttons to mark each bump, " +
-                    "pothole (left / right) and rough patch as you drive over it. Saved with a sensor recording to tune detection.",
+        card(a.getString(R.string.settings_section_road_testing),
+            Ui.toggle(a, a.getString(R.string.settings_label_mode_title),
+                a.getString(R.string.settings_label_mode_desc),
                 Prefs.labelMode(a)) { Prefs.setLabelMode(a, it) },
-            Ui.text(a, 15f, Ui.TEXT, value = "Where is the phone?"),
+            Ui.text(a, 15f, Ui.TEXT, value = a.getString(R.string.settings_phone_where)),
             place,
-            hint("A phone in a holder feels the road differently from one in a cup holder or pocket. Saved with recordings."),
+            hint(a.getString(R.string.settings_phone_hint)),
         )
 
         traceInfo = hint("")
-        card("Debug recording",
-            Ui.toggle(a, "Record raw sensor data while driving", "About 12 MB per hour. The last ${TraceWriter.KEEP} drives are kept.", Prefs.debugRecording(a)) {
+        card(a.getString(R.string.settings_section_debug),
+            Ui.toggle(a, a.getString(R.string.settings_debug_title), a.getString(R.string.settings_debug_desc, TraceWriter.KEEP), Prefs.debugRecording(a)) {
                 sp.edit().putBoolean(Prefs.DEBUG_RECORDING, it).apply()
             },
             traceInfo,
-            Ui.row(a, Ui.button(a, "Export recordings") { exportTraces() }, Ui.button(a, "Delete recordings") { deleteTraces() }),
+            Ui.row(a, Ui.button(a, a.getString(R.string.settings_export_recordings)) { exportTraces() }, Ui.button(a, a.getString(R.string.settings_delete_recordings)) { deleteTraces() }),
         )
 
-        card("Help", Ui.text(a, 14f, Ui.TEXT, value = HELP).apply { setLineSpacing(0f, 1.2f) })
+        card(a.getString(R.string.settings_section_help), Ui.text(a, 14f, Ui.TEXT, value = a.getString(R.string.settings_help)).apply { setLineSpacing(0f, 1.2f) })
         return ScrollView(a).apply { addView(col) }
     }
 
     override fun onShow() {
         val on = a.autoStartOn()
-        autoText.text = if (on) "On: starts with ${Prefs.carName(a)}" else "Off"
+        autoText.text = if (on) a.getString(R.string.settings_auto_on, Prefs.carName(a)) else a.getString(R.string.settings_auto_off)
         autoText.setTextColor(if (on) Ui.GREEN else Ui.TEXT)
-        autoBtn.text = if (on) "Turn auto start off" else "Set up auto start"
+        autoBtn.text = a.getString(if (on) R.string.settings_auto_turn_off else R.string.settings_auto_set_up)
         val files = TraceWriter.list(a)
-        traceInfo.text = if (files.isEmpty()) "No recordings yet."
-            else String.format(Locale.US, "%d recording(s), %.1f MB.", files.size, files.sumOf { it.length() } / 1_000_000.0)
+        traceInfo.text = if (files.isEmpty()) a.getString(R.string.settings_traces_none)
+            else a.getString(R.string.settings_traces_info, files.size, String.format(Locale.US, "%.1f", files.sumOf { it.length() } / 1_000_000.0))
     }
 
     private fun testVoice() {
         val first = voice == null
-        val v = voice ?: Voice(a) { ui.post { a.toast("No text-to-speech voice ready on this phone: potholes will use the two-tone sound") } }
+        val v = voice ?: Voice(a) { ui.post { a.toast(a.getString(R.string.settings_toast_no_tts)) } }
             .also { voice = it }
         ui.postDelayed({ v.pothole(Side.RIGHT) }, if (first) 1500L else 0L)
     }
 
     private fun exportAll() {
-        a.toast("Saving…")
+        a.toast(a.getString(R.string.settings_toast_saving))
         Thread {
             val db = BumpDb(a.applicationContext)
             val ok = try {
@@ -181,58 +179,44 @@ class SettingsPage(private val a: MainActivity) : Page {
                     CsvExport.save(a, "events_$stamp.csv", db.eventsCsv()) &&
                     CsvExport.save(a, "trips_$stamp.csv", db.tripsCsv())
             } finally { db.close() }
-            ui.post { a.toast(if (ok) "Saved bumps, events and trips to Downloads/BumpBeeper" else "Saving failed") }
+            ui.post { a.toast(a.getString(if (ok) R.string.settings_toast_saved_all else R.string.settings_toast_saving_failed)) }
         }.start()
     }
 
     private fun exportTraces() {
-        if (LiveState.recording) { a.toast("Stop recording first, so the last recording is complete"); return }
+        if (LiveState.recording) { a.toast(a.getString(R.string.settings_toast_stop_first_complete)); return }
         val files = TraceWriter.list(a)
-        if (files.isEmpty()) { a.toast("No recordings yet"); return }
-        a.toast("Exporting ${files.size} recording(s)…")
+        if (files.isEmpty()) { a.toast(a.getString(R.string.settings_toast_no_recordings)); return }
+        a.toast(a.getString(R.string.settings_toast_exporting, files.size))
         Thread {
             val ok = files.count { CsvExport.saveFile(a, it.name, it, "recordings") }
-            ui.post { a.toast("Saved $ok of ${files.size} to Downloads/BumpBeeper/recordings") }
+            ui.post { a.toast(a.getString(R.string.settings_toast_exported, ok, files.size)) }
         }.start()
     }
 
     private fun deleteTraces() {
-        if (LiveState.recording) { a.toast("Stop recording first"); return }
+        if (LiveState.recording) { a.toast(a.getString(R.string.settings_toast_stop_first)); return }
         AlertDialog.Builder(a)
-            .setTitle("Delete all debug recordings?")
-            .setMessage("Exported copies in Downloads stay. The bump map is not affected.")
-            .setPositiveButton("Delete") { _, _ -> TraceWriter.list(a).forEach { it.delete() }; onShow() }
-            .setNegativeButton("Cancel", null)
+            .setTitle(a.getString(R.string.settings_delete_traces_title))
+            .setMessage(a.getString(R.string.settings_delete_traces_msg))
+            .setPositiveButton(R.string.common_delete) { _, _ -> TraceWriter.list(a).forEach { it.delete() }; onShow() }
+            .setNegativeButton(R.string.common_cancel, null)
             .show()
     }
 
     private fun confirmClear() {
-        if (LiveState.recording) { a.toast("Stop recording first"); return }
+        if (LiveState.recording) { a.toast(a.getString(R.string.settings_toast_stop_first)); return }
         AlertDialog.Builder(a)
-            .setTitle("Clear everything?")
-            .setMessage("Deletes every recorded bump and pothole, the event log and all trips and scores. This can't be undone. " +
-                "Tip: Share… → Bump file first to keep a copy.")
-            .setPositiveButton("Delete") { _, _ ->
+            .setTitle(a.getString(R.string.settings_clear_title))
+            .setMessage(a.getString(R.string.settings_clear_msg))
+            .setPositiveButton(R.string.common_delete) { _, _ ->
                 Thread {
                     val db = BumpDb(a.applicationContext)
                     try { db.clearAll() } finally { db.close() }
-                    ui.post { LiveState.lastEvent = "Map cleared"; LiveState.lastTripScore = -1; a.toast("Cleared") }
+                    ui.post { LiveState.lastEvent = a.getString(R.string.settings_map_cleared); LiveState.lastTripScore = -1; a.toast(a.getString(R.string.settings_toast_cleared)) }
                 }.start()
             }
-            .setNegativeButton("Cancel", null)
+            .setNegativeButton(R.string.common_cancel, null)
             .show()
-    }
-
-    companion object {
-        private const val HELP =
-            "• Put the phone in a holder. A loose phone gives noisy readings.\n" +
-                "• Tap START before you drive (or set up Auto start). It keeps running with the screen off.\n" +
-                "• First pass over a bump: recorded silently. After that: 2 beeps before you reach it (3 above 50 km/h). " +
-                "Harsh potholes: a voice says which side they're on.\n" +
-                "• Bump or pothole is judged from how the car moves; each pass makes it surer. Correct any spot on the Map tab.\n" +
-                "• A spot you pass 3+ times but rarely feel is muted automatically. \"Mute last warning\" silences a false alarm.\n" +
-                "• Your driving score (Trips tab) looks at speeding, harsh braking, cornering, swerving, speed bumps taken fast " +
-                "and phone use.\n" +
-                "• Everything stays on your phone. Share only what you choose."
     }
 }

@@ -224,15 +224,29 @@ object DriveText {
 
     fun event(type: String, note: String): String = if (note.isEmpty()) label(type) else "${label(type)}: $note"
 
-    fun tips(d: DrivingStats): List<String> {
+    // Same as above but looked up in strings.xml. (The service still calls the plain-English version.)
+    fun label(c: Context, type: String): String = when (type) {
+        "harsh_brake" -> c.getString(R.string.event_harsh_brake)
+        "harsh_accel" -> c.getString(R.string.event_harsh_accel)
+        "harsh_corner" -> c.getString(R.string.event_harsh_corner)
+        "swerve" -> c.getString(R.string.event_swerve)
+        "speeding" -> c.getString(R.string.event_speeding)
+        "bump_fast" -> c.getString(R.string.event_bump_fast)
+        "phone_use" -> c.getString(R.string.event_phone_use)
+        else -> type
+    }
+
+    fun event(c: Context, type: String, note: String): String = if (note.isEmpty()) label(c, type) else "${label(c, type)}: $note"
+
+    fun tips(c: Context, d: DrivingStats): List<String> {
         val out = ArrayList<String>()
-        if (d.speedingShare > 0.05) out.add(String.format(Locale.US, "You were over your limit %.0f%% of the time. Easing off is the quickest way up.", d.speedingShare * 100))
-        if (d.harshBrakes > 0) out.add("Leave more distance so you can brake gently (${d.harshBrakes} harsh brake${if (d.harshBrakes > 1) "s" else ""}).")
-        if (d.harshAccels > 0) out.add("Pull away more smoothly (${d.harshAccels} harsh start${if (d.harshAccels > 1) "s" else ""}).")
-        if (d.harshCorners + d.swerves > 0) out.add("Slow down before curves and change lanes gradually.")
-        if (d.bumpsFast > 0) out.add("Slow to under 25 km/h for speed bumps: the warning gives you time.")
-        if (d.phoneUse > 0) out.add("Keep the phone in its holder while moving.")
-        if (out.isEmpty()) out.add("Smooth, steady driving. Keep it up.")
+        if (d.speedingShare > 0.05) out.add(c.getString(R.string.tip_speeding, String.format(Locale.US, "%.0f", d.speedingShare * 100)))
+        if (d.harshBrakes > 0) out.add(c.getString(if (d.harshBrakes > 1) R.string.tip_brakes_many else R.string.tip_brakes_one, d.harshBrakes))
+        if (d.harshAccels > 0) out.add(c.getString(if (d.harshAccels > 1) R.string.tip_starts_many else R.string.tip_starts_one, d.harshAccels))
+        if (d.harshCorners + d.swerves > 0) out.add(c.getString(R.string.tip_curves))
+        if (d.bumpsFast > 0) out.add(c.getString(R.string.tip_bumps_fast))
+        if (d.phoneUse > 0) out.add(c.getString(R.string.tip_phone))
+        if (out.isEmpty()) out.add(c.getString(R.string.tip_smooth))
         return out
     }
 }

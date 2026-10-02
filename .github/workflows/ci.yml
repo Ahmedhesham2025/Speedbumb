@@ -152,7 +152,7 @@ jobs:
       - uses: supabase/setup-cli@v1
         if: steps.present.outputs.found == 'true'
         with:
-          version: latest
+          version: 2.119.0
       - name: Start local Supabase (database services only)
         if: steps.present.outputs.found == 'true'
         run: |
@@ -168,7 +168,7 @@ jobs:
           if [ -n "$exclude" ]; then supabase start -x "$exclude"; else supabase start; fi
       - name: Lint database (errors fail the job)
         if: steps.present.outputs.found == 'true'
-        run: supabase db lint --level error
+        run: supabase db lint --schema public --level error --fail-on error
       - name: pgTAP tests
         if: steps.present.outputs.found == 'true'
         run: |
