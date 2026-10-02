@@ -147,6 +147,8 @@ class JoltShape(
  *  - [observationSink]: gets a `jolt` for every new spot, a `known_hit` for every hit on a known spot and a
  *    `pass_clear` for every pass that felt nothing at an informative speed (never for crawled-over passes).
  *    No privacy filtering happens here: the app drops the 300 m around trip start and end before upload.
+ *  - [sampleSink] ("Help improve detection"): a [JoltSample] with the signal window for every jolt it judged
+ *    (learned, hit, rejected), every miss and shared-spot pass_clear, and every mute. The default keeps nothing.
  */
 class BumpEngine(
     val cfg: EngineConfig,
@@ -156,6 +158,7 @@ class BumpEngine(
     val tripId: Long = 0L,
     private val spotSource: SpotSource? = null,
     private val observationSink: ObservationSink? = null,
+    private val sampleSink: JoltSampleSink = JoltSampleSink.NONE,
 ) {
     val bumps: MutableList<Bump> = store.loadBumps().toMutableList()
     val trip = TripStats()
@@ -228,6 +231,12 @@ class BumpEngine(
     private val bufGz = DoubleArray(BUF)
     private var bufHead = 0
     private var bufCount = 0
+    /** Longer signal history for [sampleSink] windows; only kept when someone listens. */
+    private val ring: WindowRing? = if (sampleSink === JoltSampleSink.NONE) null else WindowRing()
+    /** Spot (own id, or shared stand-in id) → last time it was felt or passed closest, for a user_mute window. */
+    private val nearMs = HashMap<Long, Long>()
+    /** Spots muted with no window at hand: their next hit or pass also gives the user_mute sample. */
+    private val pendingMute = HashSet<Long>()
 
     // ---------- which way is forward ----------
     // Gravity alone. The 1 s "slow" estimate above tilts along with any speed-up or braking and would hide it,
@@ -260,6 +269,7 @@ class BumpEngine(
         var hit = false
         var minSpeedNearMps = Double.MAX_VALUE   // slowest speed seen within 30 m of the bump
         var maxJoltNear = 0.0                     // strongest jolt felt within 40 m of the bump
+        var minDistMs = startMs                   // fix time of the closest approach
     }
 
     /** The bump that beeped most recently (for "Mute last beep"), or -1. */
@@ -345,6 +355,7 @@ class BumpEngine(
         bufGz[bufHead] = gyroZ
         bufHead = (bufHead + 1) % BUF
         if (bufCount < BUF) bufCount++
+        ring?.let { addToRing(it, tMs, v) }
 
         // Is the phone being moved (picked up, dropped, adjusted)?
         val cosTilt = ((slowX * fastX + slowY * fastY + slowZ * fastZ) / (g * f)).coerceIn(-1.0, 1.0)
@@ -375,18 +386,18 @@ class BumpEngine(
     private fun decide(tMs: Long, peak: Double) {
         // The decision comes 1.2 s after the jolt, so a newer fix may already be in. Use the one closest in time.
         val fix = fixes.minByOrNull { abs(it.timeMs - tMs) }
-        if (lastUnstableMs >= tMs - 1500) { reject(peak, "phone_moving", fix); return }
-        if (fix == null || abs(tMs - fix.timeMs) > cfg.maxFixAgeMs) { reject(peak, "no_gps", fix); return }
-        if (fix.accuracyM > cfg.maxAccuracyM) { reject(peak, "weak_gps", fix); return }
+        if (lastUnstableMs >= tMs - 1500) { reject(tMs, peak, "phone_moving", fix); return }
+        if (fix == null || abs(tMs - fix.timeMs) > cfg.maxFixAgeMs) { reject(tMs, peak, "no_gps", fix); return }
+        if (fix.accuracyM > cfg.maxAccuracyM) { reject(tMs, peak, "weak_gps", fix); return }
         val speedKmh = fix.speedMps * 3.6
-        if (speedKmh < cfg.minSpeedKmh) { reject(peak, "too_slow", fix); return }
-        if (heading.isNaN()) { reject(peak, "no_heading", fix); return }
+        if (speedKmh < cfg.minSpeedKmh) { reject(tMs, peak, "too_slow", fix); return }
+        if (heading.isNaN()) { reject(tMs, peak, "no_heading", fix); return }
 
         val shape = shapeOf(tMs, peak)
         if (speedKmh > cfg.maxSpeedKmh) {
             // Too fast for a speed bump. Keep it only if it is clearly a pothole (needs the gyroscope to be sure).
             val pothole = speedKmh <= cfg.potholeMaxSpeedKmh && shape.usedGyro && shape.score >= cfg.fastPotholeMinScore
-            if (!pothole) { reject(peak, "too_fast", fix, shape.describe()); return }
+            if (!pothole) { reject(tMs, peak, "too_fast", fix, shape.describe(), shape); return }
         }
 
         // GPS comes once a second; move that fix forward (or back, if it came after) to the moment of the jolt.
@@ -400,8 +411,9 @@ class BumpEngine(
         registerHit(tMs, pos[0], pos[1], speedKmh, peak, slowdownKmh, shape)
     }
 
-    private fun reject(peak: Double, reason: String, fix: Fix?, note: String = "") {
+    private fun reject(tMs: Long, peak: Double, reason: String, fix: Fix?, note: String = "", shape: JoltShape? = null) {
         trip.rejected++
+        sample("rejected", reason, tMs, (fix?.speedMps ?: 0.0) * 3.6, peak, shape, null, fix?.lat ?: Double.NaN, fix?.lon ?: Double.NaN, null)
         log(
             "rejected", -1, fix?.lat ?: Double.NaN, fix?.lon ?: Double.NaN,
             (fix?.speedMps ?: Double.NaN) * 3.6, peak, Double.NaN, Double.NaN,
@@ -547,6 +559,7 @@ class BumpEngine(
             trip.hits++
             log("new_bump", b.id, lat, lon, speedKmh, peak, slowdownKmh, 0.0, "${b.kind.name.lowercase()} ${shape.describe()}")
             observe("jolt", lat, lon, speedKmh, peak, shape.score, shape.side.toDouble(), now)
+            sample("learned", null, tMs, speedKmh, peak, shape, null, lat, lon, b.id)
             if (remoteAll.isNotEmpty()) dedupRemote()   // the new spot of your own replaces its shared twin from now on
             listener.onNewBump(b)
             // No tick when the shared map already knew it: confirming a known spot isn't news.
@@ -563,6 +576,7 @@ class BumpEngine(
         if ((a != null && a.hit) || (a == null && last != null && tMs - last < 15_000)) {
             // Second jolt on the same pass (rear wheels, a pair of bumps close together). Count once.
             log("hit_repeat", b.id, lat, lon, speedKmh, peak, slowdownKmh, bestD, "same pass")
+            sample("hit", "same_pass", tMs, speedKmh, peak, shape, null, lat, lon, b.id)
             return
         }
         lastHitMs[b.id] = tMs
@@ -600,6 +614,7 @@ class BumpEngine(
             "hits ${b.hits}/${b.passes} now=${b.kind.name.lowercase()} ${shape.describe()}",
         )
         observe("known_hit", lat, lon, speedKmh, peak, shape.score, shape.side.toDouble(), now)
+        sample("hit", null, tMs, speedKmh, peak, shape, null, lat, lon, b.id)
         listener.onKnownBumpHit(b)
     }
 
@@ -715,6 +730,85 @@ class BumpEngine(
         }
     }
 
+    // ---------- "Help improve detection" samples (only with a [sampleSink]) ----------
+
+    /** Roll and pitch rate in the car's frame need the gyroscope and the forward direction; NaN until both are known. */
+    private fun addToRing(r: WindowRing, tMs: Long, v: Double) {
+        val fwd = if (gyroSeen) forwardUnit() else null
+        if (fwd == null) { r.add(tMs, v, Double.NaN, Double.NaN); return }
+        val g = sqrt(gravX * gravX + gravY * gravY + gravZ * gravZ)
+        val ux = gravX / g; val uy = gravY / g; val uz = gravZ / g
+        val (fx, fy, fz) = fwd
+        val roll = gyroX * fx + gyroY * fy + gyroZ * fz
+        val pitch = gyroX * (uy * fz - uz * fy) + gyroY * (uz * fx - ux * fz) + gyroZ * (ux * fy - uy * fx)
+        r.add(tMs, v, roll, pitch)
+    }
+
+    /**
+     * Hands one judged candidate to the [sampleSink] with its window around [centerMs]. [spotKey] is the spot's id in
+     * this engine (own, or shared stand-in), [dir] the direction used to find a confirmed shared twin.
+     */
+    private fun sample(
+        decision: String, reason: String?, centerMs: Long, speedKmh: Double, peak: Double, shape: JoltShape?,
+        kind: BumpKind?, lat: Double, lon: Double, spotKey: Long?, dir: Double = heading,
+    ) {
+        val r = ring ?: return
+        if (spotKey != null) nearMs[spotKey] = centerMs
+        // Jolts are cut at the decision (1.2 s after the trigger); passes later, so they get the full 2 s after.
+        val w = r.window(centerMs) ?: return
+        val fix = fixes.minByOrNull { abs(it.timeMs - centerMs) }
+        val cls = shape?.let {
+            when { it.score >= Bump.KIND_MARGIN -> "pothole"; it.score <= -Bump.KIND_MARGIN -> "bump"; else -> "unsure" }
+        } ?: kind?.name?.lowercase()
+        val shared = spotKey?.let { remoteSpotId(it) } ?: if (lat.isNaN()) null else sharedIdAt(lat, lon, dir)
+        val s = JoltSample(
+            decision, reason, cls, if (speedKmh.isNaN()) 0.0 else speedKmh, headingChange(centerMs), fix?.accuracyM ?: Double.NaN,
+            peak, shape?.score ?: Double.NaN, shape?.firstDown, shape?.rollRatio ?: Double.NaN,
+            if (shape != null && shape.usedGyro) shape.side.toDouble() else Double.NaN,
+            shared, lat, lon, wallClock(), w,
+        )
+        emit(s)
+        if (spotKey != null && pendingMute.remove(spotKey)) {
+            emit(JoltSample("user_mute", null, s.classification, s.speedKmh, s.headingChangeDeg, s.gpsAccuracyM, s.peak,
+                s.shapeScore, s.firstDown, s.rollPitchRatio, s.sideScore, s.sharedSpotId, lat, lon, s.wallTimeMs, w))
+        }
+    }
+
+    /** User mute of [b] (found as [key] in this engine): sample now if it was felt or passed this trip, else at its next pass. */
+    private fun muteSample(b: Bump, key: Long, newKey: Long) {
+        val r = ring ?: return
+        val at = nearMs[key]
+        if (at == null || r.window(at) == null) { pendingMute.add(newKey); return }
+        sample("user_mute", null, at, (lastFix?.speedMps ?: 0.0) * 3.6, Double.NaN, null, b.kind, b.lat, b.lon, null, b.heading)
+        nearMs[newKey] = at
+    }
+
+    /** Slowest speed near the spot on this pass (the fix speed if it never came within 30 m). */
+    private fun passKmh(a: Approach, f: Fix) = (if (a.minSpeedNearMps == Double.MAX_VALUE) f.speedMps else a.minSpeedNearMps) * 3.6
+
+    private fun emit(s: JoltSample) {
+        try {
+            sampleSink.onSample(s)
+        } catch (e: Exception) {
+            // A broken training outbox must not stop detection.
+        }
+    }
+
+    /** The confirmed shared spot at this place and direction, if any (its server id). */
+    private fun sharedIdAt(lat: Double, lon: Double, dir: Double): Long? = remoteAll.firstOrNull {
+        abs(it.lat - lat) <= 0.0005 && abs(it.lon - lon) <= 0.0006 &&
+            Geo.distance(lat, lon, it.lat, it.lon) <= cfg.matchRadiusM &&
+            (dir.isNaN() || Geo.angleDiff(dir, it.heading) <= cfg.headingTolDeg)
+    }?.let { remoteSpotId(it.id) }
+
+    /** Signed heading change from ~4 s before [tMs] to the fix nearest it, degrees; NaN when unknown. */
+    private fun headingChange(tMs: Long): Double {
+        val withDir = fixes.filter { !it.bearingDeg.isNaN() && it.speedMps >= 1.5 }
+        val now = withDir.minByOrNull { abs(it.timeMs - tMs) } ?: return Double.NaN
+        val before = withDir.filter { it.timeMs <= now.timeMs - 3000 }.maxByOrNull { it.timeMs } ?: return Double.NaN
+        return ((now.bearingDeg - before.bearingDeg) % 360.0 + 540.0) % 360.0 - 180.0
+    }
+
     private fun updateApproaches(f: Fix, joltSinceFix: Double) {
         val moving = f.speedMps >= 1.5
         val alertDist = (f.speedMps * cfg.leadSeconds).coerceIn(cfg.minAlertDistM, cfg.maxAlertDistM)
@@ -742,7 +836,7 @@ class BumpEngine(
             a = Approach(f.timeMs, d)
             approaches[b.id] = a
         }
-        a.minDist = min(a.minDist, d)
+        if (d < a.minDist) { a.minDist = d; a.minDistMs = f.timeMs }
         if (d <= 30.0) a.minSpeedNearMps = min(a.minSpeedNearMps, f.speedMps)
         if (d <= 40.0) a.maxJoltNear = max(a.maxJoltNear, joltSinceFix)
 
@@ -855,6 +949,7 @@ class BumpEngine(
     }
 
     private fun finishPass(b: Bump, a: Approach, f: Fix) {
+        if (ring != null && !a.hit) nearMs[b.id] = a.minDistMs
         val nearNote = String.format(Locale.US, "strongest jolt nearby %.1f m/s²", a.maxJoltNear)
         if (!a.counted && !a.hit && a.minSpeedNearMps * 3.6 < cfg.minInformativeKmh) {
             // Crawled over it without feeling anything: can't tell, so it counts neither way.
@@ -874,6 +969,7 @@ class BumpEngine(
                     "hits ${b.hits}/${b.passes}, $nearNote",
                 )
                 observe("pass_clear", b.lat, b.lon, a.minSpeedNearMps * 3.6, a.maxJoltNear, 0.0, 0.0, wallClock(), b.heading)
+                sample("miss", null, a.minDistMs, passKmh(a, f), a.maxJoltNear, null, b.kind, b.lat, b.lon, b.id, b.heading)
             }
             store.updateBump(b)
         }
@@ -885,8 +981,10 @@ class BumpEngine(
      * shared map the spot may be gone.
      */
     private fun finishRemotePass(b: Bump, a: Approach, f: Fix) {
+        if (ring != null) nearMs[b.id] = a.minDistMs
         if (a.hit || a.minSpeedNearMps * 3.6 < cfg.minInformativeKmh) return
         observe("pass_clear", b.lat, b.lon, a.minSpeedNearMps * 3.6, a.maxJoltNear, 0.0, 0.0, wallClock(), b.heading)
+        sample("pass_clear", null, a.minDistMs, passKmh(a, f), a.maxJoltNear, null, b.kind, b.lat, b.lon, b.id, b.heading)
     }
 
     /**
@@ -900,6 +998,7 @@ class BumpEngine(
         b.userMuted = true
         store.updateBump(b)
         log("user_mute", b.id, b.lat, b.lon, Double.NaN, Double.NaN, Double.NaN, Double.NaN, "")
+        muteSample(b, b.id, b.id)
         return b
     }
 
@@ -915,6 +1014,7 @@ class BumpEngine(
         bumps.add(b)
         dedupRemote()   // your muted spot now replaces the shared one
         log("user_mute", b.id, b.lat, b.lon, Double.NaN, Double.NaN, Double.NaN, Double.NaN, "remote ${remoteSpotId(id)}")
+        muteSample(b, id, b.id)
         return b
     }
 
