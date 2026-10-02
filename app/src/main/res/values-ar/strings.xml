@@ -31,8 +31,8 @@
     <string name="drive_label_pothole_right">حفرة يمين</string>
     <string name="drive_label_rough">طريق وعر</string>
     <string name="drive_label_undo">تراجع</string>
-    <string name="drive_meter_open">عدّاد الهزّات  ▾</string>
-    <string name="drive_meter_closed">عدّاد الهزّات  ▸</string>
+    <string name="drive_meter_open">"عدّاد الهزّات  ▾"</string>
+    <string name="drive_meter_closed">"عدّاد الهزّات  ▸"</string>
     <string name="drive_setup_header">كمّل الإعداد</string>
     <string name="drive_setup_location_title">الموقع والإشعارات</string>
     <string name="drive_setup_location_why">لازمين عشان نعرف مكان المطبّات وعشان التطبيق يفضل شغّال.</string>
@@ -54,9 +54,9 @@
     <string name="drive_gps_tap_start">اضغط ابدأ قبل ما تسوق</string>
     <string name="drive_gps_accuracy">GPS ±%1$s م · %2$s</string>
     <string name="drive_gps_looking">بندوّر على الـ GPS… (اطلع بره أو قرّب من شباك)</string>
-    <string name="drive_last_trip">آخر رحلة: %1$d/100 · %2$s  ›  شوف الرحلات</string>
+    <string name="drive_last_trip">"آخر رحلة: %1$d/100 · %2$s  ›  شوف الرحلات"</string>
     <string name="drive_km">%1$s كم</string>
-    <string name="drive_potholes_harsh"> (%1$d عنيفة)</string>
+    <string name="drive_potholes_harsh">" (%1$d عنيفة)"</string>
     <string name="drive_nothing_yet">لسه مفيش حاجة</string>
     <string name="drive_update_available">إصدار جديد %1$s متاح</string>
     <string name="drive_detect_no_gyro">جهة الحفرة: مفيش جيروسكوب</string>
