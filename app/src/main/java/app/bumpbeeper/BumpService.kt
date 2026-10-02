@@ -28,6 +28,10 @@ import android.os.PowerManager
 import android.os.SystemClock
 import android.util.Log
 import app.bumpbeeper.crash.CrashLog
+import app.bumpbeeper.sync.CachedSpotSource
+import app.bumpbeeper.sync.OutboxSink
+import app.bumpbeeper.sync.Sync
+import app.bumpbeeper.sync.SyncStore
 import java.util.Locale
 import kotlin.math.abs
 
@@ -141,6 +145,8 @@ class BumpService : Service(), SensorEventListener, LocationListener, EngineList
     private var trace: TraceWriter? = null              // only used on the engine thread
     private var tracingStore: TracingStore? = null      // only used on the engine thread
     private var lastBatteryMs = -1L                     // only used on the engine thread
+    private var sink: OutboxSink? = null                // only used on the engine thread; null = not sharing
+    private var pulledThisTrip = false                  // only used on the engine thread
     private var wakeLock: PowerManager.WakeLock? = null
     private var tripId = 0L
     private var sensorOffsetMs: Long? = null
@@ -301,7 +307,12 @@ class BumpService : Service(), SensorEventListener, LocationListener, EngineList
             tracingStore = store
             if (record) openTrace(store)
             LiveState.labelMode = trace != null && Prefs.labelMode(this)
-            val eng = BumpEngine(cfg, store, this, { System.currentTimeMillis() }, tripId)
+            // Shared map: warn for cached confirmed spots; collect observations only if the user opted in.
+            val syncStore = SyncStore(db)
+            val outbox = if (Prefs.shareBumps(this)) OutboxSink(syncStore, tripId) else null
+            sink = outbox
+            pulledThisTrip = false
+            val eng = BumpEngine(cfg, store, this, { System.currentTimeMillis() }, tripId, CachedSpotSource(syncStore), outbox)
             engine = eng
             val logStore = store
             monitor = DrivingMonitor(DrivingConfig().also { Prefs.applyTo(it, this) }, eng) { type, lat, lon, kmh, value, note ->
@@ -359,6 +370,15 @@ class BumpService : Service(), SensorEventListener, LocationListener, EngineList
             monitor?.finish()
             engine?.let { database.endTrip(tripId, System.currentTimeMillis(), it.trip, monitor?.stats) }
             monitor?.stats?.let { LiveState.lastTripScore = it.score() }
+            // Privacy zone filter, then into the outbox; the upload runs later in the background.
+            try {
+                sink?.flush(Prefs.shareBumps(this), System.currentTimeMillis())
+            } catch (e: Exception) {
+                Log.w(TAG, "outbox not written", e)
+            }
+            sink = null
+            val last = engine?.lastFix
+            Sync.afterTrip(this, last?.lat ?: Double.NaN, last?.lon ?: Double.NaN)
             engine = null
             monitor = null
             trace?.close()
@@ -443,6 +463,12 @@ class BumpService : Service(), SensorEventListener, LocationListener, EngineList
             if (location.hasAccuracy()) location.accuracy.toDouble() else 99.0,
         )
         trace?.gps(fix.timeMs, fix.lat, fix.lon, fix.speedMps * 3.6, fix.bearingDeg, fix.accuracyM)
+        sink?.onFix(fix.lat, fix.lon, fix.accuracyM)
+        if (!pulledThisTrip && fix.accuracyM <= 100.0) {
+            // First usable position of the trip: refresh the shared spots around it (when there is network).
+            pulledThisTrip = true
+            Sync.pullAround(this, fix.lat, fix.lon)
+        }
         eng.onFix(fix)
         monitor?.onFix(eng.lastFix ?: fix)
         LiveState.forwardKnown = eng.forwardKnown

@@ -12,7 +12,8 @@ import java.util.Locale
 
 /**
  * Saves a crash to `files/crash/crash_<time>.txt` (app version, device, stack trace), then lets Android
- * handle it as usual. Stays on the phone; nothing is sent anywhere. The last [KEEP] crashes are kept.
+ * handle it as usual. The last [KEEP] crashes are kept. Only when the user shares bumps with the online map,
+ * the sync sends each file (app version, device model, stack trace) to the backend and then deletes it.
  */
 object CrashLog {
     const val KEEP = 10
