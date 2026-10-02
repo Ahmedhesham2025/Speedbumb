@@ -51,6 +51,7 @@ devops:
   - .gitattributes
   - .gitignore
 qa:
+  - core/src/test/**/qa/**   # qa adds its own test files here; Simulator/Scenarios stay with engine
   - app/src/test/**
   - app/src/androidTest/**
   - docs/test-plan.md

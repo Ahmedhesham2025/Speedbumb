@@ -9,7 +9,7 @@ none | contracts/… or core interface (link the merged lead PR)
 (simulator scenario / replay / emulator / pgTAP / Playwright)
 
 ## Replay accuracy change
-(required if `core/**` changed; paste the CI metrics table)
+(required if `core/**` changed, once the replay job exists; paste the CI metrics table)
 
 ## Privacy / security impact
 none | describe (needs security-privacy)
