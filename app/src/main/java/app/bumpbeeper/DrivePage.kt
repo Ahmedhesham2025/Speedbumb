@@ -4,6 +4,7 @@ import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.graphics.drawable.RippleDrawable
 import android.content.res.ColorStateList
+import android.os.Build
 import android.os.SystemClock
 import android.util.TypedValue
 import android.view.Gravity
@@ -159,8 +160,11 @@ class DrivePage(private val a: MainActivity) : Page {
             background = Ui.rounded(a, Ui.SURFACE, 18, Ui.LINE)
             visibility = View.GONE
         }
-        labelCard.addView(Ui.text(a, 12f, Ui.ACCENT, bold = true, value = "LABEL WHAT YOU JUST DROVE OVER").apply {
-            setPadding(dp(4), 0, 0, dp(8))
+        labelCard.addView(Ui.text(a, 12f, Ui.ACCENT, bold = true, value = "PASSENGER: TAP WHAT YOU JUST DROVE OVER").apply {
+            setPadding(dp(4), 0, 0, 0)
+        })
+        labelCard.addView(Ui.text(a, 12f, Ui.DIM, value = "Driver: keep your eyes on the road.").apply {
+            setPadding(dp(4), dp(2), 0, dp(8))
         })
         fun btn(kind: String, bg: Int, fg: Int) = Ui.bigButton(a, labelName(kind), bg, fg) { v -> tapLabel(v, kind) }
         fun gap() = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
@@ -181,7 +185,8 @@ class DrivePage(private val a: MainActivity) : Page {
     }
 
     private fun tapLabel(v: View, kind: String) {
-        v.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
+        // A firm buzz, so the passenger knows the tap counted without looking.
+        v.performHapticFeedback(if (Build.VERSION.SDK_INT >= 30) HapticFeedbackConstants.CONFIRM else HapticFeedbackConstants.LONG_PRESS)
         if (!BumpService.label(a, kind)) Toast.makeText(a, "Label not saved: recording isn't in label mode", Toast.LENGTH_SHORT).show()
         updateLabelStatus()
     }
@@ -189,8 +194,8 @@ class DrivePage(private val a: MainActivity) : Page {
     private fun updateLabelStatus() {
         val n = LiveState.labelCount
         val last = LiveState.lastLabel
-        labelStatus.text = if (last.isEmpty()) "No labels yet"
-            else "Last: ${labelName(last)} · $n label${if (n == 1) "" else "s"}"
+        val t = if (last.isEmpty()) "No labels yet" else "Last: ${labelName(last)} · $n label${if (n == 1) "" else "s"}"
+        if (labelStatus.text.toString() != t) labelStatus.text = t
     }
 
     private fun labelName(kind: String): String = when (kind) {
@@ -316,7 +321,8 @@ class DrivePage(private val a: MainActivity) : Page {
         labelLater.visibility = if (labelsPending) View.VISIBLE else View.GONE
         if (labelsLive) updateLabelStatus()
 
-        val up = a.pendingUpdate()
+        // No distractions while driving: the banner waits until recording stops.
+        val up = if (rec) null else a.pendingUpdate()
         if (up == null) {
             updateCard.visibility = View.GONE
         } else {

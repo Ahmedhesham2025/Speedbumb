@@ -191,7 +191,7 @@ class MainActivity : Activity() {
         val u = update ?: return
         val url = listOfNotNull(u.htmlUrl, u.downloadUrl).firstOrNull { trustedUpdateUrl(it) } ?: return
         try {
-            startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+            startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)).addCategory(Intent.CATEGORY_BROWSABLE))
         } catch (e: Exception) {
             toast("No browser found")
         }
