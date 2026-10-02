@@ -68,8 +68,16 @@ When you are back home (not while driving):
    One run alone starts with an empty map, so it says almost nothing about false warnings or learning.
 2. Only anonymized data goes into `testdata/`: `anonymize --in raw.csv --out anon.csv` (tools/replay).
    - Commit **short segments** only (the stretch around one failure, not a whole loop): the shape of a long track
-     could still be matched to real streets. Exception: full-loop drives may be committed when trimmed ≥1.5 km at
-     each end and rotated, owner-approved 2026-10-03 (example: `testdata/README.md`, drive01_pocket).
+     could still be matched to real streets.
+   - Exception (owner-approved 2026-10-03): drives may be committed when **all** of these hold:
+     - at least 1.5 km is trimmed at each end, by distance driven;
+     - the trimmed ends are not stops (the car is moving where each cut falls);
+     - every kept fix is at least 500 m from the real start and end;
+     - positions **and** the `bearing` column are rotated by a secret angle chosen per drive, with no mirroring;
+     - the gzip header has no file name or time;
+     - the owner approves each drive.
+
+     Example: `testdata/README.md`, drive01_pocket.
    - Name the anonymized file **without driver initials or dates**, e.g. `route2_run3_A51_mounted_seg1.csv`. The
      anonymizer writes exactly the `--out` name it is given, so choosing a clean name is up to you.
 3. Each real failure becomes an issue for the engine agent, with the anonymized trace segment attached.
