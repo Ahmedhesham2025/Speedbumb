@@ -343,19 +343,19 @@
     <string name="settings_shared_map_hint">Warnings about bumps and potholes found by other drivers. Only spots are shared, never your route.</string>
     <string name="settings_sync_delete">Delete my shared data</string>
     <string name="settings_sync_delete_title">Delete your shared data?</string>
-    <string name="settings_sync_delete_msg">Deletes everything this phone sent to the server. Spots already merged into the shared map stay, with nothing linking them to you. Also clears downloaded warnings and turns the shared map off. Your own bump map and trips stay.</string>
+    <string name="settings_sync_delete_msg">Deletes this phone\'s record on the server, with the bumps and potholes it sent, its links to spots and its crash reports. Spots already merged into the shared map stay, with nothing linking them to this phone. Also clears downloaded warnings and turns the shared map and real speed limits off. Your own bump map and trips stay.</string>
     <string name="settings_sync_deleted">Deleted</string>
     <string name="settings_sync_deleted_local">Deleted on this phone. Couldn\'t reach the server: tap Delete again when you\'re online to finish.</string>
     <!-- Road speed limits (TomTom): Settings and Trips -->
     <string name="limits_switch">Use real speed limits</string>
     <string name="limits_switch_hint">Score speeding against each road\'s real limit (from TomTom), looked up after the trip. Needs the internet. When off or unknown, the speed above is used.</string>
     <string name="limits_consent_title">Use real speed limits?</string>
-    <string name="limits_consent_msg">After each trip, the app sends your route to our server, which asks TomTom for the speed limits on those roads. The first and last 300 m of every trip are never sent. TomTom doesn\'t get your account or your phone\'s address. Our server keeps nothing except a daily count of lookups, deleted after 30 days. The route waits on your phone until it\'s looked up, at most about 2 days, then it\'s deleted. You can turn this off at any time.</string>
+    <string name="limits_consent_msg">After each trip, the app sends your route to our server, which asks TomTom for the speed limits on those roads. The first and last 300 m of every trip are never sent. TomTom doesn\'t get your phone ID or internet (IP) address: it only sees our server. Our server keeps nothing except a daily count of lookups, deleted after 30 days. The route waits on your phone until it\'s looked up. After about 2 days it is never sent, and it\'s deleted the next time the app runs. You can turn this off at any time.</string>
     <string name="limits_consent_on">Turn on</string>
     <string name="limits_need_map_title">Choose the shared map first</string>
-    <string name="limits_need_map_msg">Until you answer the shared-map question, the app stays offline and sends nothing. Choose “Share and receive” or “Receive only” first, then turn on real speed limits.</string>
+    <string name="limits_need_map_msg">Until you answer the shared-map question, the app sends nothing to our server (it only checks GitHub for updates). Choose “Share and receive” or “Receive only” first, then turn on real speed limits.</string>
     <string name="limits_need_map_open">Choose now</string>
-    <string name="limits_status_offline">Not looking up limits: the shared map is off, so the app stays offline.</string>
+    <string name="limits_status_offline">Not looking up limits: the shared map is off, so nothing is sent to our server.</string>
     <string name="limits_trip_known">Speed limits known for %1$s %% of the trip · %2$s</string>
     <string name="limits_trip_too_little">Speed limits known for %1$s %% only, so the usual speed rule was used. %2$s</string>
     <string name="limits_trip_waiting">Looking up speed limits…</string>
@@ -363,4 +363,5 @@
     <string name="limits_fact_bands">Over the limit by +10 / +20 / +30 km/h</string>
     <string name="limits_fact_max_over">Most over the limit</string>
     <string name="limits_max_over_value">+%1$s km/h</string>
+    <string name="limits_need_map_after_trip">Stop the trip first, then choose the shared map.</string>
 </resources>

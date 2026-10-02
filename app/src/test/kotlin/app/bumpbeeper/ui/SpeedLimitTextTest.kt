@@ -54,7 +54,7 @@ class SpeedLimitTextTest {
     @Test fun settingsStatus() {
         assertEquals("", SpeedLimitText.settingsStatus(ctx, on = false, allowed = false))
         assertEquals("", SpeedLimitText.settingsStatus(ctx, on = true, allowed = true))
-        assertTrue(SpeedLimitText.settingsStatus(ctx, on = true, allowed = false).contains("offline"))
+        assertTrue(SpeedLimitText.settingsStatus(ctx, on = true, allowed = false).contains("shared map is off"))
     }
 
     @Test fun combineSumsTheNewFields() {

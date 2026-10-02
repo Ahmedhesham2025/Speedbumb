@@ -232,7 +232,7 @@ class SettingsPage(private val a: MainActivity) : Page {
 
     /**
      * Turning road speed limits on: the route leaves the phone, so the user agrees first. While the shared-map
-     * question is unanswered the app makes no network calls at all, so that comes first.
+     * question is unanswered nothing goes to our server (only the GitHub update check runs), so that comes first.
      */
     private fun askLimits() {
         limitsDialog?.dismiss()
@@ -240,7 +240,10 @@ class SettingsPage(private val a: MainActivity) : Page {
         if (Prefs.syncChoice(a) == Prefs.SYNC_UNSET) {
             d.setTitle(a.getString(R.string.limits_need_map_title))
                 .setMessage(a.getString(R.string.limits_need_map_msg))
-                .setPositiveButton(R.string.limits_need_map_open) { _, _ -> a.showSyncChoice() }
+                .setPositiveButton(R.string.limits_need_map_open) { _, _ ->
+                    // The question is never shown during a trip (it would cover the Drive screen).
+                    if (LiveState.recording) a.toast(a.getString(R.string.limits_need_map_after_trip)) else a.showSyncChoice()
+                }
                 .setNegativeButton(R.string.common_not_now, null)
         } else {
             d.setTitle(a.getString(R.string.limits_consent_title))

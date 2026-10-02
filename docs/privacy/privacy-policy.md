@@ -6,61 +6,78 @@ Bump Beeper warns you about speed bumps and potholes and scores your driving. It
 <https://github.com/Ahmedhesham2025/Speedbumb>), and has **no ads, no analytics and no trackers**. You never sign up:
 there is no name, email or phone number anywhere in the app.
 
-## What stays on your phone
-Your bump map, your trips and scores, settings, and debug recordings (if you turn them on) are stored only on the
-phone. They leave it only when **you** share or export them (Share, Save all, Export recordings). "Clear all data" in
-Settings deletes them.
+## What is kept on your phone
+Your bump map, your trips and scores, your settings, and debug recordings (if you turn them on) are kept on the phone.
+They leave it when **you** share or export them (Share, Save all, Export recordings), and through **Android backup**:
+if backup is on for your phone, Android copies the bump map, trips, scores and settings to your Google account
+backup. Debug recordings, crash files and routes waiting for a speed-limit lookup are never put in the cloud backup
+(recordings do move along in a direct phone-to-phone transfer). The shared-map sign-in is never backed up either.
 
-## What leaves your phone, and only if you choose it
+## What leaves your phone
 
-### 1. Shared map (asked once; you can change it in Settings → Shared map)
-Until you answer, the app sends nothing to our server.
+### 1. Update check (automatic)
+At most once a day the app asks GitHub (<https://github.com>) whether a newer version exists. Nothing about you, your
+phone or your drives is sent; GitHub sees an ordinary web request (your internet address and the app version). This is
+the only thing the app sends before you answer the shared-map question.
+
+### 2. Shared map (asked once; Settings → Shared map)
+Until you choose, nothing is sent to our server.
 
 | Choice | What is sent | Why |
 |---|---|---|
-| *Receive only* | An anonymous phone ID (a random account created by the app), the app and Android version, your answer, and a rough area (about 1 km) around where your last trip was | To download confirmed bumps and potholes near you |
-| *Share and receive* | The above, plus each bump or pothole you find: place, time, direction, speed, how strong it was. **Never your route**, and nothing within 300 m of where a trip starts or ends. Plus crash reports if the app crashes (app version, phone model, the error; file paths and numbers that could be coordinates are removed first) | To build the shared map; to fix crashes |
+| *Receive only* | An anonymous ID (a random sign-in the app creates; not your phone number), the app and Android version, your choice, and a rough position (rounded to about 1 km) when a recording starts and when a trip ends | To download confirmed bumps and potholes near you |
+| *Share and receive* | The above, plus each bump or pothole you find: place, time (rounded down to the hour on the server), direction, speed, how strong it was. **Never your route**, and nothing within 300 m of where a trip starts or ends. Plus crash reports if the app crashes (see below) | To build the shared map; to fix crashes |
 
-### 2. Real speed limits (off by default; Settings → Driving score → Use real speed limits)
-Only after you agree to the notice, and only while the shared map is on (otherwise the app stays offline).
-- **What:** after each trip, the trip's route (sampled points with times), **without its first and last 300 m**,
-  together with your anonymous phone ID so our server can enforce a daily limit of lookups.
-- **Where:** to our server, which forwards only the points to **TomTom** to find the speed limit of each road.
-  TomTom does not get your phone ID or your phone's internet address, and the times it gets are shifted to the year
-  2000, so it does not learn when you drove. TomTom is a recipient of this data under its own privacy notice:
-  <https://www.tomtom.com/privacy/>.
+**Crash reports** (*Share and receive* only) contain: the crash time with your time-zone offset, the app version, the
+phone's manufacturer and model, the Android version, the name of the app thread that crashed, and the error message
+and stack trace, with file paths and numbers that could be coordinates removed. No location.
+
+### 3. Real speed limits (off by default; Settings → Driving score → Use real speed limits)
+Only after you agree to the notice, and only while the shared map is on.
+- **What:** after each trip, the trip's route (sampled positions with times), **without its first and last 300 m**,
+  together with your anonymous ID so our server can enforce a daily limit of lookups. This is **precise location**.
+- **Where:** to our server, which forwards only the positions to **TomTom** to find the speed limit of each road.
+  TomTom does not get your anonymous ID or your internet (IP) address (it only sees our server), and the times it gets
+  are shifted to the year 2000, so it does not learn when you drove. TomTom receives this data under its own privacy
+  notice: <https://www.tomtom.com/privacy/>.
 - **Why:** to score speeding against each road's real limit. The trip then shows "© TomTom".
-- **How long:** our server keeps nothing from the lookup except a count of lookups per phone per day, deleted after
-  30 days. On the phone the route waits until it is looked up, at most about **48 hours**, then it is deleted. It is
-  also deleted at once if you turn the switch off, turn the shared map off, delete your shared data or clear all data.
-  The limits themselves are saved only in your trip on the phone.
+- **How long:** our server keeps nothing from the lookup except a count of lookups per anonymous ID per day, deleted
+  after 30 days. On the phone the route waits until it is looked up. A route older than about **48 hours** is never
+  sent; it is deleted the next time the app or the lookup runs. It is also deleted at once if you turn the switch off,
+  turn the shared map off, delete your shared data or clear the map. The limits themselves are saved only in your trip
+  on the phone.
 
-### 3. Update check
-At most once a day the app asks GitHub (<https://github.com>) whether a newer version exists. Nothing about you, your
-phone or your drives is sent; GitHub sees an ordinary web request (your internet address and the app version).
-
-## Where the data is kept
-Our server is [Supabase](https://supabase.com) in Frankfurt, Germany (EU). Like any web service it sees the internet
-address a request comes from (Supabase's own request logs may hold it for a short time); our tables do not store it.
+## Where the data is processed
+Our server is [Supabase](https://supabase.com) in Frankfurt, Germany (EU). The speed-limit lookup asks Supabase to run
+in Frankfurt too (`x-region: eu-central-1`); other requests reach the database in Frankfurt. Like any web service,
+Supabase sees the internet address a request comes from; its own sign-in records may keep it. Our tables do not.
 
 ## How long
 
 | Data | Kept |
 |---|---|
-| Bump and pothole reports | Merged into shared spots, then deleted about a day later. A spot keeps only counts (how many phones, hits), not who or when |
-| Shared spots | As long as they are useful; they are not linked to you |
-| Anonymous phone ID, app/Android version, your choice | Until you delete your shared data |
+| Bump and pothole reports | Merged into shared spots, then deleted about a day later |
+| Shared spots | As long as they are useful. Each spot keeps when it was first seen and last hit |
+| Which phones contributed to a spot (spot, anonymous ID, hit and clear counts; no times) | Until you delete your shared data |
+| Device record (anonymous ID, app/Android version, your choice) | Until you delete your shared data |
 | Crash reports | Until you delete your shared data (no automatic expiry yet) |
-| Speed-limit lookups | Nothing but a daily count, deleted after 30 days |
-| Route waiting for a lookup (on the phone) | Until looked up, at most about 48 hours |
+| Speed-limit lookups | Only a daily count per anonymous ID, deleted after 30 days |
+| Anonymous sign-in (the ID itself, and the sign-in service's records) | Not deleted by the app yet |
+| Route waiting for a lookup (on the phone) | Until looked up; never sent after about 48 hours |
 
 ## Your choices
-- **Change or withdraw consent** at any time: Settings → Shared map (*Receive only*, *Share and receive*, or off), and
+- **Change or withdraw consent** at any time: Settings → Shared map (*Receive only*, *Share and receive*, or *Off*), and
   the *Use real speed limits* switch.
-- **Delete your shared data ("forget me"):** Settings → Shared map → *Delete my shared data* deletes everything this
-  phone sent (phone ID, reports, crash reports) from the server at once (the daily lookup counts expire after 30 days), clears the downloaded warnings
-  and turns the shared map off. Spots already merged into the shared map stay, with nothing linking them to you.
-- **Delete everything on the phone:** Settings → *Clear all data*, or uninstall the app.
+- **Delete my shared data** (Settings → Shared map): deletes this phone's device record on the server and with it the
+  bump and pothole reports it sent, its links to spots (contributions) and its crash reports. Spots already merged into
+  the shared map stay, with nothing linking them to this phone any more. What stays: the anonymous sign-in itself
+  (with the sign-in service's own records) and the speed-limit day counts until they expire after 30 days. On the
+  phone it clears the downloaded warnings, turns the shared map **and** real speed limits off (so you are asked again
+  before any new lookup), and keeps your own bump map and trips.
+- **Clear the map** (Settings → Your data): deletes the bumps, potholes, event log, trips and scores on the phone, and
+  routes waiting for a lookup. It does not delete settings or debug recordings (those have their own *Delete
+  recordings* button).
+- **Delete everything on the phone:** Android Settings → Apps → Bump Beeper → Storage → *Clear storage*, or uninstall.
 
 ## Children
 The app is meant for drivers and is not directed at children.
@@ -71,14 +88,19 @@ at <https://github.com/Ahmedhesham2025/Speedbumb/issues>.
 
 ## For store listings
 Notes for the Play Store *Data safety* form and the F-Droid listing (store-docs to finalise):
-- **Data collected** (optional, user-chosen): *Location → Approximate location* (the ~1 km download area) and
-  *Precise location* (bump/pothole points with *Share and receive*; trip routes with real speed limits); *App info
-  and performance → Crash logs* (*Share and receive* only); *Device or other IDs* (the anonymous phone ID).
-  Purposes: app functionality; crash logs also for analytics of crashes. Not used for ads or marketing.
-- **Data shared:** route points with **TomTom** (a third party) for speed-limit lookups, only with that switch on.
-- Encrypted in transit (HTTPS). Users can request deletion in the app (*Delete my shared data*).
-- No ads, no account, no tracking SDKs. F-Droid: the app contacts a non-free network service (TomTom, via our
-  server) only when the user opts in, which should be declared as the *NonFreeNet* anti-feature.
+- **Collected** (all optional, user-chosen, encrypted in transit):
+  - *Location → Approximate location*: the ~1 km area for downloading spots (processed ephemerally, not stored).
+  - *Location → Precise location*: bump/pothole points with *Share and receive*; trip routes with real speed limits
+    (routes are processed ephemerally: not stored by our server, and TomTom's terms forbid storing results).
+  - *App info and performance → Crash logs* (*Share and receive* only).
+  - *Device or other IDs*: the anonymous sign-in ID.
+  - Purposes: app functionality (crash logs: also analytics of crashes). Never ads or marketing.
+- **Shared:** *Location → Precise location* with a third party (**TomTom**), optional, processed ephemerally, only
+  with real speed limits on.
+- **Tracking:** not applicable (no advertising ID, no cross-app tracking, no analytics SDK).
+- **Deletion:** in the app (*Delete my shared data*); see what stays above.
+- **F-Droid:** the app contacts a non-free network service (TomTom, via our server) only when the user opts in:
+  declare the *NonFreeNet* anti-feature.
 
 ---
 
@@ -89,28 +111,40 @@ Notes for the Play Store *Data safety* form and the F-Droid listing (store-docs 
 بامب بيبر بينبّهك للمطبّات والحفر وبيدّي درجة لسواقتك. مجاني ومفتوح المصدر، ومن غير إعلانات ولا تتبّع. مش محتاج
 تعمل حساب، ومفيش اسم ولا إيميل ولا رقم تليفون.
 
-**اللي بيفضل على موبايلك:** خريطة المطبّات، رحلاتك ودرجاتك، والإعدادات. ما بتخرجش غير لو إنت شاركتها أو صدّرتها.
-«مسح كل البيانات» في الإعدادات بيمسحها.
+**اللي بيتحفظ على موبايلك:** خريطة المطبّات، رحلاتك ودرجاتك، والإعدادات. بتخرج لو إنت شاركتها أو صدّرتها، ولو
+النسخ الاحتياطي بتاع أندرويد شغّال، أندرويد بينسخ الخريطة والرحلات والإعدادات على حساب جوجل بتاعك. التسجيلات وتقارير
+الأعطال والطرق اللي مستنية البحث عمرها ما بتدخل النسخة الاحتياطية.
 
-**الخريطة المشتركة (اختياري، بتتسأل مرة):** لحد ما تجاوب، التطبيق مش بيبعت حاجة لسيرفرنا.
-- «استقبل بس»: رقم موبايل مجهول (حساب عشوائي بيعمله التطبيق)، نسخة التطبيق والأندرويد، ومنطقة تقريبية (حوالي 1 كم)
-  عشان ينزّل المطبّات اللي حواليك.
+**التحقق من التحديثات (أوتوماتيك):** مرة في اليوم بالكتير بيسأل GitHub لو فيه نسخة أجدد، من غير أي بيانات عنك. ده
+الحاجة الوحيدة اللي بتتبعت قبل ما تجاوب على سؤال الخريطة المتشاركة.
+
+**الخريطة المتشاركة (اختياري، بتتسأل مرة):** لحد ما تختار، مفيش حاجة بتتبعت لسيرفرنا.
+- «استقبل بس»: مُعرّف مجهول (تسجيل دخول عشوائي بيعمله التطبيق، مش رقم تليفونك)، نسخة التطبيق والأندرويد، ومكان
+  تقريبي (متقرّب لحوالي 1 كم) أول ما التسجيل يبدأ وآخر الرحلة، عشان ينزّل المطبّات اللي حواليك.
 - «شارك واستقبل»: ده كمان + كل مطبّ أو حفرة بتلاقيها (المكان، الوقت، الاتجاه، السرعة، قوّتها)، عمره ما بيبعت
-  طريقك، ولا أي حاجة في حدود 300 متر من أول أو آخر الرحلة؛ وتقارير الأعطال لو التطبيق وقع (من غير مكان).
+  طريقك، ولا أي حاجة في حدود 300 متر من أول أو آخر الرحلة. وتقارير الأعطال لو التطبيق وقع: وقت العطل بفرق التوقيت،
+  نسخة التطبيق، الشركة والموديل، نسخة الأندرويد، اسم الـ thread، ورسالة الخطأ من غير مسارات ملفات ولا أرقام ممكن
+  تكون إحداثيات. من غير مكان.
 
-**حدود السرعة الحقيقية (مقفولة من الأول):** بعد ما توافق بس، وطول ما الخريطة المشتركة شغّالة. بعد كل رحلة التطبيق
-بيبعت طريق الرحلة (من غير أول وآخر 300 متر) لسيرفرنا، والسيرفر بيبعت النقط بس لـ TomTom عشان يعرف حدّ السرعة.
-TomTom مش بياخد رقم موبايلك ولا عنوانه على الإنترنت، والأوقات بتتغيّر لسنة 2000. سياسة خصوصية TomTom:
-<https://www.tomtom.com/privacy/>. سيرفرنا مش بيحتفظ بحاجة غير عدد مرات البحث في اليوم، وبيتمسح بعد 30 يوم. الطريق
-بيستنى على موبايلك لحد ما يتبحث عنه، أقصى حاجة حوالي 48 ساعة، وبعدين بيتمسح.
+**حدود السرعة الحقيقية (مقفولة من الأول):** بعد ما توافق بس، وطول ما الخريطة المتشاركة شغّالة. بعد كل رحلة التطبيق
+بيبعت طريق الرحلة (مكان دقيق، من غير أول وآخر 300 متر) لسيرفرنا، والسيرفر بيبعت النقط بس لـ TomTom عشان يعرف حدّ
+السرعة. TomTom مش بياخد المُعرّف المجهول ولا عنوان الإنترنت (IP) بتاعك، والأوقات بتتغيّر لسنة 2000. سياسة خصوصية
+TomTom: <https://www.tomtom.com/privacy/>. سيرفرنا مش بيحتفظ بحاجة غير عدد مرات البحث في اليوم، وبيتمسح بعد 30 يوم.
+الطريق بيستنى على موبايلك لحد ما يتبحث عنه؛ بعد حوالي 48 ساعة عمره ما بيتبعت، وبيتمسح أول مرة التطبيق يشتغل بعدها.
 
-**التحقق من التحديثات:** مرة في اليوم بالكتير بيسأل GitHub لو فيه نسخة أجدد، من غير أي بيانات عنك.
+**السيرفر:** Supabase في فرانكفورت، ألمانيا، والبحث عن حدود السرعة بيشتغل في فرانكفورت كمان. التقارير بتتدمج في
+الخريطة وبتتمسح بعد حوالي يوم. سجل الموبايل، ومساهماته في الأماكن (عدد المرات، من غير أوقات)، وتقارير الأعطال بيفضلوا
+لحد ما تمسح بياناتك المتشاركة.
 
-**السيرفر:** Supabase في فرانكفورت، ألمانيا. التقارير بتتدمج في الخريطة وبتتمسح بعد حوالي يوم. تقارير الأعطال ورقم
-الموبايل المجهول بيفضلوا لحد ما تمسح بياناتك المشتركة.
-
-**اختياراتك:** تقدر تغيّر أو تلغي موافقتك في أي وقت من الإعدادات. «امسح بياناتي المشتركة» (الإعدادات ← الخريطة
-المشتركة) بيمسح كل اللي الموبايل ده بعته من السيرفر فورًا. الأماكن اللي اتدمجت في الخريطة بتفضل، من غير أي حاجة
-بتربطها بيك.
+**اختياراتك:**
+- تقدر تغيّر أو تلغي موافقتك في أي وقت من الإعدادات.
+- «امسح بياناتي المتشاركة» (الإعدادات ← الخريطة المتشاركة) بيمسح سجل الموبايل ده على السيرفر، ومعاه التقارير
+  اللي بعتها، وربطه بالأماكن، وتقارير الأعطال. الأماكن اللي اتدمجت بتفضل من غير أي حاجة تربطها بالموبايل ده. اللي
+  بيفضل: تسجيل الدخول المجهول نفسه، وعدّاد البحث اليومي لحد ما يتمسح بعد 30 يوم. وبيقفل الخريطة المتشاركة وحدود
+  السرعة الحقيقية، فهتتسأل تاني قبل أي بحث جديد.
+- «امسح الخريطة» (الإعدادات ← بياناتك) بيمسح المطبّات والحفر والرحلات والدرجات اللي على الموبايل والطرق المستنية،
+  مش الإعدادات ولا التسجيلات.
+- عشان تمسح كل حاجة على الموبايل: إعدادات أندرويد ← التطبيقات ← Bump Beeper ← التخزين ← مسح التخزين، أو امسح
+  التطبيق.
 
 أسئلة: افتح issue على <https://github.com/Ahmedhesham2025/Speedbumb/issues>.

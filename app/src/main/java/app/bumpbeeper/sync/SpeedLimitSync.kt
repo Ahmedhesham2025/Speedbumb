@@ -53,6 +53,12 @@ object SpeedLimitSync {
     const val MAX_TRIES = 3
     /** A half-written file (`.tmp`) older than this is left over from a failed write. */
     private const val STALE_TMP_MS = 10 * 60_000L
+    /**
+     * Run the function in Frankfurt, next to the database, not in the edge region nearest the phone, so the route is
+     * processed in the EU (Supabase "regional invocation"; a pinned region is not rerouted during an outage).
+     */
+    const val REGION_HEADER = "x-region"
+    const val REGION = "eu-central-1"
     /** The function waits up to 20 s for TomTom. */
     private val longTransport = HttpTransport(30_000)
 
@@ -213,7 +219,8 @@ object SpeedLimitSync {
         val url = "${BuildConfig.SUPABASE_URL}/functions/v1/speed-limits"
         val body = requestJson(points).toString()
         fun headers(token: String) =
-            mapOf("apikey" to BuildConfig.SUPABASE_KEY, "Authorization" to "Bearer $token", "Content-Type" to "application/json")
+            mapOf("apikey" to BuildConfig.SUPABASE_KEY, "Authorization" to "Bearer $token", "Content-Type" to "application/json",
+                REGION_HEADER to REGION)
         val r = transport.post(url, headers(auth.accessToken()), body)
         // An expired session: refresh once (the server answers 401 before it counts a call).
         return if (r.code == 401) transport.post(url, headers(auth.accessToken(forceRefresh = true)), body) else r

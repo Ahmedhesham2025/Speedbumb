@@ -78,7 +78,7 @@ object SpeedLimitText {
 
     /**
      * Settings: why the switch is on but nothing is looked up ([allowed] is `SpeedLimitSync.allowed`: today the only
-     * reason is the shared map being off, which keeps the app offline), or "" when it works or is off.
+     * reason is the shared map being off, so nothing goes to our server), or "" when it works or is off.
      */
     fun settingsStatus(ctx: Context, on: Boolean, allowed: Boolean): String =
         if (on && !allowed) ctx.getString(R.string.limits_status_offline) else ""

@@ -92,6 +92,8 @@ class TripsPage(private val a: MainActivity) : Page {
             val db = BumpDb(a.applicationContext)
             val (trips, counts) = try { db.trips() to db.counts(Prefs.engineConfig(a)) } finally { db.close() }
             val pending = if (SpeedLimitSync.allowed(a)) SpeedLimitSync.pendingFiles(a)
+                // A route older than SpeedLimitSync.MAX_AGE_MS is never sent (deleted on the next run): no "Looking up…".
+                .filter { System.currentTimeMillis() - it.lastModified() <= SpeedLimitSync.MAX_AGE_MS }
                 .mapNotNull { it.name.substringBefore('.').toLongOrNull() }.toSet() else emptySet()
             ui.post { waiting = pending; show(trips, counts) }
         }.start()
