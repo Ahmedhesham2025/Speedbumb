@@ -7,6 +7,7 @@ is capped (rows per day, text lengths), so one anonymous device cannot fill the 
 ```
 migrations/20261005000001_core.sql   tables, RLS policies, RPCs, aggregation, pg_cron job
 migrations/20261005000002_speed_limit_quota.sql   call counters for the speed-limits function
+migrations/20261005000003_training_samples.sql    consented learning samples ("Help improve detection")
 functions/speed-limits/              Edge Function: road speed limits from TomTom (lib.ts logic, lib_test.ts Deno tests)
 seed.sql                             sample fleets/spots for local runs and CI only (desert coordinates)
 tests/*.sql                          pgTAP tests, run by CI (`supabase test db`)
@@ -26,6 +27,7 @@ config.toml                          local `supabase start` settings (anonymous 
 | `trips`, `trip_events` | driving scores and harsh events | the device that drove, or members of the trip's fleet |
 | `app_settings` | server knobs, e.g. `confirm_devices` | nobody (owner changes it with SQL) |
 | `crash_reports` | crash stacks (≤ 8 KB) | written only by `submit_crash_report`; nobody reads through the API |
+| `training_samples`, `training_trips`, `training_quota` | learning samples, trip summaries, daily counters (see *Training samples*) | nobody; only the training RPCs |
 
 `anon` (not signed in) has no table privileges and cannot call any RPC. The app always signs in anonymously first.
 
@@ -43,7 +45,7 @@ config.toml                          local `supabase start` settings (anonymous 
   severity, n_devices, last_hit`; radius capped at 10 km.
 - `submit_crash_report(app_version, model, stack)`: registered devices only; at most 20 per device per day (`54000`),
   stack ≤ 8 KB and version/model ≤ 40 characters (`22023`).
-- `forget_me()`: deletes the caller's device and, by cascade, its observations, contributions, trips and crash reports.
+- `forget_me()`: deletes the caller's device and its training samples/trips, and by cascade its observations, contributions, trips, crash reports and counters.
   Merged spots stay because they no longer refer to anyone.
 
 `aggregate_observations()` is server-only (not executable by clients). It matches each new observation to a spot within
@@ -60,6 +62,57 @@ confirmed spot is re-checked against the new value (and may turn `stale`) the ne
 
 ```sql
 update public.app_settings set value = '3' where key = 'confirm_devices';
+```
+
+## Training samples ("Help improve detection")
+
+A separate opt-in from the shared map. Raw recordings (~19 MB of CSV per 50 min) would fill the free plan after a few
+dozen drives, so the phone uploads only **one compact row per jolt candidate** the engine judged (`learned`, `hit`,
+`rejected`, `miss`, `pass_clear`) or the user muted (`user_mute` = false-alarm label), plus a route-free trip summary.
+
+- **Consent**: `set_training_consent(enabled boolean) → boolean` stores `devices.training_consent` + `training_consent_at`
+  (registered devices only, else `42501`). `false` deletes all of that device's samples and trips at once. Clients cannot
+  set the column directly. `forget_me()` deletes them too.
+- **Window**: vertical acceleration (gravity removed, as the engine sees it) and, if the phone has a gyroscope, roll and
+  pitch rate in the car frame, at the native rate (`rate_hz` 20..200), 2..4 s (±2 s around the trigger; `pre_ms` = how
+  much is before it). Stored as `bytea` of **int16 little-endian**: accel **0.004 m/s² per unit** (±131 m/s²), gyro
+  **0.001 rad/s per unit** (±32.7 rad/s); clamp before encoding. int16 bytea is 404 B per 50 Hz channel against 824 B as `real[]`.
+- **No location by default**: a sample on a shared spot keeps only `spot_id`; otherwise the server rounds `lat`/`lon` to
+  0.01° (~1 km), or nothing if omitted. **Time**: day only (`day`), no time of day, no order within a trip.
+  Device: `sdk`, `app_version`, `brand` (manufacturer only, lower case); never the model.
+- **Size**: one sample with gyro at 50 Hz ≈ 1.2 KB of waveform + ~0.2 KB fields/row header + ~0.1 KB index ≈ **1.5 KB**
+  (≈ 0.7 KB without gyro). A 50-minute drive with ~40 candidates ≈ **60 KB** (vs 19 MB raw). At the 200 MB guard that is
+  ≈ 130,000 samples, about **3,000 drives**.
+- **Caps** (`54000`, retry tomorrow): per device per UTC day 300 samples, 1 MB of waveform bytes (binds only at high
+  rates: 300 × 3 channels × 4 s at 50 Hz = 360 KB) and 20 trips. **Project guard** (`53100`, back off for days): no new
+  rows once the three training tables reach `app_settings.training_max_mb` (200 MB of the shared 500 MB).
+- **Retention**: `prune_training_data()` (pg_cron `prune-training-data`, daily) deletes rows older than 12 months and
+  counters older than 2 days. Counters stay after a withdrawal (counts only) so toggling cannot reset the caps.
+- **Export** (owner, service role only): `training_export(since date)` returns samples with windows decoded to `real[]`
+  in m/s² / rad/s; trip summaries are read from `training_trips` directly. `label` / `label_source = 'manual'` are for
+  hand labels later.
+
+**Payload contract** for `submit_training_samples(batch jsonb) → {"samples": [uuid], "trips": [uuid]}` (the client ids
+the server holds, new or repeated; clear them from the outbox). Any bad element rejects the whole batch with `22023`
+(drop it, don't retry); `42501` = no consent.
+
+```
+batch:  {"app_version": string<=40, "sdk": int 29..100, "brand": string<=20 [a-z0-9 _-] | null,
+         "samples": [sample, <=100], "trips": [trip, <=10]}
+sample: {"client_sample_id": uuid, "client_trip_id": uuid|null, "day": "YYYY-MM-DD" (local drive day, last 31 days),
+         "decision": "learned"|"hit"|"rejected"|"miss"|"pass_clear"|"user_mute", "reason": [a-z_]{1,24}|null,
+         "classification": "bump"|"pothole"|"unsure"|null, "placement": "mounted"|"cupholder"|"pocket"|"unknown",
+         "speed_kmh": 0..250, "heading_change_deg": -180..180|null, "gps_accuracy_m": 0..500|null,
+         "peak": 0..100 (m/s²)|null, "shape_score": -1..1|null, "first_down": bool|null,
+         "roll_pitch_ratio": 0..1000|null, "side_score": -1..1|null, "spot_id": int|null (shared spot id),
+         "lat": 12..38|null, "lon": 24..60|null (both or neither; dropped when spot_id is known),
+         "rate_hz": int 20..200, "pre_ms": int 0..2000,
+         "accel_v": base64 int16 LE (2*rate_hz .. 4*rate_hz+1 values),
+         "gyro_roll": base64|null, "gyro_pitch": base64|null (both or neither, same length as accel_v)}
+trip:   {"client_trip_id": uuid, "day": "YYYY-MM-DD", "placement": as above, "duration_s": 0..86400,
+         "distance_m": 0..2000000, "n_learned", "n_hit", "n_rejected", "n_miss", "n_pass_clear", "n_user_mute",
+         "n_beeps", "harsh_brakes", "harsh_accels", "harsh_corners", "swerves", "bumps_fast", "phone_use": int|null,
+         "speeding_s": 0..86400|null, "battery_start", "battery_end", "score": 0..100|null}
 ```
 
 ## Edge Function `speed-limits` (road speed limits for the driving score)
@@ -99,6 +152,7 @@ Tests: `deno test supabase/functions/speed-limits/` (offline; TomTom, auth and t
 - Uploading needs `share_enabled = true` (the user's opt-in in the app).
 - Raw observations are deleted about a day after they are merged; contributor rows keep only counts, no times; `forget_me()` deletes a device's data at once.
 - Fleet trip data is visible only to that fleet's members; one fleet can never see another.
+- Training samples need their own opt-in, keep no route, no time of day and at most a ~1 km cell (see above).
 - `speed-limits` keeps no coordinates, only per-user daily call counts (deleted after 30 days, or at once with the auth user).
 
 ## Tests
@@ -107,7 +161,8 @@ CI (`backend` job) runs `supabase start`, `supabase db lint --schema public --le
 roles with `set local role authenticated` + `request.jwt.claims` inside a rolled-back transaction:
 `01_rls.sql` (role matrix), `02_submit_observations.sql`, `03_aggregation.sql`, `04_forget_me.sql`,
 `05_fleet_roles.sql` (owner/admin/viewer rules, last owner), `06_limits.sql` (caps, lengths, same-fleet links),
-`07_speed_limit_quota.sql` (speed-limits counters: no client access, 8/user and 2,000/project per day, pruning).
+`07_speed_limit_quota.sql` (speed-limits counters: no client access, 8/user and 2,000/project per day, pruning),
+`08_training_samples.sql` (consent, validation, caps, size guard, withdrawal, forget_me, RLS deny, retention).
 The Deno tests of `functions/speed-limits` are not in CI yet (needs a `deno test` step).
 
 ## Fleets
