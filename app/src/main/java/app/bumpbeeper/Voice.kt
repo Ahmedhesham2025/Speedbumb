@@ -15,9 +15,9 @@ import java.util.Locale
  */
 class Voice(
     ctx: Context,
-    private val onUnavailable: () -> Unit,
     /** Speech became usable (true) or stopped working (false). May be called on any thread. */
     private val onSpeechChange: (Boolean) -> Unit = {},
+    private val onUnavailable: () -> Unit,
 ) {
     private val app = ctx.applicationContext
     private val am = app.getSystemService(Context.AUDIO_SERVICE) as AudioManager

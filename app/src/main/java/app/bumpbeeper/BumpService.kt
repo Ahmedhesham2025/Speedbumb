@@ -291,7 +291,7 @@ class BumpService : Service(), SensorEventListener, LocationListener, EngineList
         db = BumpDb(this)
         beeper = Beeper(this)
         // No speech available → the two-tone pothole sound instead, and no group announcements (EngineConfig.groupWarnings).
-        voice = Voice(this, { beeper.pothole() }) { ok -> engine?.cfg?.groupWarnings = ok }
+        voice = Voice(this, { ok -> engine?.cfg?.groupWarnings = ok }) { beeper.pothole() }
         tripId = db.startTrip(System.currentTimeMillis())
 
         val t = HandlerThread("bump-engine").also { it.start() }
