@@ -128,9 +128,10 @@ class MainActivity : Activity() {
             setPadding(0, Ui.dp(this@MainActivity, 6), 0, Ui.dp(this@MainActivity, 6))
         }
         listOf(
-            "Drive" to R.drawable.ic_nav_drive, "Map" to R.drawable.ic_nav_map,
-            "Trips" to R.drawable.ic_nav_trips, "Settings" to R.drawable.ic_nav_settings,
-        ).forEachIndexed { i, (name, icon) ->
+            R.string.tab_drive to R.drawable.ic_nav_drive, R.string.tab_map to R.drawable.ic_nav_map,
+            R.string.tab_trips to R.drawable.ic_nav_trips, R.string.tab_settings to R.drawable.ic_nav_settings,
+        ).forEachIndexed { i, (nameRes, icon) ->
+            val name = getString(nameRes)
             val img = ImageView(this).apply { setImageResource(icon) }
             val label = TextView(this).apply {
                 text = name
@@ -193,7 +194,7 @@ class MainActivity : Activity() {
         try {
             startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)).addCategory(Intent.CATEGORY_BROWSABLE))
         } catch (e: Exception) {
-            toast("No browser found")
+            toast(getString(R.string.main_no_browser))
         }
     }
 
@@ -245,7 +246,7 @@ class MainActivity : Activity() {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
         when (requestCode) {
             REQ_PERMS -> if (has(Manifest.permission.ACCESS_FINE_LOCATION)) startRecording()
-                else toast("Bump Beeper needs precise location to know where the bumps are.")
+                else toast(getString(R.string.main_need_location))
             REQ_BASICS -> pages.getOrNull(current)?.onShow()
             REQ_AUTO_FINE, REQ_AUTO_BT, REQ_AUTO_BG -> setupAuto(afterRequest = requestCode)
         }
@@ -254,22 +255,22 @@ class MainActivity : Activity() {
     private fun startRecording() {
         val lm = getSystemService(LOCATION_SERVICE) as LocationManager
         if (!lm.isProviderEnabled(LocationManager.GPS_PROVIDER)) {
-            toast("Turn on Location first")
+            toast(getString(R.string.main_turn_on_location))
             startActivity(Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS))
             return
         }
-        LiveState.lastEvent = "Starting…"
+        LiveState.lastEvent = getString(R.string.main_starting)
         BumpService.start(this)
     }
 
     fun muteLast() {
-        if (!LiveState.recording) { toast("Works while recording: it silences the spot that warned last."); return }
+        if (!LiveState.recording) { toast(getString(R.string.main_mute_needs_recording)); return }
         BumpService.muteLastBeep(this)
     }
 
     fun batterySettings() {
         if (batteryOk()) {
-            toast("Already allowed. If recording still stops, check your phone's own battery / auto-launch settings for this app.")
+            toast(getString(R.string.main_battery_already))
             return
         }
         try {
@@ -302,18 +303,18 @@ class MainActivity : Activity() {
      */
     fun setupAuto(afterRequest: Int = 0) {
         if (!has(Manifest.permission.ACCESS_FINE_LOCATION)) {
-            if (afterRequest == REQ_AUTO_FINE) return cancelAuto("Auto start needs precise location")
+            if (afterRequest == REQ_AUTO_FINE) return cancelAuto(getString(R.string.main_auto_need_fine))
             requestPermissions(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION), REQ_AUTO_FINE)
             return
         }
         if (Build.VERSION.SDK_INT >= 31 && !has(Manifest.permission.BLUETOOTH_CONNECT)) {
-            if (afterRequest == REQ_AUTO_BT) return cancelAuto("Auto start needs the Nearby devices (Bluetooth) permission")
+            if (afterRequest == REQ_AUTO_BT) return cancelAuto(getString(R.string.main_auto_need_bt))
             requestPermissions(arrayOf(Manifest.permission.BLUETOOTH_CONNECT), REQ_AUTO_BT)
             return
         }
         if (afterRequest == REQ_AUTO_BG) {
             if (has(Manifest.permission.ACCESS_BACKGROUND_LOCATION)) finishAuto()
-            else cancelAuto("Auto start needs location set to \"Allow all the time\"")
+            else cancelAuto(getString(R.string.main_auto_need_bg))
             return
         }
         pickCar()
@@ -322,12 +323,12 @@ class MainActivity : Activity() {
     @SuppressLint("MissingPermission")
     private fun pickCar() {
         val adapter = (getSystemService(BLUETOOTH_SERVICE) as? BluetoothManager)?.adapter
-            ?: return cancelAuto("This phone has no Bluetooth")
+            ?: return cancelAuto(getString(R.string.main_no_bluetooth))
         val devices = try { adapter.bondedDevices?.toList() ?: emptyList() } catch (e: SecurityException) { emptyList() }
-        if (devices.isEmpty()) return cancelAuto("No paired Bluetooth devices. Pair the phone with your car first.")
+        if (devices.isEmpty()) return cancelAuto(getString(R.string.main_no_paired))
         val names = devices.map { d -> (try { d.name } catch (e: SecurityException) { null }) ?: d.address }
         AlertDialog.Builder(this)
-            .setTitle("Which one is your car?")
+            .setTitle(getString(R.string.main_pick_car))
             .setItems(names.toTypedArray()) { _, i ->
                 Prefs.sp(this).edit()
                     .putString(Prefs.CAR_ADDRESS, devices[i].address)
@@ -335,23 +336,19 @@ class MainActivity : Activity() {
                     .apply()
                 askBackgroundLocation()
             }
-            .setOnCancelListener { cancelAuto("Auto start not set up") }
+            .setOnCancelListener { cancelAuto(getString(R.string.main_auto_not_set_up)) }
             .show()
     }
 
     private fun askBackgroundLocation() {
         if (has(Manifest.permission.ACCESS_BACKGROUND_LOCATION)) return finishAuto()
         AlertDialog.Builder(this)
-            .setTitle("One more permission")
-            .setMessage(
-                "To start recording while the app is closed, Android needs location set to \"Allow all the time\". " +
-                    "On the next screen choose Allow all the time. Bump Beeper only uses location while it is recording, " +
-                    "and nothing leaves your phone."
-            )
-            .setPositiveButton("Continue") { _, _ ->
+            .setTitle(getString(R.string.main_one_more_title))
+            .setMessage(getString(R.string.main_bg_location_msg))
+            .setPositiveButton(R.string.common_continue) { _, _ ->
                 requestPermissions(arrayOf(Manifest.permission.ACCESS_BACKGROUND_LOCATION), REQ_AUTO_BG)
             }
-            .setNegativeButton("Cancel") { _, _ -> cancelAuto("Auto start not set up") }
+            .setNegativeButton(R.string.common_cancel) { _, _ -> cancelAuto(getString(R.string.main_auto_not_set_up)) }
             .setCancelable(false)
             .show()
     }
@@ -361,13 +358,13 @@ class MainActivity : Activity() {
         autoChanged()
         if (!batteryOk()) {
             AlertDialog.Builder(this)
-                .setTitle("Auto start is on")
-                .setMessage("For it to work reliably, also allow Bump Beeper to run in the background (no battery restrictions).")
-                .setPositiveButton("Battery settings") { _, _ -> batterySettings() }
-                .setNegativeButton("Later", null)
+                .setTitle(getString(R.string.main_auto_on_title))
+                .setMessage(getString(R.string.main_auto_on_battery_msg))
+                .setPositiveButton(R.string.main_battery_settings) { _, _ -> batterySettings() }
+                .setNegativeButton(R.string.common_later, null)
                 .show()
         } else {
-            toast("Auto start is on: it starts when ${Prefs.carName(this)} connects")
+            toast(getString(R.string.main_auto_on_toast, Prefs.carName(this)))
         }
     }
 
@@ -382,7 +379,7 @@ class MainActivity : Activity() {
             @Suppress("DEPRECATION")
             startActivityForResult(pick, REQ_IMPORT)
         } catch (e: Exception) {
-            toast("No file picker found")
+            toast(getString(R.string.main_no_file_picker))
         }
     }
 
