@@ -3,13 +3,18 @@
 Target (ROADMAP P1): at most 4 % per hour of recording on a flagship phone, 6 % per hour on a budget phone.
 
 ## What saves battery while recording (#50)
-| Car | GPS | Accelerometer (50 Hz) | Gyroscope |
-|---|---|---|---|
-| Moving (a fix at 6 km/h or more) | every 1 s | delivered at once | on |
-| Stopped (every fix below 5 km/h for 30 s) | every 5 s | batched, delivered once a second with exact timestamps | off |
+| Car | GPS | Accelerometer + gyroscope (50 Hz) |
+|---|---|---|
+| Moving (a fix at 6 km/h or more) | every 1 s | unchanged |
+| Stopped (every fix below 5 km/h for 30 s) | every 5 s | unchanged |
 
-The accelerometer rate never changes, so the engine sees the same samples whenever the car moves.
-Parked after real driving (3 min by default, setting `auto_stop_minutes`, 0 = never) ends the recording.
+The sensors never change, so the engine sees the same samples as before. Two ideas were dropped after review:
+switching the gyroscope off (the engine would keep using its last, frozen reading) and batching the accelerometer
+while stopped (changing it re-registers the sensor, which discards up to 1 s of queued samples, and the recording's
+wake lock keeps the CPU awake anyway, so it saved almost nothing).
+
+Parked after real driving ends the recording: no fix at 5 km/h or more that also moved 30 m for 5 min (setting
+`auto_stop_minutes`, 0 = never), never while the car's Bluetooth is connected.
 Rules and tests: `app/src/main/java/app/bumpbeeper/auto/PowerPolicy.kt`, `AutoStop.kt`.
 
 ## How to measure

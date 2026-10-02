@@ -1,51 +1,75 @@
 package app.bumpbeeper.auto
 
+import app.bumpbeeper.Geo
+
 /**
  * Ends a recording once the car is parked (#49, #50). Pure Kotlin, so it is unit-tested; times are elapsedRealtime ms.
  *
- * Rules, chosen so a red light or a traffic jam never ends a trip:
+ * Rules, chosen so a red light, a checkpoint or a jam doesn't end a trip:
  *  - Only after the car has really driven this recording (one fix at [armKmh] or more). A manual start in a car park
  *    waits for the drive instead of stopping before it.
- *  - Stop when the last fix is below [movingKmh] and nothing faster came for [stopAfterMs] (the user's setting,
- *    default 3 min; 0 = never). After Google's "left the vehicle" signal (play edition) [afterExitMs] is enough.
- *  - No fix at all for [noFixMs] (an underground car park) also stops. A short loss of fix while moving (a tunnel)
+ *  - Parked = no "moving" fix for [stopAfterMs] (the user's setting, default 5 min; 0 = never). Moving needs both
+ *    [movingKmh] or more AND [movedM] away from where the car last moved, so GPS jitter while parked (a speed spike,
+ *    a position wandering 10–20 m) never restarts the clock.
+ *  - While the car's Bluetooth is connected ([carConnected]) it never stops: the disconnect ends those trips.
+ *  - After the user was seen walking (Google, play edition, [leftVehicle]) [afterWalkingMs] is enough.
+ *  - No fix at all for [noFixMs] (an underground car park) also stops. Losing the fix while moving (a tunnel)
  *    doesn't count as parked, because the last known speed was not low.
  */
 class AutoStop(
     var stopAfterMs: Long,
     val movingKmh: Double = 5.0,
+    val movedM: Double = 30.0,
     val armKmh: Double = 15.0,
-    val afterExitMs: Long = 60_000L,
+    val afterWalkingMs: Long = 60_000L,
     val noFixMs: Long = 15 * 60_000L,
 ) {
+    /** The car's Bluetooth is connected: only its disconnect (with the usual grace) ends the trip. */
+    var carConnected = false
+
     private var armed = false
     private var lastFixMs = -1L
     private var lastKmh = Double.NaN
     private var lastMovingMs = -1L
-    private var exited = false
+    private var anchorLat = Double.NaN
+    private var anchorLon = Double.NaN
+    private var walking = false
 
-    fun onFix(tMs: Long, kmh: Double) {
+    fun onFix(tMs: Long, kmh: Double, lat: Double, lon: Double) {
         lastFixMs = tMs
         if (kmh.isNaN()) return
         lastKmh = kmh
-        if (kmh >= movingKmh) lastMovingMs = tMs
         if (kmh >= armKmh) {
+            if (!armed) moved(tMs, lat, lon)
             armed = true
-            exited = false   // really driving again: a stale "left the vehicle" no longer applies
+            walking = false   // really driving again: a stale "walking" no longer applies
         }
+        if (kmh >= movingKmh && Geo.distance(anchorLat, anchorLon, lat, lon) >= movedM) moved(tMs, lat, lon)
     }
 
-    /** Google activity recognition: the user left the vehicle (play edition). */
-    fun vehicleExit() { exited = true }
+    private fun moved(tMs: Long, lat: Double, lon: Double) {
+        lastMovingMs = tMs
+        anchorLat = lat
+        anchorLon = lon
+    }
+
+    /** Google activity recognition saw the user walking: they left the car (play edition). */
+    fun leftVehicle() { walking = true }
 
     /** Google activity recognition: back in a vehicle. */
-    fun vehicleEnter() { exited = false }
+    fun backInVehicle() { walking = false }
 
     fun shouldStop(nowMs: Long): Boolean {
-        if (stopAfterMs <= 0 || !armed || lastFixMs < 0) return false
+        if (carConnected || stopAfterMs <= 0 || !armed) return false
         if (nowMs - lastFixMs >= noFixMs) return true
-        if (!(lastKmh < movingKmh)) return false
-        val limit = if (exited) minOf(stopAfterMs, afterExitMs) else stopAfterMs
+        // Fixes stopped coming while the car was moving: a tunnel, not a car park.
+        if (lastKmh >= movingKmh && nowMs - lastFixMs > STALE_FIX_MS) return false
+        val limit = if (walking) minOf(stopAfterMs, afterWalkingMs) else stopAfterMs
         return nowMs - lastMovingMs >= limit
+    }
+
+    private companion object {
+        /** Fixes come every 1–5 s while recording; older than this means the fix was lost. */
+        const val STALE_FIX_MS = 30_000L
     }
 }
