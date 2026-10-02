@@ -234,7 +234,11 @@ class BumpEngine(
     /** Longer signal history for [sampleSink] windows; only kept when someone listens. */
     private val ring: WindowRing? = if (sampleSink === JoltSampleSink.NONE) null else WindowRing()
     /** Spot (own id, or shared stand-in id) → last time it was felt or passed closest, for a user_mute window. */
-    private val nearMs = HashMap<Long, Long>()
+    private val nearMs = HashMap<Long, Near>()
+    /** When a spot was last felt or passed closest, and the speed and jolt then (the event a mute labels). */
+    private class Near(val ms: Long, val kmh: Double, val peak: Double)
+    /** Reused for the car's forward direction, so the ring buffer allocates nothing per sample. */
+    private val fwdTmp = DoubleArray(3)
     /** Spots muted with no window at hand: their next hit or pass also gives the user_mute sample. */
     private val pendingMute = HashSet<Long>()
 
@@ -500,17 +504,24 @@ class BumpEngine(
 
     /** Unit vector of the car's forward direction in phone axes, or null while it is still unknown. */
     private fun forwardUnit(): Triple<Double, Double, Double>? {
-        if (fwdWeight < 6.0) return null
+        val o = DoubleArray(3)
+        return if (forwardInto(o)) Triple(o[0], o[1], o[2]) else null
+    }
+
+    /** [forwardUnit] without allocating: writes it into [out] and returns true, or false while still unknown. */
+    private fun forwardInto(out: DoubleArray): Boolean {
+        if (fwdWeight < 6.0) return false
         val g = sqrt(gravX * gravX + gravY * gravY + gravZ * gravZ)
-        if (g < 5.0) return null
+        if (g < 5.0) return false
         val ux = gravX / g; val uy = gravY / g; val uz = gravZ / g
         val d = fwdX * ux + fwdY * uy + fwdZ * uz
         val x = fwdX - d * ux; val y = fwdY - d * uy; val z = fwdZ - d * uz
         val n = sqrt(x * x + y * y + z * z)
         // Weight = sum of |push| × |speed change|. If every push pointed the same way, |sum| ≈ weight;
         // pushes in mixed directions (cornering, bumps) give a much shorter vector.
-        if (n < 0.6 * fwdWeight) return null
-        return Triple(x / n, y / n, z / n)
+        if (n < 0.6 * fwdWeight) return false
+        out[0] = x / n; out[1] = y / n; out[2] = z / n
+        return true
     }
 
     // =====================================================================
@@ -734,11 +745,10 @@ class BumpEngine(
 
     /** Roll and pitch rate in the car's frame need the gyroscope and the forward direction; NaN until both are known. */
     private fun addToRing(r: WindowRing, tMs: Long, v: Double) {
-        val fwd = if (gyroSeen) forwardUnit() else null
-        if (fwd == null) { r.add(tMs, v, Double.NaN, Double.NaN); return }
+        if (!gyroSeen || !forwardInto(fwdTmp)) { r.add(tMs, v, Double.NaN, Double.NaN); return }
         val g = sqrt(gravX * gravX + gravY * gravY + gravZ * gravZ)
         val ux = gravX / g; val uy = gravY / g; val uz = gravZ / g
-        val (fx, fy, fz) = fwd
+        val fx = fwdTmp[0]; val fy = fwdTmp[1]; val fz = fwdTmp[2]
         val roll = gyroX * fx + gyroY * fy + gyroZ * fz
         val pitch = gyroX * (uy * fz - uz * fy) + gyroY * (uz * fx - ux * fz) + gyroZ * (ux * fy - uy * fx)
         r.add(tMs, v, roll, pitch)
@@ -753,7 +763,7 @@ class BumpEngine(
         kind: BumpKind?, lat: Double, lon: Double, spotKey: Long?, dir: Double = heading,
     ) {
         val r = ring ?: return
-        if (spotKey != null) nearMs[spotKey] = centerMs
+        if (spotKey != null) nearMs[spotKey] = Near(centerMs, speedKmh, peak)
         // Jolts are cut at the decision (1.2 s after the trigger); passes later, so they get the full 2 s after.
         val w = r.window(centerMs) ?: return
         val fix = fixes.minByOrNull { abs(it.timeMs - centerMs) }
@@ -778,8 +788,9 @@ class BumpEngine(
     private fun muteSample(b: Bump, key: Long, newKey: Long) {
         val r = ring ?: return
         val at = nearMs[key]
-        if (at == null || r.window(at) == null) { pendingMute.add(newKey); return }
-        sample("user_mute", null, at, (lastFix?.speedMps ?: 0.0) * 3.6, Double.NaN, null, b.kind, b.lat, b.lon, null, b.heading)
+        if (at == null || r.window(at.ms) == null) { pendingMute.add(newKey); return }
+        // Speed and jolt of the event the mute labels (the hit or the pass), not of the moment the button was pressed.
+        sample("user_mute", null, at.ms, at.kmh, at.peak, null, b.kind, b.lat, b.lon, null, b.heading)
         nearMs[newKey] = at
     }
 
@@ -949,7 +960,7 @@ class BumpEngine(
     }
 
     private fun finishPass(b: Bump, a: Approach, f: Fix) {
-        if (ring != null && !a.hit) nearMs[b.id] = a.minDistMs
+        if (ring != null && !a.hit) nearMs[b.id] = Near(a.minDistMs, passKmh(a, f), a.maxJoltNear)
         val nearNote = String.format(Locale.US, "strongest jolt nearby %.1f m/s²", a.maxJoltNear)
         if (!a.counted && !a.hit && a.minSpeedNearMps * 3.6 < cfg.minInformativeKmh) {
             // Crawled over it without feeling anything: can't tell, so it counts neither way.
@@ -981,7 +992,7 @@ class BumpEngine(
      * shared map the spot may be gone.
      */
     private fun finishRemotePass(b: Bump, a: Approach, f: Fix) {
-        if (ring != null) nearMs[b.id] = a.minDistMs
+        if (ring != null) nearMs[b.id] = Near(a.minDistMs, passKmh(a, f), a.maxJoltNear)
         if (a.hit || a.minSpeedNearMps * 3.6 < cfg.minInformativeKmh) return
         observe("pass_clear", b.lat, b.lon, a.minSpeedNearMps * 3.6, a.maxJoltNear, 0.0, 0.0, wallClock(), b.heading)
         sample("pass_clear", null, a.minDistMs, passKmh(a, f), a.maxJoltNear, null, b.kind, b.lat, b.lon, b.id, b.heading)
