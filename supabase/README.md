@@ -6,6 +6,8 @@ is capped (rows per day, text lengths), so one anonymous device cannot fill the 
 
 ```
 migrations/20261005000001_core.sql   tables, RLS policies, RPCs, aggregation, pg_cron job
+migrations/20261005000002_speed_limit_quota.sql   call counters for the speed-limits function
+functions/speed-limits/              Edge Function: road speed limits from TomTom (lib.ts logic, lib_test.ts Deno tests)
 seed.sql                             sample fleets/spots for local runs and CI only (desert coordinates)
 tests/*.sql                          pgTAP tests, run by CI (`supabase test db`)
 config.toml                          local `supabase start` settings (anonymous sign-ins on)
@@ -60,20 +62,53 @@ confirmed spot is re-checked against the new value (and may turn `stale`) the ne
 update public.app_settings set value = '3' where key = 'confirm_devices';
 ```
 
+## Edge Function `speed-limits` (road speed limits for the driving score)
+
+The phone sends a stretch of its own drive; the function asks the TomTom Snap to Roads API which road each point is on
+and returns that road's legal speed limit. Phones never hold the TomTom key: it is the Supabase secret
+**`TOMTOM_API_KEY`**, read only inside the function (never put it in the repo, tests, logs or PRs).
+
+- `POST /functions/v1/speed-limits` with the user's JWT (`verify_jwt = true`; the bare anon key is refused with 401).
+  Body `{"points":[{"lat":30.05,"lon":31.23,"t":1696000000000}, ...]}`: 2 to 5000 points, `t` in epoch ms, in time order.
+- 400 `{"error":"invalid","message":...}` for bad input, a route over 100 km (TomTom Freemium limit per request)
+  or two consecutive points more than 6 km apart in a straight line (TomTom allows at most 6 km of road between points:
+  split the drive there). A body over 1 MB (Content-Length) is refused with 400 before it is read. Even under 6 km in a straight line a winding road can exceed TomTom's limit; that gives 503.
+- 200 `{"source":"tomtom","attribution":"© TomTom","limits":[{"i":0,"kmh":60},{"i":1,"kmh":null}, ...]}`: one entry
+  per input point, in order. `kmh` is the snapped road's maximum speed (mph converted), or `null` when the point is off
+  road, the road has no known limit, or TomTom gives only a *recommended* speed. Show "© TomTom" where limits are used.
+- 429 `{"error":"quota"}`: at most **8 calls per user** and **2,000 calls for the whole project** per UTC day
+  (TomTom's free plan allows about 2,500 and blocks, never bills, above that). Counted before TomTom is called, in
+  `speed_limit_usage` / `speed_limit_usage_total` via `take_speed_limit_quota(uid)` (service role only; clients have no
+  access). The daily `prune-speed-limit-usage` cron job deletes counters older than 30 days.
+- 503 `{"error":"unavailable"}`: key not set, TomTom error or timeout, or an unusable answer. Never retried
+  automatically; the app should try again later (a failed TomTom call still used one quota).
+- **No storing results (TomTom T&C 11.4):** TomTom results may not be cached or stored server-side to serve other
+  users. The function keeps nothing it gets from TomTom (no table of limits, no response logging); it logs only status
+  codes, never coordinates. Only our own call counters are stored. Don't add a speed-limit cache here.
+
+Deploy (owner / lead only): `supabase secrets set TOMTOM_API_KEY=...` on a trusted machine (or the dashboard's Edge
+Function secrets), apply the migration, then `supabase functions deploy speed-limits`.
+Tests: `deno test supabase/functions/speed-limits/` (offline; TomTom, auth and the database are fakes).
+
 ## Privacy
 
-- Only hazard **points** are uploaded, never tracks or routes; observation time is rounded down to the hour.
+- Only hazard **points** are stored, never tracks or routes; observation time is rounded down to the hour. The one
+  exception is `speed-limits`: with the user's opt-in it sends a trimmed route through our server to TomTom (times
+  rebased to 2000-01-01, so TomTom never learns when the user drove) and keeps nothing except a daily call count.
 - Devices are anonymous auth users: no name, email or phone number.
 - Uploading needs `share_enabled = true` (the user's opt-in in the app).
 - Raw observations are deleted about a day after they are merged; contributor rows keep only counts, no times; `forget_me()` deletes a device's data at once.
 - Fleet trip data is visible only to that fleet's members; one fleet can never see another.
+- `speed-limits` keeps no coordinates, only per-user daily call counts (deleted after 30 days, or at once with the auth user).
 
 ## Tests
 
 CI (`backend` job) runs `supabase start`, `supabase db lint --schema public --level error --fail-on error` and `supabase test db`. The tests impersonate
 roles with `set local role authenticated` + `request.jwt.claims` inside a rolled-back transaction:
 `01_rls.sql` (role matrix), `02_submit_observations.sql`, `03_aggregation.sql`, `04_forget_me.sql`,
-`05_fleet_roles.sql` (owner/admin/viewer rules, last owner), `06_limits.sql` (caps, lengths, same-fleet links).
+`05_fleet_roles.sql` (owner/admin/viewer rules, last owner), `06_limits.sql` (caps, lengths, same-fleet links),
+`07_speed_limit_quota.sql` (speed-limits counters: no client access, 8/user and 2,000/project per day, pruning).
+The Deno tests of `functions/speed-limits` are not in CI yet (needs a `deno test` step).
 
 ## Fleets
 
