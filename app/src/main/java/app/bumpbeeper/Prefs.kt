@@ -29,8 +29,15 @@ object Prefs {
     const val UPDATE_VERSION = "update_version"
     const val UPDATE_URL = "update_url"
     const val UPDATE_HTML_URL = "update_html_url"
-    /** Opt-in: share hazard points with the online bump map (off until the user says yes). */
-    const val SHARE_BUMPS = "share_bumps"
+    /**
+     * The online bump map, as answered on the first-run screen: [SYNC_UNSET] (not answered: no network at all),
+     * [SYNC_RECEIVE] (download confirmed spots only) or [SYNC_SHARE] (also upload hazard points and crash reports).
+     */
+    const val SYNC_CHOICE = "sync_choice"
+    const val SYNC_UNSET = "unset"
+    const val SYNC_RECEIVE = "receive"
+    const val SYNC_SHARE = "share"
+    val SYNC_CHOICES = listOf(SYNC_UNSET, SYNC_RECEIVE, SYNC_SHARE)
 
     fun sp(ctx: Context): SharedPreferences = ctx.getSharedPreferences("settings", Context.MODE_PRIVATE)
 
@@ -75,9 +82,12 @@ object Prefs {
     fun setPlacement(ctx: Context, value: String) =
         sp(ctx).edit().putString(PLACEMENT, if (value in PLACEMENTS) value else "unknown").apply()
 
-    fun shareBumps(ctx: Context): Boolean = sp(ctx).getBoolean(SHARE_BUMPS, false)
-    /** Use [app.bumpbeeper.sync.Sync.setShareBumps] from screens: it also tells the server. */
-    fun setShareBumps(ctx: Context, on: Boolean) = sp(ctx).edit().putBoolean(SHARE_BUMPS, on).apply()
+    fun syncChoice(ctx: Context): String = sp(ctx).getString(SYNC_CHOICE, SYNC_UNSET)?.takeIf { it in SYNC_CHOICES } ?: SYNC_UNSET
+    /** Screens use [app.bumpbeeper.sync.Sync.setChoice]: it also starts (or stops) the sync. */
+    fun setSyncChoice(ctx: Context, choice: String) =
+        sp(ctx).edit().putString(SYNC_CHOICE, if (choice in SYNC_CHOICES) choice else SYNC_UNSET).apply()
+    /** Upload hazard points (and crash reports): only when the user chose "share". */
+    fun shareBumps(ctx: Context): Boolean = syncChoice(ctx) == SYNC_SHARE
 
     fun autoStart(ctx: Context): Boolean = sp(ctx).getBoolean(AUTO_START, false)
     fun carAddress(ctx: Context): String? = sp(ctx).getString(CAR_ADDRESS, null)

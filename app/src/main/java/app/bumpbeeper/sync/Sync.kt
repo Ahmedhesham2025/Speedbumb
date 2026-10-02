@@ -24,8 +24,9 @@ import kotlin.math.roundToLong
  * The shared bump map, phone side. Entry points for the service and the screens; the work itself runs
  * in [SyncJob] (JobScheduler, network required), never on the main thread.
  *
- * One run: sign in (anonymous) → register_device → upload the outbox (only with sharing on) → upload crash
- * reports (only with sharing on) → download confirmed spots within 10 km of the last trip position into the cache.
+ * Nothing touches the network until the user answered the first-run screen ([Prefs.syncChoice] not "unset").
+ * One run: sign in (anonymous) → register_device → upload the outbox and crash reports (choice "share" only)
+ * → download confirmed spots within 10 km of the last trip position into the cache.
  */
 object Sync {
     private const val TAG = "BumpBeeper"
@@ -58,8 +59,10 @@ object Sync {
 
     /** App opened: make sure the daily sync exists, sync once now (when online), and load the status numbers. */
     fun onAppStart(ctx: Context) {
-        ensureDaily(ctx)
-        schedule(ctx, JOB_NOW, false, Double.NaN, Double.NaN)
+        if (online(ctx)) {
+            ensureDaily(ctx)
+            schedule(ctx, JOB_NOW, false, Double.NaN, Double.NaN)
+        }
         val app = ctx.applicationContext ?: ctx
         Thread({
             try {
@@ -71,19 +74,34 @@ object Sync {
     }
 
     /** Recording started and has a position: refresh the spot cache around it as soon as there is network. */
-    fun pullAround(ctx: Context, lat: Double, lon: Double) = schedule(ctx, JOB_PULL, true, lat, lon)
+    fun pullAround(ctx: Context, lat: Double, lon: Double) {
+        if (online(ctx)) schedule(ctx, JOB_PULL, true, lat, lon)
+    }
 
     /** Recording stopped (the outbox has this trip's observations): full sync when online. */
     fun afterTrip(ctx: Context, lat: Double, lon: Double) {
+        if (!online(ctx)) return
         ensureDaily(ctx)
         schedule(ctx, JOB_NOW, false, lat, lon)
     }
 
-    /** The opt-in switch. Off also empties the outbox at the next run: nothing collected before is sent later. */
-    fun setShareBumps(ctx: Context, on: Boolean) {
-        Prefs.setShareBumps(ctx, on)
-        schedule(ctx, JOB_NOW, false, Double.NaN, Double.NaN)   // tells the server (register_device)
+    /**
+     * The first-run / settings answer: [Prefs.SYNC_RECEIVE] or [Prefs.SYNC_SHARE] start syncing (a run now tells the
+     * server, register_device); leaving "share" empties the outbox at that run, so nothing collected before is sent.
+     * [Prefs.SYNC_UNSET] stops all sync jobs.
+     */
+    fun setChoice(ctx: Context, choice: String) {
+        Prefs.setSyncChoice(ctx, choice)
+        if (online(ctx)) {
+            ensureDaily(ctx)
+            schedule(ctx, JOB_NOW, false, Double.NaN, Double.NaN)
+        } else {
+            try { scheduler(ctx)?.let { js -> listOf(JOB_DAILY, JOB_NOW, JOB_PULL).forEach { js.cancel(it) } } } catch (_: Exception) {}
+        }
     }
+
+    /** The user answered the first-run screen; before that, nothing goes online. */
+    private fun online(ctx: Context) = Prefs.syncChoice(ctx) != Prefs.SYNC_UNSET
 
     private fun scheduler(ctx: Context): JobScheduler? = ctx.getSystemService(JobScheduler::class.java)
 
@@ -124,12 +142,12 @@ object Sync {
 
     /**
      * Deletes this phone's data on the server (forget_me), then the outbox, spot cache, sync state and sign-in
-     * here, and switches sharing off. [callback] runs on the main thread: true = server data deleted (or there
+     * here, and sets the choice back to "unset" (no network until the user chooses again). [callback] runs on the main thread: true = server data deleted (or there
      * never was any), false = offline/server error (sharing is off and local data is gone; try again later).
      */
     fun forgetMe(ctx: Context, callback: (Boolean) -> Unit) {
         val app = ctx.applicationContext ?: ctx
-        Prefs.setShareBumps(app, false)
+        setChoice(app, Prefs.SYNC_UNSET)
         Thread({
             val ok = try {
                 synchronized(lock) {
@@ -161,8 +179,13 @@ object Sync {
 
     // ---------------------------------------------------------------- one run (SyncJob thread)
 
-    /** One sync run. Returns true when it should be retried later (offline, server busy). */
-    fun run(ctx: Context, pullOnly: Boolean, lat: Double, lon: Double): Boolean = synchronized(lock) {
+    /**
+     * One sync run. Returns true when it should be retried later (offline, server busy).
+     * [transport] is swapped for a fake in tests.
+     */
+    fun run(ctx: Context, pullOnly: Boolean, lat: Double, lon: Double, transport: Transport = UrlTransport): Boolean = synchronized(lock) {
+        val choice = Prefs.syncChoice(ctx)
+        if (choice == Prefs.SYNC_UNSET) return false   // not answered yet: no sign-in, no calls at all
         withDb(ctx) { db ->
             val store = SyncStore(db)
             if (!lat.isNaN() && !lon.isNaN()) {
@@ -170,13 +193,13 @@ object Sync {
                 store.put(POS_LAT, round2(lat))
                 store.put(POS_LON, round2(lon))
             }
-            val api = SupabaseApi(BuildConfig.SUPABASE_URL, BuildConfig.SUPABASE_KEY, newAuth(ctx))
+            val api = SupabaseApi(BuildConfig.SUPABASE_URL, BuildConfig.SUPABASE_KEY, newAuth(ctx, transport), transport)
             val now = System.currentTimeMillis()
             var retry = false
             var error = ""
             try {
                 if (!pullOnly) {
-                    val share = Prefs.shareBumps(ctx)
+                    val share = choice == Prefs.SYNC_SHARE
                     api.registerDevice(TraceWriter.appVersion(ctx), Build.VERSION.SDK_INT, CONSENT_VERSION, share)
                     if (share) {
                         error = upload(api, store, now, ctx)
@@ -287,7 +310,8 @@ object Sync {
         LiveState.syncRemoteSpots = store.remoteSpotCount()
     }
 
-    private fun newAuth(ctx: Context) = SupabaseAuth(ctx, BuildConfig.SUPABASE_URL, BuildConfig.SUPABASE_KEY)
+    private fun newAuth(ctx: Context, transport: Transport = UrlTransport) =
+        SupabaseAuth(ctx, BuildConfig.SUPABASE_URL, BuildConfig.SUPABASE_KEY, transport)
 
     private fun <T> withDb(ctx: Context, block: (BumpDb) -> T): T {
         val db = BumpDb(ctx)
