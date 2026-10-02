@@ -13,7 +13,12 @@ import java.util.Locale
  * (works offline once the voice is installed). Like the beeps, it plays as navigation voice: through the car's
  * Bluetooth if connected, music ducks. [onUnavailable] is used if speech isn't ready (e.g. no voice installed).
  */
-class Voice(ctx: Context, private val onUnavailable: () -> Unit) {
+class Voice(
+    ctx: Context,
+    private val onUnavailable: () -> Unit,
+    /** Speech became usable (true) or stopped working (false). May be called on any thread. */
+    private val onSpeechChange: (Boolean) -> Unit = {},
+) {
     private val app = ctx.applicationContext
     private val am = app.getSystemService(Context.AUDIO_SERVICE) as AudioManager
     private val attrs = AudioAttributes.Builder()
@@ -22,9 +27,15 @@ class Voice(ctx: Context, private val onUnavailable: () -> Unit) {
         .build()
     private val focus = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK).setAudioAttributes(attrs).build()
     @Volatile private var ready = false
+    @Volatile private var broken = false
+    /** Text-to-speech is set up and hasn't failed. */
+    val speaks: Boolean get() = ready && !broken
     private var lang = ""
     private var n = 0
-    private val tts: TextToSpeech = TextToSpeech(app) { status -> ready = status == TextToSpeech.SUCCESS }
+    private val tts: TextToSpeech = TextToSpeech(app) { status ->
+        ready = status == TextToSpeech.SUCCESS
+        onSpeechChange(speaks)
+    }
 
     init {
         tts.setAudioAttributes(attrs)
@@ -39,8 +50,15 @@ class Voice(ctx: Context, private val onUnavailable: () -> Unit) {
     fun pothole(side: Side) = say(Phrases.pothole(Prefs.voiceLang(app), side))
 
     /** Announce a group of spots ahead ("3 bumps ahead."); [fallback] plays instead if speech isn't available. */
-    fun cluster(c: HazardCluster, fallback: () -> Unit) =
-        say(Phrases.cluster(Prefs.voiceLang(app), c.count, c.kind, c.harshSide), fallback)
+    fun cluster(c: HazardCluster, fallback: () -> Unit) {
+        val text = Phrases.cluster(Prefs.voiceLang(app), c.count, c.kind, c.harshSide)
+        if (text == null) fallback() else say(text, fallback)
+    }
+
+    private fun fail(fallback: () -> Unit) {
+        if (!broken) { broken = true; onSpeechChange(false) }
+        fallback()
+    }
 
     fun say(text: String, fallback: () -> Unit = onUnavailable) {
         val code = Prefs.voiceLang(app)
@@ -49,14 +67,14 @@ class Voice(ctx: Context, private val onUnavailable: () -> Unit) {
             val r = tts.setLanguage(if (code == "ar") Locale("ar", "EG") else Locale.US)
             if (r == TextToSpeech.LANG_MISSING_DATA || r == TextToSpeech.LANG_NOT_SUPPORTED) {
                 // Arabic voice not installed: fall back to English rather than staying silent.
-                if (code == "ar") tts.setLanguage(Locale.US) else { fallback(); return }
+                if (code == "ar") tts.setLanguage(Locale.US) else { fail(fallback); return }
             }
             lang = code
         }
         am.requestAudioFocus(focus)
         if (tts.speak(text, TextToSpeech.QUEUE_FLUSH, null, "w${n++}") != TextToSpeech.SUCCESS) {
             am.abandonAudioFocusRequest(focus)
-            fallback()
+            fail(fallback)
         }
     }
 

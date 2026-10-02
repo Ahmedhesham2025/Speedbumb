@@ -19,8 +19,10 @@ object Phrases {
     /**
      * A group of [count] spots ahead ("3 bumps ahead."), naming a harsh pothole among them if there is one.
      * [kind] null = mixed. Kept short: it has to finish before the first spot.
+     * Null below 3: a group is at least 3 spots, and 2 would need the Arabic dual form, which this doesn't
+     * build; the caller then plays the first spot's own sound.
      */
-    fun cluster(lang: String, count: Int, kind: BumpKind?, harshSide: Side?): String = if (lang == "ar") {
+    fun cluster(lang: String, count: Int, kind: BumpKind?, harshSide: Side?): String? = if (count < 3) null else if (lang == "ar") {
         // Arabic counts 3–10 take the plural, 11 and up the singular.
         val plural = count in 3..10
         val noun = when (kind) {

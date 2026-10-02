@@ -617,6 +617,13 @@ object Scenarios {
         check(r.newBumps == 3 && r.ticks == 1, "rate limit: 3 new spots but 1 tick expected, got new=${r.newBumps} ticks=${r.ticks}")
         val t2 = Simulator(72).drive(store, spec, tripId = 2)
         check(t2.newBumps == 0 && t2.ticks == 0, "known spots don't tick, got ${t2.ticks}")
+
+        // Spots the shared map already warned about are confirmed, not new: no tick.
+        val sim = Simulator(76)
+        val source = ListSpotSource(listOf(500.0, 1100.0, 1600.0).mapIndexed { i, p -> remoteAt(sim, 200L + i, p) })
+        val t3 = sim.drive(MemoryStore(), spec, tripId = 3, spotSource = source)
+        check(t3.newBumps == 3 && t3.warnings.size == 3, "3 shared bumps warned and recorded, got new=${t3.newBumps} warnings=${t3.warnings.size}")
+        check(t3.ticks == 0, "no tick for spots the shared map knew, got ${t3.ticks}")
     }
 
     /** Each kind of spot has its own sound: bump beeps, pothole bongs, harsh pothole voice, unsure single beep. */
@@ -678,8 +685,7 @@ object Scenarios {
         val store = MemoryStore()
         val t1 = sim.drive(store, DriveSpec(cruiseKmh = 50.0), tripId = 1, spotSource = ListSpotSource(spots))
         describe("trip 1", t1)
-        check(t1.warnings.size == 1, "one group warning expected, got ${t1.warnings.size}: " +
-            store.events.filter { it.type.startsWith("beep") }.map { "${it.type} ${it.bumpId} ${it.note} d=${it.distanceM.toInt()}" })
+        check(t1.warnings.size == 1, "one group warning expected, got ${t1.warnings.size}")
         val g = t1.warnings[0].cluster
         check(g != null && g.count == 3 && g.kind == null && g.harshSide == Side.RIGHT, "mixed group of 3 with a harsh pothole on the right")
         check(t1.warnings[0].sound == WarnSound.BUMP, "the first spot's own sound stays a bump")
