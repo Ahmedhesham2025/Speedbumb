@@ -4,6 +4,7 @@ import java.util.Locale
 import java.util.UUID
 import kotlin.math.abs
 import kotlin.math.acos
+import kotlin.math.cos
 import kotlin.math.ln
 import kotlin.math.max
 import kotlin.math.min
@@ -809,8 +810,13 @@ class BumpEngine(
             if (ds > maxDist || ds < 8.0) continue
             if (approaches[s.id]?.beeped == true || !warnable(s)) continue
             if (Geo.angleDiff(heading, s.heading) > cfg.headingTolDeg) continue
-            val ahead = Geo.angleDiff(heading, Geo.bearing(f.lat, f.lon, s.lat, s.lon))
-            if (ahead > 45.0 || ds * sin(Math.toRadians(ahead)) > cfg.maxCrossTrackM) continue
+            // "Further along the same road" is measured from the warned spot along its own direction of travel
+            // (averaged over its hits), not along the car's GPS heading: a few degrees of GPS wobble would
+            // otherwise throw a spot 200 m ahead off the path.
+            val gap = Geo.distance(first.lat, first.lon, s.lat, s.lon)
+            val off = Math.toRadians(Geo.angleDiff(first.heading, Geo.bearing(first.lat, first.lon, s.lat, s.lon)))
+            val along = gap * cos(off)
+            if (along < -cfg.matchRadiusM || along > cfg.clusterRangeM || gap * sin(off) > cfg.maxCrossTrackM) continue
             members.add(s to ds)
         }
         if (members.size < cfg.clusterMinExtra) return null
