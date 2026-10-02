@@ -389,6 +389,162 @@ object Scenarios {
         check(r.driving.phoneUse == 1, "expected 1 phone use, got ${r.driving.phoneUse}")
     }
 
+    // ---------- shared online map ----------
+
+    /** A shared-map spot at road position [p] (eastbound unless [westbound]). */
+    private fun remoteAt(
+        sim: Simulator, id: Long, p: Double, kind: BumpKind = BumpKind.BUMP, side: Side = Side.UNKNOWN,
+        severity: Double = 5.0, westbound: Boolean = false,
+    ): RemoteSpot {
+        val q = sim.point(p, westbound)
+        return RemoteSpot(id, q[0], q[1], if (westbound) 270.0 else 90.0, kind, side, severity, nDevices = 3)
+    }
+
+    private fun remoteBeeps(store: MemoryStore, trip: Long) =
+        store.events.filter { it.tripId == trip && it.type == "beep" && it.note.startsWith("remote") }
+
+    /**
+     * A fresh phone with an empty map warns before every bump on its very first drive, from the shared map.
+     * On the next drive its own learned spots take over: each bump warns once, not twice.
+     */
+    fun remoteSpotsWarnFirstDrive() {
+        log("remoteSpotsWarnFirstDrive")
+        val sim = Simulator(61)
+        val store = MemoryStore()
+        val real = listOf(500.0, 1100.0, 1600.0)
+        val source = ListSpotSource(real.mapIndexed { i, p -> remoteAt(sim, 100L + i, p) })
+
+        val t1 = sim.drive(store, DriveSpec(bumpsAt = real), tripId = 1, spotSource = source)
+        describe("trip 1", t1)
+        check(source.calls >= 2, "the shared map should be asked again while driving, asked ${source.calls}x")
+        check(t1.beepBumpIds.size == 3, "trip 1 should warn before all 3 shared bumps, got ${t1.beepBumpIds.size}")
+        check(
+            t1.beepBumpIds.map { BumpEngine.remoteSpotId(it) } == listOf(100L, 101L, 102L),
+            "trip 1: one warning per shared bump, in order: ${t1.beepBumpIds}",
+        )
+        for (d in t1.beepTrueDistM) check(d in 40.0..160.0, "trip 1: warning came at ${f1(d)} m, expected 40–160 m ahead")
+        val logged = remoteBeeps(store, 1)
+        check(
+            logged.map { it.bumpId } == listOf(100L, 101L, 102L),
+            "beeps logged with note 'remote' and the server ids: ${logged.map { "${it.bumpId} ${it.note}" }}",
+        )
+        check(t1.newBumps == 3 && store.saved.size == 3, "only the 3 felt spots are stored locally, got ${store.saved.size}")
+        check(store.saved.all { it.id > 0 && it.passes == 1 }, "shared spots must not be stored or count passes")
+
+        val t2 = sim.drive(store, DriveSpec(bumpsAt = real), tripId = 2, spotSource = source)
+        describe("trip 2", t2)
+        check(t2.beepBumpIds.size == 3, "trip 2: each bump warns once (own spot wins over its shared twin), got ${t2.beepBumpIds.size}")
+        check(t2.beepBumpIds.all { it > 0 }, "trip 2 warnings must come from the local spots: ${t2.beepBumpIds}")
+        check(remoteBeeps(store, 2).isEmpty(), "no remote beep when a local twin exists")
+    }
+
+    /** A spot you muted (by hand, or automatically because it is gone) also silences its shared twin. */
+    fun localMuteSuppressesRemote() {
+        log("localMuteSuppressesRemote")
+        val sim = Simulator(62)
+        val store = MemoryStore()
+        sim.drive(store, DriveSpec(bumpsAt = listOf(500.0, 1100.0, 1600.0)), tripId = 1)
+        // 1600 was removed: three clean passes auto-mute it.
+        for (trip in 2..4) {
+            sim.drive(store, DriveSpec(bumpsAt = listOf(500.0, 1100.0), silentBumpsAt = listOf(1600.0)), tripId = trip.toLong())
+        }
+        val gone = nearest(store, sim, 1600.0)
+        check(gone.isMuted(EngineConfig()) && !gone.userMuted, "1600 should be auto-muted, got ${gone.hits}/${gone.passes}")
+        // 500: "Mute last beep".
+        val muted = nearest(store, sim, 500.0)
+        BumpEngine(EngineConfig(), store, object : EngineListener {}, { 0L }).muteBump(muted.id)
+        val kept = nearest(store, sim, 1100.0)
+
+        val source = ListSpotSource(listOf(remoteAt(sim, 1, 500.0), remoteAt(sim, 2, 1100.0), remoteAt(sim, 3, 1600.0)))
+        val spec = DriveSpec(bumpsAt = listOf(500.0, 1100.0), silentBumpsAt = listOf(1600.0))
+        val t5 = sim.drive(store, spec, tripId = 5, spotSource = source)
+        describe("trip 5", t5)
+        check(t5.beepBumpIds == listOf(kept.id), "only the un-muted local spot should warn, got ${t5.beepBumpIds}")
+        check(remoteBeeps(store, 5).isEmpty(), "muted spots must silence their shared twins")
+    }
+
+    /** Shared potholes follow the same rules: only harsh ones warn, and none with pothole warnings off. */
+    fun remotePotholeRules() {
+        log("remotePotholeRules")
+        val sim = Simulator(63)
+        val store = MemoryStore()
+        val small = remoteAt(sim, 7, 700.0, BumpKind.POTHOLE, Side.RIGHT, severity = 4.2)
+        val harsh = remoteAt(sim, 8, 1300.0, BumpKind.POTHOLE, Side.LEFT, severity = 7.0)
+        val source = ListSpotSource(listOf(small, harsh))
+        val spec = DriveSpec(cruiseKmh = 40.0)
+
+        val t1 = sim.drive(store, spec, tripId = 1, spotSource = source)
+        describe("trip 1", t1)
+        check(t1.beepBumpIds.map { BumpEngine.remoteSpotId(it) } == listOf(8L), "only the harsh shared pothole should warn, got ${t1.beepBumpIds}")
+        check(t1.beepKinds == listOf(BumpKind.POTHOLE), "it warns as a pothole, got ${t1.beepKinds}")
+
+        val off = EngineConfig().apply { warnPotholes = false }
+        val t2 = sim.drive(store, spec, off, tripId = 2, spotSource = source)
+        describe("trip 2 (no pothole warnings)", t2)
+        check(t2.beepBumpIds.isEmpty(), "pothole warnings off: no shared pothole warns, got ${t2.beepBumpIds}")
+    }
+
+    /** The observation outbox gets jolt / known_hit / pass_clear with sane values, and nothing for crawled-over passes. */
+    fun observationsRecorded() {
+        log("observationsRecorded")
+        val sim = Simulator(64)
+        val store = MemoryStore()
+        val sink = ListSink()
+        fun near(o: Observation, p: Double, m: Double = 12.0): Boolean {
+            val q = sim.point(p, false)
+            return Geo.distance(o.lat, o.lon, q[0], q[1]) <= m
+        }
+        fun sane(o: Observation) {
+            check(o.clientId.length == 36 && o.clientId[8] == '-', "clientId should be a UUID: ${o.clientId}")
+            check(Geo.angleDiff(o.heading, 90.0) < 20.0, "heading should be eastbound: ${o.heading}")
+            check(o.wallTimeMs >= 1_700_000_000_000L, "wall time from the engine clock: ${o.wallTimeMs}")
+            check(o.kind in setOf("jolt", "known_hit", "pass_clear"), "unknown kind ${o.kind}")
+        }
+        fun show(name: String, os: List<Observation>) =
+            log("  $name: ${os.map { "${it.kind} ${f1(it.speedKmh)} km/h peak ${String.format(Locale.US, "%.1f", it.peak)}" }}")
+
+        sim.drive(store, DriveSpec(bumpsAt = listOf(500.0, 1100.0, 1600.0)), tripId = 1, observationSink = sink)
+        val o1 = sink.got.toList()
+        show("trip 1", o1)
+        check(o1.map { it.kind } == listOf("jolt", "jolt", "jolt"), "trip 1: one jolt per new bump, got ${o1.map { it.kind }}")
+        for ((o, p) in o1.zip(listOf(500.0, 1100.0, 1600.0))) {
+            sane(o)
+            check(near(o, p), "jolt should be at the bump at $p")
+            check(o.speedKmh in 5.0..30.0 && o.peak >= 3.0 && o.kindScore < 0.0, "jolt values: ${o.speedKmh} km/h, peak ${o.peak}, score ${o.kindScore}")
+        }
+        check(o1.map { it.clientId }.toSet().size == 3, "clientIds must be unique")
+
+        // 500 crawled over (pass_slow: nothing), 1100 removed (miss: pass_clear), 1600 felt again (known_hit).
+        sink.got.clear()
+        val spec2 = DriveSpec(crawlAt = listOf(500.0), silentBumpsAt = listOf(1100.0), bumpsAt = listOf(1600.0))
+        sim.drive(store, spec2, tripId = 2, observationSink = sink)
+        val o2 = sink.got.toList()
+        show("trip 2", o2)
+        check(store.events.any { it.tripId == 2L && it.type == "pass_slow" }, "trip 2 should have a pass_slow at 500")
+        check(o2.map { it.kind } == listOf("pass_clear", "known_hit"), "trip 2: pass_clear then known_hit, got ${o2.map { it.kind }}")
+        o2.forEach { sane(it) }
+        check(o2.none { near(it, 500.0, 60.0) }, "a crawled-over pass (pass_slow) must not be reported")
+        val clear = o2[0]
+        check(
+            near(clear, 1100.0) && clear.speedKmh >= 12.0 && clear.peak < 3.0,
+            "pass_clear at 1100, informative speed, no jolt: ${clear.speedKmh} km/h peak ${clear.peak}",
+        )
+        val hit = o2[1]
+        check(near(hit, 1600.0) && hit.peak >= 3.0 && hit.speedKmh in 5.0..30.0, "known_hit at 1600: ${hit.speedKmh} km/h peak ${hit.peak}")
+
+        // A shared spot driven over cleanly is reported too (that is how removed bumps leave the shared map).
+        // Fresh phone: the bump at 1600 is new to it.
+        sink.got.clear()
+        val source = ListSpotSource(listOf(remoteAt(sim, 9, 1300.0)))
+        sim.drive(MemoryStore(), DriveSpec(bumpsAt = listOf(1600.0)), tripId = 3, spotSource = source, observationSink = sink)
+        val o3 = sink.got.toList()
+        show("trip 3", o3)
+        check(
+            o3.map { it.kind } == listOf("pass_clear", "jolt") && near(o3[0], 1300.0, 2.0) && near(o3[1], 1600.0),
+            "trip 3: pass_clear at the shared spot, then a jolt at 1600: ${o3.map { it.kind }}",
+        )
+    }
+
     fun all(): List<Pair<String, () -> Unit>> = listOf(
         "calmDrivingScoresHigh" to ::calmDrivingScoresHigh,
         "speedingAndHardBraking" to ::speedingAndHardBraking,
@@ -406,5 +562,9 @@ object Scenarios {
         "parkedAndNoGps" to ::parkedAndNoGps,
         "crawlVersusRemoved" to ::crawlVersusRemoved,
         "userMute" to ::userMute,
+        "remoteSpotsWarnFirstDrive" to ::remoteSpotsWarnFirstDrive,
+        "localMuteSuppressesRemote" to ::localMuteSuppressesRemote,
+        "remotePotholeRules" to ::remotePotholeRules,
+        "observationsRecorded" to ::observationsRecorded,
     )
 }

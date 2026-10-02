@@ -138,6 +138,9 @@ class Simulator(seed: Long) {
         drivingCfg: DrivingConfig = DrivingConfig(),
         /** If given, every accelerometer sample, GPS fix and logged event is added here (for trace export). */
         recorder: MutableList<TraceSample>? = null,
+        /** Shared-map spots and observation outbox (both off by default). */
+        spotSource: SpotSource? = null,
+        observationSink: ObservationSink? = null,
     ): TripResult {
         val len = roadLen
         fun travel(p: Double) = if (spec.westbound) len - p else p   // road position ↔ distance travelled
@@ -182,7 +185,7 @@ class Simulator(seed: Long) {
             }
             override fun onJoltRejected(peak: Double, reason: String) { rejected.add(reason) }
         }
-        val engine = BumpEngine(cfg, sink, listener, { 1_700_000_000_000L + (t * 1000).toLong() }, tripId)
+        val engine = BumpEngine(cfg, sink, listener, { 1_700_000_000_000L + (t * 1000).toLong() }, tripId, spotSource, observationSink)
         monitor = DrivingMonitor(drivingCfg, engine) { type, lat, lon, kmh, value, note ->
             sink.logEvent(BumpEvent(1_700_000_000_000L + (t * 1000).toLong(), tripId, type, -1, lat, lon, kmh, Double.NaN, value, Double.NaN, Double.NaN, note))
         }

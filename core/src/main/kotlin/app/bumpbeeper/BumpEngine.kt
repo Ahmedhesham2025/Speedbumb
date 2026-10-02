@@ -1,6 +1,7 @@
 package app.bumpbeeper
 
 import java.util.Locale
+import java.util.UUID
 import kotlin.math.abs
 import kotlin.math.acos
 import kotlin.math.ln
@@ -74,6 +75,15 @@ class EngineConfig {
 
     var maxFixAgeMs = 3000L
     var maxAccuracyM = 30.0
+
+    /** Shared map: ask the [SpotSource] again after this much driving... */
+    var remoteRefreshMs = 30_000L
+    /** ...or after moving this far since the last time. */
+    var remoteRefreshMoveM = 300.0
+    /** How far around the car to ask for shared-map spots. */
+    var remoteRadiusM = 1500.0
+    /** A spot of your own this close (same direction) replaces the shared one: no double warning, and your mute wins. */
+    var remoteDedupRadiusM = 15.0
 }
 
 /**
@@ -112,6 +122,16 @@ class JoltShape(
  *  2. put new ones on the map, or add a hit to a spot it already knows,
  *  3. while you drive, watch the known spots ahead of you and beep before you reach one,
  *  4. count every pass (felt or not), so spots that are rarely felt get muted.
+ *
+ * Shared map (both optional; null = behaves exactly as without them):
+ *  - [spotSource]: confirmed spots from other phones warn like your own (same lead time, direction, quiet and
+ *    harsh-pothole rules), logged as `beep` with a note starting with `remote`. They are never stored and never
+ *    count passes. A spot of your own within [EngineConfig.remoteDedupRadiusM] and the same direction replaces
+ *    its shared twin, so it warns once, and muting your spot silences the shared one too.
+ *    In [EngineListener.onBeep] a shared spot arrives as a stand-in [Bump] with a negative id, see [remoteSpotId].
+ *  - [observationSink]: gets a `jolt` for every new spot, a `known_hit` for every hit on a known spot and a
+ *    `pass_clear` for every pass that felt nothing at an informative speed (never for crawled-over passes).
+ *    No privacy filtering happens here: the app drops the 300 m around trip start and end before upload.
  */
 class BumpEngine(
     val cfg: EngineConfig,
@@ -119,6 +139,8 @@ class BumpEngine(
     private val listener: EngineListener,
     private val wallClock: () -> Long,
     val tripId: Long = 0L,
+    private val spotSource: SpotSource? = null,
+    private val observationSink: ObservationSink? = null,
 ) {
     val bumps: MutableList<Bump> = store.loadBumps().toMutableList()
     val trip = TripStats()
@@ -228,6 +250,14 @@ class BumpEngine(
     /** The bump that beeped most recently (for "Mute last beep"), or -1. */
     var lastBeepedId = -1L
         private set
+
+    // ---------- shared map ----------
+    /** Every shared spot near the car (stand-in bumps with negative ids), and the ones not replaced by a spot of your own. */
+    private var remoteAll: List<Bump> = emptyList()
+    private var remoteActive: List<Bump> = emptyList()
+    private var remoteAskedMs = Long.MIN_VALUE / 4
+    private var remoteAskedLat = Double.NaN
+    private var remoteAskedLon = Double.NaN
 
     private val approaches = HashMap<Long, Approach>()
     private val recentMissMs = HashMap<Long, Long>()
@@ -472,6 +502,11 @@ class BumpEngine(
             }
         }
         val now = wallClock()
+        // A shared spot we are driving towards was felt: its pass must not report "pass_clear".
+        for (r in remoteActive) {
+            val ra = approaches[r.id] ?: continue
+            if (Geo.distance(lat, lon, r.lat, r.lon) <= cfg.matchRadiusM && Geo.angleDiff(heading, r.heading) <= cfg.headingTolDeg) ra.hit = true
+        }
 
         if (best == null) {
             // First time here → record it. No beep: we are already on top of it.
@@ -489,6 +524,8 @@ class BumpEngine(
             trip.newBumps++
             trip.hits++
             log("new_bump", b.id, lat, lon, speedKmh, peak, slowdownKmh, 0.0, "${b.kind.name.lowercase()} ${shape.describe()}")
+            observe("jolt", lat, lon, speedKmh, peak, shape.score, shape.side.toDouble(), now)
+            if (remoteAll.isNotEmpty()) dedupRemote()   // the new spot of your own replaces its shared twin from now on
             listener.onNewBump(b)
             return
         }
@@ -535,6 +572,7 @@ class BumpEngine(
             "hit", b.id, lat, lon, speedKmh, peak, slowdownKmh, bestD,
             "hits ${b.hits}/${b.passes} now=${b.kind.name.lowercase()} ${shape.describe()}",
         )
+        observe("known_hit", lat, lon, speedKmh, peak, shape.score, shape.side.toDouble(), now)
         listener.onKnownBumpHit(b)
     }
 
@@ -589,74 +627,133 @@ class BumpEngine(
         if (!brg.isNaN() && speed >= 1.5) heading = brg
         val joltSinceFix = maxVertSinceFix
         maxVertSinceFix = 0.0
+        if (spotSource != null && f.accuracyM <= cfg.maxAccuracyM) maybeAskRemote(f)
         if (f.accuracyM > cfg.maxAccuracyM || heading.isNaN()) return
         updateApproaches(f, joltSinceFix)
+    }
+
+    // =====================================================================
+    // 3b. Shared map: spots from other phones
+    // =====================================================================
+
+    /** Ask the [SpotSource] at the first good fix, then every [EngineConfig.remoteRefreshMs] of driving or after moving far. */
+    private fun maybeAskRemote(f: Fix) {
+        val first = remoteAskedLat.isNaN()
+        val due = f.speedMps >= 1.5 && f.timeMs - remoteAskedMs >= cfg.remoteRefreshMs
+        if (!first && !due && Geo.distance(f.lat, f.lon, remoteAskedLat, remoteAskedLon) < cfg.remoteRefreshMoveM) return
+        remoteAskedMs = f.timeMs
+        remoteAskedLat = f.lat
+        remoteAskedLon = f.lon
+        val spots = try {
+            spotSource!!.spotsNear(f.lat, f.lon, cfg.remoteRadiusM)
+        } catch (e: Exception) {
+            return   // a broken cache must not stop the engine; keep what we had
+        }
+        remoteAll = spots.filter { it.id >= 0 }.map { r ->
+            Bump(
+                -2L - r.id, r.lat, r.lon, r.heading, hits = 0, passes = 0, misses = 0, nPos = 0, firstSeen = 0, lastSeen = 0,
+                kindScore = when (r.kind) { BumpKind.POTHOLE -> 1.0; BumpKind.BUMP -> -1.0; BumpKind.UNSURE -> 0.0 },
+                kindVotes = if (r.kind == BumpKind.UNSURE) 0 else 1,
+                sideScore = when (r.side) { Side.RIGHT -> 1.0; Side.LEFT -> -1.0; Side.UNKNOWN -> 0.0 },
+                sideVotes = if (r.side == Side.UNKNOWN) 0 else 1,
+                peakAvg = r.severity,
+            )
+        }
+        dedupRemote()
+    }
+
+    /** Drop shared spots that have a spot of your own within [EngineConfig.remoteDedupRadiusM] going the same way. */
+    private fun dedupRemote() {
+        remoteActive = remoteAll.filter { r ->
+            bumps.none { b ->
+                abs(b.lat - r.lat) <= 0.0005 && abs(b.lon - r.lon) <= 0.0006 &&   // quick ~55 m box
+                    Geo.distance(b.lat, b.lon, r.lat, r.lon) <= cfg.remoteDedupRadiusM &&
+                    Geo.angleDiff(b.heading, r.heading) <= cfg.headingTolDeg
+            }
+        }
+        val keep = remoteActive.mapTo(HashSet()) { it.id }
+        approaches.keys.removeAll { it <= -2L && it !in keep }
+    }
+
+    private fun observe(kind: String, lat: Double, lon: Double, speedKmh: Double, peak: Double, kindScore: Double, sideScore: Double, now: Long) {
+        val sink = observationSink ?: return
+        try {
+            sink.record(Observation(UUID.randomUUID().toString(), kind, lat, lon, heading, speedKmh, peak, kindScore, sideScore, now))
+        } catch (e: Exception) {
+            // A full or broken outbox must not stop detection.
+        }
     }
 
     private fun updateApproaches(f: Fix, joltSinceFix: Double) {
         val moving = f.speedMps >= 1.5
         val alertDist = (f.speedMps * cfg.leadSeconds).coerceIn(cfg.minAlertDistM, cfg.maxAlertDistM)
+        for (b in bumps) watch(b, false, f, joltSinceFix, moving, alertDist)
+        for (b in remoteActive) watch(b, true, f, joltSinceFix, moving, alertDist)
+    }
 
-        for (b in bumps) {
-            var a = approaches[b.id]
-            if (abs(b.lat - f.lat) > 0.006 || abs(b.lon - f.lon) > 0.007) {   // more than ~600 m away
-                if (a != null) approaches.remove(b.id)
-                continue
-            }
-            val d = Geo.distance(f.lat, f.lon, b.lat, b.lon)
-            val aheadDiff = Geo.angleDiff(heading, Geo.bearing(f.lat, f.lon, b.lat, b.lon))
-            val dirDiff = Geo.angleDiff(heading, b.heading)
+    /** One spot (your own, or a shared one if [remote]) on this fix: start or stop watching it, count the pass, beep. */
+    private fun watch(b: Bump, remote: Boolean, f: Fix, joltSinceFix: Double, moving: Boolean, alertDist: Double) {
+        var a = approaches[b.id]
+        if (abs(b.lat - f.lat) > 0.006 || abs(b.lon - f.lon) > 0.007) {   // more than ~600 m away
+            if (a != null) approaches.remove(b.id)
+            return
+        }
+        val d = Geo.distance(f.lat, f.lon, b.lat, b.lon)
+        val aheadDiff = Geo.angleDiff(heading, Geo.bearing(f.lat, f.lon, b.lat, b.lon))
+        val dirDiff = Geo.angleDiff(heading, b.heading)
 
-            if (a == null) {
-                // Start watching: same direction, ahead of us, within range.
-                if (!moving || dirDiff > cfg.headingTolDeg || d > cfg.approachRadiusM || d < 8.0 || aheadDiff > 60.0) continue
-                a = Approach(f.timeMs, d)
-                approaches[b.id] = a
-            }
-            a.minDist = min(a.minDist, d)
-            if (d <= 30.0) a.minSpeedNearMps = min(a.minSpeedNearMps, f.speedMps)
-            if (d <= 40.0) a.maxJoltNear = max(a.maxJoltNear, joltSinceFix)
+        if (a == null) {
+            // Start watching: same direction, ahead of us, within range.
+            if (!moving || dirDiff > cfg.headingTolDeg || d > cfg.approachRadiusM || d < 8.0 || aheadDiff > 60.0) return
+            a = Approach(f.timeMs, d)
+            approaches[b.id] = a
+        }
+        a.minDist = min(a.minDist, d)
+        if (d <= 30.0) a.minSpeedNearMps = min(a.minSpeedNearMps, f.speedMps)
+        if (d <= 40.0) a.maxJoltNear = max(a.maxJoltNear, joltSinceFix)
 
-            // Drove over it (came close, now moving away or it is behind us) → count the pass.
-            val passed = a.minDist <= cfg.passRadiusM && (d >= a.minDist + 25.0 || (d > 15.0 && aheadDiff > 110.0))
-            if (passed) {
-                finishPass(b, a, f)
-                approaches.remove(b.id)
-                continue
-            }
-            // Turned off before reaching it.
-            val gaveUp = d > cfg.approachRadiusM + 150.0 ||
-                f.timeMs - a.startMs > 10 * 60_000L ||
-                (moving && dirDiff > 70.0 && d > 40.0)
-            if (gaveUp) {
-                approaches.remove(b.id)
-                continue
-            }
+        // Drove over it (came close, now moving away or it is behind us) → count the pass.
+        val passed = a.minDist <= cfg.passRadiusM && (d >= a.minDist + 25.0 || (d > 15.0 && aheadDiff > 110.0))
+        if (passed) {
+            if (remote) finishRemotePass(b, a, f) else finishPass(b, a, f)
+            approaches.remove(b.id)
+            return
+        }
+        // Turned off before reaching it.
+        val gaveUp = d > cfg.approachRadiusM + 150.0 ||
+            f.timeMs - a.startMs > 10 * 60_000L ||
+            (moving && dirDiff > 70.0 && d > 40.0)
+        if (gaveUp) {
+            approaches.remove(b.id)
+            return
+        }
 
-            // Beep: close enough for our speed, straight ahead, on our side of the road, not muted.
-            val crossTrack = d * sin(Math.toRadians(aheadDiff))
-            // Speed bumps always warn; potholes only when harsh (smaller ones are counted, but stay silent).
-            val wanted = !b.isMuted(cfg) && (b.kind != BumpKind.POTHOLE || (cfg.warnPotholes && b.isHarsh(cfg)))
-            if (!a.beeped && moving && dirDiff <= cfg.headingTolDeg && d <= alertDist &&
-                aheadDiff <= 45.0 && crossTrack <= cfg.maxCrossTrackM && wanted
-            ) {
-                val speedKmh = f.speedMps * 3.6
-                if (speedKmh < cfg.quietBelowKmh) {
-                    // Already slow: you have seen it. Stay quiet, but keep checking in case you speed up again.
-                    if (!a.quietLogged) {
-                        a.quietLogged = true
-                        log("beep_quiet", b.id, f.lat, f.lon, speedKmh, Double.NaN, Double.NaN, d, "slower than ${cfg.quietBelowKmh.toInt()} km/h")
-                    }
-                    continue
+        // Beep: close enough for our speed, straight ahead, on our side of the road, not muted.
+        val crossTrack = d * sin(Math.toRadians(aheadDiff))
+        // Speed bumps always warn; potholes only when harsh (smaller ones are counted, but stay silent).
+        val wanted = !b.isMuted(cfg) && (b.kind != BumpKind.POTHOLE || (cfg.warnPotholes && b.isHarsh(cfg)))
+        if (!a.beeped && moving && dirDiff <= cfg.headingTolDeg && d <= alertDist &&
+            aheadDiff <= 45.0 && crossTrack <= cfg.maxCrossTrackM && wanted
+        ) {
+            val speedKmh = f.speedMps * 3.6
+            val logId = if (remote) remoteSpotId(b.id)!! else b.id   // shared spots are logged with their server id
+            if (speedKmh < cfg.quietBelowKmh) {
+                // Already slow: you have seen it. Stay quiet, but keep checking in case you speed up again.
+                if (!a.quietLogged) {
+                    a.quietLogged = true
+                    val why = "slower than ${cfg.quietBelowKmh.toInt()} km/h"
+                    log("beep_quiet", logId, f.lat, f.lon, speedKmh, Double.NaN, Double.NaN, d, if (remote) "remote, $why" else why)
                 }
-                a.beeped = true
-                if (f.timeMs - lastBeepMs >= cfg.minBeepGapMs) {
-                    lastBeepMs = f.timeMs
-                    lastBeepedId = b.id
-                    trip.beeps++
-                    log("beep", b.id, f.lat, f.lon, speedKmh, Double.NaN, Double.NaN, d, b.kind.name.lowercase())
-                    listener.onBeep(b, d, speedKmh)
-                }
+                return
+            }
+            a.beeped = true
+            if (f.timeMs - lastBeepMs >= cfg.minBeepGapMs) {
+                lastBeepMs = f.timeMs
+                lastBeepedId = b.id
+                trip.beeps++
+                val kind = b.kind.name.lowercase()
+                log("beep", logId, f.lat, f.lon, speedKmh, Double.NaN, Double.NaN, d, if (remote) "remote $kind" else kind)
+                listener.onBeep(b, d, speedKmh)
             }
         }
     }
@@ -680,10 +777,20 @@ class BumpEngine(
                     "miss", b.id, f.lat, f.lon, f.speedMps * 3.6, a.maxJoltNear, Double.NaN, a.minDist,
                     "hits ${b.hits}/${b.passes}, $nearNote",
                 )
+                observe("pass_clear", b.lat, b.lon, a.minSpeedNearMps * 3.6, a.maxJoltNear, 0.0, 0.0, wallClock())
             }
             store.updateBump(b)
         }
         listener.onPassed(b, a.hit)
+    }
+
+    /**
+     * Passed a shared spot. Nothing is counted locally, but a clean pass at an informative speed tells the
+     * shared map the spot may be gone.
+     */
+    private fun finishRemotePass(b: Bump, a: Approach, f: Fix) {
+        if (a.hit || a.minSpeedNearMps * 3.6 < cfg.minInformativeKmh) return
+        observe("pass_clear", b.lat, b.lon, a.minSpeedNearMps * 3.6, a.maxJoltNear, 0.0, 0.0, wallClock())
     }
 
     /** "Mute last beep": silence this bump for good (it stays on the map and in the export). */
@@ -705,6 +812,12 @@ class BumpEngine(
     }
 
     companion object {
+        /**
+         * The shared-map server id behind a stand-in [Bump] handed to [EngineListener.onBeep], or null for a spot
+         * of your own. Shared spots are not in [bumps], so [muteBump] can't mute them (it returns null).
+         */
+        fun remoteSpotId(bumpId: Long): Long? = if (bumpId <= -2L) -2L - bumpId else null
+
         /** Sample buffer size: ≥ 2.5 s even if the phone delivers 200 samples per second. */
         private const val BUF = 512
     }
