@@ -378,7 +378,9 @@ class DrivePage(private val a: MainActivity) : Page {
 
     /** The live speed-limit sign and the speed's colour (orange over the limit, red over it by the chosen margin). */
     private fun showSign(rec: Boolean, gpsOk: Boolean) {
-        val show = LiveLimitText.showSign(rec, Prefs.liveLimits(a), Prefs.liveLimitsConsentVersion(a))
+        // With the shared map unanswered nothing is looked up, so a sign stuck at "– –" would only mislead.
+        val on = Prefs.liveLimits(a) && Prefs.syncChoice(a) != Prefs.SYNC_UNSET
+        val show = LiveLimitText.showSign(rec, on, Prefs.liveLimitsConsentVersion(a))
         signBox.visibility = if (show) View.VISIBLE else View.GONE
         speed.setTextColor(if (show && gpsOk) LiveLimitText.speedColor(LiveState.overLimit) else Ui.TEXT)
         if (!show) return

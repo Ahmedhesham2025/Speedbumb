@@ -42,7 +42,8 @@ is closed or not in use**. Before Android asks for location, the app shows what 
   answer *Yes, I drove*, the trip's bump points, its speed-limit route and its training samples **stay on the phone**.
   *No* deletes them, together with the trip and the spots only it found. With no answer within **24 hours** they are
   never sent, and they are deleted at the next sync or app start after that (the trip itself stays on the phone). A trip during which your car's Bluetooth connected counts as
-  confirmed.
+  confirmed. **Exception:** with *Live speed limit & warning* on, its lookups are sent during the trip, before you
+  answer; nothing of them is kept, so *No* has nothing to delete (and cannot recall lookups already made).
 - **Auto-stop:** a recording stops after the car has been parked for the minutes you choose (default 5; *never* is
   possible), only after real driving and never while the car's Bluetooth is connected. With a parked time set, it also
   stops 1 minute after Google (play edition) sees you walking, or after 15 minutes without any GPS fix. Whatever the
@@ -89,14 +90,18 @@ Only after you agree to the notice, and only while the shared map is on.
 ### 3b. Live speed limit & warning (off by default; Settings → Driving score → Live speed limit & warning)
 A separate switch from *Use real speed limits*. Only after you agree to its notice (consent version 1), and only while
 the shared map is on.
-- **What:** while you drive with it on, about **every kilometre** the app sends your **last few GPS points (about the
-  last 300 m)**, with your anonymous ID so our server can enforce the daily limit. This is **precise location**.
-  Nothing is sent in the **first 300 m** of a trip. The **end of a trip cannot be protected**: the app does not know
-  where you will stop, so the last lookup can be close to where you park. This also works on trips that started by
-  themselves (*Start recording when I drive*). At most **60 lookups a day**, shared with the after-trip lookup.
-- **Where:** to our server, which forwards only the positions to **TomTom**, the same way as real speed limits above:
-  TomTom does not get your anonymous ID or your internet (IP) address (it only sees our server). TomTom's privacy
-  notice: <https://www.tomtom.com/privacy/>.
+- **What:** while you drive with it on, the app sends your **last few GPS points (about the last 300 m)**, with your
+  anonymous ID so our server can enforce the daily limit. This is **precise location**. **How often:** about **every
+  kilometre**, and more often after you turn onto another road or when you drive slowly (at most every 30 seconds;
+  about every 2 minutes when slow); **never below 10 km/h**. Nothing is sent in the **first 300 m** of a trip or
+  **within 300 m of where the trip started**. The **end of a trip cannot be protected**: the app does not know where
+  you will stop, so the last lookup can be close to where you park. This also works on trips that started by
+  themselves (*Start recording when I drive*), including before you answer "Was this a drive?" (see above).
+  **At most 60 lookups a day, shared with the after-trip lookup**; live lookups stop for the day when 4 are left, so
+  the after-trip lookup still works.
+- **Where:** to our server, which forwards only the positions to **TomTom**. TomTom does not get your anonymous ID or
+  your internet (IP) address (it only sees our server), and **the times it gets are shifted to the year 2000**, so it
+  does not learn when you drove. TomTom's privacy notice: <https://www.tomtom.com/privacy/>.
 - **Why:** to show the speed limit of the road you are on next to your speed (with "© TomTom"), and to warn you: when
   you are over it by your chosen margin (+5, +10 or +20 km/h) for 3 seconds, you hear a tone and then the limit spoken.
 - **How long:** our server keeps nothing from the lookup except the count of lookups per anonymous ID per day, deleted
@@ -149,7 +154,7 @@ Supabase sees the internet address a request comes from; its own sign-in records
 | Route waiting for a lookup (on the phone) | Until looked up; never sent after about 48 hours |
 | Training samples and trip summaries (server) | 12 months, or until you turn *Help improve detection* off or delete your shared data |
 | Training samples not sent yet (on the phone) | 7 days |
-| Data of a trip waiting for "Was this a drive?" (on the phone) | Until you answer; never sent after 24 hours, deleted at the next sync or app start |
+| Data of a trip waiting for "Was this a drive?" (on the phone) | Until you answer; never sent after 24 hours, deleted at the next sync or app start. Exception: live speed-limit lookups are sent during the trip (nothing of them is kept) |
 | Daily upload counters for training samples (counts per device, no content) | 2 days |
 
 ## Your choices
@@ -160,7 +165,7 @@ Supabase sees the internet address a request comes from; its own sign-in records
   bump and pothole reports it sent, its links to spots (contributions), its crash reports and its training samples. Spots already merged into
   the shared map stay, with nothing linking them to this phone any more. What stays: the anonymous sign-in itself
   (with the sign-in service's own records) and the speed-limit day counts until they expire after 30 days. On the
-  phone it clears the downloaded warnings, turns the shared map, real speed limits **and** *Help improve detection* off
+  phone it clears the downloaded warnings, turns the shared map, real speed limits, the *live speed limit* **and** *Help improve detection* off
   (so you are asked again before any new lookup or upload), and keeps your own bump map and trips.
 - **Clear the map** (Settings → Your data): deletes the bumps, potholes, event log, trips and scores on the phone, and
   routes waiting for a lookup. It does not delete settings or debug recordings (those have their own *Delete
@@ -192,10 +197,12 @@ Notes for the Play Store *Data safety* form and the F-Droid listing (store-docs 
   - *Precise location* used for auto-detect is processed **on the device only** and is not collected; it leaves the
     phone only through the opt-in features above.
   - Purposes: app functionality (crash logs: also analytics of crashes). Never ads or marketing.
-  - *Location → Precise location*, with *Live speed limit & warning*: the last ~300 m of GPS points about every km while
-    driving (processed ephemerally; optional; also in the background on trips that started by themselves).
+  - *Location → Precise location*, with *Live speed limit & warning*: the last ~300 m of GPS points while driving
+    (about every km, more often on a road change or when slow), shared with TomTom; processed ephemerally; optional;
+    also in the background on trips that started by themselves.
 - **Shared:** *Location → Precise location* with a third party (**TomTom**), optional, processed ephemerally, only
-  with real speed limits or the live speed limit on.
+  with real speed limits or the live speed limit on (the live one also in the background, on trips that started by
+  themselves).
 - **Tracking:** not applicable (no advertising ID, no cross-app tracking, no analytics SDK).
 - **Deletion:** in the app (*Delete my shared data*, or turning *Help improve detection* off); see what stays above.
 - **Google Play, background location:** declare `ACCESS_BACKGROUND_LOCATION` for *Start recording when I drive* (core
@@ -244,6 +251,8 @@ Notes for the Play Store *Data safety* form and the F-Droid listing (store-docs 
   سقت»، نقط المطبّات وطريق حدود السرعة وعيّنات التدريب بتاعة الرحلة **بتفضل على الموبايل**. «لأ» بيمسحهم مع الرحلة
   والأماكن اللي هي بس لقتها. ولو ما ردّتش خلال **24 ساعة** عمرهم ما بيتبعتوا، وبيتمسحوا أول مزامنة أو أول ما التطبيق
   يشتغل بعدها (والرحلة نفسها بتفضل على الموبايل). الرحلة اللي بلوتوث العربية اتوصّل فيها بتتحسب متأكّدة.
+  **استثناء:** لو «حد السرعة المباشر والتنبيه» شغّال، عمليات البحث بتاعته بتتبعت أثناء الرحلة، قبل ما ترد؛ مفيش حاجة
+  منها بتتحفظ، فـ«لأ» مفيش حاجة يمسحها (ومش ممكن يرجّع عمليات بحث اتعملت خلاص).
   المكان التقريبي (حوالي 1 كم) أول وآخر الرحلة بيتبعت عادي لو اخترت «استقبل بس» أو «شارك واستقبل».
 - **الإيقاف التلقائي:** التسجيل بيقف بعد ما العربية تركن عدد الدقايق اللي تختاره (5 من الأول، أو «أبدًا»)، بس بعد
   سواقة حقيقية، وعمره ما بيقف وبلوتوث العربية متوصّل. لو فيه وقت متحدد، بيقف كمان بعد دقيقة من ما جوجل يشوفك ماشي
@@ -272,13 +281,16 @@ TomTom: <https://www.tomtom.com/privacy/>. سيرفرنا مش بيحتفظ بح
 الطريق بيستنى على موبايلك لحد ما يتبحث عنه؛ بعد حوالي 48 ساعة عمره ما بيتبعت، وبيتمسح أول مرة التطبيق يشتغل بعدها.
 
 **حد السرعة المباشر والتنبيه (مقفول من الأول، منفصل عن حدود السرعة الحقيقية):** بعد ما توافق على الملاحظة بتاعته
-بس، وطول ما الخريطة المتشاركة شغّالة. وانت سايق، كل حوالي كيلومتر التطبيق بيبعت آخر كام نقطة GPS بتوعك (حوالي آخر
-300 متر؛ مكان دقيق) لسيرفرنا، والسيرفر بيبعت النقط بس لـ TomTom عشان يعرف حد السرعة بتاع الطريق. مفيش حاجة بتتبعت
-في أول 300 متر من الرحلة، بس آخر الرحلة مش ممكن نحميه، لأن التطبيق ميعرفش انت هتقف فين. TomTom مش بياخد المُعرّف
-المجهول ولا عنوان الإنترنت (IP) بتاعك. سيرفرنا مش بيحتفظ بحاجة غير عدد مرات البحث في اليوم، وبيتمسح بعد 30 يوم.
-الحد بيظهر جنب سرعتك (مع «© TomTom»)، ولو عدّيته بالهامش اللي اخترته (+5 أو +10 أو +20 كم/س) لمدة 3 ثواني هتسمع
-نغمة وبعدها الحد بصوت. على الموبايل الحد بيفضل في الذاكرة بس، 5 دقايق بالكتير، وعمره ما بيتحفظ. بيشتغل كمان في
-الرحلات اللي بدأت لوحدها. لحد 60 مرة بحث في اليوم. تقدر تقفله في أي وقت.
+بس، وطول ما الخريطة المتشاركة شغّالة. وانت سايق، التطبيق بيبعت آخر كام نقطة GPS بتوعك (حوالي آخر 300 متر؛ مكان
+دقيق) مع المُعرّف المجهول لسيرفرنا، والسيرفر بيبعت النقط بس لـ TomTom عشان يعرف حد السرعة بتاع الطريق. كل قد إيه:
+كل حوالي كيلومتر، وأكتر لو دخلت طريق تاني أو بتسوق بالراحة (كل 30 ثانية بالكتير؛ حوالي كل دقيقتين وانت بطيء)،
+وعمره ما بيبعت تحت 10 كم/س. مفيش حاجة بتتبعت في أول 300 متر من الرحلة ولا في حدود 300 متر من المكان اللي الرحلة
+بدأت منه، بس آخر الرحلة مش ممكن نحميه، لأن التطبيق ميعرفش انت هتقف فين. TomTom مش بياخد المُعرّف المجهول ولا عنوان
+الإنترنت (IP) بتاعك، والأوقات اللي بياخدها بتتغيّر لسنة 2000. سيرفرنا مش بيحتفظ بحاجة غير عدد مرات البحث في اليوم،
+وبيتمسح بعد 30 يوم. الحد بيظهر جنب سرعتك (مع «© TomTom»)، ولو عدّيته بالهامش اللي اخترته (+5 أو +10 أو +20 كم/س)
+لمدة 3 ثواني هتسمع نغمة وبعدها الحد بصوت. على الموبايل الحد بيفضل في الذاكرة بس، 5 دقايق بالكتير، وعمره ما بيتحفظ.
+بيشتغل كمان في الرحلات اللي بدأت لوحدها، حتى قبل ما ترد على «كنت إنت اللي سايق؟». لحد 60 مرة بحث في اليوم، مشتركة مع
+البحث اللي بعد الرحلة؛ البحث المباشر بيقف لما يفضل 4، عشان البحث اللي بعد الرحلة يفضل شغّال. تقدر تقفله في أي وقت.
 
 **ساعد في تحسين الكشف (مقفول من الأول، منفصل عن الخريطة المتشاركة):** بيظهر بس بعد ما تجاوب على سؤال الخريطة
 المتشاركة وبعد ما توافق على الملاحظة بتاعته.
@@ -301,14 +313,14 @@ TomTom: <https://www.tomtom.com/privacy/>. سيرفرنا مش بيحتفظ بح
 الخريطة وبتتمسح بعد حوالي يوم. سجل الموبايل، ومساهماته في الأماكن (عدد المرات، من غير أوقات)، وتقارير الأعطال بيفضلوا
 لحد ما تمسح بياناتك المتشاركة. عيّنات التدريب وملخّصات الرحلات: 12 شهر على السيرفر أو لحد ما تقفل «ساعد في تحسين
 الكشف» أو تمسح بياناتك المتشاركة؛ اللي لسه ما اتبعتش: 7 أيام على الموبايل. بيانات الرحلة المستنية «كنت إنت اللي
-سايق؟»: لحد ما ترد، وبعد 24 ساعة عمرها ما بتتبعت. عدّادات الرفع اليومية (أعداد بس): يومين.
+سايق؟»: لحد ما ترد، وبعد 24 ساعة عمرها ما بتتبعت (ما عدا بحث حد السرعة المباشر، اللي بيتبعت أثناء الرحلة ومش بيتحفظ). عدّادات الرفع اليومية (أعداد بس): يومين.
 
 **اختياراتك:**
 - تقدر تغيّر أو تلغي موافقتك في أي وقت من الإعدادات.
 - «امسح بياناتي المتشاركة» (الإعدادات ← الخريطة المتشاركة) بيمسح سجل الموبايل ده على السيرفر، ومعاه التقارير
   اللي بعتها، وربطه بالأماكن، وتقارير الأعطال، وعيّنات التدريب. الأماكن اللي اتدمجت بتفضل من غير أي حاجة تربطها بالموبايل ده. اللي
   بيفضل: تسجيل الدخول المجهول نفسه، وعدّاد البحث اليومي لحد ما يتمسح بعد 30 يوم. وبيقفل الخريطة المتشاركة وحدود
-  السرعة الحقيقية و«ساعد في تحسين الكشف»، فهتتسأل تاني قبل أي بحث أو رفع جديد.
+  السرعة الحقيقية وحد السرعة المباشر و«ساعد في تحسين الكشف»، فهتتسأل تاني قبل أي بحث أو رفع جديد.
 - «امسح الخريطة» (الإعدادات ← بياناتك) بيمسح المطبّات والحفر والرحلات والدرجات اللي على الموبايل والطرق المستنية،
   مش الإعدادات ولا التسجيلات.
 - عشان تمسح كل حاجة على الموبايل: إعدادات أندرويد ← التطبيقات ← Bump Beeper ← التخزين ← مسح التخزين، أو امسح
