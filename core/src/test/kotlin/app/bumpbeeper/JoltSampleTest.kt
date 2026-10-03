@@ -75,6 +75,9 @@ class JoltSampleTest {
         assertEquals(s2[0].window.preMs, s2[1].window.preMs)
         assertEquals(s2[0].window.accel.toList(), s2[1].window.accel.take(s2[0].window.accel.size))
         assertEquals(4 * 50 + 1, s2[1].window.accel.size)
+        // The label carries the speed and jolt of the hit it labels.
+        assertEquals(s2[0].speedKmh, s2[1].speedKmh, 1e-9)
+        assertEquals(s2[0].peak, s2[1].peak, 1e-9)
 
         val s3 = ArrayList<JoltSample>()
         drive(store, s3, 60, 8.33)
