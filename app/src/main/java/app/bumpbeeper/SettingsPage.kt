@@ -19,6 +19,7 @@ import app.bumpbeeper.sync.Sync
 import app.bumpbeeper.sync.TrainingConsent
 import app.bumpbeeper.ui.AutoDetectText
 import app.bumpbeeper.ui.LiveLimitText
+import app.bumpbeeper.ui.DriveMap
 import app.bumpbeeper.ui.SpeedLimitText
 import app.bumpbeeper.ui.SyncChoice
 import java.text.SimpleDateFormat
@@ -111,6 +112,7 @@ class SettingsPage(private val a: MainActivity) : Page {
                 sp.edit().putBoolean(Prefs.LOUD, it).apply()
             },
             Ui.toggle(a, a.getString(R.string.settings_click_new), null, Prefs.clickOnNew(a)) { sp.edit().putBoolean(Prefs.CLICK_ON_NEW, it).apply() },
+            Ui.toggle(a, a.getString(R.string.settings_drive_map), a.getString(R.string.settings_drive_map_hint), DriveMap.enabled(a)) { DriveMap.setEnabled(a, it) },
             Ui.row(a, Ui.button(a, a.getString(R.string.settings_test_beep)) { Beeper(a).beep(2) }, Ui.button(a, a.getString(R.string.settings_test_voice)) { testVoice() }),
         )
 

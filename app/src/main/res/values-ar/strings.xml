@@ -70,6 +70,8 @@
     <string name="settings_loud_title">صفّارات عالية</string>
     <string name="settings_loud_desc">بصوت المنبّه من سبيكر الموبايل، بدل صوت الميديا / صوت العربية.</string>
     <string name="settings_click_new">تكّة لما مطبّ جديد يتسجّل</string>
+    <string name="settings_drive_map">اعرض الخريطة وانت سايق</string>
+    <string name="settings_drive_map_hint">خريطة شوارع صغيرة في شاشة السواقة بتمشي مع العربية، وعليها الأماكن اللي قدامك. التحذيرات بتشتغل زي ما هي من غيرها. الخريطة بتنزل من OpenFreeMap، واللي بيعرف تقريبًا انت سايق فين.</string>
     <string name="settings_test_beep">جرّب الصفّارة</string>
     <string name="settings_test_voice">جرّب صوت الحفرة</string>
     <string name="settings_section_potholes">الحفر</string>

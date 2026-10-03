@@ -69,6 +69,8 @@
     <string name="settings_loud_title">Loud beeps</string>
     <string name="settings_loud_desc">Alarm volume through the phone speaker, instead of media volume / car audio.</string>
     <string name="settings_click_new">Tick when a new bump is recorded</string>
+    <string name="settings_drive_map">Show map while driving</string>
+    <string name="settings_drive_map_hint">A small street map on the Drive screen that follows the car, with the spots ahead. Warnings work the same without it. Map tiles come from OpenFreeMap, which sees roughly where you drive.</string>
     <string name="settings_test_beep">Test beep</string>
     <string name="settings_test_voice">Test pothole voice</string>
     <string name="settings_section_potholes">Potholes</string>

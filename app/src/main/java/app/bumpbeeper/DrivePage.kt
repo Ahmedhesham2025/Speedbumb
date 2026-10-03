@@ -4,17 +4,29 @@ import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.graphics.drawable.RippleDrawable
 import android.content.res.ColorStateList
+import android.location.Location
+import android.location.LocationListener
+import android.location.LocationManager
 import android.os.Build
+import android.os.Handler
+import android.os.Looper
 import android.os.SystemClock
 import android.util.TypedValue
 import android.view.Gravity
 import android.view.HapticFeedbackConstants
 import android.view.View
+import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
+import app.bumpbeeper.sync.CachedSpotSource
+import app.bumpbeeper.sync.SyncStore
+import app.bumpbeeper.ui.DriveMap
 import app.bumpbeeper.ui.LiveLimitText
+import app.bumpbeeper.ui.MapSpot
+import app.bumpbeeper.ui.SpotMarks
+import app.bumpbeeper.ui.StreetMap
 import app.bumpbeeper.ui.SpeedSignView
 import app.bumpbeeper.ui.SyncChoice
 import java.util.Locale
@@ -50,6 +62,13 @@ class DrivePage(private val a: MainActivity) : Page {
     private lateinit var labelCard: LinearLayout
     private lateinit var labelStatus: TextView
     private lateinit var labelLater: TextView
+    private lateinit var mapBox: FrameLayout
+    private var driveMap: StreetMap? = null
+    private var listening = false
+    private var spotsAt: Location? = null
+    private var bearing = Double.NaN
+    private val ui = Handler(Looper.getMainLooper())
+    private val onFix = LocationListener { follow(it) }
     private var wasRecording: Boolean? = null
     private var updateShown: String? = null
 
@@ -134,6 +153,9 @@ class DrivePage(private val a: MainActivity) : Page {
         }, 12)
         gps = Ui.text(a, 13f, Ui.DIM).apply { gravity = Gravity.CENTER }
         add(gps)
+        // Small street map that follows the car (Settings → Show map while driving). Built on first use.
+        mapBox = FrameLayout(a).apply { visibility = View.GONE }
+        add(mapBox, 10, dp(230))
         afterTrip = Ui.text(a, 15f, Ui.TEXT).apply {
             gravity = Gravity.CENTER
             setPadding(dp(12), dp(10), dp(12), dp(10))
@@ -323,6 +345,7 @@ class DrivePage(private val a: MainActivity) : Page {
             else if (rec) a.getString(R.string.drive_speed_unknown) else ""
         speed.visibility = if (rec) View.VISIBLE else View.GONE
         showSign(rec, gpsOk)
+        if (DriveMap.shown(rec, DriveMap.enabled(a))) startMap() else stopMap()
         gps.text = when {
             !rec -> if (a.autoStartOn()) a.getString(R.string.drive_gps_auto, Prefs.carName(a)) else a.getString(R.string.drive_gps_tap_start)
             gpsOk -> a.getString(R.string.drive_gps_accuracy, String.format(Locale.US, "%.0f", LiveState.accuracyM), detectionText())
@@ -388,6 +411,73 @@ class DrivePage(private val a: MainActivity) : Page {
         sign.value = t
         sign.contentDescription = if (t == LiveLimitText.UNKNOWN) a.getString(R.string.live_limit_sign_unknown)
             else a.getString(R.string.live_limit_sign_desc, t)
+    }
+
+    // ---------------------------------------------------------------- driving map
+
+    private fun startMap() {
+        val m = driveMap ?: StreetMap(a, interactive = false).also {
+            driveMap = it
+            mapBox.addView(it.view, FrameLayout.LayoutParams(-1, -1))
+        }
+        mapBox.visibility = View.VISIBLE
+        m.resume()
+        if (listening) return
+        // The recording service's own GPS fixes, passed on for free (no extra GPS use for the map).
+        val lm = a.getSystemService(android.content.Context.LOCATION_SERVICE) as LocationManager
+        listening = try {
+            lm.requestLocationUpdates(LocationManager.PASSIVE_PROVIDER, 1000L, 0f, onFix, Looper.getMainLooper())
+            true
+        } catch (e: SecurityException) { false } catch (e: IllegalArgumentException) { false }
+    }
+
+    /** Not shown, tab left, screen off or app in the background: no fixes, no drawing. */
+    private fun stopMap() {
+        if (listening) {
+            (a.getSystemService(android.content.Context.LOCATION_SERVICE) as LocationManager).removeUpdates(onFix)
+            listening = false
+        }
+        driveMap?.pause()
+        mapBox.visibility = View.GONE
+    }
+
+    /** Heading up, zoom by speed, fewer frames when stopped; spots reloaded after every kilometre. */
+    private fun follow(loc: Location) {
+        val m = driveMap ?: return
+        val kmh = if (loc.hasSpeed()) loc.speed * 3.6 else LiveState.speedKmh
+        if (DriveMap.headingUsable(kmh, loc.hasBearing())) bearing = loc.bearing.toDouble()
+        m.setMe(loc.latitude, loc.longitude, bearing)
+        m.setMaxFps(DriveMap.fpsFor(kmh))
+        m.moveTo(loc.latitude, loc.longitude, DriveMap.zoomFor(kmh), if (bearing.isNaN()) 0.0 else bearing, animateMs = 900)
+        val last = spotsAt
+        if (last == null || last.distanceTo(loc) > DriveMap.RELOAD_M) {
+            spotsAt = loc
+            loadSpots(loc.latitude, loc.longitude)
+        }
+    }
+
+    /** Your spots and the shared map's cached ones around the car (the local database only, never the network). */
+    private fun loadSpots(lat: Double, lon: Double) {
+        val cfg = Prefs.engineConfig(a)
+        Thread {
+            val db = BumpDb(a.applicationContext)
+            val spots: List<MapSpot> = try {
+                val mine = db.loadBumps().map { SpotMarks.fromLocal(it, cfg) }
+                val shared = runCatching {
+                    SyncStore(db).remoteSpotsInBox(lat, lon, DriveMap.SPOTS_RADIUS_M).mapNotNull { CachedSpotSource.toRemote(it) }
+                }.getOrDefault(emptyList()).map { SpotMarks.fromShared(it, cfg) }
+                SpotMarks.nearest(SpotMarks.merge(mine, shared), lat, lon, DriveMap.SPOTS_RADIUS_M)
+            } finally { db.close() }
+            ui.post { driveMap?.setSpots(spots) }
+        }.start()
+    }
+
+    override fun onHide() { stopMap() }
+
+    override fun release() {
+        stopMap()
+        driveMap?.destroy()
+        driveMap = null
     }
 
     private fun detectionText(): String = when {
