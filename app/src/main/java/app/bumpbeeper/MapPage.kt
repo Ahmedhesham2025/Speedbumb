@@ -2,8 +2,11 @@ package app.bumpbeeper
 
 import android.Manifest
 import android.app.AlertDialog
+import android.app.Dialog
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.graphics.Color
+import android.graphics.drawable.ColorDrawable
 import android.location.Location
 import android.location.LocationManager
 import android.net.Uri
@@ -11,26 +14,34 @@ import android.os.Handler
 import android.os.Looper
 import android.view.Gravity
 import android.view.View
+import android.view.ViewGroup
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
+import app.bumpbeeper.sync.CachedSpotSource
+import app.bumpbeeper.sync.SyncStore
+import app.bumpbeeper.ui.MapSpot
+import app.bumpbeeper.ui.SpotMarks
+import app.bumpbeeper.ui.StreetMap
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
-/** Your bumps and potholes: offline map, filters, nearest-first list, share and import. */
+/** Your bumps and potholes on a street map (plus the shared map's confirmed spots), filters, nearest-first list, share and import. */
 class MapPage(private val a: MainActivity) : Page {
     private fun dp(v: Int) = Ui.dp(a, v)
     private val ui = Handler(Looper.getMainLooper())
 
     private lateinit var tiles: List<TextView>
-    private lateinit var map: BumpMapView
+    private lateinit var map: StreetMap
     private lateinit var list: LinearLayout
     private lateinit var chips: List<TextView>
     private var cfg = EngineConfig()
     private var all: List<Bump> = emptyList()
-    private var filter = 0      // 0 all, 1 speed bumps, 2 potholes, 3 harsh potholes
+    private var spots: List<MapSpot> = emptyList()
+    private var filter = SpotMarks.ALL
     private var firstLoad = true
+    private var sheet: Dialog? = null
 
     override val view: View = build()
 
@@ -47,24 +58,27 @@ class MapPage(private val a: MainActivity) : Page {
         tiles = t.map { it.second }
         add(Ui.grid(a, t.map { it.first }, 4), 12)
 
-        // Filter chips.
-        val names = listOf(R.string.map_chip_all, R.string.map_chip_bumps, R.string.map_chip_potholes, R.string.map_chip_harsh).map { a.getString(it) }
+        // Filter chips: all, bumps, potholes, harsh, muted (SpotMarks order).
+        val names = listOf(R.string.map_chip_all, R.string.map_chip_bumps, R.string.map_chip_potholes, R.string.map_chip_harsh, R.string.map_chip_muted).map { a.getString(it) }
         chips = names.mapIndexed { i, n ->
-            Ui.text(a, 14f, Ui.TEXT, bold = true, value = n).apply {
+            Ui.text(a, 13f, Ui.TEXT, bold = true, value = n).apply {
                 gravity = Gravity.CENTER
-                setPadding(dp(8), dp(8), dp(8), dp(8))
+                setPadding(dp(4), dp(10), dp(4), dp(10))
+                maxLines = 1
                 isClickable = true
                 setOnClickListener { filter = i; show() }
             }
         }
-        add(Ui.row(a, *chips.toTypedArray(), gapDp = 6), 14)
+        add(Ui.row(a, *chips.toTypedArray(), gapDp = 4), 14)
 
-        map = BumpMapView(a).apply { onSelect = { showActions(it) } }
-        add(map, 10, dp(340))
+        // A big map: most of the screen height; the rest of the page scrolls under it.
+        map = StreetMap(a, interactive = true).apply { onSpot = { showSheet(it) } }
+        add(map.view, 10, (a.resources.displayMetrics.heightPixels * 0.55).toInt())
         add(Ui.row(a,
-            Ui.button(a, a.getString(R.string.map_zoom_out)) { map.radiusM *= 2 },
-            Ui.button(a, a.getString(R.string.map_zoom_in)) { map.radiusM /= 2 },
+            Ui.button(a, a.getString(R.string.map_zoom_out)) { map.zoomBy(-1.0) },
+            Ui.button(a, a.getString(R.string.map_zoom_in)) { map.zoomBy(1.0) },
             Ui.button(a, a.getString(R.string.map_me)) { centerOnMe() },
+            Ui.button(a, a.getString(R.string.map_north)) { map.northUp() },
         ), 8)
         add(Ui.text(a, 12f, Ui.DIM, value = a.getString(R.string.map_legend)), 6)
 
@@ -86,25 +100,52 @@ class MapPage(private val a: MainActivity) : Page {
     }
 
     override fun onShow() {
+        map.resume()
         cfg = Prefs.engineConfig(a)
+        val c = cfg
+        val center = map.camera() ?: lastLocation()?.let { doubleArrayOf(it.latitude, it.longitude) } ?: savedCamera()
         Thread {
             val db = BumpDb(a.applicationContext)
-            val loaded = try { db.loadBumps() } finally { db.close() }
-            ui.post { all = loaded; show() }
+            val (loaded, shared) = try {
+                val bumps = db.loadBumps()
+                // Confirmed shared spots from the local cache (never the network), around where you look or are.
+                val lat = center?.get(0) ?: bumps.firstOrNull()?.lat
+                val lon = center?.get(1) ?: bumps.firstOrNull()?.lon
+                val remote = if (lat == null || lon == null) emptyList()
+                    else runCatching { SyncStore(db).remoteSpotsInBox(lat, lon, SHARED_RADIUS_M).mapNotNull { CachedSpotSource.toRemote(it) } }
+                        .getOrDefault(emptyList())
+                bumps to remote
+            } finally { db.close() }
+            val merged = SpotMarks.merge(loaded.map { SpotMarks.fromLocal(it, c) }, shared.map { SpotMarks.fromShared(it, c) })
+            ui.post { all = loaded; spots = merged; show() }
         }.start()
     }
 
-    private fun matches(b: Bump) = when (filter) {
-        1 -> b.kind == BumpKind.BUMP || b.kind == BumpKind.UNSURE
-        2 -> b.kind == BumpKind.POTHOLE
-        3 -> b.isHarsh(cfg)
-        else -> true
+    override fun onHide() {
+        map.camera()?.let { saveCamera(it) }
+        map.pause()
     }
 
-    private fun describe(b: Bump): String = when {
-        b.kind != BumpKind.POTHOLE -> b.kind.label
-        else -> a.getString(if (b.isHarsh(cfg)) R.string.map_describe_harsh_pothole else R.string.map_describe_pothole) + (if (b.side != Side.UNKNOWN) ", ${b.side.label}" else "")
+    override fun release() {
+        sheet?.dismiss()
+        map.destroy()
     }
+
+    private fun describe(s: MapSpot): String {
+        val kind = a.getString(when {
+            s.kind == BumpKind.POTHOLE && s.harsh -> R.string.map_describe_harsh_pothole
+            s.kind == BumpKind.POTHOLE -> R.string.map_describe_pothole
+            s.kind == BumpKind.BUMP -> R.string.map_kind_bump
+            else -> R.string.map_kind_unsure
+        })
+        return if (s.kind == BumpKind.POTHOLE && s.side != Side.UNKNOWN) "$kind, ${sideName(s.side)}" else kind
+    }
+
+    private fun sideName(side: Side) = a.getString(when (side) {
+        Side.LEFT -> R.string.map_side_left
+        Side.RIGHT -> R.string.map_side_right
+        Side.UNKNOWN -> R.string.map_side_unknown
+    })
 
     private fun lastLocation(): Location? {
         if (a.checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED &&
@@ -126,32 +167,37 @@ class MapPage(private val a: MainActivity) : Page {
         tiles[2].text = all.count { it.isHarsh(cfg) }.toString()
         tiles[3].text = all.count { it.isMuted(cfg) }.toString()
 
-        val shown = all.filter { matches(it) }
+        val shown = spots.filter { SpotMarks.matches(it, filter) }
         val me = lastLocation()
-        map.meLat = me?.latitude ?: Double.NaN
-        map.meLon = me?.longitude ?: Double.NaN
-        if (firstLoad && all.isNotEmpty() || firstLoad && me != null) {
+        map.setMe(me?.latitude ?: Double.NaN, me?.longitude ?: Double.NaN)
+        map.setSpots(shown)
+        if (firstLoad) {
             firstLoad = false
-            if (me != null) { map.centerLat = me.latitude; map.centerLon = me.longitude }
-            else { map.centerLat = all.map { it.lat }.average(); map.centerLon = all.map { it.lon }.average() }
-            val near = all.map { Geo.distance(map.centerLat, map.centerLon, it.lat, it.lon) }.sorted()
-            map.radiusM = if (near.isEmpty()) 1000.0 else (near[minOf(4, near.size - 1)] * 1.3).coerceAtLeast(200.0)
+            // Where you are, else where you last looked, else around your spots.
+            val saved = savedCamera()
+            when {
+                me != null -> map.moveTo(me.latitude, me.longitude, StreetMap.DEFAULT_ZOOM, 0.0)
+                saved != null -> map.moveTo(saved[0], saved[1], saved[2], 0.0)
+                spots.isNotEmpty() -> map.moveTo(spots.map { it.lat }.average(), spots.map { it.lon }.average(), 13.0, 0.0)
+                else -> firstLoad = true
+            }
         }
-        map.bumps = shown
 
         list.removeAllViews()
         if (shown.isEmpty()) {
-            list.addView(Ui.text(a, 14f, Ui.DIM, value = a.getString(if (all.isEmpty()) R.string.map_nothing_yet else R.string.map_nothing_filter)))
+            list.addView(Ui.text(a, 14f, Ui.DIM, value = a.getString(if (spots.isEmpty()) R.string.map_nothing_yet else R.string.map_nothing_filter)))
             return
         }
-        val refLat = me?.latitude ?: map.centerLat
-        val refLon = me?.longitude ?: map.centerLon
-        val sorted = shown.sortedBy { Geo.distance(refLat, refLon, it.lat, it.lon) }
-        for (b in sorted.take(200)) {
-            val d = Geo.distance(refLat, refLon, b.lat, b.lon)
-            val dir = compass(Geo.bearing(refLat, refLon, b.lat, b.lon))
+        val ref = me?.let { doubleArrayOf(it.latitude, it.longitude) } ?: map.camera()
+            ?: doubleArrayOf(shown[0].lat, shown[0].lon)
+        val sorted = SpotMarks.nearest(shown, ref[0], ref[1])
+        for (s in sorted.take(200)) {
+            val d = Geo.distance(ref[0], ref[1], s.lat, s.lon)
+            val dir = compass(Geo.bearing(ref[0], ref[1], s.lat, s.lon))
             val dist = if (d >= 1000) a.getString(R.string.map_dist_km, String.format(Locale.US, "%.1f", d / 1000))
                 else a.getString(R.string.map_dist_m, String.format(Locale.US, "%.0f", d))
+            val detail = if (s.shared) a.getString(R.string.map_row_shared, dist, dir, s.devices)
+                else a.getString(R.string.map_row_felt, dist, dir, s.hits, s.hits + s.clears) + if (s.muted) a.getString(R.string.map_row_muted) else ""
             val row = LinearLayout(a).apply {
                 orientation = LinearLayout.HORIZONTAL
                 gravity = Gravity.CENTER_VERTICAL
@@ -159,16 +205,15 @@ class MapPage(private val a: MainActivity) : Page {
                 background = Ui.rounded(a, Ui.SURFACE, 14)
                 isClickable = true
                 setOnClickListener {
-                    map.centerLat = b.lat; map.centerLon = b.lon; map.selectedId = b.id
-                    map.radiusM = minOf(map.radiusM, 400.0)
-                    showActions(b)
+                    map.moveTo(s.lat, s.lon, maxOf(map.camera()?.get(2) ?: 0.0, 16.0), animateMs = 600)
+                    showSheet(s)
                 }
-                addView(View(a).apply { background = Ui.rounded(a, map.colorOf(b), 6) }, LinearLayout.LayoutParams(dp(12), dp(12)))
+                addView(View(a).apply { background = Ui.rounded(a, s.icon.color, 6) }, LinearLayout.LayoutParams(dp(12), dp(12)))
                 addView(LinearLayout(a).apply {
                     orientation = LinearLayout.VERTICAL
-                    setPadding(dp(12), 0, 0, 0)
-                    addView(Ui.text(a, 15f, Ui.TEXT, bold = true, value = describe(b).replaceFirstChar { it.uppercase() }))
-                    addView(Ui.text(a, 13f, Ui.DIM, value = a.getString(R.string.map_row_felt, dist, dir, b.hits, b.passes) + if (b.isMuted(cfg)) a.getString(R.string.map_row_muted) else ""))
+                    setPaddingRelative(dp(12), 0, 0, 0)
+                    addView(Ui.text(a, 15f, Ui.TEXT, bold = true, value = describe(s).replaceFirstChar { it.uppercase() }))
+                    addView(Ui.text(a, 13f, Ui.DIM, value = detail))
                 }, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
                 addView(Ui.text(a, 18f, Ui.DIM, value = "›"))
             }
@@ -182,45 +227,69 @@ class MapPage(private val a: MainActivity) : Page {
 
     private fun centerOnMe() {
         val me = lastLocation() ?: return a.toast(a.getString(R.string.map_location_unknown))
-        map.meLat = me.latitude; map.meLon = me.longitude
-        map.centerLat = me.latitude; map.centerLon = me.longitude
-        map.invalidate()
+        map.setMe(me.latitude, me.longitude)
+        map.moveTo(me.latitude, me.longitude, StreetMap.DEFAULT_ZOOM, animateMs = 600)
     }
+
+    private fun saveCamera(c: DoubleArray) {
+        Prefs.sp(a).edit().putString(KEY_CAMERA, String.format(Locale.US, "%.6f,%.6f,%.2f", c[0], c[1], c[2])).apply()
+    }
+
+    private fun savedCamera(): DoubleArray? =
+        Prefs.sp(a).getString(KEY_CAMERA, null)?.split(",")?.mapNotNull { it.toDoubleOrNull() }?.takeIf { it.size == 3 }?.toDoubleArray()
 
     // ---------------------------------------------------------------- one spot
 
-    private fun showActions(b: Bump) {
-        val date = SimpleDateFormat("d MMM yyyy", Locale.US).format(Date(b.firstSeen))
-        val info = a.getString(R.string.map_spot_info, b.hits, b.passes, String.format(Locale.US, "%.1f", b.peakAvg), date)
-        val actions = arrayOf(
-            a.getString(R.string.map_action_open_maps),
-            a.getString(if (b.userMuted) R.string.map_action_unmute else R.string.map_action_mute),
-            a.getString(R.string.map_action_is_bump),
-            a.getString(R.string.map_action_is_pothole),
-            a.getString(R.string.map_action_pothole_left),
-            a.getString(R.string.map_action_pothole_right),
-            a.getString(R.string.common_delete),
-        )
-        AlertDialog.Builder(a)
-            .setTitle("#${b.id} · ${describe(b)}\n$info")
-            .setItems(actions) { _, which ->
-                when (which) {
-                    0 -> openInMaps(b)
-                    1 -> edit(b) { it.userMuted = !it.userMuted }
-                    2 -> edit(b) { it.kindScore = -1.0; it.kindVotes = maxOf(it.kindVotes, 10) }
-                    3 -> edit(b) { it.kindScore = 1.0; it.kindVotes = maxOf(it.kindVotes, 10) }
-                    4 -> edit(b) { it.sideScore = -1.0; it.sideVotes = maxOf(it.sideVotes, 10) }
-                    5 -> edit(b) { it.sideScore = 1.0; it.sideVotes = maxOf(it.sideVotes, 10) }
-                    6 -> confirmDelete(b)
-                }
+    /** A sheet from the bottom: what the spot is, and what you can do with it (yours only: mute, correct, delete). */
+    private fun showSheet(s: MapSpot) {
+        sheet?.dismiss()
+        val b = all.firstOrNull { it.id == s.localId }
+        val d = Dialog(a)
+        val card = Ui.card(a, 20).apply { background = Ui.rounded(a, Ui.SURFACE, 22) }
+        val full = { top: Int -> LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { topMargin = dp(top) } }
+        fun line(text: String) = card.addView(Ui.text(a, 14f, Ui.DIM, value = text), full(4))
+        fun act(label: Int, style: Ui.Style = Ui.Style.SECONDARY, run: () -> Unit) =
+            card.addView(Ui.button(a, a.getString(label), style) { d.dismiss(); run() }, full(8))
+        fun pair(l: Int, r: Int, change: (Int) -> Unit) = card.addView(Ui.row(a,
+            Ui.button(a, a.getString(l)) { d.dismiss(); change(-1) },
+            Ui.button(a, a.getString(r)) { d.dismiss(); change(1) },
+        ), full(8))
+
+        card.addView(Ui.text(a, 19f, Ui.TEXT, bold = true, value = describe(s).replaceFirstChar { it.uppercase() }))
+        line(a.getString(R.string.map_sheet_side, sideName(s.side)))
+        line(a.getString(if (s.harsh) R.string.map_sheet_jolt_harsh else R.string.map_sheet_jolt, String.format(Locale.US, "%.1f", s.jolt)))
+        if (s.shared) {
+            line(a.getString(R.string.map_sheet_source_shared, s.devices))
+            line(a.getString(R.string.map_sheet_shared_note))
+        } else {
+            line(a.getString(R.string.map_sheet_hits, s.hits, s.clears))
+            b?.let { line(a.getString(R.string.map_sheet_first_seen, SimpleDateFormat("d MMM yyyy", Locale.US).format(Date(it.firstSeen)))) }
+            line(a.getString(R.string.map_sheet_source_mine) + if (s.muted) a.getString(R.string.map_row_muted) else "")
+        }
+        act(R.string.map_action_open_maps) { openInMaps(s) }
+        if (b != null) {
+            act(if (b.userMuted) R.string.map_action_unmute else R.string.map_action_mute, Ui.Style.PRIMARY) { edit(b) { it.userMuted = !it.userMuted } }
+            pair(R.string.map_action_is_bump, R.string.map_action_is_pothole) { v -> edit(b) { it.kindScore = v.toDouble(); it.kindVotes = maxOf(it.kindVotes, 10) } }
+            if (s.kind == BumpKind.POTHOLE) {
+                pair(R.string.map_action_pothole_left, R.string.map_action_pothole_right) { v -> edit(b) { it.sideScore = v.toDouble(); it.sideVotes = maxOf(it.sideVotes, 10) } }
             }
-            .setNegativeButton(R.string.common_close, null)
-            .show()
+            act(R.string.common_delete, Ui.Style.DANGER) { confirmDelete(b) }
+        }
+        act(R.string.common_close, Ui.Style.QUIET) {}
+        d.setContentView(ScrollView(a).apply { addView(card) })
+        d.window?.apply {
+            setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
+            setGravity(Gravity.BOTTOM)
+            setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+        }
+        d.setOnDismissListener { if (sheet === d) sheet = null }
+        sheet = d
+        d.show()
     }
 
-    private fun openInMaps(b: Bump) {
-        val label = Uri.encode(a.getString(R.string.map_maps_label, b.id, describe(b)))
-        val uri = Uri.parse(String.format(Locale.US, "geo:%.7f,%.7f?q=%.7f,%.7f(%s)", b.lat, b.lon, b.lat, b.lon, label))
+    private fun openInMaps(s: MapSpot) {
+        val label = Uri.encode(if (s.localId >= 0) a.getString(R.string.map_maps_label, s.localId, describe(s)) else describe(s))
+        val uri = Uri.parse(String.format(Locale.US, "geo:%.7f,%.7f?q=%.7f,%.7f(%s)", s.lat, s.lon, s.lat, s.lon, label))
         try { a.startActivity(Intent(Intent.ACTION_VIEW, uri)) } catch (e: Exception) { a.toast(a.getString(R.string.map_no_maps_app)) }
     }
 
@@ -259,6 +328,9 @@ class MapPage(private val a: MainActivity) : Page {
     }
 
     private companion object {
+        const val KEY_CAMERA = "ui_map_camera"
+        /** Shared spots shown around the map centre (the cache only holds spots near where you drove anyway). */
+        const val SHARED_RADIUS_M = 50_000.0
         val COMPASS = intArrayOf(
             R.string.map_compass_n, R.string.map_compass_ne, R.string.map_compass_e, R.string.map_compass_se,
             R.string.map_compass_s, R.string.map_compass_sw, R.string.map_compass_w, R.string.map_compass_nw,
