@@ -108,6 +108,22 @@ object Prefs {
     /** Collect and upload samples: consent on AND the network allowed (shared-map choice answered). */
     fun trainingActive(ctx: Context): Boolean = trainingConsent(ctx) && syncChoice(ctx) != SYNC_UNSET
     fun trainingConsentVersion(ctx: Context): Int = sp(ctx).getInt(TRAINING_CONSENT_VERSION, 0)
+    /** The server must still hear "off" (and delete what it holds) before anything else. */
+    const val TRAINING_WIPE_PENDING = "training_wipe_pending"
+    /** The server must still hear "on" (sent only after a pending wipe went through). */
+    const val TRAINING_ON_PENDING = "training_on_pending"
+    /** Why the last upload stopped ("" = fine), see [app.bumpbeeper.sync.TrainingConsent.Status.lastError]. */
+    const val TRAINING_NOTE = "training_note"
+    fun trainingWipePending(ctx: Context): Boolean = sp(ctx).getBoolean(TRAINING_WIPE_PENDING, false)
+    fun trainingOnPending(ctx: Context): Boolean = sp(ctx).getBoolean(TRAINING_ON_PENDING, false)
+    fun trainingNote(ctx: Context): String = sp(ctx).getString(TRAINING_NOTE, "") ?: ""
+    fun setTrainingWipePending(ctx: Context, v: Boolean) = sp(ctx).edit().putBoolean(TRAINING_WIPE_PENDING, v).commit()
+    fun setTrainingOnPending(ctx: Context, v: Boolean) = sp(ctx).edit().putBoolean(TRAINING_ON_PENDING, v).commit()
+    fun setTrainingNote(ctx: Context, v: String) = sp(ctx).edit().putString(TRAINING_NOTE, v).commit()
+    /** All training choice fields in one write. */
+    fun setTrainingState(ctx: Context, on: Boolean, version: Int, wipe: Boolean, sendOn: Boolean, note: String) =
+        sp(ctx).edit().putBoolean(TRAINING_CONSENT, on).putInt(TRAINING_CONSENT_VERSION, version)
+            .putBoolean(TRAINING_WIPE_PENDING, wipe).putBoolean(TRAINING_ON_PENDING, sendOn).putString(TRAINING_NOTE, note).commit()
 
     fun autoStart(ctx: Context): Boolean = sp(ctx).getBoolean(AUTO_START, false)
     fun carAddress(ctx: Context): String? = sp(ctx).getString(CAR_ADDRESS, null)

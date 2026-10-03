@@ -76,6 +76,8 @@ enum class Outcome {
     NOT_ALLOWED,
     /** 54000: daily cap reached. Try again tomorrow. */
     LIMIT,
+    /** 53100: the server's storage for this data is full. Back off for days. */
+    FULL,
     /** 401 / expired token: refresh the session (handled inside [SupabaseApi]). */
     AUTH,
     /** Offline, timeout, 5xx or anything unexpected: try again later. */
@@ -92,6 +94,7 @@ object ApiErrors {
             code == "22023" -> Outcome.DROP
             code == "42501" -> Outcome.NOT_ALLOWED
             code == "54000" -> Outcome.LIMIT
+            code == "53100" -> Outcome.FULL
             httpCode == 401 || code.startsWith("PGRST30") -> Outcome.AUTH   // PGRST301/303: bad or expired JWT
             else -> Outcome.RETRY
         }
@@ -102,6 +105,7 @@ object ApiErrors {
         Outcome.DROP -> "server rejected some data"
         Outcome.NOT_ALLOWED -> "sharing is off on the server"
         Outcome.LIMIT -> "daily upload limit reached"
+        Outcome.FULL -> "server storage full, trying again in a few days"
         Outcome.AUTH -> "sign-in failed"
         Outcome.RETRY -> "offline or server busy"
     }
