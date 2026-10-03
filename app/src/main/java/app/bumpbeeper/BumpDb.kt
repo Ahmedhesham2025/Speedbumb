@@ -6,6 +6,7 @@ import android.database.Cursor
 import android.database.sqlite.SQLiteDatabase
 import android.database.sqlite.SQLiteOpenHelper
 import app.bumpbeeper.sync.SyncStore
+import app.bumpbeeper.sync.TrainingStore
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -17,9 +18,10 @@ import kotlin.math.roundToInt
  *  bumps  – the learned map
  *  events – everything that happened (new bump, hit, miss, beep, rejected jolt) → for tuning
  *  trips  – one row per Start…Stop
- * plus the shared-map sync tables (outbox, remote_spots, sync_state), see [SyncStore].
+ * plus the shared-map sync tables (outbox, remote_spots, sync_state), see [SyncStore], and the training outbox
+ * ("Help improve detection"), see [TrainingStore].
  */
-class BumpDb(ctx: Context) : SQLiteOpenHelper(ctx, "bumps.db", null, 6), BumpStore {
+class BumpDb(ctx: Context) : SQLiteOpenHelper(ctx, "bumps.db", null, 7), BumpStore {
 
     init {
         setWriteAheadLoggingEnabled(true)
@@ -52,6 +54,7 @@ class BumpDb(ctx: Context) : SQLiteOpenHelper(ctx, "bumps.db", null, 6), BumpSto
         addTripColumns(db)
         SyncStore.createTables(db)
         addSpeedLimitColumns(db)
+        TrainingStore.createTables(db)
     }
 
     /** Version 6: speeding against road limits ([DrivingStats.withSpeedLimits]); -1 = not looked up. */
@@ -89,6 +92,8 @@ class BumpDb(ctx: Context) : SQLiteOpenHelper(ctx, "bumps.db", null, 6), BumpSto
         if (oldVersion < 5) SyncStore.createTables(db)
         // Version 6: road speed limit columns; existing trips read as "not looked up".
         if (oldVersion < 6) addSpeedLimitColumns(db)
+        // Version 7: training outbox ("Help improve detection"). New table only.
+        if (oldVersion < 7) TrainingStore.createTables(db)
     }
 
     // ---------------- BumpStore (used by the engine) ----------------

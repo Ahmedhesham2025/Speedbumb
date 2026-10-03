@@ -98,6 +98,17 @@ object Prefs {
     const val SPEED_LIMITS = "speed_limits"
     fun speedLimits(ctx: Context): Boolean = sp(ctx).getBoolean(SPEED_LIMITS, false)
 
+    /**
+     * "Help improve detection": upload compact learning samples. Separate opt-in, off by default; only used while
+     * the network is allowed. Screens switch it with [app.bumpbeeper.sync.TrainingConsent.setEnabled].
+     */
+    const val TRAINING_CONSENT = "training_consent"
+    const val TRAINING_CONSENT_VERSION = "training_consent_version"
+    fun trainingConsent(ctx: Context): Boolean = sp(ctx).getBoolean(TRAINING_CONSENT, false)
+    /** Collect and upload samples: consent on AND the network allowed (shared-map choice answered). */
+    fun trainingActive(ctx: Context): Boolean = trainingConsent(ctx) && syncChoice(ctx) != SYNC_UNSET
+    fun trainingConsentVersion(ctx: Context): Int = sp(ctx).getInt(TRAINING_CONSENT_VERSION, 0)
+
     fun autoStart(ctx: Context): Boolean = sp(ctx).getBoolean(AUTO_START, false)
     fun carAddress(ctx: Context): String? = sp(ctx).getString(CAR_ADDRESS, null)
     fun carName(ctx: Context): String? = sp(ctx).getString(CAR_NAME, null)

@@ -89,7 +89,7 @@ class SpeedLimitDbTest {
 
         val db = db()
         val sql = db.writableDatabase
-        assertEquals(6, sql.version)
+        assertTrue(sql.version >= 6)
         assertTrue(columns(sql).containsAll(limitColumns))
         val old = db.trips().single()
         assertEquals(88, old.score)
