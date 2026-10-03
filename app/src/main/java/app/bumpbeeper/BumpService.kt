@@ -31,6 +31,8 @@ import app.bumpbeeper.auto.AutoDetect
 import app.bumpbeeper.auto.AutoStop
 import app.bumpbeeper.auto.DriveWatcher
 import app.bumpbeeper.auto.PowerPolicy
+import app.bumpbeeper.auto.TripCheck
+import app.bumpbeeper.auto.TripHold
 import app.bumpbeeper.crash.CrashLog
 import app.bumpbeeper.sync.CachedSpotSource
 import app.bumpbeeper.sync.OutboxSink
@@ -219,6 +221,8 @@ class BumpService : Service(), SensorEventListener, LocationListener, EngineList
     private var tracingStore: TracingStore? = null      // only used on the engine thread
     private var lastBatteryMs = -1L                     // only used on the engine thread
     private var sink: OutboxSink? = null                // only used on the engine thread; null = not sharing
+    /** Started by a guess (motion / Google) and not confirmed by the car's Bluetooth yet: ask at the end (#49). */
+    @Volatile private var unconfirmed = false
     private var route: TripRoute? = null                // only used on the engine thread; null = no speed-limit lookup
     private var pulledThisTrip = false                  // only used on the engine thread
     private var training: TrainingSink? = null          // only used on the engine thread; null = not helping improve detection
@@ -468,7 +472,12 @@ class BumpService : Service(), SensorEventListener, LocationListener, EngineList
         if (running) {
             if (source == SOURCE_CAR) {
                 LiveState.lastEvent = "Car reconnected: still recording"
-                handler?.post { autoStop?.carConnected = true }
+                handler?.post {
+                    autoStop?.carConnected = true
+                    // The car's Bluetooth confirms it was a drive: nothing to ask, nothing to hold.
+                    unconfirmed = false
+                    sink?.held = false
+                }
             }
             if (source == SOURCE_VEHICLE) handler?.post { autoStop?.backInVehicle() }
             return
@@ -534,7 +543,8 @@ class BumpService : Service(), SensorEventListener, LocationListener, EngineList
             LiveState.labelMode = trace != null && Prefs.labelMode(this)
             // Shared map: warn for cached confirmed spots; collect observations only if the user opted in.
             val syncStore = SyncStore(db)
-            val outbox = if (Prefs.shareBumps(this)) OutboxSink(syncStore, tripId) else null
+            unconfirmed = guessed
+            val outbox = if (Prefs.shareBumps(this)) OutboxSink(syncStore, tripId, held = guessed) else null
             sink = outbox
             // Road speed limits (opt-in): the trip's fixes stay in memory until the trip ends.
             route = if (SpeedLimitSync.allowed(this)) TripRoute() else null
@@ -600,6 +610,9 @@ class BumpService : Service(), SensorEventListener, LocationListener, EngineList
             monitor?.finish()
             engine?.let { database.endTrip(tripId, System.currentTimeMillis(), it.trip, monitor?.stats) }
             monitor?.stats?.let { LiveState.lastTripScore = it.score() }
+            // Started by itself and never confirmed: hold everything that would leave the phone (#49).
+            val ask = unconfirmed && engine != null
+            if (ask) TripHold.hold(this, tripId)
             // Privacy zone filter, then into the outbox; the upload runs later in the background.
             try {
                 sink?.flush(Prefs.shareBumps(this), System.currentTimeMillis())
@@ -607,6 +620,7 @@ class BumpService : Service(), SensorEventListener, LocationListener, EngineList
                 Log.w(TAG, "outbox not written", e)
             }
             sink = null
+            unconfirmed = false
             try {
                 // Also sets the training upload delay before Sync.afterTrip below, so the trip-end sync can't upload it.
                 training?.flush(this, tripId, System.currentTimeMillis(), engine?.trip, monitor?.stats, batteryPercent())
@@ -621,6 +635,7 @@ class BumpService : Service(), SensorEventListener, LocationListener, EngineList
                 Log.w(TAG, "speed-limit lookup not queued: ${e.javaClass.simpleName}")
             }
             route = null
+            if (ask) TripCheck.ask(this, tripId)
             val last = engine?.lastFix
             Sync.afterTrip(this, last?.lat ?: Double.NaN, last?.lon ?: Double.NaN)
             engine = null
