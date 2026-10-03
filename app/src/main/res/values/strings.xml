@@ -179,6 +179,8 @@
     <string name="map_zoom_out">"−  Zoom out"</string>
     <string name="map_zoom_in">"+  Zoom in"</string>
     <string name="map_me">"◎  Me"</string>
+    <string name="map_attribution" translatable="false">© OpenStreetMap contributors, OpenFreeMap, © OpenMapTiles</string>
+    <string name="map_unavailable">The street map can\'t start on this phone. Your spots are in the list below.</string>
     <string name="map_legend">● orange speed bump · ● red pothole · ● grey not sure yet · ○ hollow muted. The tick shows the direction it warns for. Drag to move; tap a dot for options. No streets because the app works offline: use Open in Google Maps.</string>
     <string name="map_section_share">Share &amp; import</string>
     <string name="map_share_hint">To give your bumps to someone: Share… → Bump file, and send it (WhatsApp, email, Drive…). They tap the file and choose Bump Beeper, or use Import a file. Their own spots are kept; yours are added.\nMap file (KML) opens in Google Earth and can be imported into Google My Maps.</string>

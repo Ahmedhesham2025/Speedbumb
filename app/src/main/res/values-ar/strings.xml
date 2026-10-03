@@ -180,6 +180,7 @@
     <string name="map_zoom_out">"−  بعّد"</string>
     <string name="map_zoom_in">"+  قرّب"</string>
     <string name="map_me">"◎  أنا"</string>
+    <string name="map_unavailable">خريطة الشوارع مش راضية تشتغل على الموبايل ده. أماكنك موجودة في القايمة تحت.</string>
     <string name="map_legend">● برتقالي مطبّ · ● أحمر حفرة · ● رمادي لسه مش متأكد · ○ فاضي مكتوم. العلامة بتوضّح الاتجاه اللي بيحذّر منه. اسحب عشان تحرّك؛ اضغط على نقطة عشان الخيارات. مفيش شوارع لأن التطبيق شغّال أوفلاين: استخدم افتح في Google Maps.</string>
     <string name="map_section_share">المشاركة والاستيراد</string>
     <string name="map_share_hint">عشان تدّي مطبّاتك لحد: شارك… ← ملف المطبّات، وابعته (واتساب، إيميل، Drive…). هو بيضغط على الملف ويختار Bump Beeper، أو يستخدم استيراد ملف. أماكنه بتفضل زي ما هي؛ وأماكنك بتتضاف.\nملف الخريطة (KML) بيتفتح في Google Earth وممكن يتستورد في Google My Maps.</string>
