@@ -118,6 +118,15 @@ kotlin {
     }
 }
 
+// Unit tests use the real org.json (JSONObject.keySet() etc.), but android.jar's stub JSONObject sits first on the
+// Kotlin compiler's classpath since the MapLibre libraries joined it. Put org.json in front for test compiles only.
+val orgJsonForTests: Configuration = configurations.detachedConfiguration(dependencies.create("org.json:json:20240303"))
+tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach {
+    if (name.contains("UnitTest")) {
+        doFirst { libraries.setFrom(orgJsonForTests.files + libraries.files) }
+    }
+}
+
 // Show why an app unit test failed, right in the build log.
 tasks.withType<Test>().configureEach {
     testLogging {
