@@ -86,6 +86,23 @@ Only after you agree to the notice, and only while the shared map is on.
   turn the shared map off, delete your shared data or clear the map. The limits themselves are saved only in your trip
   on the phone.
 
+### 3b. Live speed limit & warning (off by default; Settings → Driving score → Live speed limit & warning)
+A separate switch from *Use real speed limits*. Only after you agree to its notice (consent version 1), and only while
+the shared map is on.
+- **What:** while you drive with it on, about **every kilometre** the app sends your **last few GPS points (about the
+  last 300 m)**, with your anonymous ID so our server can enforce the daily limit. This is **precise location**.
+  Nothing is sent in the **first 300 m** of a trip. The **end of a trip cannot be protected**: the app does not know
+  where you will stop, so the last lookup can be close to where you park. This also works on trips that started by
+  themselves (*Start recording when I drive*). At most **60 lookups a day**, shared with the after-trip lookup.
+- **Where:** to our server, which forwards only the positions to **TomTom**, the same way as real speed limits above:
+  TomTom does not get your anonymous ID or your internet (IP) address (it only sees our server). TomTom's privacy
+  notice: <https://www.tomtom.com/privacy/>.
+- **Why:** to show the speed limit of the road you are on next to your speed (with "© TomTom"), and to warn you: when
+  you are over it by your chosen margin (+5, +10 or +20 km/h) for 3 seconds, you hear a tone and then the limit spoken.
+- **How long:** our server keeps nothing from the lookup except the count of lookups per anonymous ID per day, deleted
+  after 30 days. On the phone the limit is kept **only in memory**, for at most 5 minutes, never on disk, in your trips or
+  in recordings. Turning the switch off stops the lookups at once.
+
 ### 4. Help improve detection (off by default; Settings → Help improve detection)
 A separate choice from the shared map, offered only after you answered the shared-map question, and only after you agree
 to its notice. It sends compact learning samples so the detection of bumps and potholes can be improved.
@@ -126,7 +143,8 @@ Supabase sees the internet address a request comes from; its own sign-in records
 | Which phones contributed to a spot (spot, anonymous ID, hit and clear counts; no times) | Until you delete your shared data |
 | Device record (anonymous ID, app/Android version, your choice) | Until you delete your shared data |
 | Crash reports | Until you delete your shared data (no automatic expiry yet) |
-| Speed-limit lookups | Only a daily count per anonymous ID, deleted after 30 days |
+| Speed-limit lookups (after-trip and live) | Only a daily count per anonymous ID, deleted after 30 days |
+| Live speed limit (on the phone) | In memory only, at most 5 minutes; never saved |
 | Anonymous sign-in (the ID itself, and the sign-in service's records) | Not deleted by the app yet |
 | Route waiting for a lookup (on the phone) | Until looked up; never sent after about 48 hours |
 | Training samples and trip summaries (server) | 12 months, or until you turn *Help improve detection* off or delete your shared data |
@@ -136,7 +154,7 @@ Supabase sees the internet address a request comes from; its own sign-in records
 
 ## Your choices
 - **Change or withdraw consent** at any time: Settings → Shared map (*Receive only*, *Share and receive*, or *Off*), and
-  the *Use real speed limits* switch, the *Help improve detection* switch, and *Start recording when I drive* (or
+  the *Use real speed limits* and *Live speed limit & warning* switches, the *Help improve detection* switch, and *Start recording when I drive* (or
   the location permission in Android settings).
 - **Delete my shared data** (Settings → Shared map): deletes this phone's device record on the server and with it the
   bump and pothole reports it sent, its links to spots (contributions), its crash reports and its training samples. Spots already merged into
@@ -174,8 +192,10 @@ Notes for the Play Store *Data safety* form and the F-Droid listing (store-docs 
   - *Precise location* used for auto-detect is processed **on the device only** and is not collected; it leaves the
     phone only through the opt-in features above.
   - Purposes: app functionality (crash logs: also analytics of crashes). Never ads or marketing.
+  - *Location → Precise location*, with *Live speed limit & warning*: the last ~300 m of GPS points about every km while
+    driving (processed ephemerally; optional; also in the background on trips that started by themselves).
 - **Shared:** *Location → Precise location* with a third party (**TomTom**), optional, processed ephemerally, only
-  with real speed limits on.
+  with real speed limits or the live speed limit on.
 - **Tracking:** not applicable (no advertising ID, no cross-app tracking, no analytics SDK).
 - **Deletion:** in the app (*Delete my shared data*, or turning *Help improve detection* off); see what stays above.
 - **Google Play, background location:** declare `ACCESS_BACKGROUND_LOCATION` for *Start recording when I drive* (core
@@ -250,6 +270,15 @@ Notes for the Play Store *Data safety* form and the F-Droid listing (store-docs 
 السرعة. TomTom مش بياخد المُعرّف المجهول ولا عنوان الإنترنت (IP) بتاعك، والأوقات بتتغيّر لسنة 2000. سياسة خصوصية
 TomTom: <https://www.tomtom.com/privacy/>. سيرفرنا مش بيحتفظ بحاجة غير عدد مرات البحث في اليوم، وبيتمسح بعد 30 يوم.
 الطريق بيستنى على موبايلك لحد ما يتبحث عنه؛ بعد حوالي 48 ساعة عمره ما بيتبعت، وبيتمسح أول مرة التطبيق يشتغل بعدها.
+
+**حد السرعة المباشر والتنبيه (مقفول من الأول، منفصل عن حدود السرعة الحقيقية):** بعد ما توافق على الملاحظة بتاعته
+بس، وطول ما الخريطة المتشاركة شغّالة. وانت سايق، كل حوالي كيلومتر التطبيق بيبعت آخر كام نقطة GPS بتوعك (حوالي آخر
+300 متر؛ مكان دقيق) لسيرفرنا، والسيرفر بيبعت النقط بس لـ TomTom عشان يعرف حد السرعة بتاع الطريق. مفيش حاجة بتتبعت
+في أول 300 متر من الرحلة، بس آخر الرحلة مش ممكن نحميه، لأن التطبيق ميعرفش انت هتقف فين. TomTom مش بياخد المُعرّف
+المجهول ولا عنوان الإنترنت (IP) بتاعك. سيرفرنا مش بيحتفظ بحاجة غير عدد مرات البحث في اليوم، وبيتمسح بعد 30 يوم.
+الحد بيظهر جنب سرعتك (مع «© TomTom»)، ولو عدّيته بالهامش اللي اخترته (+5 أو +10 أو +20 كم/س) لمدة 3 ثواني هتسمع
+نغمة وبعدها الحد بصوت. على الموبايل الحد بيفضل في الذاكرة بس، 5 دقايق بالكتير، وعمره ما بيتحفظ. بيشتغل كمان في
+الرحلات اللي بدأت لوحدها. لحد 60 مرة بحث في اليوم. تقدر تقفله في أي وقت.
 
 **ساعد في تحسين الكشف (مقفول من الأول، منفصل عن الخريطة المتشاركة):** بيظهر بس بعد ما تجاوب على سؤال الخريطة
 المتشاركة وبعد ما توافق على الملاحظة بتاعته.

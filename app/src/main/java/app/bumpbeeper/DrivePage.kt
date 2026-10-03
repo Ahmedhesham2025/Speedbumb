@@ -14,6 +14,8 @@ import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
+import app.bumpbeeper.ui.LiveLimitText
+import app.bumpbeeper.ui.SpeedSignView
 import app.bumpbeeper.ui.SyncChoice
 import java.util.Locale
 
@@ -26,6 +28,8 @@ class DrivePage(private val a: MainActivity) : Page {
     private lateinit var setupCard: LinearLayout
     private lateinit var startBtn: TextView
     private lateinit var speed: TextView
+    private lateinit var signBox: LinearLayout
+    private lateinit var sign: SpeedSignView
     private lateinit var gps: TextView
     private lateinit var tDist: TextView
     private lateinit var tTime: TextView
@@ -111,7 +115,23 @@ class DrivePage(private val a: MainActivity) : Page {
         }, 16)
 
         speed = Ui.text(a, 56f, Ui.TEXT, bold = true).apply { gravity = Gravity.CENTER }
-        add(speed, 12)
+        // Live speed limit (opt-in): a road sign beside the speed, with TomTom's notice under it. The row follows
+        // the layout direction, so in Arabic the sign sits on the left.
+        sign = SpeedSignView(a)
+        signBox = LinearLayout(a).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER_HORIZONTAL
+            visibility = View.GONE
+            addView(sign, LinearLayout.LayoutParams(dp(76), dp(76)))
+            addView(Ui.text(a, 10f, Ui.DIM, value = SpeedLimitScoring.ATTRIBUTION).apply { gravity = Gravity.CENTER })
+        }
+        add(LinearLayout(a).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER
+            addView(speed)
+            addView(signBox, LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT)
+                .apply { marginStart = dp(18) })
+        }, 12)
         gps = Ui.text(a, 13f, Ui.DIM).apply { gravity = Gravity.CENTER }
         add(gps)
         afterTrip = Ui.text(a, 15f, Ui.TEXT).apply {
@@ -302,6 +322,7 @@ class DrivePage(private val a: MainActivity) : Page {
         speed.text = if (gpsOk) a.getString(R.string.drive_speed_kmh, String.format(Locale.US, "%.0f", LiveState.speedKmh))
             else if (rec) a.getString(R.string.drive_speed_unknown) else ""
         speed.visibility = if (rec) View.VISIBLE else View.GONE
+        showSign(rec, gpsOk)
         gps.text = when {
             !rec -> if (a.autoStartOn()) a.getString(R.string.drive_gps_auto, Prefs.carName(a)) else a.getString(R.string.drive_gps_tap_start)
             gpsOk -> a.getString(R.string.drive_gps_accuracy, String.format(Locale.US, "%.0f", LiveState.accuracyM), detectionText())
@@ -353,6 +374,18 @@ class DrivePage(private val a: MainActivity) : Page {
 
         graph.threshold = Prefs.thresholdFor(Prefs.sensitivity(a)).toFloat()
         if (graph.visibility == View.VISIBLE) graph.invalidate()
+    }
+
+    /** The live speed-limit sign and the speed's colour (orange over the limit, red over it by the chosen margin). */
+    private fun showSign(rec: Boolean, gpsOk: Boolean) {
+        val show = LiveLimitText.showSign(rec, Prefs.liveLimits(a), Prefs.liveLimitsConsentVersion(a))
+        signBox.visibility = if (show) View.VISIBLE else View.GONE
+        speed.setTextColor(if (show && gpsOk) LiveLimitText.speedColor(LiveState.overLimit) else Ui.TEXT)
+        if (!show) return
+        val t = LiveLimitText.signText(LiveState.speedLimitKmh, LiveState.speedLimitAgeMs)
+        sign.value = t
+        sign.contentDescription = if (t == LiveLimitText.UNKNOWN) a.getString(R.string.live_limit_sign_unknown)
+            else a.getString(R.string.live_limit_sign_desc, t)
     }
 
     private fun detectionText(): String = when {
