@@ -161,7 +161,7 @@
     <string name="main_pick_car">Which one is your car?</string>
     <string name="main_auto_not_set_up">Auto start not set up</string>
     <string name="main_one_more_title">One more permission</string>
-    <string name="main_bg_location_msg">To start recording while the app is closed, Android needs location set to \"Allow all the time\". On the next screen choose Allow all the time. Bump Beeper only uses location while it is recording, and nothing leaves your phone.</string>
+    <string name="main_bg_location_msg">To start recording while the app is closed, Android needs location set to \"Allow all the time\". On the next screen choose Allow all the time. Location is used to record your drives. It leaves the phone only through the shared map, real speed limits or “Help improve detection”, if you turned them on.</string>
     <string name="main_auto_on_title">Auto start is on</string>
     <string name="main_auto_on_battery_msg">For it to work reliably, also allow Bump Beeper to run in the background (no battery restrictions).</string>
     <string name="main_battery_settings">Battery settings</string>
@@ -343,7 +343,7 @@
     <string name="settings_shared_map_hint">Warnings about bumps and potholes found by other drivers. Only spots are shared, never your route.</string>
     <string name="settings_sync_delete">Delete my shared data</string>
     <string name="settings_sync_delete_title">Delete your shared data?</string>
-    <string name="settings_sync_delete_msg">Deletes this phone\'s record on the server, with the bumps and potholes it sent, its links to spots and its crash reports. Spots already merged into the shared map stay, with nothing linking them to this phone. Also clears downloaded warnings and turns the shared map and real speed limits off. Your own bump map and trips stay.</string>
+    <string name="settings_sync_delete_msg">Deletes this phone\'s record on the server, with the bumps and potholes it sent, its links to spots and its crash reports. Spots already merged into the shared map stay, with nothing linking them to this phone. Also clears downloaded warnings and turns the shared map, real speed limits and “Help improve detection” off, deleting its samples. Your own bump map and trips stay.</string>
     <string name="settings_sync_deleted">Deleted</string>
     <string name="settings_sync_deleted_local">Deleted on this phone. Couldn\'t reach the server: tap Delete again when you\'re online to finish.</string>
     <!-- Road speed limits (TomTom): Settings and Trips -->
@@ -364,4 +364,47 @@
     <string name="limits_fact_max_over">Most over the limit</string>
     <string name="limits_max_over_value">+%1$s km/h</string>
     <string name="limits_need_map_after_trip">Stop the trip first, then choose the shared map.</string>
+    <!-- Start recording when I drive (#49) -->
+    <string name="auto_detect_switch">Start recording when I drive</string>
+    <string name="auto_detect_hint">Notices that you are driving without Bluetooth, using the motion sensor and short GPS checks. Uses your location in the background.</string>
+    <string name="auto_status_off">Off</string>
+    <string name="auto_status_needs_permission">Needs a permission before it can work</string>
+    <string name="auto_status_google">On: Google\'s driving detection</string>
+    <string name="auto_status_motion">On: motion sensor and short GPS checks</string>
+    <string name="auto_status_passive">On, but limited: this phone has no motion sensor, so it starts only from other apps\' location updates or your car\'s Bluetooth</string>
+    <string name="auto_status_not_running">On, but Android stopped it. Tap Fix to try again.</string>
+    <string name="auto_status_watching">Watching for driving</string>
+    <string name="auto_fix">Fix</string>
+    <string name="auto_stop_never">Never stop by itself when parked</string>
+    <string name="auto_stop_after">Stop after parked for %1$d min</string>
+    <string name="auto_stop_hint">Only after real driving, and never while your car\'s Bluetooth is connected.</string>
+    <string name="auto_disclosure_title">Location in the background</string>
+    <string name="auto_disclosure_msg">Bump Beeper collects location data to notice when you start driving and to start recording without Bluetooth, even when the app is closed or not in use.\n\nIt uses the motion sensor, short GPS checks and location updates that other apps already asked for. All of this is checked on your phone.\n\nYour location stays on the phone, unless you turned on the shared map, real speed limits or “Help improve detection” (see the privacy policy). You can turn this off at any time in Settings.</string>
+    <string name="auto_disclosure_no">No thanks</string>
+    <string name="auto_bg_title">Location all the time</string>
+    <string name="auto_bg_msg_11">Android will now open Bump Beeper\'s location settings. Choose “%1$s” there, then come back. Without it, recording can\'t start while the app is closed.</string>
+    <string name="auto_bg_msg_10">On the next screen, choose “Allow all the time”. Without it, recording can\'t start while the app is closed.</string>
+    <string name="auto_battery_title">Let it run in the background</string>
+    <string name="auto_battery_msg">Some phones stop apps that wait in the background. On the next screen, allow Bump Beeper to ignore battery optimisation so it notices when you drive. It only checks GPS briefly when the phone starts moving.</string>
+    <string name="auto_activity_title">Physical activity</string>
+    <string name="auto_activity_msg">With the “Physical activity” permission, Google Play services tells Bump Beeper when you are in a vehicle. It works better and needs no notification. Without it, the built-in detection is used.</string>
+    <string name="auto_need_fine">Start recording when I drive needs precise location</string>
+    <string name="auto_need_bg">Start recording when I drive needs location set to “Allow all the time”</string>
+    <string name="auto_on_toast">Recording will start by itself when you drive</string>
+    <!-- Help improve detection (training samples) -->
+    <string name="settings_section_training">Help improve detection</string>
+    <string name="train_switch">Help improve detection</string>
+    <string name="train_hint">Off by default and separate from the shared map. Sends short motion-sensor samples, never your route.</string>
+    <string name="train_need_map">Choose the shared map first: until you do, the app sends nothing to our server.</string>
+    <string name="train_consent_title">Help improve detection?</string>
+    <string name="train_consent_msg">This is separate from the shared map, and off unless you turn it on.\n\nFor each possible bump the app judges: up to 4 seconds of motion-sensor readings (2 s before and after) (shake, plus rotation if the phone has a gyroscope), the app\'s decision and its reason, speed, heading change, GPS accuracy and where the phone sits. Only the date of the drive, no time of day. Also your Android version, app version and phone brand (not the model).\n\nFor each trip: date, duration, distance, counts, beeps, score figures and battery.\n\nNo route and no coordinates. The only place information is the number of a public, confirmed bump you passed, and never within 300 m of where a trip starts or ends. Over time these can hint at the areas you drive in.\n\nA random ID that changes each time you turn this on; on our server it is kept with this phone\'s anonymous record, so it can be deleted. Samples aren\'t linked to trips.\n\nUploads 1 to 6 hours after a drive, about 30 to 90 KB per drive. Kept 7 days on the phone if not sent, and 12 months on our server (Supabase, Frankfurt). Used only to improve detection, analysed offline by the app\'s owner, never sold.\n\nTurning this off, or “Delete my shared data”, deletes it on the server at once, except the provider\'s backups and logs, which rotate.\n\nTrips that started by themselves are held until you confirm them.</string>
+    <string name="train_consent_on">Turn on</string>
+    <string name="train_status_queued">Waiting to upload: %1$d</string>
+    <string name="train_status_pending_on">Telling the server you turned this on (when online)</string>
+    <string name="train_status_pending_off">Deleting your samples on the server (when online)</string>
+    <string name="train_session_reset">Your anonymous ID was reset, so this was switched off; turn it on again if you like.</string>
+    <string name="train_error_other">Upload paused; it will try again later.</string>
+    <string name="train_off_toast">Turned off: your samples will be deleted on the server</string>
+    <string name="auto_open_settings">Open settings</string>
+    <string name="auto_fix_not_running">Everything is allowed, but Android isn\'t running the detection. Check Bump Beeper\'s battery setting (no restrictions), or restart the phone.</string>
 </resources>
