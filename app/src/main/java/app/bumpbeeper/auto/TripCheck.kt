@@ -31,8 +31,8 @@ object TripCheck {
     fun ask(ctx: Context, tripId: Long) {
         val nm = ctx.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         nm.createNotificationChannel(
-            NotificationChannel(CHANNEL, "Was this a drive?", NotificationManager.IMPORTANCE_DEFAULT).apply {
-                description = "After a trip that started by itself: was it you driving?"
+            NotificationChannel(CHANNEL, ctx.getString(R.string.notif_trip_check_channel), NotificationManager.IMPORTANCE_DEFAULT).apply {
+                description = ctx.getString(R.string.notif_trip_check_channel_desc)
             }
         )
         fun button(action: String, code: Int): PendingIntent = PendingIntent.getBroadcast(
@@ -43,10 +43,10 @@ object TripCheck {
         val icon = Icon.createWithResource(ctx, R.drawable.ic_stat_bump)
         val n = Notification.Builder(ctx, CHANNEL)
             .setSmallIcon(R.drawable.ic_stat_bump)
-            .setContentTitle("Was this a drive?")
-            .setContentText("A trip was recorded by itself. Were you driving?")
-            .addAction(Notification.Action.Builder(icon, "Yes, I drove", button(ACTION_YES, code)).build())
-            .addAction(Notification.Action.Builder(icon, "No", button(ACTION_NO, code + 1)).build())
+            .setContentTitle(ctx.getString(R.string.notif_trip_check_title))
+            .setContentText(ctx.getString(R.string.notif_trip_check_text))
+            .addAction(Notification.Action.Builder(icon, ctx.getString(R.string.notif_trip_yes), button(ACTION_YES, code)).build())
+            .addAction(Notification.Action.Builder(icon, ctx.getString(R.string.notif_trip_no), button(ACTION_NO, code + 1)).build())
             .setTimeoutAfter(TripHold.MAX_AGE_MS)
             .setAutoCancel(true)
             .build()

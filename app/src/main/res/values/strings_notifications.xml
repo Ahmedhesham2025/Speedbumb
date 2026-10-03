@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Notification texts (BumpService, auto/**). Arabic in values-ar/strings_notifications.xml. -->
+<resources>
+    <string name="notif_tap_car">Your car connected. Tap to start recording.</string>
+    <string name="notif_tap_driving">Driving detected. Tap to start recording.</string>
+    <string name="notif_channel_auto">Auto start</string>
+    <string name="notif_channel_auto_desc">Shown when your car connects or driving is detected but recording could not start by itself</string>
+    <string name="notif_detection_paused">Driving detection paused. Tap to resume.</string>
+    <string name="notif_channel_watch">Ready to detect driving</string>
+    <string name="notif_channel_watch_desc">Android needs this while Bump Beeper waits for you to drive. You can hide it here.</string>
+    <string name="notif_watch_text">Ready to detect driving</string>
+    <string name="notif_recording">Recording</string>
+    <string name="notif_starting">Starting…</string>
+    <string name="notif_recording_counts">%1$d on map · this trip: %2$d hit, %3$d new, %4$d warnings</string>
+    <string name="notif_channel_recording">Recording</string>
+    <string name="notif_channel_recording_desc">Shown while Bump Beeper is recording</string>
+    <string name="notif_recording_title">Recording speed bumps</string>
+    <string name="notif_stop">Stop</string>
+    <string name="notif_trip_check_channel">Was this a drive?</string>
+    <string name="notif_trip_check_channel_desc">After a trip that started by itself: was it you driving?</string>
+    <string name="notif_trip_check_title">Was this a drive?</string>
+    <string name="notif_trip_check_text">A trip was recorded by itself. Were you driving?</string>
+    <string name="notif_trip_yes">Yes, I drove</string>
+    <string name="notif_trip_no">No</string>
+</resources>

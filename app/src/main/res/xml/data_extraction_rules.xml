@@ -2,16 +2,21 @@
 <!-- Android 12+ (android:dataExtractionRules). Cloud backup keeps the bump database and settings but not
      crash reports or drive recordings. A cable/Wi-Fi move to a new phone keeps the recordings too;
      crash reports are about the old phone, so they never move. The shared-map sign-in (sync_auth) never moves
-     either: each phone is its own anonymous device. -->
+     either: each phone is its own anonymous device. Neither do the "Was this a drive?" holds (trip_hold,
+     trip_hold_done): held data that arrives without its hold is never sent and expires. -->
 <data-extraction-rules>
     <cloud-backup>
         <exclude domain="file" path="crash/" />
         <exclude domain="file" path="traces/" />
         <exclude domain="external" path="traces/" />
         <exclude domain="sharedpref" path="sync_auth.xml" />
+        <exclude domain="sharedpref" path="trip_hold.xml" />
+        <exclude domain="sharedpref" path="trip_hold_done.xml" />
     </cloud-backup>
     <device-transfer>
         <exclude domain="file" path="crash/" />
         <exclude domain="sharedpref" path="sync_auth.xml" />
+        <exclude domain="sharedpref" path="trip_hold.xml" />
+        <exclude domain="sharedpref" path="trip_hold_done.xml" />
     </device-transfer>
 </data-extraction-rules>

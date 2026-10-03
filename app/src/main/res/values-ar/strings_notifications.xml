@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- نصوص الإشعارات (مسودة بالمصري) -->
+<resources>
+    <string name="notif_tap_car">عربيتك اتوصّلت. دوس عشان تبدأ التسجيل.</string>
+    <string name="notif_tap_driving">باين إنك بتسوق. دوس عشان تبدأ التسجيل.</string>
+    <string name="notif_channel_auto">التشغيل التلقائي</string>
+    <string name="notif_channel_auto_desc">بيظهر لما عربيتك تتوصّل أو السواقة تتعرف بس التسجيل ما قدرش يبدأ لوحده</string>
+    <string name="notif_detection_paused">كشف السواقة واقف. دوس عشان يكمّل.</string>
+    <string name="notif_channel_watch">مستعد يكشف السواقة</string>
+    <string name="notif_channel_watch_desc">أندرويد محتاج ده وبامب بيبر مستنيك تسوق. تقدر تخفيه من هنا.</string>
+    <string name="notif_watch_text">مستعد يكشف السواقة</string>
+    <string name="notif_recording">بيسجّل</string>
+    <string name="notif_starting">بيبدأ…</string>
+    <string name="notif_recording_counts">%1$d على الخريطة · الرحلة دي: %2$d خبطة، %3$d جديد، %4$d تنبيه</string>
+    <string name="notif_channel_recording">التسجيل</string>
+    <string name="notif_channel_recording_desc">بيظهر وبامب بيبر بيسجّل</string>
+    <string name="notif_recording_title">بيسجّل المطبّات</string>
+    <string name="notif_stop">وقّف</string>
+    <string name="notif_trip_check_channel">كنت إنت اللي سايق؟</string>
+    <string name="notif_trip_check_channel_desc">بعد رحلة بدأت لوحدها: كنت إنت اللي سايق؟</string>
+    <string name="notif_trip_check_title">كنت إنت اللي سايق؟</string>
+    <string name="notif_trip_check_text">فيه رحلة اتسجّلت لوحدها. كنت بتسوق؟</string>
+    <string name="notif_trip_yes">أيوه، أنا سقت</string>
+    <string name="notif_trip_no">لأ</string>
+</resources>
