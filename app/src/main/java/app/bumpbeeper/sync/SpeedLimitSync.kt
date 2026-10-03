@@ -43,13 +43,11 @@ object SpeedLimitSync {
     /** The same job, waiting for tomorrow's quota (a separate id, so scheduling it never stops a running job). */
     private const val JOB_TOMORROW = 4105
     const val EXTRA_JOB = "speed_limits"
-    /** The server's per-user quota (take_speed_limit_quota): calls per UTC day. */
-    const val MAX_CALLS_PER_DAY = 8
+    /** The server's per-user quota (take_speed_limit_quota): calls per UTC day, shared with live lookups. */
+    const val MAX_CALLS_PER_DAY = SpeedLimitQuota.MAX_PER_DAY
     const val MAX_AGE_MS = 48 * 60 * 60 * 1000L
     private const val DAY_MS = 24 * 60 * 60 * 1000L
     private const val MAGIC = 0x534c5231
-    private const val DAY_KEY = "speed_limit_day"
-    private const val CALLS_KEY = "speed_limit_calls"
     /** A 5xx is tried again on the next run, [MAX_TRIES] runs in all (still within [MAX_AGE_MS]). */
     const val MAX_TRIES = 3
     /** A half-written file (`.tmp`) older than this is left over from a failed write. */
@@ -197,18 +195,16 @@ object SpeedLimitSync {
         if (gone()) return Step.DONE
         val fixes = p.route.fixes()
         val chunks = RouteSampler.plan(fixes, p.epochOffsetMs)
-        val day = now / DAY_MS
-        var used = if (store.getLong(DAY_KEY, -1L) == day) store.getLong(CALLS_KEY).toInt() else 0
+        // One daily count with the live lookups (SpeedLimitQuota).
+        val used = SpeedLimitQuota.used(ctx, now)
         // A trip that fits in one day's calls waits for tomorrow rather than being half looked up.
         if (chunks.size <= MAX_CALLS_PER_DAY && used + chunks.size > MAX_CALLS_PER_DAY) return Step.TOMORROW
         val replies = ArrayList<List<Double?>?>()
         for (c in chunks) {
-            if (used >= MAX_CALLS_PER_DAY) { replies.add(null); continue }
             // The user may have said no (or cleared the data) since the last call: nothing more leaves the phone.
             if (!allowed(ctx)) return Step.STOP
             if (gone()) return Step.DONE
-            used++
-            store.put(DAY_KEY, day); store.put(CALLS_KEY, used)
+            if (!SpeedLimitQuota.take(ctx, now)) { replies.add(null); continue }
             val r = try {
                 call(c, auth, transport)
             } catch (e: IOException) {
@@ -219,7 +215,7 @@ object SpeedLimitSync {
             }
             when (r.code) {
                 200 -> replies.add(parseLimits(r.body, c.size))
-                429 -> { store.put(CALLS_KEY, MAX_CALLS_PER_DAY); return Step.TOMORROW }
+                429 -> { SpeedLimitQuota.exhaust(ctx, now); return Step.TOMORROW }
                 else -> {
                     Log.w(TAG, "speed limits: HTTP ${r.code}")
                     // Server or TomTom trouble: the whole trip again on a later run, at most MAX_TRIES runs.
