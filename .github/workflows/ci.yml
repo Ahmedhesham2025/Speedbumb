@@ -111,25 +111,36 @@ jobs:
             echo "$line"
             echo "### $line" >> "$GITHUB_STEP_SUMMARY"
           done
-      # Hard rule 2: the foss edition ships only Android APIs + :core (+ the Kotlin stdlib :core needs).
-      # Anything else on its release runtime classpath fails the job. The play edition may add Google Play services.
-      - name: No runtime libraries in the foss edition
+      # Hard rule 2: the foss edition ships only Android APIs + :core + MapLibre Native (BSD-2, the street map; owner
+      # decision 2026-10-03). Its only direct libraries may be :core and org.maplibre.gl:android-sdk-opengl, and every
+      # library on the release runtime classpath must be listed in .github/foss-runtime-allowlist.txt (MapLibre's own
+      # transitive libraries, by group:artifact). Anything else fails the job. The play edition may add Google Play services.
+      - name: No runtime libraries in the foss edition (except MapLibre)
         run: |
           ./gradlew -q :app:dependencies --configuration fossReleaseRuntimeClasspath > foss-deps.txt
           cat foss-deps.txt
           # Every resolved node: "project :core" or "group:artifact:version" (tree prefixes stripped).
           nodes=$(grep -E '^[|+\\ ]*[+\\]--- ' foss-deps.txt | sed -E 's/^[|+\\ -]*//; s/ \(.*$//; s/ -> .*$//' | sort -u)
-          bad=$(echo "$nodes" | grep -vE '^project :core$|^org\.jetbrains\.kotlin:kotlin-stdlib(-jdk[78]|-common)?:|^org\.jetbrains:annotations:' || true)
+          # Direct dependencies: the tree's top level ("+--- x" / "\--- x" at column 0), as group:artifact.
+          direct=$(grep -E '^[+\\]--- ' foss-deps.txt | sed -E 's/^[+\\]--- //; s/ \(.*$//; s/ -> .*$//; s/^([^:]+:[^:]+):.*/\1/' | sort -u)
           if [ -z "$nodes" ] || ! echo "$nodes" | grep -q '^project :core$'; then
             echo "::error::Could not read the foss runtime classpath (expected at least project :core)."
             exit 1
           fi
+          bad_direct=$(echo "$direct" | grep -vxE 'project :core|org\.maplibre\.gl:android-sdk-opengl|org\.jetbrains\.kotlin:kotlin-stdlib' || true)
+          if [ -n "$bad_direct" ]; then
+            echo "::error::The foss edition may only add MapLibre. New direct runtime libraries:"
+            echo "$bad_direct"
+            exit 1
+          fi
+          allowed=$(grep -vE '^\s*(#|$)' .github/foss-runtime-allowlist.txt | sed -E 's/\s+$//')
+          bad=$(echo "$nodes" | grep -v '^project :core$' | sed -E 's/^([^:]+:[^:]+):.*/\1/' | sort -u | grep -vxFf <(echo "$allowed") || true)
           if [ -n "$bad" ]; then
-            echo "::error::The foss edition must not ship runtime libraries. Found:"
+            echo "::error::The foss edition must not ship runtime libraries beyond MapLibre and its own. Not in the allowlist:"
             echo "$bad"
             exit 1
           fi
-          echo "foss runtime classpath OK: $(echo "$nodes" | tr '\n' ' ')" | tee -a "$GITHUB_STEP_SUMMARY"
+          echo "foss runtime classpath OK ($(echo "$nodes" | wc -l) libraries): $(echo "$nodes" | tr '\n' ' ')" | tee -a "$GITHUB_STEP_SUMMARY"
       - name: Build debug APKs (foss + play)
         run: ./gradlew assembleFossDebug assemblePlayDebug
       # Lint reports existing issues without blocking merges yet; the reports are uploaded below.
