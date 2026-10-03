@@ -135,7 +135,7 @@ dependencies {
     // emulator) can draw it. CI's foss guard allows exactly this and its transitive libraries.
     implementation("org.maplibre.gl:android-sdk-opengl:13.6.1")
     // The ONE allowed library, play edition only (owner decision, #48). The foss edition must never get one.
-    // 21.4.0 ships Kotlin 2.3 metadata and needs Kotlin 2.3 (we use 2.2.21, which MapLibre 13.6 needs): bump both together.
+    // 21.4.0 ships Kotlin 2.3 metadata and needs Kotlin 2.3 (we use 2.1.21, which reads the Kotlin 2.2 metadata of MapLibre 13.6): bump both together.
     "playImplementation"("com.google.android.gms:play-services-location:21.3.0")
 
     // Test-only: never shipped in the APK.
