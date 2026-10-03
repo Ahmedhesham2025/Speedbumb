@@ -37,7 +37,7 @@ class JavaRandomPort(seed: Long) {
 
     private companion object {
         const val MULTIPLIER = 0x5DEECE66DL
-        const val MASK = (1L shl 48) - 1
-        const val DOUBLE_UNIT = 1.0 / (1L shl 53)
+        const val MASK = 0xFFFFFFFFFFFFL          // 48 bits
+        const val DOUBLE_UNIT = 1.1102230246251565E-16   // 2^-53, literal: Kotlin/Native 2.0 rejects a shl in a const
     }
 }
