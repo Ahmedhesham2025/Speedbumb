@@ -26,9 +26,11 @@ import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
+import app.bumpbeeper.auto.AutoDetect
 import app.bumpbeeper.crash.CrashLog
 import app.bumpbeeper.sync.Sync
 import app.bumpbeeper.sync.UpdateCheck
+import app.bumpbeeper.ui.AutoSetup
 import app.bumpbeeper.ui.SyncChoice
 import java.net.URI
 import java.util.Locale
@@ -107,6 +109,8 @@ class MainActivity : Activity() {
 
     override fun onResume() {
         super.onResume()
+        AutoDetect.apply(this)   // permissions may have changed in Android settings meanwhile
+        if (autoWaitingBattery) { autoWaitingBattery = false; nextAutoStep() }   // back from the battery screen
         pages.getOrNull(current)?.onShow()
         ui.post(ticker)
         // Once per run; UpdateCheck itself only goes online once a day.
@@ -125,6 +129,8 @@ class MainActivity : Activity() {
     override fun onDestroy() {
         syncDialog?.dismiss()
         syncDialog = null
+        autoDialog?.dismiss()
+        autoDialog = null
         (pages[TAB_SETTINGS] as? SettingsPage)?.release()
         super.onDestroy()
     }
@@ -277,6 +283,7 @@ class MainActivity : Activity() {
                 else toast(getString(R.string.main_need_location))
             REQ_BASICS -> pages.getOrNull(current)?.onShow()
             REQ_AUTO_FINE, REQ_AUTO_BT, REQ_AUTO_BG -> setupAuto(afterRequest = requestCode)
+            REQ_DETECT -> autoStepAnswered()
         }
     }
 
@@ -396,6 +403,114 @@ class MainActivity : Activity() {
         }
     }
 
+    // ---------------------------------------------------------------- start recording when I drive (#49)
+
+    private val autoAsked = HashSet<AutoSetup.Step>()
+    private var autoStep: AutoSetup.Step? = null
+    private var autoFlow = false
+    private var autoWaitingBattery = false
+    private var autoDialog: Dialog? = null
+
+    /** Settings switch turned on: the prominent disclosure first; [answered] gets true after "Continue". */
+    fun turnOnAutoDetect(answered: (Boolean) -> Unit) {
+        showAutoDisclosure { ok ->
+            if (ok) { AutoDetect.setEnabled(this, true); startAutoFlow() }
+            answered(ok)
+        }
+    }
+
+    /** "Fix": ask again for what is missing (the disclosure again if location is among it). */
+    fun fixAutoDetect() {
+        if (AutoSetup.needsDisclosure(autoState())) showAutoDisclosure { if (it) startAutoFlow() } else startAutoFlow()
+    }
+
+    /** Google Play's prominent disclosure: shown before Android's location questions, never skipped. */
+    private fun showAutoDisclosure(done: (Boolean) -> Unit) {
+        autoDialog?.dismiss()
+        var ok = false
+        autoDialog = AlertDialog.Builder(this)
+            .setTitle(getString(R.string.auto_disclosure_title))
+            .setMessage(getString(R.string.auto_disclosure_msg))
+            .setPositiveButton(R.string.common_continue) { _, _ -> ok = true }
+            .setNegativeButton(R.string.auto_disclosure_no, null)
+            .setCancelable(false)
+            .setOnDismissListener { autoDialog = null; done(ok) }
+            .show()
+    }
+
+    private fun autoState() = AutoSetup.State(
+        fine = has(Manifest.permission.ACCESS_FINE_LOCATION),
+        background = has(Manifest.permission.ACCESS_BACKGROUND_LOCATION),
+        sdk = Build.VERSION.SDK_INT,
+        notifications = Build.VERSION.SDK_INT < 33 || has(Manifest.permission.POST_NOTIFICATIONS),
+        batteryOk = batteryOk(),
+        activityNeeded = BuildConfig.FLAVOR == "play" && AutoDetect.optionalPermission(this) != null,
+    )
+
+    private fun startAutoFlow() {
+        autoAsked.clear()
+        autoFlow = true
+        nextAutoStep()
+    }
+
+    /** Applies what has been granted so far, then asks the next question (one at a time). */
+    private fun nextAutoStep() {
+        AutoDetect.apply(this)
+        autoChanged()
+        if (!autoFlow || isFinishing) return
+        val step = AutoSetup.next(autoState(), autoAsked) ?: return endAutoFlow(null)
+        autoAsked.add(step)
+        autoStep = step
+        when (step) {
+            AutoSetup.Step.FINE -> requestPermissions(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION), REQ_DETECT)
+            AutoSetup.Step.BACKGROUND -> explainAutoStep(R.string.auto_bg_title, if (Build.VERSION.SDK_INT >= 30)
+                getString(R.string.auto_bg_msg_11, packageManager.backgroundPermissionOptionLabel) else getString(R.string.auto_bg_msg_10)) {
+                requestPermissions(arrayOf(Manifest.permission.ACCESS_BACKGROUND_LOCATION), REQ_DETECT)
+            }
+            AutoSetup.Step.NOTIFICATIONS -> requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), REQ_DETECT)
+            AutoSetup.Step.BATTERY -> explainAutoStep(R.string.auto_battery_title, getString(R.string.auto_battery_msg)) {
+                autoWaitingBattery = true
+                batterySettings()
+            }
+            AutoSetup.Step.ACTIVITY -> explainAutoStep(R.string.auto_activity_title, getString(R.string.auto_activity_msg)) {
+                val p = AutoDetect.optionalPermission(this)
+                if (p != null) requestPermissions(arrayOf(p), REQ_DETECT) else nextAutoStep()
+            }
+        }
+    }
+
+    /** A short "why" before an Android question; "Not now" skips it (or ends the walk if it is required). */
+    private fun explainAutoStep(title: Int, msg: String, go: () -> Unit) {
+        autoDialog?.dismiss()
+        var chosen = false
+        autoDialog = AlertDialog.Builder(this)
+            .setTitle(getString(title))
+            .setMessage(msg)
+            .setPositiveButton(R.string.common_continue) { _, _ -> chosen = true; go() }
+            .setNegativeButton(R.string.common_not_now, null)
+            .setCancelable(false)
+            .setOnDismissListener { autoDialog = null; if (!chosen) autoStepAnswered() }
+            .show()
+    }
+
+    private fun autoStepAnswered() {
+        val step = autoStep ?: return
+        if (AutoSetup.required(step) && AutoSetup.needed(step, autoState())) {
+            return endAutoFlow(getString(if (step == AutoSetup.Step.FINE) R.string.auto_need_fine else R.string.auto_need_bg))
+        }
+        nextAutoStep()
+    }
+
+    /** Stays switched on: Settings then shows "Needs a permission" with a Fix button. */
+    private fun endAutoFlow(problem: String?) {
+        autoFlow = false
+        autoStep = null
+        AutoDetect.apply(this)
+        autoChanged()
+        if (problem != null) toast(problem)
+        else if (AutoDetect.status(this) != AutoDetect.Status.NEEDS_PERMISSION) toast(getString(R.string.auto_on_toast))
+    }
+
     // ---------------------------------------------------------------- import from a file picker
 
     fun pickImportFile() {
@@ -431,6 +546,7 @@ class MainActivity : Activity() {
         private const val REQ_AUTO_BT = 3
         private const val REQ_AUTO_BG = 4
         private const val REQ_BASICS = 5
+        private const val REQ_DETECT = 6
         private const val REQ_IMPORT = 10
     }
 }
