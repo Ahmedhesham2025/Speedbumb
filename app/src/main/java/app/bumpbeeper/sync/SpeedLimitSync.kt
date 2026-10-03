@@ -124,9 +124,10 @@ object SpeedLimitSync {
         if (allowed(ctx) && File(dir(ctx), "$tripId.route").exists()) schedule(ctx, JOB_ID, 0L)
     }
 
-    /** "No", or no answer in time: the held trip's route is deleted unsent. */
+    /** "No", or no answer in time: the held trip's route is deleted unsent. Throws if it couldn't be deleted. */
     fun drop(ctx: Context, tripId: Long) {
-        File(dir(ctx), "$tripId.route").delete()
+        val f = File(dir(ctx), "$tripId.route")
+        if (f.exists() && !f.delete()) throw IOException("route of trip $tripId not deleted")
     }
 
     private fun heldFile(ctx: Context, f: File): Boolean =

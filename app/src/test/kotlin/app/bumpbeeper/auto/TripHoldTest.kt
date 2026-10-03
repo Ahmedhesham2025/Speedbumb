@@ -8,6 +8,7 @@ import app.bumpbeeper.BumpEvent
 import app.bumpbeeper.Fix
 import app.bumpbeeper.Prefs
 import app.bumpbeeper.sync.SpeedLimitSync
+import app.bumpbeeper.sync.SyncStore
 import app.bumpbeeper.sync.TripRoute
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -38,6 +39,8 @@ class TripHoldTest {
 
     @After fun tearDown() {
         SpeedLimitSync.clearPending(ctx)
+        TripHold.reset()            // the listeners outlive a test in Robolectric
+        TripHold.installBuiltIns()
     }
 
     // ---------------------------------------------------------------- generic API
@@ -52,11 +55,11 @@ class TripHoldTest {
         TripHold.hold(ctx, 103, now - TripHold.MAX_AGE_MS)
         assertTrue(TripHold.isHeld(ctx, 101))
         assertFalse(TripHold.isHeld(ctx, 999))
-        TripHold.confirm(ctx, 101)
-        TripHold.confirm(ctx, 101)          // a second tap: nothing more
+        TripHold.confirm(ctx, 101, now)
+        TripHold.confirm(ctx, 101, now)          // a second tap: nothing more
         TripHold.reject(ctx, 102)
         assertEquals(1, TripHold.expire(ctx, now))
-        TripHold.confirm(ctx, 999)          // never held (a car-confirmed trip): nothing
+        TripHold.confirm(ctx, 999, now)         // never held (a car-confirmed trip): nothing
         assertEquals(listOf("yes 101", "no 102", "late 103"), seen.filter { it.split(' ')[1] in setOf("101", "102", "103", "999") })
         assertTrue(TripHold.heldTrips(ctx).isEmpty())
     }
@@ -82,7 +85,7 @@ class TripHoldTest {
         assertTrue(jobs().isEmpty())
         SpeedLimitSync.onAppStart(ctx, now)          // an app start doesn't schedule it either
         assertTrue(jobs().isEmpty())
-        TripHold.confirm(ctx, 7)
+        TripHold.confirm(ctx, 7, now)
         assertEquals(1, jobs().size)
         assertTrue(routeFile(7).exists())
     }
@@ -102,6 +105,52 @@ class TripHoldTest {
         assertFalse(routeFile(9).exists())
         assertFalse(TripHold.isHeld(ctx, 9))
         assertTrue(jobs().isEmpty())
+    }
+
+    @Test fun aFailingDeleteKeepsTheTripHeldAndItsRouteUnsent() {
+        TripHold.hold(ctx, 20, now)
+        routeFor(20)
+        var fail = true
+        TripHold.onExpired { _, _ -> if (fail) throw IllegalStateException("database locked") }
+        TripHold.onRejected { _, _ -> if (fail) throw IllegalStateException("disk full") }
+
+        TripHold.reject(ctx, 20)
+        assertTrue(TripHold.isHeld(ctx, 20))                   // kept: the next expiry retries
+        assertEquals(0, TripHold.expire(ctx, now + TripHold.MAX_AGE_MS))
+        assertTrue(TripHold.isHeld(ctx, 20))
+        SpeedLimitSync.onAppStart(ctx, now + TripHold.MAX_AGE_MS)
+        assertTrue(jobs().isEmpty())                           // nothing of it is sent
+        TripHold.confirm(ctx, 20, now + TripHold.MAX_AGE_MS)   // a late "yes" can't release it either
+        assertTrue(jobs().isEmpty())
+
+        fail = false
+        assertEquals(1, TripHold.expire(ctx, now + TripHold.MAX_AGE_MS))
+        assertFalse(TripHold.isHeld(ctx, 20))
+        assertFalse(routeFile(20).exists())
+        assertTrue(jobs().isEmpty())
+    }
+
+    @Test fun aYesAfterADaySendsNothing() {
+        TripHold.hold(ctx, 21, now)
+        routeFor(21)
+        TripHold.confirm(ctx, 21, now + TripHold.MAX_AGE_MS)
+        assertFalse(TripHold.isHeld(ctx, 21))
+        assertFalse(routeFile(21).exists())
+        assertTrue(jobs().isEmpty())
+    }
+
+    @Test fun heldPointsWithoutAHoldAreSwept() {
+        val db = BumpDb(ctx)
+        try {
+            val s = SyncStore(db)
+            s.holdAdd(listOf("a" to "{}"), 30, now)            // left behind: no hold for trip 30
+            TripHold.hold(ctx, 31, now)
+            s.holdAdd(listOf("b" to "{}"), 31, now)
+            TripHold.expire(ctx, now + 1_000)
+            assertEquals(listOf(31L), s.heldTrips().map { it.first })
+        } finally {
+            db.close()
+        }
     }
 
     @Test fun confirmedTripsRouteIsScheduledAsBefore() {
@@ -124,12 +173,13 @@ class TripHoldTest {
             val hitLater = spot().also { event(trip, "new_bump", it); event(later, "hit", it) }
             val existedBefore = spot().also { event(before, "new_bump", it); event(trip, "hit", it) }
             val unrelated = spot().also { event(later, "new_bump", it) }
+            val missedLater = spot().also { event(trip, "new_bump", it); event(later, "miss", it) }
             TripHold.hold(ctx, trip, now)
 
             TripHold.reject(ctx, trip)
 
             val left = db.loadBumps().map { it.id }.toSet()
-            assertEquals(setOf(hitLater, existedBefore, unrelated), left)
+            assertEquals(setOf(hitLater, existedBefore, unrelated, missedLater), left)
             assertFalse(onlyThisTrip in left)
             assertTrue(db.trips().none { it.id == trip })
             assertTrue(db.tripEvents(trip).isEmpty())

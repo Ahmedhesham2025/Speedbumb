@@ -296,8 +296,9 @@ class BumpDb(ctx: Context) : SQLiteOpenHelper(ctx, "bumps.db", null, 6), BumpSto
     }
 
     /**
-     * "Not a drive" (#49): deletes the spots first found on trip [id] (its `new_bump` events) that no other trip
-     * found or hit. Spots also seen on other trips stay; their hit counts aren't stored per trip, so they stay too.
+     * "Not a drive" (#49): deletes the spots first found on trip [id] (its `new_bump` events) that no event of any
+     * other trip mentions (found, hit, missed, beeped, muted...). Spots seen on other trips stay; their hit counts
+     * aren't stored per trip, so they stay too.
      * Call before [deleteTrip], which deletes the events this reads. Returns how many spots were deleted.
      */
     fun deleteSpotsOnlyFrom(id: Long): Int {
@@ -305,8 +306,7 @@ class BumpDb(ctx: Context) : SQLiteOpenHelper(ctx, "bumps.db", null, 6), BumpSto
         return writableDatabase.delete(
             "bumps",
             "id IN (SELECT bump_id FROM events WHERE trip_id = ? AND type = 'new_bump') AND id NOT IN " +
-                "(SELECT bump_id FROM events WHERE bump_id IS NOT NULL AND (trip_id IS NULL OR trip_id <> ?) " +
-                "AND type IN ('new_bump', 'hit', 'hit_repeat'))",
+                "(SELECT bump_id FROM events WHERE bump_id IS NOT NULL AND (trip_id IS NULL OR trip_id <> ?))",
             arrayOf(t, t),
         )
     }

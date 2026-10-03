@@ -82,6 +82,7 @@ class UnconfirmedTripTest {
         val d = db()
         val tripId = d.startTrip(1_000)
         trip(SyncStore(d), tripId, held = true, now = 2_000)
+        TripHold.hold(ctx, tripId)   // answered now: within the day (a "yes" after 24 h sends nothing)
         TripCheck.answer(ctx, tripId, drove = true)
         val s = SyncStore(d)
         assertEquals("middle-$tripId", s.outboxBatch(10).single().first)

@@ -63,7 +63,7 @@ class SyncStore(private val helper: SQLiteOpenHelper) {
     /** Sharing switched off: nothing queued may leave the phone, held items of unconfirmed trips included. */
     fun outboxClear() {
         db.delete("outbox", null, null)
-        db.delete("sync_state", "key LIKE ?", arrayOf("$HELD%"))
+        db.delete("sync_state", "key GLOB ?", arrayOf("$HELD*"))   // GLOB: '_' in the prefix is literal
     }
 
     // ---------------- held: unconfirmed trips (#49)
@@ -93,7 +93,7 @@ class SyncStore(private val helper: SQLiteOpenHelper) {
 
     /** Trips with held elements, oldest first: (trip id, held since). */
     fun heldTrips(): List<Pair<Long, Long>> =
-        db.rawQuery("SELECT key, value FROM sync_state WHERE key LIKE ?", arrayOf("$HELD%")).use { c ->
+        db.rawQuery("SELECT key, value FROM sync_state WHERE key GLOB ?", arrayOf("$HELD*")).use { c ->
             val out = ArrayList<Pair<Long, Long>>()
             while (c.moveToNext()) {
                 val id = c.getString(0).removePrefix(HELD).toLongOrNull() ?: continue
