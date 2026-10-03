@@ -47,7 +47,8 @@ android {
     }
 
     // Two editions from the same code (issue #48). Same applicationId and key: a user installs one or the other.
-    // foss: Android platform APIs + :core only (GitHub Releases, F-Droid, AppGallery); CI fails if it gains a library.
+    // foss: Android platform APIs + :core + MapLibre (the street map, v1.8) only (GitHub Releases, F-Droid, AppGallery);
+    // CI fails if it gains any other library.
     // play: adds Google Play services activity recognition, falling back to the foss detection without Google services.
     flavorDimensions += "dist"
     productFlavors {
@@ -94,6 +95,14 @@ android {
         checkReleaseBuilds = false
     }
 
+    // MapLibre's native map engine (~40 MB for all 4 ABIs uncompressed). Compressing it in the APK roughly halves the
+    // download; Android unpacks it once at install. Per-ABI APKs would shrink it further (see the v1.8 PR notes).
+    packaging {
+        jniLibs {
+            useLegacyPackaging = true
+        }
+    }
+
     // Robolectric needs the merged resources; unmocked android.* calls return defaults instead of throwing.
     testOptions {
         unitTests {
@@ -109,6 +118,15 @@ kotlin {
     }
 }
 
+// Unit tests use the real org.json (JSONObject.keySet() etc.), but android.jar's stub JSONObject sits first on the
+// Kotlin compiler's classpath since the MapLibre libraries joined it. Put org.json in front for test compiles only.
+val orgJsonForTests: Configuration = configurations.detachedConfiguration(dependencies.create("org.json:json:20240303"))
+tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach {
+    if (name.contains("UnitTest")) {
+        doFirst { libraries.setFrom(orgJsonForTests.files + libraries.files) }
+    }
+}
+
 // Show why an app unit test failed, right in the build log.
 tasks.withType<Test>().configureEach {
     testLogging {
@@ -119,10 +137,14 @@ tasks.withType<Test>().configureEach {
 }
 
 dependencies {
-    // The engine lives in :core (pure Kotlin). No other libraries in the app itself, except the play line below.
+    // The engine lives in :core (pure Kotlin). No other libraries in the app itself, except the two below.
     implementation(project(":core"))
+    // The street map (owner decision 2026-10-03): MapLibre Native, BSD-2, both editions, with free OpenFreeMap tiles
+    // (no key, no account). The OpenGL ES build, not the Vulkan default, so older and budget phones (and the CI
+    // emulator) can draw it. CI's foss guard allows exactly this and its transitive libraries.
+    implementation("org.maplibre.gl:android-sdk-opengl:13.6.1")
     // The ONE allowed library, play edition only (owner decision, #48). The foss edition must never get one.
-    // 21.4.0 ships Kotlin 2.3 metadata and doesn't compile with our Kotlin 2.0.21: bump both together.
+    // 21.4.0 ships Kotlin 2.3 metadata and needs Kotlin 2.3 (we use 2.2.21, which MapLibre 13.6 needs): bump both together.
     "playImplementation"("com.google.android.gms:play-services-location:21.3.0")
 
     // Test-only: never shipped in the APK.
