@@ -18,7 +18,6 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
-import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 import java.io.File
 
@@ -73,7 +72,7 @@ class TripHoldTest {
         SpeedLimitSync.afterTrip(ctx, tripId, r, now, now - 1_000_000L)
     }
 
-    private fun jobs() = shadowOf(ctx.getSystemService(JobScheduler::class.java)).allPendingJobs.filter { it.id == SpeedLimitSync.JOB_ID }
+    private fun jobs() = ctx.getSystemService(JobScheduler::class.java).allPendingJobs.filter { it.id == SpeedLimitSync.JOB_ID }
     private fun routeFile(tripId: Long) = File(SpeedLimitSync.dir(ctx), "$tripId.route")
 
     @Test fun heldRouteIsKeptButNotScheduledUntilYes() {
