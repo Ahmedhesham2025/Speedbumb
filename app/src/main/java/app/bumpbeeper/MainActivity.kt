@@ -513,8 +513,8 @@ class MainActivity : Activity() {
         autoStep = step
         when (step) {
             AutoSetup.Step.FINE -> requestPermissions(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION), REQ_DETECT)
-            AutoSetup.Step.BACKGROUND -> explainAutoStep(step, R.string.auto_bg_title, if (Build.VERSION.SDK_INT >= 30)
-                getString(R.string.auto_bg_msg_11, packageManager.backgroundPermissionOptionLabel) else getString(R.string.auto_bg_msg_10)) {
+            AutoSetup.Step.BACKGROUND -> explainAutoStep(step, R.string.auto_bg_title, bgOption()?.let { getString(R.string.auto_bg_msg_11, it) }
+                ?: getString(R.string.auto_bg_msg_10)) {
                 requestPermissions(arrayOf(Manifest.permission.ACCESS_BACKGROUND_LOCATION), REQ_DETECT)
             }
             AutoSetup.Step.NOTIFICATIONS -> requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), REQ_DETECT)
@@ -577,6 +577,10 @@ class MainActivity : Activity() {
             .setOnDismissListener { autoDialog = null }
             .show()
     }
+
+    /** Android 11+: the system's own name for "Allow all the time" (some builds have none: then the generic text). */
+    private fun bgOption(): CharSequence? = if (Build.VERSION.SDK_INT < 30) null
+        else try { packageManager.backgroundPermissionOptionLabel.takeIf { it.isNotBlank() } } catch (_: Exception) { null }
 
     private fun openAppSettings() {
         try {
