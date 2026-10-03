@@ -24,8 +24,10 @@ class TrainingUploadTest {
     private val day = 24 * 60 * 60 * 1000L
 
     /** Answers like the backend. [submit] = error code for submit_training_samples, or null to hold [keep] (all if null). */
-    private class FakeBackend(val submit: String? = null, val keep: Set<String>? = null) : Transport {
+    private class FakeBackend(val submit: String? = null, val keep: Set<String>? = null, val consent: String? = null) : Transport {
         val calls = ArrayList<String>()
+        /** `enabled` of every set_training_consent call, in order. */
+        val consents = ArrayList<Boolean>()
         val bodies = HashMap<String, String>()
         override fun post(url: String, headers: Map<String, String>, body: String): HttpResult {
             val name = url.substringAfterLast('/').substringBefore('?')
@@ -34,7 +36,10 @@ class TrainingUploadTest {
             return when (name) {
                 "signup", "token" -> HttpResult(200, """{"access_token":"a","expires_in":3600,"refresh_token":"r","user":{"id":"u"}}""")
                 "register_device" -> HttpResult(200, "\"u\"")
-                "set_training_consent" -> HttpResult(200, JSONObject(body).getBoolean("enabled").toString())
+                "set_training_consent" -> if (consent != null) HttpResult(400, """{"code":"$consent","message":"no"}""") else {
+                    consents.add(JSONObject(body).getBoolean("enabled"))
+                    HttpResult(200, JSONObject(body).getBoolean("enabled").toString())
+                }
                 "submit_training_samples" -> when {
                     submit == "503" -> HttpResult(503, "busy")
                     submit != null -> HttpResult(400, """{"code":"$submit","message":"no"}""")
@@ -73,7 +78,7 @@ class TrainingUploadTest {
     private fun queued(): Set<String> = db { TrainingStore(it).batch(1000, 1000, Int.MAX_VALUE).map { i -> i.id }.toSet() }
 
     /** Consent on and the server already told (as after a successful first run). */
-    private fun consented() = Prefs.setTrainingConsent(ctx, true, TrainingConsent.TRAINING_CONSENT_VERSION, serverPending = false)
+    private fun consented() = Prefs.setTrainingState(ctx, true, TrainingConsent.TRAINING_CONSENT_VERSION, wipe = false, sendOn = false, note = "")
 
     @Test fun offByDefaultAndGatedOnTheNetworkChoice() {
         assertFalse(TrainingConsent.status(ctx).enabled)
@@ -122,22 +127,68 @@ class TrainingUploadTest {
         assertTrue(Prefs.trainingConsent(ctx))
     }
 
-    @Test fun noConsentOnTheServerSwitchesItOffHere() {
+    @Test fun noConsentOnTheServerSwitchesItOffHereAndSaysSo() {
         consented()
         queue("s1")
         TrainingConsent.run(ctx, FakeBackend(submit = "42501"))
         assertTrue(queued().isEmpty())
         assertFalse(Prefs.trainingConsent(ctx))
         assertFalse(TrainingConsent.active(ctx))
+        assertEquals(TrainingConsent.SESSION_RESET, TrainingConsent.status(ctx).lastError)
+    }
+
+    @Test fun unregisteredDeviceWhileSendingConsentIsRetriedWithAClearMessage() {
+        TrainingConsent.setEnabled(ctx, true)
+        assertTrue(TrainingConsent.run(ctx, FakeBackend(consent = "42501")))
+        assertTrue(TrainingConsent.status(ctx).serverPending)
+        assertTrue(TrainingConsent.status(ctx).lastError.contains("registered"))
+        assertTrue(Prefs.trainingConsent(ctx))
+    }
+
+    @Test fun offThenOnWhileOfflineSendsTheWipeFirst() {
+        consented()
+        TrainingConsent.setEnabled(ctx, false)
+        TrainingConsent.setEnabled(ctx, true)   // no run in between (offline)
+        val net = FakeBackend()
+        assertFalse(TrainingConsent.run(ctx, net))
+        assertEquals(listOf(false, true), net.consents)
+        assertFalse(TrainingConsent.status(ctx).serverPending)
+        // A failed wipe keeps the flag: the "on" waits for it.
+        TrainingConsent.setEnabled(ctx, false)
+        TrainingConsent.setEnabled(ctx, true)
+        assertTrue(TrainingConsent.run(ctx, FakeBackend(consent = "503")))
+        assertTrue(Prefs.trainingWipePending(ctx) && Prefs.trainingOnPending(ctx))
+        val later = FakeBackend()
+        TrainingConsent.run(ctx, later)
+        assertEquals(listOf(false, true), later.consents)
+    }
+
+    @Test fun queuedTripsUploadHoursLaterNotAtTripEnd() {
+        consented()
+        val now = System.currentTimeMillis()
+        TrainingSink.queue(ctx, listOf(TrainingStore.Item("s1", TrainingStore.SAMPLE, """{"client_sample_id":"s1"}""")), 3L, now)
+        val after = db { SyncStore(it).getLong(TrainingConsent.UPLOAD_AFTER) }
+        assertTrue(after >= now + 3_600_000L && after <= now + 6 * 3_600_000L)
+        val atTripEnd = FakeBackend()
+        Sync.run(ctx, false, 30.0, 31.0, atTripEnd)
+        assertFalse(atTripEnd.calls.contains("submit_training_samples"))
+        val later = FakeBackend()
+        TrainingConsent.run(ctx, later, now = after + 1)
+        assertTrue(later.calls.contains("submit_training_samples"))
+        assertTrue(queued().isEmpty())
     }
 
     @Test fun dailyCapPausesUntilTomorrowAndStorageFullForThreeDays() {
         consented()
         queue("s1")
-        TrainingConsent.run(ctx, FakeBackend(submit = "54000"))
+        val now = System.currentTimeMillis()
+        TrainingConsent.run(ctx, FakeBackend(submit = "54000"), now)
         assertEquals(setOf("s1"), queued())
         val until = db { SyncStore(it).getLong(TrainingConsent.PAUSED_UNTIL) }
-        assertTrue(until > System.currentTimeMillis() && until <= System.currentTimeMillis() + day + 3_600_000)
+        // The server's caps count per UTC day: paused until the next UTC midnight, whatever the phone's time zone.
+        assertEquals(0L, until % day)
+        assertTrue(until > now && until <= now + day)
+        assertEquals(TrainingConsent.nextUtcMidnight(now), until)
         val again = FakeBackend()
         TrainingConsent.run(ctx, again)
         assertFalse("paused: no upload today", again.calls.contains("submit_training_samples"))
@@ -186,7 +237,7 @@ class TrainingUploadTest {
         queue("s1", "t1")
         Sync.withdrawConsent(ctx)
         assertFalse(Prefs.trainingConsent(ctx))
-        assertFalse("the deleted device isn't told again", Prefs.trainingServerPending(ctx))
+        assertFalse("the deleted device isn't told again", TrainingConsent.status(ctx).serverPending)
         // The blocking part empties it for sure (not signed in: nothing to delete on the server).
         assertTrue(Sync.forgetNow(ctx, FakeBackend()))
         assertTrue(queued().isEmpty())

@@ -129,14 +129,20 @@ class TrainingSink(
          */
         fun queue(ctx: Context, items: List<TrainingStore.Item>, tripId: Long, now: Long): Int = synchronized(Sync.lock) {
             if (!Prefs.trainingActive(ctx)) return 0
-            Sync.withDb(ctx) { TrainingStore(it).add(items, now, tripId.toString(), isHeld(tripId)) }
+            Sync.withDb(ctx) {
+                TrainingStore(it).add(items, now, tripId.toString(), isHeld(tripId))
+                TrainingConsent.uploadLater(ctx, SyncStore(it), now)   // hours later, never at trip end
+            }
             items.size
         }
 
         /** The trip was confirmed: its held rows may be uploaded if consent still holds, else they are deleted. Background thread. */
         fun release(ctx: Context, tripKey: String) {
             synchronized(Sync.lock) {
-                Sync.withDb(ctx) { if (Prefs.trainingActive(ctx)) TrainingStore(it).release(tripKey) else TrainingStore(it).discard(tripKey) }
+                Sync.withDb(ctx) {
+                    if (!Prefs.trainingActive(ctx)) TrainingStore(it).discard(tripKey)
+                    else { TrainingStore(it).release(tripKey); TrainingConsent.uploadLater(ctx, SyncStore(it), System.currentTimeMillis()) }
+                }
             }
         }
 
