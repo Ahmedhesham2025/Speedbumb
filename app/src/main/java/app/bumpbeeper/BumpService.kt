@@ -27,6 +27,10 @@ import android.os.Looper
 import android.os.PowerManager
 import android.os.SystemClock
 import android.util.Log
+import app.bumpbeeper.auto.AutoDetect
+import app.bumpbeeper.auto.AutoStop
+import app.bumpbeeper.auto.DriveWatcher
+import app.bumpbeeper.auto.PowerPolicy
 import app.bumpbeeper.crash.CrashLog
 import app.bumpbeeper.sync.CachedSpotSource
 import app.bumpbeeper.sync.OutboxSink
@@ -48,9 +52,17 @@ class BumpService : Service(), SensorEventListener, LocationListener, EngineList
         private const val ACTION_STOP = "app.bumpbeeper.STOP"
         private const val ACTION_MUTE_LAST = "app.bumpbeeper.MUTE_LAST"
         private const val ACTION_CAR_GONE = "app.bumpbeeper.CAR_GONE"
-        private const val EXTRA_AUTO = "auto"
+        private const val ACTION_WATCH = "app.bumpbeeper.WATCH"
+        private const val ACTION_UNWATCH = "app.bumpbeeper.UNWATCH"
+        private const val ACTION_WALKING = "app.bumpbeeper.WALKING"
+        /** Who started an automatic recording: [SOURCE_CAR], [SOURCE_VEHICLE] or [SOURCE_MOTION]; absent = the user. */
+        private const val EXTRA_SOURCE = "source"
+        const val SOURCE_CAR = "car"
+        const val SOURCE_VEHICLE = "vehicle"
+        const val SOURCE_MOTION = "motion"
         private const val CHANNEL_ID = "recording"
         private const val CHANNEL_AUTO = "auto_start"
+        private const val CHANNEL_WATCH = "watching"
         private const val NOTIF_ID = 1
         /** Settings that [Prefs.applyTo] copies into the engine or driving monitor. */
         private val ENGINE_KEYS: Set<String?> = setOf(
@@ -63,6 +75,10 @@ class BumpService : Service(), SensorEventListener, LocationListener, EngineList
         private const val CAR_GONE_GRACE_MS = 60_000L
         /** How often the battery level goes into the recording. */
         private const val BATTERY_EVERY_MS = 5 * 60_000L
+        /** How often the engine thread asks [AutoStop] whether the car is parked. */
+        private const val PARKED_CHECK_MS = 15_000L
+        /** After the user presses Stop, motion detection waits this long (they may still be driving). */
+        private const val SNOOZE_AFTER_STOP_MS = 15 * 60_000L
 
         /** The running service, for [label]. Set in onCreate, cleared in onDestroy. */
         @Volatile private var instance: BumpService? = null
@@ -81,14 +97,68 @@ class BumpService : Service(), SensorEventListener, LocationListener, EngineList
         }
 
         /** The car's Bluetooth connected. Start recording (or, if it was about to stop, keep going). */
-        fun startFromCar(ctx: Context) {
+        fun startFromCar(ctx: Context) = startAuto(ctx, SOURCE_CAR)
+
+        /**
+         * Automatic start ([SOURCE_CAR] Bluetooth, [SOURCE_VEHICLE] Google activity recognition). Android 12+ only lets
+         * a background app start a foreground service in some cases (activity-recognition transitions are one); when it
+         * refuses, a "tap to start" notification is the fallback. While the service already runs (watching for
+         * driving) a plain start is enough and always allowed.
+         */
+        fun startAuto(ctx: Context, source: String) {
+            val i = Intent(ctx, BumpService::class.java).setAction(ACTION_START).putExtra(EXTRA_SOURCE, source)
+            if (instance == null && !mayRecordInBackground(ctx)) {
+                // startForeground would throw after startForegroundService, and Android then kills the app.
+                notifyTapToStart(ctx, tapText(source))
+                return
+            }
             try {
-                ctx.startForegroundService(Intent(ctx, BumpService::class.java).setAction(ACTION_START).putExtra(EXTRA_AUTO, true))
+                if (instance != null) ctx.startService(i) else ctx.startForegroundService(i)
             } catch (e: Exception) {
                 // Android refused to start from the background (missing permission or battery restriction).
                 Log.w(TAG, "auto start refused", e)
-                notifyTapToStart(ctx, "Your car connected. Tap to start recording.")
+                notifyTapToStart(ctx, tapText(source))
             }
+        }
+
+        private fun tapText(source: String?): String =
+            if (source == SOURCE_CAR) "Your car connected. Tap to start recording." else "Driving detected. Tap to start recording."
+
+        /** Google saw the user walking (they left the car): a recording then stops after 1 min parked. */
+        fun userWalking(ctx: Context) {
+            if (instance?.running != true) return
+            try { ctx.startService(Intent(ctx, BumpService::class.java).setAction(ACTION_WALKING)) } catch (_: Exception) {}
+        }
+
+        /**
+         * Keep running with a quiet "ready to detect driving" notification and start recording when the car moves
+         * (no Bluetooth needed). Call from the app or a boot broadcast: Android 12+ refuses it from other background
+         * moments. Returns false when Android refused. See [app.bumpbeeper.auto.AutoDetect].
+         */
+        fun watch(ctx: Context): Boolean {
+            if (!mayRecordInBackground(ctx)) return false   // see startAuto
+            return try {
+                ctx.startForegroundService(Intent(ctx, BumpService::class.java).setAction(ACTION_WATCH))
+                true
+            } catch (e: Exception) {
+                Log.w(TAG, "watching refused", e)
+                false
+            }
+        }
+
+        /**
+         * A location foreground service may start without the app on screen: Android 14+ throws in startForeground
+         * otherwise. Checked before startForegroundService, because a service that then fails to call startForeground
+         * crashes the app ("did not then call startForeground"), even if it stops itself.
+         */
+        private fun mayRecordInBackground(ctx: Context): Boolean = listOf(
+            android.Manifest.permission.ACCESS_FINE_LOCATION, android.Manifest.permission.ACCESS_BACKGROUND_LOCATION,
+        ).all { ctx.checkSelfPermission(it) == android.content.pm.PackageManager.PERMISSION_GRANTED }
+
+        /** Stop watching for driving (a recording in progress continues). */
+        fun unwatch(ctx: Context) {
+            if (instance == null) return
+            try { ctx.startService(Intent(ctx, BumpService::class.java).setAction(ACTION_UNWATCH)) } catch (_: Exception) {}
         }
 
         /**
@@ -112,15 +182,15 @@ class BumpService : Service(), SensorEventListener, LocationListener, EngineList
         }
 
         /** Fallback when auto start isn't allowed: a notification that starts recording with one tap. */
-        fun notifyTapToStart(ctx: Context, text: String) {
+        fun notifyTapToStart(ctx: Context, text: String, resume: Boolean = false) {
             val nm = ctx.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
             nm.createNotificationChannel(
                 NotificationChannel(CHANNEL_AUTO, "Auto start", NotificationManager.IMPORTANCE_HIGH).apply {
-                    description = "Shown when your car connects but recording could not start by itself"
+                    description = "Shown when your car connects or driving is detected but recording could not start by itself"
                 }
             )
             val open = PendingIntent.getActivity(
-                ctx, 2, Intent(ctx, MainActivity::class.java).putExtra(MainActivity.EXTRA_START, true)
+                ctx, if (resume) 3 else 2, Intent(ctx, MainActivity::class.java).putExtra(MainActivity.EXTRA_START, !resume)
                     .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP),
                 PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
             )
@@ -135,7 +205,7 @@ class BumpService : Service(), SensorEventListener, LocationListener, EngineList
         }
     }
 
-    private var running = false
+    @Volatile private var running = false
     private lateinit var db: BumpDb
     private lateinit var beeper: Beeper
     private var voice: Voice? = null
@@ -161,16 +231,44 @@ class BumpService : Service(), SensorEventListener, LocationListener, EngineList
     private var gz = 0.0
     /** No gyroscope reading yet this trip: the recording leaves gx/gy/gz empty instead of a fake 0. */
     private var gyroSeen = false
+    // Battery saving (#50) and auto-stop when parked: only used on the engine thread.
+    private var power = PowerPolicy()
+    private var autoStop: AutoStop? = null
+    /** Auto-detect driving is on: between recordings the service stays up and [watcher] waits for the car to move. */
+    @Volatile private var watching = false
+    private var watcher: DriveWatcher? = null           // main thread; only while watching and not recording
+
+    /** Engine thread, every [PARKED_CHECK_MS] while recording (the wake lock keeps it on time). */
+    private val parkedCheck = object : Runnable {
+        override fun run() {
+            val h = handler ?: return
+            if (autoStop?.shouldStop(SystemClock.elapsedRealtime()) == true) {
+                autoStop = null
+                main.post {
+                    if (running) {
+                        LiveState.lastEvent = "Parked: recording stopped"
+                        stopRecording(manual = false)
+                    }
+                }
+                return
+            }
+            h.postDelayed(this, PARKED_CHECK_MS)
+        }
+    }
 
     private val stopForCarGone = Runnable {
         LiveState.lastEvent = "Car disconnected: stopped"
-        stopRecording()
+        stopRecording(manual = false)
     }
 
     private val prefListener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
         // Only settings that change detection or scoring touch the engine; others (update check,
         // voice, car…) are written often enough that re-applying on each one would be wasted work.
         val engineKey = key == null || key in ENGINE_KEYS   // null = all settings cleared
+        if (key == Prefs.AUTO_STOP_MIN || key == null) {
+            val ms = Prefs.autoStopMinutes(this) * 60_000L
+            handler?.post { autoStop?.stopAfterMs = ms }
+        }
         if (!engineKey && key != Prefs.LABEL_MODE) return@OnSharedPreferenceChangeListener
         handler?.post {
             if (engineKey) {
@@ -194,23 +292,112 @@ class BumpService : Service(), SensorEventListener, LocationListener, EngineList
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        when (intent?.action) {
+        if (intent == null) {
+            // Restarted by Android after it killed us while watching (START_STICKY): resume watching only, never
+            // recording. If Android refuses the foreground start, the user gets a "tap to resume" notification.
+            if (!running && AutoDetect.enabled(this) && AutoDetect.missingPermissions(this).isEmpty()) {
+                startWatching(restarted = true)
+            } else {
+                stopIfIdle()
+            }
+            return if (watching) START_STICKY else START_NOT_STICKY
+        }
+        when (intent.action) {
             ACTION_STOP -> {
                 main.removeCallbacks(stopForCarGone)
-                stopRecording()
+                stopRecording(manual = true)
             }
-            ACTION_MUTE_LAST -> if (running) muteLast() else stopSelf()
+            ACTION_MUTE_LAST -> if (running) muteLast() else stopIfIdle()
             ACTION_CAR_GONE -> if (running) {
                 main.removeCallbacks(stopForCarGone)
                 main.postDelayed(stopForCarGone, CAR_GONE_GRACE_MS)
+                handler?.post { autoStop?.carConnected = false }
                 LiveState.lastEvent = "Car disconnected: stopping in ${CAR_GONE_GRACE_MS / 1000} s"
-            } else stopSelf()
+            } else stopIfIdle()
+            ACTION_WATCH -> startWatching()
+            ACTION_UNWATCH -> stopWatching()
+            ACTION_WALKING -> if (running) handler?.post { autoStop?.leftVehicle() } else stopIfIdle()
             else -> {
                 main.removeCallbacks(stopForCarGone)   // car came back (or Start pressed): keep going
-                startRecording(intent?.getBooleanExtra(EXTRA_AUTO, false) == true)
+                startRecording(intent.getStringExtra(EXTRA_SOURCE))
             }
         }
-        return START_NOT_STICKY
+        // While watching, Android restarts us after killing the process (a null intent, handled above).
+        return if (watching) START_STICKY else START_NOT_STICKY
+    }
+
+    /** Nothing to do (not recording, not watching): let the service end. */
+    private fun stopIfIdle() {
+        if (!running && !watching) stopSelf()
+    }
+
+    // ---------------------------------------------------------------- watching for driving (#49)
+
+    private fun startWatching(restarted: Boolean = false) {
+        // Always answer startForegroundService with startForeground, even when already in the foreground.
+        val n = if (running) buildNotification("Recording") else buildWatchNotification()
+        try {
+            startForeground(NOTIF_ID, n, ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION)
+        } catch (e: Exception) {
+            // Only reachable when permissions changed after the check in watch(), or on a sticky restart.
+            Log.w(TAG, "watching: startForeground refused", e)
+            if (!running) {
+                if (restarted) notifyTapToStart(this, "Driving detection paused. Tap to resume.", resume = true)
+                stopIfIdle()
+                return
+            }
+        }
+        watching = true
+        LiveState.watching = true
+        if (!running) beginWatch()
+    }
+
+    private fun stopWatching() {
+        watching = false
+        LiveState.watching = false
+        watcher?.stop()
+        watcher = null
+        if (!running) {
+            stopForeground(STOP_FOREGROUND_REMOVE)
+            stopSelf()
+        }
+    }
+
+    /** Main thread. Between recordings: wait for the car to move (motion sensor, then a short GPS check). */
+    private fun beginWatch(snoozeMs: Long = 0L) {
+        if (watcher != null) return
+        watcher = DriveWatcher(this) { drivingDetected() }.also {
+            if (snoozeMs > 0) it.snooze(snoozeMs)
+            it.start()
+        }
+    }
+
+    /** The watcher saw a drive. Internal for tests. */
+    internal fun drivingDetected() {
+        if (watching && !running) startRecording(SOURCE_MOTION)
+    }
+
+    /** For tests: the watcher waiting for the next drive (null while recording or not watching). */
+    internal val currentWatcher: DriveWatcher? get() = watcher
+
+    private fun buildWatchNotification(): Notification {
+        (getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager).createNotificationChannel(
+            NotificationChannel(CHANNEL_WATCH, "Ready to detect driving", NotificationManager.IMPORTANCE_MIN).apply {
+                description = "Android needs this while Bump Beeper waits for you to drive. You can hide it here."
+                setShowBadge(false)
+            }
+        )
+        val open = PendingIntent.getActivity(
+            this, 0, Intent(this, MainActivity::class.java),
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+        )
+        return Notification.Builder(this, CHANNEL_WATCH)
+            .setSmallIcon(R.drawable.ic_stat_bump)
+            .setContentTitle("Bump Beeper")
+            .setContentText("Ready to detect driving")
+            .setOngoing(true)
+            .setContentIntent(open)
+            .build()
     }
 
     private fun muteLast() {
@@ -224,7 +411,11 @@ class BumpService : Service(), SensorEventListener, LocationListener, EngineList
 
     override fun onDestroy() {
         main.removeCallbacks(stopForCarGone)
-        if (running) stopRecording()
+        watching = false
+        LiveState.watching = false
+        watcher?.stop()
+        watcher = null
+        if (running) stopRecording(manual = false)
         if (instance === this) instance = null
         super.onDestroy()
     }
@@ -270,26 +461,44 @@ class BumpService : Service(), SensorEventListener, LocationListener, EngineList
 
     // ---------------------------------------------------------------- start / stop
 
-    private fun startRecording(auto: Boolean) {
+    /** [source]: who started it ([SOURCE_CAR], [SOURCE_VEHICLE], [SOURCE_MOTION]); null = the user. */
+    private fun startRecording(source: String?) {
         if (running) {
-            if (auto) LiveState.lastEvent = "Car reconnected: still recording"
+            if (source == SOURCE_CAR) {
+                LiveState.lastEvent = "Car reconnected: still recording"
+                handler?.post { autoStop?.carConnected = true }
+            }
+            if (source == SOURCE_VEHICLE) handler?.post { autoStop?.backInVehicle() }
             return
         }
         createChannel()
         try {
             startForeground(NOTIF_ID, buildNotification("Starting…"), ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION)
         } catch (e: Exception) {
-            Log.e(TAG, "startForeground failed", e)
-            LiveState.recording = false
-            LiveState.lastEvent = "Could not start: ${e.message}"
-            if (auto) notifyTapToStart(this, "Your car connected, but recording couldn't start by itself. Tap to start.")
-            stopSelf()
-            return
+            if (watching) {
+                // Already in the foreground (watching): Android may refuse a second startForeground from the
+                // background, but the service stays in the foreground; only the notification has to change.
+                Log.w(TAG, "startForeground while watching refused; keeping the watching one", e)
+                (getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager).notify(NOTIF_ID, buildNotification("Starting…"))
+            } else {
+                Log.e(TAG, "startForeground failed", e)
+                LiveState.recording = false
+                LiveState.lastEvent = "Could not start: ${e.message}"
+                if (source != null) notifyTapToStart(this, tapText(source))
+                stopSelf()
+                return
+            }
         }
+        watcher?.stop()
+        watcher = null
         running = true
         LiveState.resetTrip()
         LiveState.recording = true
-        LiveState.lastEvent = if (auto) "Car connected: recording started" else "Recording started"
+        LiveState.lastEvent = when (source) {
+            SOURCE_CAR -> "Car connected: recording started"
+            SOURCE_VEHICLE, SOURCE_MOTION -> "Driving detected: recording started"
+            else -> "Recording started"
+        }
 
         db = BumpDb(this)
         beeper = Beeper(this)
@@ -306,7 +515,17 @@ class BumpService : Service(), SensorEventListener, LocationListener, EngineList
         val record = Prefs.recordTrace(this)
         gx = 0.0; gy = 0.0; gz = 0.0
         gyroSeen = false
+        power = PowerPolicy()
+        val stopAfterMs = Prefs.autoStopMinutes(this) * 60_000L
+        // Started by a guess (motion / Google): give up if the car never really drives.
+        val guessed = source == SOURCE_VEHICLE || source == SOURCE_MOTION
         h.post {
+            // A trip the car's Bluetooth started only ends when it disconnects (ACTION_CAR_GONE), never as "parked".
+            autoStop = AutoStop(stopAfterMs).also {
+                it.carConnected = source == SOURCE_CAR
+                if (guessed) it.autoStarted(SystemClock.elapsedRealtime())
+            }
+            h.postDelayed(parkedCheck, PARKED_CHECK_MS)
             val store = TracingStore(db, null)
             tracingStore = store
             if (record) openTrace(store)
@@ -345,24 +564,19 @@ class BumpService : Service(), SensorEventListener, LocationListener, EngineList
             sm.registerListener(this, accel, 20_000 /* µs → 50 Hz */, h)
         }
         // Optional: tells speed bumps (car pitches) from potholes (car rolls). Works without it, less surely.
+        // Stays on for the whole trip: switched off, the engine would keep using its last (frozen) reading.
         sm.getDefaultSensor(Sensor.TYPE_GYROSCOPE)?.let { sm.registerListener(this, it, 20_000, h) }
         LiveState.hasGyro = sm.getDefaultSensor(Sensor.TYPE_GYROSCOPE) != null
 
-        val lm = getSystemService(Context.LOCATION_SERVICE) as LocationManager
-        try {
-            lm.requestLocationUpdates(LocationManager.GPS_PROVIDER, 1000L, 0f, this, t.looper)
-        } catch (e: SecurityException) {
-            LiveState.lastEvent = "No location permission"
-        } catch (e: IllegalArgumentException) {
-            LiveState.lastEvent = "This phone has no GPS"
-        }
+        requestGps(PowerPolicy.MOVING_GPS_MS, t.looper)
 
         Prefs.sp(this).registerOnSharedPreferenceChangeListener(prefListener)
     }
 
-    private fun stopRecording() {
+    /** [manual]: the user pressed Stop, so motion detection pauses for a while (they may still be in the car). */
+    private fun stopRecording(manual: Boolean) {
         if (!running) {
-            stopSelf()
+            stopIfIdle()
             return
         }
         running = false
@@ -373,7 +587,11 @@ class BumpService : Service(), SensorEventListener, LocationListener, EngineList
         val h = handler
         val t = thread
         val database = db
+        h?.removeCallbacks(parkedCheck)
         h?.post {
+            autoStop = null
+            // Again on this thread: a fix handled just before stopRecording may have re-requested GPS (applyPower).
+            (getSystemService(Context.LOCATION_SERVICE) as LocationManager).removeUpdates(this)
             monitor?.finish()
             engine?.let { database.endTrip(tripId, System.currentTimeMillis(), it.trip, monitor?.stats) }
             monitor?.stats?.let { LiveState.lastTripScore = it.score() }
@@ -399,8 +617,9 @@ class BumpService : Service(), SensorEventListener, LocationListener, EngineList
             trace = null
             tracingStore = null
             database.close()
-            // A GPS fix handled just before this runnable may have re-posted the notification. Remove it.
-            (getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager).cancel(NOTIF_ID)
+            // A GPS fix handled just before this runnable may have re-posted the notification. Remove (or replace) it.
+            val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            if (watching) nm.notify(NOTIF_ID, buildWatchNotification()) else nm.cancel(NOTIF_ID)
             t?.quitSafely()
         }
         handler = null
@@ -413,7 +632,15 @@ class BumpService : Service(), SensorEventListener, LocationListener, EngineList
         voice = null
         LiveState.recording = false
         LiveState.labelMode = false
-        if (!LiveState.lastEvent.startsWith("Car disconnected")) LiveState.lastEvent = "Stopped"
+        if (!LiveState.lastEvent.startsWith("Car disconnected") && !LiveState.lastEvent.startsWith("Parked")) {
+            LiveState.lastEvent = "Stopped"
+        }
+        if (watching) {
+            // Stay in the foreground and wait for the next drive.
+            (getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager).notify(NOTIF_ID, buildWatchNotification())
+            beginWatch(if (manual) SNOOZE_AFTER_STOP_MS else 0L)
+            return
+        }
         stopForeground(STOP_FOREGROUND_REMOVE)
         stopSelf()
     }
@@ -487,7 +714,30 @@ class BumpService : Service(), SensorEventListener, LocationListener, EngineList
         eng.onFix(fix)
         monitor?.onFix(eng.lastFix ?: fix)
         LiveState.forwardKnown = eng.forwardKnown
+        val kmh = fix.speedMps * 3.6
+        autoStop?.onFix(fix.timeMs, kmh, fix.lat, fix.lon)
+        if (power.onFix(fix.timeMs, kmh)) applyPower()
         publish(eng, force = false)
+    }
+
+    /** Engine thread. Stopped: GPS every 5 s; moving: every 1 s (#50). The sensors never change. */
+    private fun applyPower() {
+        val h = handler ?: return
+        if (!running) return
+        (getSystemService(Context.LOCATION_SERVICE) as LocationManager).removeUpdates(this)
+        requestGps(power.gpsIntervalMs, h.looper)
+        trace?.power(power.stopped)
+    }
+
+    private fun requestGps(intervalMs: Long, looper: Looper) {
+        try {
+            (getSystemService(Context.LOCATION_SERVICE) as LocationManager)
+                .requestLocationUpdates(LocationManager.GPS_PROVIDER, intervalMs, 0f, this, looper)
+        } catch (e: SecurityException) {
+            LiveState.lastEvent = "No location permission"
+        } catch (e: IllegalArgumentException) {
+            LiveState.lastEvent = "This phone has no GPS"
+        }
     }
 
     // Android 10 needs these three implemented explicitly.

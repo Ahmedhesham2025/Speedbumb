@@ -26,6 +26,10 @@ android-platform:
   - app/src/main/java/app/bumpbeeper/sync/**
   - app/src/main/java/app/bumpbeeper/crash/**
   - app/src/main/AndroidManifest.xml   # owner sees every change
+  - app/src/main/java/app/bumpbeeper/auto/**
+  - app/src/foss/**
+  - app/src/play/**
+  - docs/battery.md
 android-ui:
   - app/src/main/java/app/bumpbeeper/MainActivity.kt
   - app/src/main/java/app/bumpbeeper/*Page.kt

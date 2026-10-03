@@ -3,6 +3,8 @@ package app.bumpbeeper
 /** Numbers the recording service shares with the screen. The screen reads them 4 times a second. */
 object LiveState {
     @Volatile var recording = false
+    /** Auto-detect driving is waiting for the next drive (the quiet "ready" notification is up). */
+    @Volatile var watching = false
     @Volatile var speedKmh = Double.NaN
     @Volatile var accuracyM = Double.NaN
     @Volatile var lastFixAtMs = 0L          // SystemClock.elapsedRealtime of the last GPS fix
