@@ -112,7 +112,7 @@ class BumpService : Service(), SensorEventListener, LocationListener, EngineList
             val i = Intent(ctx, BumpService::class.java).setAction(ACTION_START).putExtra(EXTRA_SOURCE, source)
             if (instance == null && !mayRecordInBackground(ctx)) {
                 // startForeground would throw after startForegroundService, and Android then kills the app.
-                notifyTapToStart(ctx, tapText(source))
+                notifyTapToStart(ctx, tapText(ctx, source))
                 return
             }
             try {
@@ -120,12 +120,12 @@ class BumpService : Service(), SensorEventListener, LocationListener, EngineList
             } catch (e: Exception) {
                 // Android refused to start from the background (missing permission or battery restriction).
                 Log.w(TAG, "auto start refused", e)
-                notifyTapToStart(ctx, tapText(source))
+                notifyTapToStart(ctx, tapText(ctx, source))
             }
         }
 
-        private fun tapText(source: String?): String =
-            if (source == SOURCE_CAR) "Your car connected. Tap to start recording." else "Driving detected. Tap to start recording."
+        private fun tapText(ctx: Context, source: String?): String =
+            ctx.getString(if (source == SOURCE_CAR) R.string.notif_tap_car else R.string.notif_tap_driving)
 
         /** Google saw the user walking (they left the car): a recording then stops after 1 min parked. */
         fun userWalking(ctx: Context) {
@@ -188,8 +188,8 @@ class BumpService : Service(), SensorEventListener, LocationListener, EngineList
         fun notifyTapToStart(ctx: Context, text: String, resume: Boolean = false) {
             val nm = ctx.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
             nm.createNotificationChannel(
-                NotificationChannel(CHANNEL_AUTO, "Auto start", NotificationManager.IMPORTANCE_HIGH).apply {
-                    description = "Shown when your car connects or driving is detected but recording could not start by itself"
+                NotificationChannel(CHANNEL_AUTO, ctx.getString(R.string.notif_channel_auto), NotificationManager.IMPORTANCE_HIGH).apply {
+                    description = ctx.getString(R.string.notif_channel_auto_desc)
                 }
             )
             val open = PendingIntent.getActivity(
@@ -199,7 +199,7 @@ class BumpService : Service(), SensorEventListener, LocationListener, EngineList
             )
             val n = Notification.Builder(ctx, CHANNEL_AUTO)
                 .setSmallIcon(R.drawable.ic_stat_bump)
-                .setContentTitle("Bump Beeper")
+                .setContentTitle(ctx.getString(R.string.app_name))
                 .setContentText(text)
                 .setContentIntent(open)
                 .setAutoCancel(true)
@@ -341,14 +341,14 @@ class BumpService : Service(), SensorEventListener, LocationListener, EngineList
 
     private fun startWatching(restarted: Boolean = false) {
         // Always answer startForegroundService with startForeground, even when already in the foreground.
-        val n = if (running) buildNotification("Recording") else buildWatchNotification()
+        val n = if (running) buildNotification(getString(R.string.notif_recording)) else buildWatchNotification()
         try {
             startForeground(NOTIF_ID, n, ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION)
         } catch (e: Exception) {
             // Only reachable when permissions changed after the check in watch(), or on a sticky restart.
             Log.w(TAG, "watching: startForeground refused", e)
             if (!running) {
-                if (restarted) notifyTapToStart(this, "Driving detection paused. Tap to resume.", resume = true)
+                if (restarted) notifyTapToStart(this, getString(R.string.notif_detection_paused), resume = true)
                 stopIfIdle()
                 return
             }
@@ -388,8 +388,8 @@ class BumpService : Service(), SensorEventListener, LocationListener, EngineList
 
     private fun buildWatchNotification(): Notification {
         (getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager).createNotificationChannel(
-            NotificationChannel(CHANNEL_WATCH, "Ready to detect driving", NotificationManager.IMPORTANCE_MIN).apply {
-                description = "Android needs this while Bump Beeper waits for you to drive. You can hide it here."
+            NotificationChannel(CHANNEL_WATCH, getString(R.string.notif_channel_watch), NotificationManager.IMPORTANCE_MIN).apply {
+                description = getString(R.string.notif_channel_watch_desc)
                 setShowBadge(false)
             }
         )
@@ -399,8 +399,8 @@ class BumpService : Service(), SensorEventListener, LocationListener, EngineList
         )
         return Notification.Builder(this, CHANNEL_WATCH)
             .setSmallIcon(R.drawable.ic_stat_bump)
-            .setContentTitle("Bump Beeper")
-            .setContentText("Ready to detect driving")
+            .setContentTitle(getString(R.string.app_name))
+            .setContentText(getString(R.string.notif_watch_text))
             .setOngoing(true)
             .setContentIntent(open)
             .build()
@@ -484,18 +484,18 @@ class BumpService : Service(), SensorEventListener, LocationListener, EngineList
         }
         createChannel()
         try {
-            startForeground(NOTIF_ID, buildNotification("Starting…"), ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION)
+            startForeground(NOTIF_ID, buildNotification(getString(R.string.notif_starting)), ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION)
         } catch (e: Exception) {
             if (watching) {
                 // Already in the foreground (watching): Android may refuse a second startForeground from the
                 // background, but the service stays in the foreground; only the notification has to change.
                 Log.w(TAG, "startForeground while watching refused; keeping the watching one", e)
-                (getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager).notify(NOTIF_ID, buildNotification("Starting…"))
+                (getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager).notify(NOTIF_ID, buildNotification(getString(R.string.notif_starting)))
             } else {
                 Log.e(TAG, "startForeground failed", e)
                 LiveState.recording = false
                 LiveState.lastEvent = "Could not start: ${e.message}"
-                if (source != null) notifyTapToStart(this, tapText(source))
+                if (source != null) notifyTapToStart(this, tapText(this, source))
                 stopSelf()
                 return
             }
@@ -868,7 +868,7 @@ class BumpService : Service(), SensorEventListener, LocationListener, EngineList
         if (force || now - lastNotifMs > 5000) {
             lastNotifMs = now
             val text = String.format(
-                Locale.US, "%d on map · this trip: %d hit, %d new, %d warnings",
+                Locale.US, getString(R.string.notif_recording_counts),
                 eng.bumps.size, tr.hits, tr.newBumps, tr.beeps,
             )
             (getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager).notify(NOTIF_ID, buildNotification(text))
@@ -876,8 +876,8 @@ class BumpService : Service(), SensorEventListener, LocationListener, EngineList
     }
 
     private fun createChannel() {
-        val ch = NotificationChannel(CHANNEL_ID, "Recording", NotificationManager.IMPORTANCE_LOW).apply {
-            description = "Shown while Bump Beeper is recording"
+        val ch = NotificationChannel(CHANNEL_ID, getString(R.string.notif_channel_recording), NotificationManager.IMPORTANCE_LOW).apply {
+            description = getString(R.string.notif_channel_recording_desc)
             setShowBadge(false)
         }
         (getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager).createNotificationChannel(ch)
@@ -894,12 +894,12 @@ class BumpService : Service(), SensorEventListener, LocationListener, EngineList
         )
         val b = Notification.Builder(this, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_stat_bump)
-            .setContentTitle("Recording speed bumps")
+            .setContentTitle(getString(R.string.notif_recording_title))
             .setContentText(text)
             .setOngoing(true)
             .setOnlyAlertOnce(true)
             .setContentIntent(open)
-            .addAction(Notification.Action.Builder(Icon.createWithResource(this, R.drawable.ic_stat_bump), "Stop", stop).build())
+            .addAction(Notification.Action.Builder(Icon.createWithResource(this, R.drawable.ic_stat_bump), getString(R.string.notif_stop), stop).build())
         if (Build.VERSION.SDK_INT >= 31) b.setForegroundServiceBehavior(Notification.FOREGROUND_SERVICE_IMMEDIATE)
         return b.build()
     }
