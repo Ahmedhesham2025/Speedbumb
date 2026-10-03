@@ -9,6 +9,7 @@ Android app that learns the speed bumps on your routes and warns you about them.
 - **Voice warning for harsh potholes only**, saying which way to go around it: *"Pothole on the right. Keep left."* (English or Egyptian Arabic, offline text-to-speech). Smaller potholes are counted but stay silent.
 - **Quiet when you're already slow:** no warning below 20 km/h (adjustable), since you've clearly seen it.
 - **Auto start/stop** when the phone connects to / disconnects from your car's Bluetooth.
+- **Start recording when I drive** (optional, off by default): notices driving without Bluetooth, from the motion sensor and short GPS checks (Google's in-vehicle detection in the Play edition), even with the app closed; needs location *Allow all the time*. Trips that started by themselves ask **"Was this a drive?"** and nothing of them leaves the phone until you say yes. Recording stops after the car is parked for a few minutes (adjustable).
 - **Your bumps:** offline map and list; open a spot in Google Maps, mute it, correct bump/pothole, delete it; **share** your map and **import** someone else's.
 - **Debug recording:** saves every sensor reading of a drive, to check afterwards what happened at a spot.
 - **Driving score out of 100** for every trip and overall (Trips tab): speeding, harsh braking / acceleration, harsh cornering, swerving, speed bumps taken fast, and handling the phone while moving. With tips, a trend chart, and a shareable trip report.
@@ -28,6 +29,7 @@ Braking and acceleration come from the phone's sensors once it knows which way i
 Android 10 or newer. No sign-up: online features use an anonymous ID, never your name, email or phone number. Your bump map, trips and scores are kept on the phone (and in your Google backup if Android backup is on). What goes online:
 - **Shared map (optional, asked once):** *Receive only* downloads confirmed bumps near you (the app sends a rough position, rounded to about 1 km, when a recording starts and when a trip ends). *Share and receive* also uploads the bump and pothole **points** you find (never your route, nothing near where trips start or end) and crash reports. Until you answer, nothing goes to our server.
 - **Real speed limits (optional, off by default):** see *Driving score* above. Only route stretches go out, and only via our server to TomTom.
+- **Help improve detection (optional, off by default, separate from the shared map):** short motion-sensor samples around possible bumps and route-free trip summaries, under a random ID that changes each time you turn it on; no coordinates. Kept 12 months; turning it off deletes them on the server.
 - **Update check (automatic, the only call before you choose):** at most once a day the app asks GitHub whether a newer version exists; nothing about you or your drives is sent.
 
 Details: [privacy policy](docs/privacy/privacy-policy.md).
