@@ -24,6 +24,10 @@ application { mainClass.set("app.bumpbeeper.replay.MainKt") }
 tasks.named<JavaExec>("run") { workingDir = rootProject.projectDir }
 
 tasks.withType<Test>().configureEach {
+    // Anonymized real drives (testdata/real) are replayed by RealDriveTest; a new or changed recording reruns it.
+    val testdata = rootProject.file("testdata")
+    systemProperty("testdata.dir", testdata.absolutePath)
+    inputs.dir(testdata).withPropertyName("testdata").optional()
     testLogging {
         events("passed", "skipped", "failed")
         exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL
