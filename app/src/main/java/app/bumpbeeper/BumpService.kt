@@ -37,6 +37,7 @@ import app.bumpbeeper.sync.OutboxSink
 import app.bumpbeeper.sync.SpeedLimitSync
 import app.bumpbeeper.sync.Sync
 import app.bumpbeeper.sync.SyncStore
+import app.bumpbeeper.sync.TrainingSink
 import app.bumpbeeper.sync.TripRoute
 import java.util.Locale
 import kotlin.math.abs
@@ -220,6 +221,7 @@ class BumpService : Service(), SensorEventListener, LocationListener, EngineList
     private var sink: OutboxSink? = null                // only used on the engine thread; null = not sharing
     private var route: TripRoute? = null                // only used on the engine thread; null = no speed-limit lookup
     private var pulledThisTrip = false                  // only used on the engine thread
+    private var training: TrainingSink? = null          // only used on the engine thread; null = not helping improve detection
     private var wakeLock: PowerManager.WakeLock? = null
     private var tripId = 0L
     private var sensorOffsetMs: Long? = null
@@ -537,7 +539,10 @@ class BumpService : Service(), SensorEventListener, LocationListener, EngineList
             // Road speed limits (opt-in): the trip's fixes stay in memory until the trip ends.
             route = if (SpeedLimitSync.allowed(this)) TripRoute() else null
             pulledThisTrip = false
-            val eng = BumpEngine(cfg, store, this, { System.currentTimeMillis() }, tripId, CachedSpotSource(syncStore), outbox)
+            // "Help improve detection" (separate opt-in): jolt samples with their signal window, no coordinates uploaded.
+            training = if (Prefs.trainingActive(this)) TrainingSink(Prefs.placement(this), System.currentTimeMillis(), batteryPercent()) else null
+            val eng = BumpEngine(cfg, store, this, { System.currentTimeMillis() }, tripId, CachedSpotSource(syncStore), outbox,
+                training ?: JoltSampleSink.NONE)
             eng.cfg.groupWarnings = voice?.speaks == true
             engine = eng
             val logStore = store
@@ -602,6 +607,13 @@ class BumpService : Service(), SensorEventListener, LocationListener, EngineList
                 Log.w(TAG, "outbox not written", e)
             }
             sink = null
+            try {
+                // Also sets the training upload delay before Sync.afterTrip below, so the trip-end sync can't upload it.
+                training?.flush(this, tripId, System.currentTimeMillis(), engine?.trip, monitor?.stats, batteryPercent())
+            } catch (e: Exception) {
+                Log.w(TAG, "training samples not queued: ${e.javaClass.simpleName}")
+            }
+            training = null
             // Speed-limit lookup (opt-in): the route waits on disk for a background job, then is deleted.
             try {
                 if (engine != null) route?.let { SpeedLimitSync.afterTrip(this, tripId, it) }
@@ -705,6 +717,7 @@ class BumpService : Service(), SensorEventListener, LocationListener, EngineList
         )
         trace?.gps(fix.timeMs, fix.lat, fix.lon, fix.speedMps * 3.6, fix.bearingDeg, fix.accuracyM)
         sink?.onFix(fix)
+        training?.onFix(fix)
         route?.add(fix)
         if (!pulledThisTrip && fix.accuracyM <= 100.0) {
             // First usable position of the trip: refresh the shared spots around it (when there is network).
