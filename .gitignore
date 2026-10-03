@@ -9,3 +9,5 @@ captures/
 *.p12
 *.jks
 *.keystore
+# Kotlin 2.x per-project caches
+.kotlin/
