@@ -16,6 +16,7 @@ import android.widget.TextView
 import app.bumpbeeper.auto.AutoDetect
 import app.bumpbeeper.sync.SpeedLimitSync
 import app.bumpbeeper.sync.Sync
+import app.bumpbeeper.sync.TrainingConsent
 import app.bumpbeeper.ui.AutoDetectText
 import app.bumpbeeper.ui.SpeedLimitText
 import app.bumpbeeper.ui.SyncChoice
@@ -38,6 +39,14 @@ class SettingsPage(private val a: MainActivity) : Page {
     private lateinit var detectFix: TextView
     /** True while the screen itself moves the auto-detect switch. */
     private var settingDetect = false
+    private var trainBox: CheckBox? = null
+    private lateinit var trainToggle: View
+    private lateinit var trainNeedMap: TextView
+    private lateinit var trainChoose: TextView
+    private lateinit var trainInfo: TextView
+    private lateinit var trainProblem: TextView
+    /** True while the screen itself moves the training switch. */
+    private var settingTrain = false
     private var debugBox: CheckBox? = null
     private var limitsBox: CheckBox? = null
     private lateinit var limitsStatus: TextView
@@ -55,8 +64,11 @@ class SettingsPage(private val a: MainActivity) : Page {
 
     private var forgetDialog: AlertDialog? = null
     private var limitsDialog: AlertDialog? = null
+    private var trainDialog: AlertDialog? = null
 
     fun release() {
+        trainDialog?.dismiss()
+        trainDialog = null
         voice?.shutdown()
         forgetDialog?.dismiss()
         forgetDialog = null
@@ -168,6 +180,19 @@ class SettingsPage(private val a: MainActivity) : Page {
         )
 
         buildSharedMap { title, items -> card(title, *items) }
+
+        trainNeedMap = hint(a.getString(R.string.train_need_map))
+        trainChoose = Ui.button(a, a.getString(R.string.limits_need_map_open)) {
+            if (LiveState.recording) a.toast(a.getString(R.string.limits_need_map_after_trip)) else a.showSyncChoice()
+        }
+        trainToggle = Ui.toggle(a, a.getString(R.string.train_switch), a.getString(R.string.train_hint), Prefs.trainingConsent(a)) { on ->
+            if (settingTrain) return@toggle
+            if (on) { showTraining(false); askTraining() }   // only the consent dialog turns it on
+            else { TrainingConsent.setEnabled(a, false); a.toast(a.getString(R.string.train_off_toast)); showTraining() }
+        }.also { trainBox = ((it as? ViewGroup)?.getChildAt(0) ?: it) as? CheckBox }
+        trainInfo = Ui.text(a, 13f, Ui.DIM).apply { setPadding(dp(32), 0, 0, dp(4)) }
+        trainProblem = Ui.text(a, 13f, Ui.ORANGE).apply { setPadding(dp(32), 0, 0, dp(4)) }
+        card(a.getString(R.string.settings_section_training), trainNeedMap, trainChoose, trainToggle, trainInfo, trainProblem)
 
         card(a.getString(R.string.settings_section_data),
             Ui.row(a, Ui.button(a, a.getString(R.string.settings_share), Ui.Style.PRIMARY) { Sharing.chooseAndShare(a) }, Ui.button(a, a.getString(R.string.settings_import)) { a.pickImportFile() }),
@@ -286,6 +311,35 @@ class SettingsPage(private val a: MainActivity) : Page {
         detectFix.visibility = if (on && AutoDetectText.showFix(st)) View.VISIBLE else View.GONE
     }
 
+    /** Offered once the shared-map question is answered (no network before that); switch-off stays reachable. */
+    private fun showTraining(on: Boolean = Prefs.trainingConsent(a)) {
+        trainBox?.let { if (it.isChecked != on) { settingTrain = true; it.isChecked = on; settingTrain = false } }
+        val unset = Prefs.syncChoice(a) == Prefs.SYNC_UNSET && !Prefs.trainingConsent(a)
+        trainNeedMap.visibility = if (unset) View.VISIBLE else View.GONE
+        trainChoose.visibility = trainNeedMap.visibility
+        trainToggle.visibility = if (unset) View.GONE else View.VISIBLE
+        val (info, problem) = AutoDetectText.training(a, TrainingConsent.status(a))
+        for ((v, s) in listOf(trainInfo to info, trainProblem to problem)) {
+            if (v.text.toString() != s) v.text = s
+            v.visibility = if (s.isEmpty() || unset) View.GONE else View.VISIBLE
+        }
+    }
+
+    /** Turning "Help improve detection" on: the consent text first (TrainingConsent.TRAINING_CONSENT_VERSION). */
+    private fun askTraining() {
+        trainDialog?.dismiss()
+        trainDialog = AlertDialog.Builder(a)
+            .setTitle(a.getString(R.string.train_consent_title))
+            .setMessage(a.getString(R.string.train_consent_msg))
+            .setPositiveButton(R.string.train_consent_on) { _, _ ->
+                TrainingConsent.setEnabled(a, true, TrainingConsent.TRAINING_CONSENT_VERSION)
+                showTraining()
+            }
+            .setNegativeButton(R.string.common_cancel, null)
+            .setOnDismissListener { trainDialog = null }
+            .show()
+    }
+
     private fun showSyncChoice() {
         val choice = Prefs.syncChoice(a)
         for (i in 0 until syncGroup.childCount) {
@@ -311,6 +365,7 @@ class SettingsPage(private val a: MainActivity) : Page {
         set(syncPending, SyncChoice.pending(a, LiveState.syncPending), on && choice == Prefs.SYNC_SHARE && LiveState.syncPending > 0)
         set(syncError, SyncChoice.error(a, LiveState.syncLastError), on && LiveState.syncLastError.isNotEmpty())
         showDetect()
+        showTraining()
     }
 
     private fun confirmForget() {
