@@ -6,14 +6,14 @@ import app.bumpbeeper.BumpDb
 import app.bumpbeeper.sync.SpeedLimitSync
 import app.bumpbeeper.sync.Sync
 import app.bumpbeeper.sync.SyncStore
+import app.bumpbeeper.sync.TrainingSink
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * Trips that started by themselves (motion detection / Google, #49) are **held** until the user answers
  * "Was this a drive?" ([TripCheck]). Nothing from a held trip may leave the phone. One generic API for every kind of
- * held data: shared-map points and the speed-limit route (built in, [installBuiltIns]); training samples plug in the
- * same way.
+ * held data: shared-map points and the speed-limit route ([installBuiltIns]) and training samples ([installTraining]).
  *
  * To hold your own data: at trip end check [isHeld] and keep the data local; register listeners once per process
  * from [AppStart.onCreate]:
@@ -35,6 +35,7 @@ object TripHold {
     private val rejected = CopyOnWriteArrayList<Listener>()
     private val expired = CopyOnWriteArrayList<Listener>()
     private val builtIns = AtomicBoolean(false)
+    private val training = AtomicBoolean(false)
     /** One answer at a time per process: check-and-remove of a hold is atomic. */
     private val lock = Any()
     private const val TAG = "BumpBeeper"
@@ -51,6 +52,17 @@ object TripHold {
     }
 
     fun isHeld(ctx: Context, tripId: Long): Boolean = sp(ctx).contains(tripId.toString())
+
+    /** Answered "No" or expired (kept [2 × MAX_AGE_MS]): data that arrives late for this trip must be held too. */
+    private fun done(ctx: Context) = ctx.getSharedPreferences("trip_hold_done", Context.MODE_PRIVATE)
+
+    fun wasDiscarded(ctx: Context, tripId: Long): Boolean = done(ctx).contains(tripId.toString())
+
+    /**
+     * Data written after trip end on another thread (training samples) must be held when the trip is held now, or
+     * when it was already rejected / expired by the time the data lands (a quick "No" can win that race).
+     */
+    fun mustHold(ctx: Context, tripId: Long): Boolean = isHeld(ctx, tripId) || wasDiscarded(ctx, tripId)
 
     /** Held trips, oldest first: (trip id, held since). */
     fun heldTrips(ctx: Context): List<Pair<Long, Long>> =
@@ -101,8 +113,13 @@ object TripHold {
             synchronized(lock) { if (isHeld(ctx, id) && dropHeld(ctx, id, expired)) n++ }
         }
         try {
-            withStore(ctx) { s ->
-                s.heldTrips().filter { (id, at) -> !isHeld(ctx, id) || now - at >= MAX_AGE_MS }.forEach { s.heldDrop(it.first) }
+            synchronized(lock) {   // a "Yes" between reading and dropping would otherwise lose approved points
+                withStore(ctx) { s ->
+                    s.heldTrips().filter { (id, at) -> !isHeld(ctx, id) || now - at >= MAX_AGE_MS }.forEach { s.heldDrop(it.first) }
+                }
+                val d = done(ctx)
+                val stale = d.all.filter { (_, v) -> now - ((v as? Long) ?: 0L) >= 2 * MAX_AGE_MS }.keys
+                if (stale.isNotEmpty()) d.edit().apply { stale.forEach { remove(it) } }.commit()
             }
         } catch (e: Exception) {
             Log.w(TAG, "held points not swept", e)
@@ -113,6 +130,7 @@ object TripHold {
     /** Under [lock]: the delete listeners first, each on its own; the hold goes only if all of them succeeded. */
     private fun dropHeld(ctx: Context, tripId: Long, listeners: List<Listener>): Boolean {
         if (!runAll(listeners, ctx, tripId)) return false
+        done(ctx).edit().putLong(tripId.toString(), System.currentTimeMillis()).commit()
         sp(ctx).edit().remove(tripId.toString()).commit()
         return true
     }
@@ -134,6 +152,7 @@ object TripHold {
     internal fun reset() {
         confirmed.clear(); rejected.clear(); expired.clear()
         builtIns.set(false)
+        training.set(false)
     }
 
     /** Shared-map points ([SyncStore.holdAdd]) and the speed-limit route ([SpeedLimitSync]). Once per process. */
@@ -147,6 +166,20 @@ object TripHold {
         val points = Listener { ctx, id -> withStore(ctx) { it.heldDrop(id) } }
         val route = Listener { ctx, id -> SpeedLimitSync.drop(ctx, id) }
         for (l in listOf(points, route)) { onRejected(l); onExpired(l) }
+    }
+
+    /**
+     * Training samples ([TrainingSink]): held while the trip is held (or already rejected), released on "Yes",
+     * deleted on "No" or expiry ([TrainingSink.discard] throws if it can't delete). Once per process.
+     */
+    fun installTraining(ctx: Context) {
+        val app = ctx.applicationContext ?: ctx
+        TrainingSink.isHeld = { mustHold(app, it) }   // every time: follows the current Application (tests make new ones)
+        if (!training.compareAndSet(false, true)) return
+        onConfirmed { c, id -> TrainingSink.release(c, id.toString()) }
+        val discard = Listener { c, id -> TrainingSink.discard(c, id.toString()) }
+        onRejected(discard)
+        onExpired(discard)
     }
 
     private fun <T> withStore(ctx: Context, block: (SyncStore) -> T): T {

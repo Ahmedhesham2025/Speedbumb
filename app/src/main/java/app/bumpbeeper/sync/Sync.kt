@@ -102,7 +102,13 @@ object Sync {
             val app = ctx.applicationContext ?: ctx
             Thread({
                 try {
-                    synchronized(lock) { withDb(app) { db -> SyncStore(db).outboxClear(); publishStatus(SyncStore(db)) } }
+                    synchronized(lock) {
+                        withDb(app) { db ->
+                            SyncStore(db).outboxClear()
+                            if (Prefs.syncChoice(app) == Prefs.SYNC_UNSET) TrainingStore(db).clear()   // no network: never sent
+                            publishStatus(SyncStore(db))
+                        }
+                    }
                 } catch (e: Exception) {
                     Log.w(TAG, "outbox not cleared", e)
                 }
@@ -168,6 +174,7 @@ object Sync {
     fun withdrawConsent(app: Context) {
         setChoice(app, Prefs.SYNC_UNSET)
         SpeedLimitSync.setEnabled(app, false)
+        TrainingConsent.forgetLocal(app)
     }
 
     fun forgetMe(ctx: Context, callback: (Boolean) -> Unit) {
@@ -202,6 +209,7 @@ object Sync {
         withDb(app) { db ->
             val store = SyncStore(db)
             store.clearAll()
+            TrainingStore(db).clear()
             if (!serverOk) store.put(LAST_ERROR, reason)
             publishStatus(store)
         }
@@ -233,10 +241,12 @@ object Sync {
             val now = System.currentTimeMillis()
             var retry = false
             var error = ""
+            var registered = false
             try {
                 if (!pullOnly) {
                     val share = choice == Prefs.SYNC_SHARE
                     api.registerDevice(TraceWriter.appVersion(ctx), Build.VERSION.SDK_INT, CONSENT_VERSION, share)
+                    registered = true
                     if (share) {
                         error = upload(api, store, now, ctx, clock)
                         if (error.isEmpty()) uploadCrashes(api, ctx)
@@ -250,6 +260,8 @@ object Sync {
                 error = ApiErrors.describe(e.outcome)
                 retry = e.outcome == Outcome.RETRY
             }
+            // "Help improve detection" (own opt-in): its errors never stop the shared map.
+            if (registered) retry = TrainingConsent.duringSync(ctx, api, db, now) || retry
             if (!retry) store.put(LAST_AT, now)
             store.put(LAST_ERROR, error)
             publishStatus(store)
@@ -348,6 +360,7 @@ object Sync {
         LiveState.syncLastError = store.get(LAST_ERROR) ?: ""
         LiveState.syncPending = store.outboxCount()
         LiveState.syncRemoteSpots = store.remoteSpotCount()
+        LiveState.trainingQueued = try { TrainingStore(store.helper).count() } catch (_: Exception) { 0 }
     }
 
     private fun newAuth(ctx: Context, transport: Transport = UrlTransport) =

@@ -56,6 +56,7 @@ object TripCheck {
     /** Background thread: apply the answer ([TripHold]). Internal for tests. */
     internal fun answer(ctx: Context, tripId: Long, drove: Boolean) {
         TripHold.installBuiltIns()
+        TripHold.installTraining(ctx)
         if (drove) TripHold.confirm(ctx, tripId) else TripHold.reject(ctx, tripId)
         (ctx.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager).cancel(notificationId(tripId))
     }

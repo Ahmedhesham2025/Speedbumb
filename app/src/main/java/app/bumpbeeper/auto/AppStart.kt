@@ -9,7 +9,8 @@ import android.app.Application
 class AppStart : Application() {
     override fun onCreate() {
         super.onCreate()
-        // Held data of trips that started by themselves (#49). Training samples register their listeners here too.
+        // Held data of trips that started by themselves (#49): shared-map points, the speed-limit route, training samples.
         TripHold.installBuiltIns()
+        TripHold.installTraining(this)
     }
 }

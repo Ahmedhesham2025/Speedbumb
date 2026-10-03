@@ -15,7 +15,7 @@ import kotlin.math.cos
  *  sync_state   – small key/value notes (last sync time, back-off, last position for the download), and the
  *                 held observations of unconfirmed trips ([holdAdd])
  */
-class SyncStore(private val helper: SQLiteOpenHelper) {
+class SyncStore(internal val helper: SQLiteOpenHelper) {
 
     private val db: SQLiteDatabase get() = helper.writableDatabase
 
