@@ -42,6 +42,10 @@ interface Page {
     fun onShow() {}
     /** Called 4 times a second while the tab is visible. */
     fun tick() {}
+    /** The tab was left, or the app went to the background / the screen turned off (stop drawing maps here). */
+    fun onHide() {}
+    /** The activity is going away. */
+    fun release() {}
 }
 
 /**
@@ -125,6 +129,7 @@ class MainActivity : Activity() {
 
     override fun onPause() {
         ui.removeCallbacks(ticker)
+        pages.getOrNull(current)?.onHide()
         super.onPause()
     }
 
@@ -132,7 +137,7 @@ class MainActivity : Activity() {
         syncDialog?.dismiss()
         syncDialog = null
         closeAutoDialog()
-        (pages[TAB_SETTINGS] as? SettingsPage)?.release()
+        pages.forEach { it?.release() }
         super.onDestroy()
     }
 
@@ -184,6 +189,7 @@ class MainActivity : Activity() {
             else -> SettingsPage(this)
         }.also { pages[tab] = it }
         if (current != tab) {
+            pages.getOrNull(current)?.onHide()
             content.removeAllViews()
             content.addView(page.view)
             current = tab
@@ -196,7 +202,7 @@ class MainActivity : Activity() {
         page.onShow()
     }
 
-    fun refreshMap() { mapPage?.onShow() }
+    fun refreshMap() { if (current == TAB_MAP) mapPage?.onShow() }
 
     // ---------------------------------------------------------------- shared map question
 

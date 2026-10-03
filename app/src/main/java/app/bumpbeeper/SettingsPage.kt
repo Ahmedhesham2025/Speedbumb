@@ -73,7 +73,7 @@ class SettingsPage(private val a: MainActivity) : Page {
     private var liveDialog: AlertDialog? = null
     private var trainDialog: AlertDialog? = null
 
-    fun release() {
+    override fun release() {
         trainDialog?.dismiss()
         trainDialog = null
         voice?.shutdown()
