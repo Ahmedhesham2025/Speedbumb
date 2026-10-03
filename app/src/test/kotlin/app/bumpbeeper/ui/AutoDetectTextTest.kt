@@ -2,7 +2,6 @@ package app.bumpbeeper.ui
 
 import app.bumpbeeper.R
 import app.bumpbeeper.auto.AutoDetect.Status
-import app.bumpbeeper.sync.TrainingConsent
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -12,7 +11,7 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
 import org.robolectric.annotation.Config
 
-/** Settings words for auto-detect, auto-stop and "Help improve detection". */
+/** Settings words for auto-detect and auto-stop. */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34])
 class AutoDetectTextTest {
@@ -45,24 +44,5 @@ class AutoDetectTextTest {
     @Test fun autoStopLabel() {
         assertEquals("Never stop by itself when parked", AutoDetectText.autoStop(ctx, 0))
         assertEquals("Stop after parked for 5 min", AutoDetectText.autoStop(ctx, 5))
-    }
-
-    private fun st(enabled: Boolean, pending: Boolean = false, queued: Int = 0, error: String = "") =
-        TrainingConsent.Status(enabled, 1, enabled, pending, queued, error)
-
-    @Test fun trainingStatusLines() {
-        assertEquals("" to "", AutoDetectText.training(ctx, st(false)))
-        assertEquals("Waiting to upload: 12" to "", AutoDetectText.training(ctx, st(true, queued = 12)))
-        assertEquals("Telling the server you turned this on (when online)", AutoDetectText.training(ctx, st(true, pending = true)).first)
-        assertEquals("Deleting your samples on the server (when online)", AutoDetectText.training(ctx, st(false, pending = true)).first)
-        assertEquals("Upload paused; it will try again later.", AutoDetectText.training(ctx, st(true, error = "offline")).second)
-        assertEquals("", AutoDetectText.training(ctx, st(false, error = "offline")).second)
-    }
-
-    @Test fun sessionResetIsExplained() {
-        assertEquals("Your anonymous ID was reset, so this was switched off; turn it on again if you like.",
-            AutoDetectText.training(ctx, st(false, error = TrainingConsent.SESSION_RESET)).second)
-        // Turned on again: the old note no longer shows.
-        assertEquals("", AutoDetectText.training(ctx, st(true, error = TrainingConsent.SESSION_RESET)).second)
     }
 }

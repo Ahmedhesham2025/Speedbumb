@@ -4,9 +4,6 @@ import android.Manifest
 import android.app.AlertDialog
 import android.content.DialogInterface
 import android.os.Looper
-import android.view.View
-import android.view.ViewGroup
-import android.widget.CheckBox
 import app.bumpbeeper.LiveState
 import app.bumpbeeper.MainActivity
 import app.bumpbeeper.Prefs
@@ -32,7 +29,7 @@ import org.robolectric.shadows.ShadowToast
 
 /**
  * The privacy-critical gates on the real screen: the prominent disclosure comes before any permission request and only
- * "Continue" turns auto-detect on; only "Turn on" in the consent dialog turns "Help improve detection" on; a rotation
+ * "Continue" turns auto-detect on; a rotation
  * during the walk-through is not taken as an answer.
  */
 @RunWith(RobolectricTestRunner::class)
@@ -115,41 +112,5 @@ class AutoDetectFlowTest {
         assertTrue(again.isShowing)
         assertEquals(app.getString(R.string.auto_bg_title), title(again))
         assertTrue(AutoDetect.enabled(app))
-    }
-
-    private fun findCheckBox(v: View, text: String): CheckBox? {
-        if (v is CheckBox && v.text.toString() == text) return v
-        if (v is ViewGroup) for (i in 0 until v.childCount) findCheckBox(v.getChildAt(i), text)?.let { return it }
-        return null
-    }
-
-    private fun trainingSwitch(): CheckBox {
-        val a = controller.get()
-        a.select(MainActivity.TAB_SETTINGS)
-        idle()
-        return findCheckBox(a.window.decorView, app.getString(R.string.train_switch)) ?: throw AssertionError("no training switch")
-    }
-
-    @Test fun consentCancelOrBackLeavesTrainingOff() {
-        val box = trainingSwitch()
-        box.performClick(); idle()
-        assertEquals(app.getString(R.string.train_consent_title), title(latest()))
-        click(latest(), DialogInterface.BUTTON_NEGATIVE)
-        assertFalse(Prefs.trainingConsent(app))
-        assertFalse(box.isChecked)
-
-        box.performClick(); idle()
-        latest().cancel(); idle()   // back button / tap outside
-        assertFalse(Prefs.trainingConsent(app))
-        assertFalse(box.isChecked)
-    }
-
-    @Test fun turnOnStoresConsentVersion1() {
-        val box = trainingSwitch()
-        box.performClick(); idle()
-        click(latest(), DialogInterface.BUTTON_POSITIVE)
-        assertTrue(Prefs.trainingConsent(app))
-        assertEquals(1, Prefs.trainingConsentVersion(app))
-        assertTrue(box.isChecked)
     }
 }
