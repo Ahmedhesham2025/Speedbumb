@@ -87,7 +87,8 @@ class LiveSpeedLimitTest {
         assertEquals(1, net.bodies.size)
         val pts = net.bodies[0].getJSONArray("points")
         assertTrue(pts.length() in LiveLimitPlanner.MIN_POINTS..LiveLimitPlanner.MAX_POINTS)
-        assertEquals(t + offset, pts.getJSONObject(pts.length() - 1).getLong("t"))   // epoch ms
+        // Epoch ms of the newest fix when the call went out (the 21st: the first 300 m are never sent).
+        assertEquals(1_021_000L + offset, pts.getJSONObject(pts.length() - 1).getLong("t"))
         assertEquals(SpeedLimitSync.REGION, net.headers[0][SpeedLimitSync.REGION_HEADER])
         assertEquals("Bearer jwt", net.headers[0]["Authorization"])
         assertEquals(60, LiveState.speedLimitKmh)
