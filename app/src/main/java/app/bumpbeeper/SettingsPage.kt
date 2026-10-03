@@ -18,6 +18,7 @@ import app.bumpbeeper.sync.SpeedLimitSync
 import app.bumpbeeper.sync.Sync
 import app.bumpbeeper.sync.TrainingConsent
 import app.bumpbeeper.ui.AutoDetectText
+import app.bumpbeeper.ui.LiveLimitText
 import app.bumpbeeper.ui.SpeedLimitText
 import app.bumpbeeper.ui.SyncChoice
 import java.text.SimpleDateFormat
@@ -52,6 +53,11 @@ class SettingsPage(private val a: MainActivity) : Page {
     private lateinit var limitsStatus: TextView
     /** True while the screen itself moves the speed-limit switch (so it isn't taken as the user's choice). */
     private var settingLimits = false
+    private var liveBox: CheckBox? = null
+    private lateinit var liveExtras: LinearLayout
+    private lateinit var liveStatus: TextView
+    /** True while the screen itself moves the live-limit switch. */
+    private var settingLive = false
     private lateinit var syncGroup: RadioGroup
     private lateinit var syncLast: TextView
     private lateinit var syncSpots: TextView
@@ -64,6 +70,7 @@ class SettingsPage(private val a: MainActivity) : Page {
 
     private var forgetDialog: AlertDialog? = null
     private var limitsDialog: AlertDialog? = null
+    private var liveDialog: AlertDialog? = null
     private var trainDialog: AlertDialog? = null
 
     fun release() {
@@ -74,6 +81,8 @@ class SettingsPage(private val a: MainActivity) : Page {
         forgetDialog = null
         limitsDialog?.dismiss()
         limitsDialog = null
+        liveDialog?.dismiss()
+        liveDialog = null
     }
 
     private fun build(): View {
@@ -134,6 +143,13 @@ class SettingsPage(private val a: MainActivity) : Page {
                 else { SpeedLimitSync.setEnabled(a, false); showLimitsSwitch(false) }
             }.also { limitsBox = ((it as? ViewGroup)?.getChildAt(0) ?: it) as? CheckBox },
             Ui.text(a, 13f, Ui.ORANGE).also { limitsStatus = it; it.setPadding(dp(32), 0, 0, dp(6)) },
+            Ui.toggle(a, a.getString(R.string.live_limit_switch), a.getString(R.string.live_limit_switch_hint), Prefs.liveLimits(a)) { on ->
+                if (settingLive) return@toggle
+                if (on) { showLive(false); askLive() }   // only "Turn on" in the consent dialog turns it on
+                else { sp.edit().putBoolean(Prefs.LIVE_LIMITS, false).apply(); showLive() }
+            }.also { liveBox = ((it as? ViewGroup)?.getChildAt(0) ?: it) as? CheckBox },
+            Ui.text(a, 13f, Ui.ORANGE).also { liveStatus = it; it.setPadding(dp(32), 0, 0, dp(6)) },
+            buildLiveExtras(),
         )
 
         val sens = RadioGroup(a).apply { orientation = RadioGroup.HORIZONTAL }
@@ -254,6 +270,7 @@ class SettingsPage(private val a: MainActivity) : Page {
             SyncChoice.markAnswered(a)
             Sync.setChoice(a, choice)
             showLimitsSwitch()
+            showLive()
             tick()
         }
         fun status(color: Int = Ui.DIM) = Ui.text(a, 14f, color).apply { setPadding(0, dp(2), 0, dp(2)) }
@@ -298,6 +315,68 @@ class SettingsPage(private val a: MainActivity) : Page {
                 .setNegativeButton(R.string.common_cancel, null)
         }
         limitsDialog = d.setOnDismissListener { limitsDialog = null }.show()
+    }
+
+    /** Live speed limit: warning margin (+5 / +10 / +20 km/h) and the tone + voice switch, shown while it's on. */
+    private fun buildLiveExtras(): View {
+        val margins = RadioGroup(a).apply { orientation = RadioGroup.HORIZONTAL }
+        val current = LiveLimitText.margin(Prefs.limitMarginKmh(a))
+        Prefs.LIMIT_MARGINS.forEach { m ->
+            val rb = RadioButton(a).apply {
+                text = a.getString(R.string.live_limit_margin_option, m); tag = m; id = View.generateViewId()
+                minHeight = dp(48)
+                setTextColor(Ui.TEXT); buttonTintList = ColorStateList.valueOf(Ui.ACCENT)
+            }
+            margins.addView(rb, RadioGroup.LayoutParams(0, RadioGroup.LayoutParams.WRAP_CONTENT, 1f))
+            if (m == current) rb.isChecked = true
+        }
+        margins.setOnCheckedChangeListener { g, id ->
+            val m = g.findViewById<RadioButton>(id)?.tag as? Int ?: return@setOnCheckedChangeListener
+            sp.edit().putInt(Prefs.LIMIT_MARGIN_KMH, m).apply()
+        }
+        liveExtras = LinearLayout(a).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(32), 0, 0, 0)
+            addView(Ui.text(a, 14f, Ui.TEXT, value = a.getString(R.string.live_limit_margin_title)))
+            addView(margins)
+            addView(Ui.toggle(a, a.getString(R.string.live_limit_sound), null, Prefs.limitSound(a)) {
+                sp.edit().putBoolean(Prefs.LIMIT_SOUND, it).apply()
+            })
+        }
+        return liveExtras
+    }
+
+    /** Moves the live-limit switch to [on] without asking; margin and sound only show while it's on. */
+    private fun showLive(on: Boolean = Prefs.liveLimits(a)) {
+        liveBox?.let { if (it.isChecked != on) { settingLive = true; it.isChecked = on; settingLive = false } }
+        liveExtras.visibility = if (on) View.VISIBLE else View.GONE
+        // Same reason as real speed limits: with the shared map unanswered nothing goes to our server.
+        val why = SpeedLimitText.settingsStatus(a, on, Prefs.syncChoice(a) != Prefs.SYNC_UNSET)
+        liveStatus.text = why
+        liveStatus.visibility = if (why.isEmpty()) View.GONE else View.VISIBLE
+    }
+
+    /** Turning the live speed limit on: shared-map choice first, then the consent text (LiveLimitText.CONSENT_VERSION). */
+    private fun askLive() {
+        liveDialog?.dismiss()
+        val d = AlertDialog.Builder(a)
+        when (LiveLimitText.turnOnStep(Prefs.syncChoice(a))) {
+            LiveLimitText.TurnOn.NEED_MAP -> d.setTitle(a.getString(R.string.limits_need_map_title))
+                .setMessage(a.getString(R.string.live_limit_need_map_msg))
+                .setPositiveButton(R.string.limits_need_map_open) { _, _ ->
+                    if (LiveState.recording) a.toast(a.getString(R.string.limits_need_map_after_trip)) else a.showSyncChoice()
+                }
+                .setNegativeButton(R.string.common_not_now, null)
+            LiveLimitText.TurnOn.ASK_CONSENT -> d.setTitle(a.getString(R.string.live_limit_consent_title))
+                .setMessage(a.getString(R.string.live_limit_consent_msg))
+                .setPositiveButton(R.string.limits_consent_on) { _, _ ->
+                    sp.edit().putInt(Prefs.LIVE_LIMITS_CONSENT_VERSION, LiveLimitText.CONSENT_VERSION)
+                        .putBoolean(Prefs.LIVE_LIMITS, true).apply()
+                    showLive()
+                }
+                .setNegativeButton(R.string.common_cancel, null)
+        }
+        liveDialog = d.setOnDismissListener { liveDialog = null }.show()
     }
 
     /** The auto-detect switch, what actually runs, and the Fix button. Cheap; runs with every tick. */
@@ -376,9 +455,9 @@ class SettingsPage(private val a: MainActivity) : Page {
             .setPositiveButton(R.string.common_delete) { _, _ ->
                 Sync.forgetMe(a) { ok ->
                     a.toast(a.getString(if (ok) R.string.settings_sync_deleted else R.string.settings_sync_deleted_local))
-                    showSyncChoice(); showLimitsSwitch(); tick()
+                    showSyncChoice(); showLimitsSwitch(); showLive(); tick()
                 }
-                showSyncChoice(); showLimitsSwitch(); tick()
+                showSyncChoice(); showLimitsSwitch(); showLive(); tick()
             }
             .setNegativeButton(R.string.common_cancel, null)
             .setOnDismissListener { forgetDialog = null }
@@ -388,6 +467,7 @@ class SettingsPage(private val a: MainActivity) : Page {
     override fun onShow() {
         showSyncChoice()
         showLimitsSwitch()
+        showLive()
         tick()
         val on = a.autoStartOn()
         autoText.text = if (on) a.getString(R.string.settings_auto_on, Prefs.carName(a)) else a.getString(R.string.settings_auto_off)
