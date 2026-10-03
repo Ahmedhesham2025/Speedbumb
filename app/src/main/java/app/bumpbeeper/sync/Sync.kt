@@ -13,6 +13,7 @@ import app.bumpbeeper.BuildConfig
 import app.bumpbeeper.BumpDb
 import app.bumpbeeper.LiveState
 import app.bumpbeeper.Prefs
+import app.bumpbeeper.auto.TripHold
 import app.bumpbeeper.TraceWriter
 import app.bumpbeeper.crash.CrashLog
 import org.json.JSONArray
@@ -228,6 +229,8 @@ object Sync {
         if (choice == Prefs.SYNC_UNSET) return false   // not answered yet: no sign-in, no calls at all
         withDb(ctx) { db ->
             val store = SyncStore(db)
+            // "Was this a drive?" unanswered for a day: held points and routes are deleted unsent.
+            TripHold.expire(ctx)
             if (!lat.isNaN() && !lon.isNaN()) {
                 // Only a rounded position (about 1 km) is kept and sent: enough for a 10 km download circle.
                 store.put(POS_LAT, round2(lat))
@@ -373,7 +376,8 @@ object Sync {
     }
 
     /** Two decimals (about 1 km): the only precision of a position the sync keeps or sends. */
-    fun round2(x: Double): Double = (x * 100).roundToLong() / 100.0
+    /** NaN (no position) stays NaN: roundToLong() would throw. */
+    fun round2(x: Double): Double = if (x.isNaN()) x else (x * 100).roundToLong() / 100.0
 
     private fun nextMidnight(now: Long): Long = Calendar.getInstance().apply {
         timeInMillis = now

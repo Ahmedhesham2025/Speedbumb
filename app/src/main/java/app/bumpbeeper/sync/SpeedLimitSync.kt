@@ -10,6 +10,7 @@ import android.util.Log
 import app.bumpbeeper.BuildConfig
 import app.bumpbeeper.BumpDb
 import app.bumpbeeper.Prefs
+import app.bumpbeeper.auto.TripHold
 import app.bumpbeeper.RoutePoint
 import app.bumpbeeper.RouteSampler
 import app.bumpbeeper.SpeedLimitScoring
@@ -114,17 +115,33 @@ object SpeedLimitSync {
             return
         }
         if (!tmp.renameTo(File(d, "$tripId.route"))) tmp.delete()
-        schedule(ctx, JOB_ID, 0L)
+        // A trip that started by itself waits for "Yes, I drove" ([release]); see TripHold.
+        if (!TripHold.isHeld(ctx, tripId)) schedule(ctx, JOB_ID, 0L)
     }
+
+    /** The held trip was a drive: its route may now be looked up. */
+    fun release(ctx: Context, tripId: Long) {
+        if (allowed(ctx) && File(dir(ctx), "$tripId.route").exists()) schedule(ctx, JOB_ID, 0L)
+    }
+
+    /** "No", or no answer in time: the held trip's route is deleted unsent. Throws if it couldn't be deleted. */
+    fun drop(ctx: Context, tripId: Long) {
+        val f = File(dir(ctx), "$tripId.route")
+        if (f.exists() && !f.delete()) throw IOException("route of trip $tripId not deleted")
+    }
+
+    private fun heldFile(ctx: Context, f: File): Boolean =
+        f.name.substringBefore('.').toLongOrNull()?.let { TripHold.isHeld(ctx, it) } == true
 
     /** App opened (background thread): drops old or unwanted routes, and makes sure waiting ones get a job. */
     fun onAppStart(ctx: Context, now: Long = System.currentTimeMillis()) {
         try {
+            TripHold.expire(ctx, now)   // unanswered "Was this a drive?": held routes are deleted unsent
             if (!allowed(ctx)) { clearPending(ctx); return }
             sweepTmp(ctx, now)
             var waiting = false
             for (f in pendingFiles(ctx)) {
-                if (load(f)?.let { fresh(it, now) } == true) waiting = true else f.delete()
+                if (load(f)?.let { fresh(it, now) } != true) f.delete() else if (!heldFile(ctx, f)) waiting = true
             }
             if (waiting) schedule(ctx, JOB_ID, 0L)
         } catch (e: Exception) {
@@ -157,6 +174,7 @@ object SpeedLimitSync {
             val store = SyncStore(db)
             val auth = SupabaseAuth(ctx, BuildConfig.SUPABASE_URL, BuildConfig.SUPABASE_KEY, transport)
             for (f in files) {
+                if (heldFile(ctx, f)) continue   // waits for "Yes, I drove"
                 val p = load(f)
                 val tries = "speed_limit_tries_" + f.name.substringBefore('.')
                 if (p == null || !fresh(p, now)) { f.delete(); store.put(tries, null); continue }

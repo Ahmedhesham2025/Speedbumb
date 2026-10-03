@@ -4,13 +4,16 @@ import android.content.ContentValues
 import android.database.sqlite.SQLiteDatabase
 import android.database.sqlite.SQLiteOpenHelper
 import app.bumpbeeper.Geo
+import org.json.JSONArray
+import org.json.JSONObject
 import kotlin.math.cos
 
 /**
  * The sync tables inside bumps.db (database version 5):
  *  outbox       – hazard observations waiting for upload (already privacy-filtered), one JSON element each
  *  remote_spots – the cache of confirmed shared-map spots the engine warns for (filled in the background)
- *  sync_state   – small key/value notes (last sync time, back-off, last position for the download)
+ *  sync_state   – small key/value notes (last sync time, back-off, last position for the download), and the
+ *                 held observations of unconfirmed trips ([holdAdd])
  */
 class SyncStore(internal val helper: SQLiteOpenHelper) {
 
@@ -57,9 +60,48 @@ class SyncStore(internal val helper: SQLiteOpenHelper) {
 
     fun outboxCount(): Int = count("outbox")
 
+    /** Sharing switched off: nothing queued may leave the phone, held items of unconfirmed trips included. */
     fun outboxClear() {
         db.delete("outbox", null, null)
+        db.delete("sync_state", "key GLOB ?", arrayOf("$HELD*"))   // GLOB: '_' in the prefix is literal
     }
+
+    // ---------------- held: unconfirmed trips (#49)
+
+    /**
+     * A trip started by a guess (motion detection / Google) may have been a bus or a train: its upload elements wait
+     * here, not in the outbox, until the user says it was a drive ([heldRelease]) or not ([heldDrop]).
+     */
+    fun holdAdd(items: List<Pair<String, String>>, tripId: Long, now: Long) {
+        val arr = JSONArray()
+        for ((id, json) in items) arr.put(JSONArray().put(id).put(json))
+        put("$HELD$tripId", JSONObject().put("at", now).put("items", arr).toString())
+    }
+
+    /** The trip was a drive: its held elements go to the outbox. Returns how many. */
+    fun heldRelease(tripId: Long): Int {
+        val o = get("$HELD$tripId")?.let { JSONObject(it) } ?: return 0
+        val arr = o.getJSONArray("items")
+        val items = (0 until arr.length()).map { arr.getJSONArray(it).let { e -> e.getString(0) to e.getString(1) } }
+        outboxAdd(items, tripId, o.getLong("at"))
+        put("$HELD$tripId", null)
+        return items.size
+    }
+
+    /** Not a drive (or not answered in time, [app.bumpbeeper.auto.TripHold]): deleted, never sent. */
+    fun heldDrop(tripId: Long) = put("$HELD$tripId", null)
+
+    /** Trips with held elements, oldest first: (trip id, held since). */
+    fun heldTrips(): List<Pair<Long, Long>> =
+        db.rawQuery("SELECT key, value FROM sync_state WHERE key GLOB ?", arrayOf("$HELD*")).use { c ->
+            val out = ArrayList<Pair<Long, Long>>()
+            while (c.moveToNext()) {
+                val id = c.getString(0).removePrefix(HELD).toLongOrNull() ?: continue
+                out.add(id to (runCatching { JSONObject(c.getString(1)).getLong("at") }.getOrDefault(0L)))
+            }
+            out.sortedBy { it.second }
+        }
+
 
     // ---------------- remote spot cache
 
@@ -141,6 +183,8 @@ class SyncStore(internal val helper: SQLiteOpenHelper) {
     }
 
     companion object {
+        private const val HELD = "held_trip_"
+
         /** Version 5: creates the sync tables (fresh install and upgrade alike). */
         fun createTables(db: SQLiteDatabase) {
             db.execSQL(

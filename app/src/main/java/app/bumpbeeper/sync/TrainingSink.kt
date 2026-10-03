@@ -121,7 +121,7 @@ class TrainingSink(
 
         /**
          * Trips not confirmed yet (auto-started): their rows are held, see [release] / [discard]. Default: none.
-         * The auto-start stack sets this to its TripHold check once it lands.
+         * Set by [app.bumpbeeper.auto.TripHold.installTraining] at app start.
          */
         @Volatile var isHeld: (Long) -> Boolean = { false }
 

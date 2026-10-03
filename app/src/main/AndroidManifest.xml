@@ -32,6 +32,7 @@
     <uses-feature android:name="android.hardware.bluetooth" android:required="false" />
 
     <application
+        android:name=".auto.AppStart"
         android:allowBackup="true"
         android:fullBackupContent="@xml/backup_rules"
         android:dataExtractionRules="@xml/data_extraction_rules"
@@ -89,6 +90,11 @@
                 <action android:name="android.bluetooth.device.action.ACL_DISCONNECTED" />
             </intent-filter>
         </receiver>
+
+        <!-- Auto-detect driving: the "Was this a drive?" answer after a trip that started by itself. -->
+        <receiver
+            android:name=".auto.TripCheck$Answer"
+            android:exported="false" />
 
         <!-- Auto-detect driving: after a reboot or an update, start detecting again (only when switched on). -->
         <receiver

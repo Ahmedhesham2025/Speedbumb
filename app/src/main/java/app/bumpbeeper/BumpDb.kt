@@ -300,6 +300,30 @@ class BumpDb(ctx: Context) : SQLiteOpenHelper(ctx, "bumps.db", null, 7), BumpSto
         )
     }
 
+    /**
+     * "Not a drive" (#49): deletes the spots first found on trip [id] (its `new_bump` events) that no event of any
+     * other trip mentions (found, hit, missed, beeped, muted...). Spots seen on other trips stay; their hit counts
+     * aren't stored per trip, so they stay too.
+     * Call before [deleteTrip], which deletes the events this reads. Returns how many spots were deleted.
+     */
+    fun deleteSpotsOnlyFrom(id: Long): Int {
+        val t = id.toString()
+        return writableDatabase.delete(
+            "bumps",
+            "id IN (SELECT bump_id FROM events WHERE trip_id = ? AND type = 'new_bump') AND id NOT IN " +
+                "(SELECT bump_id FROM events WHERE bump_id IS NOT NULL AND (trip_id IS NULL OR trip_id <> ?))",
+            arrayOf(t, t),
+        )
+    }
+
+    /** "Not a drive" (#49): the trip and its events go. */
+    fun deleteTrip(id: Long) {
+        writableDatabase.apply {
+            delete("events", "trip_id = ?", arrayOf(id.toString()))
+            delete("trips", "id = ?", arrayOf(id.toString()))
+        }
+    }
+
     fun clearAll() {
         writableDatabase.apply {
             delete("bumps", null, null)

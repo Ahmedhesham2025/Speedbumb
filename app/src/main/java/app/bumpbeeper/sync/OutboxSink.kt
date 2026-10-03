@@ -11,7 +11,12 @@ import app.bumpbeeper.TripPrivacy
  *
  * Nothing about the route is kept or uploaded: only these hazard points, each on its own.
  */
-class OutboxSink(private val store: SyncStore, private val tripId: Long) : ObservationSink {
+class OutboxSink(
+    private val store: SyncStore,
+    private val tripId: Long,
+    /** An unconfirmed trip (#49): [flush] holds the elements until the user says it was a drive. */
+    @Volatile var held: Boolean = false,
+) : ObservationSink {
     private val pending = ArrayList<Observation>()
     /** Metres driven when each pending observation came in ([TripPrivacy.driven]). */
     private val drivenAt = ArrayList<Double>()
@@ -57,7 +62,9 @@ class OutboxSink(private val store: SyncStore, private val tripId: Long) : Obser
         drivenAt.clear()
         val items = keep.filter { ObservationJson.inServiceArea(it.lat, it.lon) }
             .map { it.clientId to ObservationJson.toJson(it).toString() }
-        if (items.isNotEmpty()) store.outboxAdd(items, tripId, now)
+        if (items.isNotEmpty()) {
+            if (held) store.holdAdd(items, tripId, now) else store.outboxAdd(items, tripId, now)
+        }
         return items.size
     }
 
