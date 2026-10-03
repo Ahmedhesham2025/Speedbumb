@@ -28,9 +28,8 @@ import org.robolectric.shadows.ShadowAlertDialog
 import org.robolectric.shadows.ShadowToast
 
 /**
- * The privacy-critical gates on the real screen: the prominent disclosure comes before any permission request and only
- * "Continue" turns auto-detect on; a rotation
- * during the walk-through is not taken as an answer.
+ * Privacy gates on the real screen: the disclosure comes before any permission request, only "Continue" turns
+ * auto-detect on, and a rotation during the walk-through is not taken as an answer.
  */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34])
@@ -41,7 +40,6 @@ class AutoDetectFlowTest {
     @Before fun setUp() {
         // The shared-map question is answered, so no other dialog opens on resume.
         Prefs.sp(app).edit().clear().putString(Prefs.SYNC_CHOICE, Prefs.SYNC_RECEIVE).commit()
-        app.getSharedPreferences("sync_choice", 0).edit().clear().commit()
         LiveState.recording = false
         LiveState.watching = false
         ShadowAlertDialog.reset()
