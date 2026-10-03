@@ -148,6 +148,12 @@ object TripHold {
         return ok
     }
 
+    /** First start after a backup restore ([app.bumpbeeper.sync.RestoreReset]): no hold or answer of the old phone counts. */
+    fun forgetAll(ctx: Context) {
+        sp(ctx).edit().clear().commit()
+        done(ctx).edit().clear().commit()
+    }
+
     /** Tests only: forget every listener (Robolectric keeps this object between tests). */
     internal fun reset() {
         confirmed.clear(); rejected.clear(); expired.clear()

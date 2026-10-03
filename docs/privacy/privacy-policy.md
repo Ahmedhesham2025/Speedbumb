@@ -13,9 +13,10 @@ if backup is on for your phone, Android copies the bump map, trips, scores and s
 backup. Debug recordings, crash files and routes waiting for a speed-limit lookup are never put in the cloud backup
 (recordings do move along in a direct phone-to-phone transfer). The shared-map sign-in and the "Was this a drive?"
 holds (see below) are never backed up or moved to a new phone either. Training samples not sent yet and bump points
-waiting for "Was this a drive?" are stored in the bump database, so they are part of the backup. After a restore the
-held points are never sent (their hold is gone), and our server does not accept the samples from the restored phone,
-which signs in as a new anonymous device without the opt-in; the app then deletes them.
+waiting for "Was this a drive?" are stored in the bump database, so they are part of the backup. The restored phone
+signs in as a new anonymous device that never agreed to *Help improve detection*, so on its first start after a restore,
+before it connects to our server, the app switches that option off, deletes the unsent samples and the held points, and
+tells you; you can turn it on again. Your shared-map and speed-limit choices stay as they were.
 
 **Debug recordings** (off by default) hold every sensor reading and GPS fix of a drive, the app's events, and now also
 *power* rows: when the app slowed GPS down because the car stood still, and when it sped it up again.
@@ -141,8 +142,8 @@ Supabase sees the internet address a request comes from; its own sign-in records
   bump and pothole reports it sent, its links to spots (contributions), its crash reports and its training samples. Spots already merged into
   the shared map stay, with nothing linking them to this phone any more. What stays: the anonymous sign-in itself
   (with the sign-in service's own records) and the speed-limit day counts until they expire after 30 days. On the
-  phone it clears the downloaded warnings, turns the shared map **and** real speed limits off (so you are asked again
-  before any new lookup), and keeps your own bump map and trips.
+  phone it clears the downloaded warnings, turns the shared map, real speed limits **and** *Help improve detection* off
+  (so you are asked again before any new lookup or upload), and keeps your own bump map and trips.
 - **Clear the map** (Settings → Your data): deletes the bumps, potholes, event log, trips and scores on the phone, and
   routes waiting for a lookup. It does not delete settings or debug recordings (those have their own *Delete
   recordings* button).
@@ -203,8 +204,9 @@ Notes for the Play Store *Data safety* form and the F-Droid listing (store-docs 
 النسخ الاحتياطي بتاع أندرويد شغّال، أندرويد بينسخ الخريطة والرحلات والإعدادات على حساب جوجل بتاعك. التسجيلات وتقارير
 الأعطال والطرق اللي مستنية البحث عمرها ما بتدخل النسخة الاحتياطية، ولا تسجيل الدخول المجهول ولا علامات «مستنية
 رد» بتاعة «كنت إنت اللي سايق؟» (الرحلات نفسها بتتنسخ). عيّنات التدريب اللي لسه ما اتبعتتش ونقط المطبّات المستنية الرد
-موجودين في قاعدة البيانات اللي بتتنسخ؛ بعد الاسترجاع النقط عمرها ما بتتبعت، والسيرفر مش بيقبل العيّنات من الموبايل
-المسترجَع (بيدخل كجهاز مجهول جديد)، فالتطبيق بيمسحها. التسجيلات (مقفولة من الأول) بقت فيها كمان سطور *power*: إمتى التطبيق قلّل الـ GPS
+موجودين في قاعدة البيانات اللي بتتنسخ. الموبايل المسترجَع بيدخل كجهاز مجهول جديد عمره ما وافق على «ساعد في تحسين
+الكشف»، فأول مرة يشتغل بعد الاسترجاع، وقبل ما يتصل بسيرفرنا، التطبيق بيقفل الاختيار ده ويمسح العيّنات اللي ما اتبعتتش
+والنقط المستنية الرد، وبيقولك؛ وتقدر تفتحه تاني. اختيارك للخريطة المتشاركة وحدود السرعة بيفضل زي ما هو. التسجيلات (مقفولة من الأول) بقت فيها كمان سطور *power*: إمتى التطبيق قلّل الـ GPS
 عشان العربية واقفة وإمتى رجّعه.
 
 **ابدأ التسجيل لما أسوق (مقفول من الأول؛ الإعدادات ← التشغيل التلقائي):** لو فتحته، التطبيق بيعرف إنك بتسوق
@@ -277,7 +279,7 @@ TomTom: <https://www.tomtom.com/privacy/>. سيرفرنا مش بيحتفظ بح
 - «امسح بياناتي المتشاركة» (الإعدادات ← الخريطة المتشاركة) بيمسح سجل الموبايل ده على السيرفر، ومعاه التقارير
   اللي بعتها، وربطه بالأماكن، وتقارير الأعطال، وعيّنات التدريب. الأماكن اللي اتدمجت بتفضل من غير أي حاجة تربطها بالموبايل ده. اللي
   بيفضل: تسجيل الدخول المجهول نفسه، وعدّاد البحث اليومي لحد ما يتمسح بعد 30 يوم. وبيقفل الخريطة المتشاركة وحدود
-  السرعة الحقيقية، فهتتسأل تاني قبل أي بحث جديد.
+  السرعة الحقيقية و«ساعد في تحسين الكشف»، فهتتسأل تاني قبل أي بحث أو رفع جديد.
 - «امسح الخريطة» (الإعدادات ← بياناتك) بيمسح المطبّات والحفر والرحلات والدرجات اللي على الموبايل والطرق المستنية،
   مش الإعدادات ولا التسجيلات.
 - عشان تمسح كل حاجة على الموبايل: إعدادات أندرويد ← التطبيقات ← Bump Beeper ← التخزين ← مسح التخزين، أو امسح
