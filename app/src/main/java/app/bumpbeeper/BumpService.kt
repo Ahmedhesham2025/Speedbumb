@@ -35,8 +35,10 @@ import app.bumpbeeper.auto.TripCheck
 import app.bumpbeeper.auto.TripHold
 import app.bumpbeeper.crash.CrashLog
 import app.bumpbeeper.sync.CachedSpotSource
+import app.bumpbeeper.sync.LiveSpeedLimit
 import app.bumpbeeper.sync.OutboxSink
 import app.bumpbeeper.sync.SpeedLimitSync
+import app.bumpbeeper.sync.SpeedWarner
 import app.bumpbeeper.sync.Sync
 import app.bumpbeeper.sync.SyncStore
 import app.bumpbeeper.sync.TrainingSink
@@ -82,6 +84,8 @@ class BumpService : Service(), SensorEventListener, LocationListener, EngineList
         private const val PARKED_CHECK_MS = 15_000L
         /** After the user presses Stop, motion detection waits this long (they may still be driving). */
         private const val SNOOZE_AFTER_STOP_MS = 15 * 60_000L
+        /** A speeding warning waits this long after a bump or pothole warning (those come first). */
+        private const val HAZARD_FIRST_MS = 6_000L
 
         /** The running service, for [label]. Set in onCreate, cleared in onDestroy. */
         @Volatile private var instance: BumpService? = null
@@ -226,6 +230,9 @@ class BumpService : Service(), SensorEventListener, LocationListener, EngineList
     private var route: TripRoute? = null                // only used on the engine thread; null = no speed-limit lookup
     private var pulledThisTrip = false                  // only used on the engine thread
     private var training: TrainingSink? = null          // only used on the engine thread; null = not helping improve detection
+    private var live: LiveSpeedLimit? = null            // only used on the engine thread: live road speed limit (opt-in)
+    private var warner = SpeedWarner()                  // only used on the engine thread
+    @Volatile private var lastHazardWarnMs = -1L        // elapsedRealtime of the last bump / pothole warning
     private var wakeLock: PowerManager.WakeLock? = null
     private var tripId = 0L
     private var sensorOffsetMs: Long? = null
@@ -248,6 +255,7 @@ class BumpService : Service(), SensorEventListener, LocationListener, EngineList
     private val parkedCheck = object : Runnable {
         override fun run() {
             val h = handler ?: return
+            live?.tick()
             if (autoStop?.shouldStop(SystemClock.elapsedRealtime()) == true) {
                 autoStop = null
                 main.post {
@@ -549,6 +557,10 @@ class BumpService : Service(), SensorEventListener, LocationListener, EngineList
             // Road speed limits (opt-in): the trip's fixes stay in memory until the trip ends.
             route = if (SpeedLimitSync.allowed(this)) TripRoute() else null
             pulledThisTrip = false
+            // Live road speed limit (opt-in, checked again on every fix). An unconfirmed trip may look it up, but logs nothing.
+            live = LiveSpeedLimit(this, h, quiet = { unconfirmed })
+            warner = SpeedWarner()
+            lastHazardWarnMs = -1L
             // "Help improve detection" (separate opt-in): jolt samples with their signal window, no coordinates uploaded.
             training = if (Prefs.trainingActive(this)) TrainingSink(Prefs.placement(this), System.currentTimeMillis(), batteryPercent()) else null
             val eng = BumpEngine(cfg, store, this, { System.currentTimeMillis() }, tripId, CachedSpotSource(syncStore), outbox,
@@ -635,6 +647,9 @@ class BumpService : Service(), SensorEventListener, LocationListener, EngineList
                 Log.w(TAG, "speed-limit lookup not queued: ${e.javaClass.simpleName}")
             }
             route = null
+            live?.close()
+            live = null
+            LiveState.overLimit = 0
             if (ask) TripCheck.ask(this, tripId)
             val last = engine?.lastFix
             Sync.afterTrip(this, last?.lat ?: Double.NaN, last?.lon ?: Double.NaN)
@@ -741,6 +756,7 @@ class BumpService : Service(), SensorEventListener, LocationListener, EngineList
         }
         eng.onFix(fix)
         monitor?.onFix(eng.lastFix ?: fix)
+        live?.let { checkSpeedLimit(it, fix) }
         LiveState.forwardKnown = eng.forwardKnown
         val kmh = fix.speedMps * 3.6
         autoStop?.onFix(fix.timeMs, kmh, fix.lat, fix.lon)
@@ -776,6 +792,23 @@ class BumpService : Service(), SensorEventListener, LocationListener, EngineList
     @Deprecated("Deprecated in Android, still called on Android 10")
     override fun onStatusChanged(provider: String?, status: Int, extras: Bundle?) {}
 
+    /** Engine thread, each fix: the live limit, and the speeding warning (tone, then the limit spoken). */
+    private fun checkSpeedLimit(l: LiveSpeedLimit, fix: Fix) {
+        l.onFix(fix)
+        val now = SystemClock.elapsedRealtime()
+        // Never over a bump warning: wait until it has played. "Quiet when slow" can't apply: this needs ≥ 15 km/h.
+        val mayPlay = Prefs.limitSound(this) && (lastHazardWarnMs < 0 || now - lastHazardWarnMs > HAZARD_FIRST_MS)
+        val limit = warner.onSpeed(now, fix.speedMps * 3.6, LiveState.speedLimitKmh, Prefs.limitMarginKmh(this), mayPlay)
+        LiveState.overLimit = warner.overLimit
+        if (limit == null) return
+        beeper.speeding()
+        val v = voice ?: return
+        handler?.postDelayed({
+            // A bump warning that came meanwhile wins: no voice over it.
+            if (lastHazardWarnMs < now) v.speedLimit(limit)
+        }, Beeper.SPEEDING_MS)
+    }
+
     // ---------------------------------------------------------------- engine events (engine thread)
 
     private fun describe(b: Bump): String = when {
@@ -802,6 +835,7 @@ class BumpService : Service(), SensorEventListener, LocationListener, EngineList
     }
 
     override fun onWarning(w: Warning) {
+        lastHazardWarnMs = SystemClock.elapsedRealtime()
         val b = w.spot
         val plain = { beeper.warn(w.sound, w.speedKmh) }
         // The group line couldn't be spoken: play this spot's sound and let the silenced ones warn on their own.

@@ -51,4 +51,27 @@ object Phrases {
         }
         "$count $noun ahead$harsh."
     }
+
+    /**
+     * The road's speed limit, said after the speeding tone: "Speed limit 60." / «السرعة المسموحة ستين.»
+     * Arabic is a draft (Egyptian spoken numbers, units before tens as in «خمسة وأربعين»); limits outside 1..199
+     * are left as digits, which the Arabic voice reads out on its own.
+     */
+    fun speedLimit(lang: String, kmh: Int): String =
+        if (lang == "ar") "السرعة المسموحة ${arabicNumber(kmh) ?: kmh.toString()}." else "Speed limit $kmh."
+
+    private val AR_UNITS = listOf("", "واحد", "اتنين", "تلاتة", "أربعة", "خمسة", "ستة", "سبعة", "تمانية", "تسعة")
+    private val AR_TEENS = listOf("عشرة", "حداشر", "اتناشر", "تلاتاشر", "أربعتاشر", "خمستاشر", "ستاشر", "سبعتاشر", "تمنتاشر", "تسعتاشر")
+    private val AR_TENS = listOf("", "", "عشرين", "تلاتين", "أربعين", "خمسين", "ستين", "سبعين", "تمانين", "تسعين")
+
+    /** 1..199 in spoken Egyptian Arabic, else null. */
+    fun arabicNumber(n: Int): String? = when {
+        n !in 1..199 -> null
+        n == 100 -> "مية"
+        n > 100 -> "مية و" + arabicNumber(n - 100)
+        n < 10 -> AR_UNITS[n]
+        n < 20 -> AR_TEENS[n - 10]
+        n % 10 == 0 -> AR_TENS[n / 10]
+        else -> AR_UNITS[n % 10] + " و" + AR_TENS[n / 10]
+    }
 }
