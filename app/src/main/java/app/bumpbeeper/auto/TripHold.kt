@@ -14,6 +14,8 @@ import java.util.concurrent.atomic.AtomicBoolean
  * Trips that started by themselves (motion detection / Google, #49) are **held** until the user answers
  * "Was this a drive?" ([TripCheck]). Nothing from a held trip may leave the phone. One generic API for every kind of
  * held data: shared-map points and the speed-limit route ([installBuiltIns]) and training samples ([installTraining]).
+ * One exception: live speed-limit lookups ([app.bumpbeeper.sync.LiveSpeedLimit]) run during a held trip, because the
+ * user opted in to them and the screen says so; they keep and log nothing.
  *
  * To hold your own data: at trip end check [isHeld] and keep the data local; register listeners once per process
  * from [AppStart.onCreate]:

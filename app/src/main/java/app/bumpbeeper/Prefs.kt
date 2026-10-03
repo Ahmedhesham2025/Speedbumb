@@ -99,6 +99,23 @@ object Prefs {
     fun speedLimits(ctx: Context): Boolean = sp(ctx).getBoolean(SPEED_LIMITS, false)
 
     /**
+     * Live road speed limit while driving (TomTom, through our server), with a speeding warning. Opt-in, off by
+     * default, and separate from [SPEED_LIMITS]. Calls need [LIVE_LIMITS_CONSENT_VERSION] ≥ 1 (set by the consent
+     * screen) and the network allowed; see [app.bumpbeeper.sync.LiveSpeedLimit.allowed].
+     */
+    const val LIVE_LIMITS = "live_limits"
+    const val LIVE_LIMITS_CONSENT_VERSION = "live_limits_consent_version"
+    /** Warn when this many km/h over the limit: one of [LIMIT_MARGINS]. */
+    const val LIMIT_MARGIN_KMH = "limit_margin_kmh"
+    val LIMIT_MARGINS = listOf(5, 10, 20)
+    /** The speeding warning's tone and voice; false mutes it (the limit is still shown). */
+    const val LIMIT_SOUND = "limit_sound"
+    fun liveLimits(ctx: Context): Boolean = sp(ctx).getBoolean(LIVE_LIMITS, false)
+    fun liveLimitsConsentVersion(ctx: Context): Int = sp(ctx).getInt(LIVE_LIMITS_CONSENT_VERSION, 0)
+    fun limitMarginKmh(ctx: Context): Int = sp(ctx).getInt(LIMIT_MARGIN_KMH, 10).takeIf { it in LIMIT_MARGINS } ?: 10
+    fun limitSound(ctx: Context): Boolean = sp(ctx).getBoolean(LIMIT_SOUND, true)
+
+    /**
      * Stop recording after the car has been parked this many minutes (0 = never). Only after real driving, and never
      * while the car's Bluetooth is connected; see [app.bumpbeeper.auto.AutoStop].
      */

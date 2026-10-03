@@ -55,6 +55,9 @@ class Voice(
         if (text == null) fallback() else say(text, fallback)
     }
 
+    /** After the speeding tone: "Speed limit 60." Silent if speech isn't available (the tone already played). */
+    fun speedLimit(kmh: Int) = say(Phrases.speedLimit(Prefs.voiceLang(app), kmh)) {}
+
     private fun fail(fallback: () -> Unit) {
         if (!broken) { broken = true; onSpeechChange(false) }
         fallback()
