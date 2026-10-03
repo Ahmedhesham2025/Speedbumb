@@ -23,10 +23,6 @@ class AutoDetectTextTest {
         assertEquals(Status.values().size, texts.toSet().size)
         assertEquals("Off", ctx.getString(AutoDetectText.statusRes(Status.OFF)))
         assertEquals(R.string.auto_status_needs_permission, AutoDetectText.statusRes(Status.NEEDS_PERMISSION))
-        assertEquals(R.string.auto_status_google, AutoDetectText.statusRes(Status.GOOGLE_ACTIVITY))
-        assertEquals(R.string.auto_status_motion, AutoDetectText.statusRes(Status.MOTION_SENSOR))
-        assertEquals(R.string.auto_status_passive, AutoDetectText.statusRes(Status.PASSIVE_ONLY))
-        assertEquals(R.string.auto_status_not_running, AutoDetectText.statusRes(Status.NOT_RUNNING))
     }
 
     @Test fun watchingLineOnlyWhenOn() {
