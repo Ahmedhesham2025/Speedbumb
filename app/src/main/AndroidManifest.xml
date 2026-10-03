@@ -32,6 +32,7 @@
     <uses-feature android:name="android.hardware.bluetooth" android:required="false" />
 
     <application
+        android:name=".auto.AppStart"
         android:allowBackup="true"
         android:fullBackupContent="@xml/backup_rules"
         android:dataExtractionRules="@xml/data_extraction_rules"
