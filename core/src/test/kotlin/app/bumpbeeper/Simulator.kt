@@ -40,6 +40,8 @@ class DriveSpec(
     val slowZonesAt: List<Double> = emptyList(),
     /** Where a passenger picks the phone up out of the holder and shakes it around. */
     val handlingAt: Double? = null,
+    /** More places where the phone is picked up the same way (held 5 s, then put back). */
+    val moreHandlingsAt: List<Double> = emptyList(),
     /** Spots where the driver slows to bump speed but feels nothing (the bump was removed). */
     val silentBumpsAt: List<Double> = emptyList(),
     /** Bumps the driver crawls over at 8 km/h, so gently that nothing is felt. */
@@ -60,6 +62,14 @@ class DriveSpec(
     val hardBrakesAt: List<Double> = emptyList(),
     /** Swerves: a sudden turn left, then right (0.7 s each), like dodging something. */
     val swervesAt: List<Double> = emptyList(),
+    /** Sharp turns: the car turns left at 0.45 rad/s for 2 s (≈ 52°, ≈ 6 m/s² at 50 km/h), and back right 6 s later. */
+    val sharpTurnsAt: List<Double> = emptyList(),
+    /** The phone twists 50° about the vertical in 0.8 s (shifting in a pocket): the gyroscope turns, the car doesn't. */
+    val pocketTwistsAt: List<Double> = emptyList(),
+    /** The phone is jostled (tipped 70° for a second and shaken), like a loose phone in a pocket. */
+    val jostlesAt: List<Double> = emptyList(),
+    /** Road joints (expansion seams): a short sharp up-first jolt on both axles that barely rocks the car. */
+    val seamsAt: List<Double> = emptyList(),
 )
 
 class TripResult(
@@ -74,6 +84,8 @@ class TripResult(
     val stats: TripStats,
     /** Snapshots of the engine's forward-direction learning (for debugging the bump/pothole tests). */
     val forwardTrace: List<String> = emptyList(),
+    /** The driving monitor was in pocket mode at the end of the trip. */
+    val pocketMode: Boolean = false,
     /** How the simulated driver drove, as measured by [DrivingMonitor]. */
     val driving: DrivingStats = DrivingStats(),
     /** Every warning as the engine handed it out (sound + group), in order. */
@@ -160,7 +172,7 @@ class Simulator(seed: Long) {
             spec.potholesLeftAt.map { Triple(travel(it), -1.0, 7.0) } +
             spec.smallPotholesAt.map { Triple(travel(it), 1.0, 4.2) }
         val zones = spec.slowZonesAt.map { travel(it) }
-        val handling = spec.handlingAt?.let { travel(it) }
+        val handlings = (listOfNotNull(spec.handlingAt) + spec.moreHandlingsAt).map { travel(it) }
 
         var s = 0.0
         var v = 0.0
@@ -204,8 +216,18 @@ class Simulator(seed: Long) {
         val mon = monitor!!
         val brakes = spec.hardBrakesAt.map { travel(it) }
         val swerves = spec.swervesAt.map { travel(it) }
+        val turns = spec.sharpTurnsAt.map { travel(it) }
+        val twists = spec.pocketTwistsAt.map { travel(it) }
+        val jostles = spec.jostlesAt.map { travel(it) }
+        val seams = spec.seamsAt.map { travel(it) }
         var forceBrakeUntil = -1.0
         var swerveStart = -1.0
+        var turnStart = -1.0
+        var twistStart = -1.0
+        var jostleStart = -1.0
+        val seamHits = ArrayList<DoubleArray>()   // (time, amplitude)
+        // The car's own heading change from swerves and turns (radians, left = positive): the GPS bearing follows it.
+        var carYaw = 0.0
 
         val dt = 0.02
         val cruise = spec.cruiseKmh / 3.6
@@ -239,6 +261,9 @@ class Simulator(seed: Long) {
             }
             for (sb in brakes) if (s < sb && s + v * dt >= sb) forceBrakeUntil = t + 1.5
             for (sw in swerves) if (s < sw && s + v * dt >= sw) swerveStart = t
+            for (st in turns) if (s < st && s + v * dt >= st) turnStart = t
+            for (sp in twists) if (s < sp && s + v * dt >= sp) twistStart = t
+            for (sj in jostles) if (s < sj && s + v * dt >= sj) jostleStart = t
             val vNew = when {
                 t < forceBrakeUntil -> max(0.5, v - 6.5 * dt)
                 target > v -> min(target, v + maxAccel * dt)
@@ -252,22 +277,27 @@ class Simulator(seed: Long) {
                 if (s < sb + 2.6 && sNew >= sb + 2.6) crossings.add(doubleArrayOf(t, 0.8 * bumpAmp(vNew))) // rear axle
             }
             for (sj in jolts) if (s < sj && sNew >= sj) crossings.add(doubleArrayOf(t, 6.0))
+            for (ss in seams) {
+                if (s < ss && sNew >= ss) seamHits.add(doubleArrayOf(t, 6.0))
+                if (s < ss + 2.6 && sNew >= ss + 2.6) seamHits.add(doubleArrayOf(t, 5.0))
+            }
             for ((sp, side, amp) in potholes) {
                 if (s < sp && sNew >= sp) holeHits.add(doubleArrayOf(t, amp, side))                    // front wheel
                 if (s < sp + 2.6 && sNew >= sp + 2.6) holeHits.add(doubleArrayOf(t, 0.7 * amp, side))  // rear wheel, same side
             }
-            if (handling != null && handlingStart < 0 && s < handling && sNew >= handling) handlingStart = t
+            for (sh in handlings) if (s < sh && sNew >= sh) handlingStart = t
 
             s = sNew
             v = vNew
             t += dt
-            history.add(doubleArrayOf(t, s, v))
+            history.add(doubleArrayOf(t, s, v, carYaw))
 
             // Vertical: road noise + occasional rough patch + bump pulses.
             var av = gauss(0.35)
             if (rnd.nextDouble() < 0.002) av += if (rnd.nextBoolean()) 1.5 else -1.5
             for (c in crossings) av += pulse(t - c[0], c[1])
             for (c in holeHits) av += potholePulse(t - c[0], c[1])
+            for (c in seamHits) av += pulse(t - c[0], c[1])
 
             // Rotation (car axes: roll about forward, pitch about left, yaw about up), rad/s.
             // Bumps tip the car nose-up/down (pitch); a pothole under one wheel rocks it sideways (roll).
@@ -275,15 +305,32 @@ class Simulator(seed: Long) {
             var roll = gauss(0.02)
             var pitch = gauss(0.02)
             var yaw = gauss(0.01)
+            var carTurn = 0.0
             if (swerveStart >= 0) {
                 val k = t - swerveStart
-                yaw += when { k < 0.7 -> 0.28; k < 1.4 -> -0.28; else -> 0.0 }   // left, then right
+                carTurn += when { k < 0.7 -> 0.28; k < 1.4 -> -0.28; else -> 0.0 }   // left, then right
+            }
+            if (turnStart >= 0) {
+                val k = t - turnStart
+                carTurn += when { k < 2.0 -> 0.45; k in 8.0..10.0 -> -0.45; else -> 0.0 }   // left, then back right
+            }
+            yaw += carTurn
+            carYaw += carTurn * dt
+            // The phone turning in a pocket: only the gyroscope (and the phone's axes) see it.
+            var twist = 0.0
+            var twistRate = 0.0
+            if (twistStart >= 0) {
+                val k = t - twistStart
+                twistRate = if (k < 0.8) Math.toRadians(50.0) / 0.8 else 0.0
+                twist = Math.toRadians(50.0) * min(1.0, k / 0.8)
             }
             val lateral = v * (yaw)   // sideways (to the left) force from turning
             for (c in crossings) pitch += swing(t - c[0], 0.05 * c[1], 0.2)
             for (c in holeHits) { roll += c[2] * swing(t - c[0], 0.08 * c[1], 0.15); pitch += swing(t - c[0], 0.015 * c[1], 0.15) }
+            for (c in seamHits) pitch += swing(t - c[0], 0.005 * c[1], 0.1)   // a seam is too short to rock the car
             crossings.removeAll { t - it[0] > 0.5 }
             holeHits.removeAll { t - it[0] > 0.5 }
+            seamHits.removeAll { t - it[0] > 0.5 }
 
             // Passenger picks the phone up: it rotates 70° and gets shaken, is held 5 s, then put back.
             var extraTilt = 0.0
@@ -298,10 +345,15 @@ class Simulator(seed: Long) {
                 }
                 if (h < 1.5 || (h > 5.0 && h < 6.0)) shake = 4.0
             }
+            if (jostleStart >= 0) {
+                val h = t - jostleStart
+                if (h < 1.8) extraTilt += Math.toRadians(70.0) * when { h < 0.4 -> h / 0.4; h < 1.4 -> 1.0; else -> 1.0 - (h - 1.4) / 0.4 }
+                if (h < 0.8) shake = 4.0
+            }
 
             // Specific force in car axes (fwd, left, up), then into the tilted phone's axes.
             val fv = doubleArrayOf(aLong + 0.3 * av + gauss(0.2), lateral + gauss(0.2), 9.81 + av)
-            val r = rot(yaw0, pitch0 + extraTilt, roll0)   // pitch axis is horizontal → tilts the phone 70° relative to gravity
+            val r = rot(yaw0 + twist, pitch0 + extraTilt, roll0)   // pitch axis is horizontal → tilts the phone 70° relative to gravity
             val ax = r[0][0] * fv[0] + r[1][0] * fv[1] + r[2][0] * fv[2] + gauss(shake)
             val ay = r[0][1] * fv[0] + r[1][1] * fv[1] + r[2][1] * fv[2] + gauss(shake)
             val az = r[0][2] * fv[0] + r[1][2] * fv[1] + r[2][2] * fv[2] + gauss(shake)
@@ -309,7 +361,7 @@ class Simulator(seed: Long) {
             recTMs = tMs
             var rgx = Double.NaN; var rgy = Double.NaN; var rgz = Double.NaN
             if (spec.gyro) {
-                val w = doubleArrayOf(roll, pitch, yaw)
+                val w = doubleArrayOf(roll, pitch, yaw + twistRate)
                 val wx = r[0][0] * w[0] + r[1][0] * w[1] + r[2][0] * w[2] + gauss(shake * 0.3)
                 val wy = r[0][1] * w[0] + r[1][1] * w[1] + r[2][1] * w[2] + gauss(shake * 0.3)
                 val wz = r[0][2] * w[0] + r[1][2] * w[1] + r[2][2] * w[2] + gauss(shake * 0.3)
@@ -329,7 +381,7 @@ class Simulator(seed: Long) {
                 val n1 = Geo.move(p[0], p[1], 0.0, gauss(3.0))
                 val n2 = Geo.move(n1[0], n1[1], 90.0, gauss(3.0))
                 val speed = max(0.0, past[2] + gauss(0.3))
-                val bearing = if (past[2] > 1.0) ((if (spec.westbound) 270.0 else 90.0) + gauss(3.0) + 360) % 360 else Double.NaN
+                val bearing = if (past[2] > 1.0) ((if (spec.westbound) 270.0 else 90.0) - Math.toDegrees(past[3]) + gauss(3.0) + 360) % 360 else Double.NaN
                 recorder?.add(TraceSample.Gps(tMs, n2[0], n2[1], speed * 3.6, bearing, 5.0))
                 engine.onFix(Fix(tMs, n2[0], n2[1], speed, bearing, 5.0))
                 if (mutePending) { mutePending = false; engine.muteBump(engine.lastBeepedId) }
@@ -341,6 +393,6 @@ class Simulator(seed: Long) {
         }
         mon.finish()
         fwdTrace.add("monitor: ${mon.debug}")
-        return TripResult(beepIds, beepKinds, beepTrue, newBumps, knownHits, rejected, engine.trip, fwdTrace, mon.stats, warnings, ticks)
+        return TripResult(beepIds, beepKinds, beepTrue, newBumps, knownHits, rejected, engine.trip, fwdTrace, mon.pocketMode, mon.stats, warnings, ticks)
     }
 }

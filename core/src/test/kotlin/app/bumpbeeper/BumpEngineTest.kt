@@ -21,4 +21,9 @@ class BumpEngineTest {
     @Test fun swerving() = Scenarios.swerving()
     @Test fun speedBumpsTakenFast() = Scenarios.speedBumpsTakenFast()
     @Test fun phoneHandledWhileDriving() = Scenarios.phoneHandledWhileDriving()
+    @Test fun pocketShiftNotACorner() = Scenarios.pocketShiftNotACorner()
+    @Test fun sharpTurnCounted() = Scenarios.sharpTurnCounted()
+    @Test fun pocketModeNoPhoneUse() = Scenarios.pocketModeNoPhoneUse()
+    @Test fun repeatedHandlingIsPhoneUse() = Scenarios.repeatedHandlingIsPhoneUse()
+    @Test fun fastBumpVersusRoadJoint() = Scenarios.fastBumpVersusRoadJoint()
 }
