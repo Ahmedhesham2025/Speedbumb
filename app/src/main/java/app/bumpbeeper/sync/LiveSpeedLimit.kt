@@ -42,12 +42,23 @@ class LiveSpeedLimit(
             Prefs.liveLimits(ctx) && Prefs.liveLimitsConsentVersion(ctx) >= 1 && Prefs.syncChoice(ctx) != Prefs.SYNC_UNSET
     }
 
-    val planner = LiveLimitPlanner { wallMs -> SpeedLimitQuota.take(ctx, wallMs, reserve = SpeedLimitQuota.KEEP_FOR_AFTER_TRIP) }
+    private fun newPlanner() = LiveLimitPlanner { wallMs -> SpeedLimitQuota.take(ctx, wallMs, reserve = SpeedLimitQuota.KEEP_FOR_AFTER_TRIP) }
+
+    /** Engine thread only. A new one each time the feature is switched back on mid-trip (nothing carried over). */
+    var planner = newPlanner()
+        private set
+    /** Switched off, or the trip ended: no answer may show a limit any more. */
+    @Volatile var closed = false
+        private set
+    private var ended = false
 
     /** Engine thread, every GPS fix. */
     fun onFix(f: Fix) {
-        if (!allowed(ctx)) { planner.forget(); LiveState.liveLimitsOn = false; publish(); return }
+        if (ended) return
+        if (!allowed(ctx)) { shut(); return }
+        if (closed) { closed = false; planner = newPlanner() }   // switched back on: start afresh
         LiveState.liveLimitsOn = true
+        val planner = planner
         planner.onFix(f)
         val pts = planner.next(f.timeMs, wall())
         if (pts != null) {
@@ -58,20 +69,36 @@ class LiveSpeedLimit(
                 val (code, kmh) = call(body, pts.size)
                 // A 429 also ends the after-trip lookups for today: the server's quota is shared.
                 if (code == 429) SpeedLimitQuota.exhaust(ctx, wall())
-                engine.post { planner.onResult(elapsed(), wall(), code, kmh); publish() }
+                engine.post {
+                    // Late answer: dropped after switch-off, trip end, lost consent, or for a replaced planner.
+                    if (closed || planner !== this.planner || !allowed(ctx)) { if (!ended && !allowed(ctx)) shut(); return@post }
+                    planner.onResult(elapsed(), wall(), code, kmh); publish()
+                }
             }
         }
         publish()
     }
 
     /** Engine thread, now and then without fixes (tunnel): drops an answer that got too old. */
-    fun tick() = publish()
+    fun tick() {
+        if (ended || closed) return
+        if (!allowed(ctx)) shut() else publish()
+    }
 
-    /** Trip ended: nothing kept. */
+    /** Trip ended: nothing kept, and nothing more shown. */
     fun close() {
+        ended = true
         (exec as? ExecutorService)?.shutdown()
+        shut()
+    }
+
+    /** Switched off (or ended): drop the cached limit and clear what the screen shows. */
+    private fun shut() {
+        closed = true
         planner.forget()
         LiveState.setSpeedLimit(null, 0L)
+        LiveState.overLimit = 0
+        LiveState.liveLimitsOn = false
     }
 
     private fun publish() = LiveState.setSpeedLimit(planner.limit(elapsed()), planner.limitAtMs)
@@ -98,6 +125,10 @@ class LiveSpeedLimit(
             if (!quiet()) Log.w(TAG, "live speed limit: ${e.javaClass.simpleName}")
             LiveLimitPlanner.OFFLINE to null
         } catch (_: ApiException) {
+            LiveLimitPlanner.OFFLINE to null
+        } catch (e: Exception) {
+            // Anything else (a bad answer, a bug): treated as offline, never a crash of the recording service.
+            if (!quiet()) Log.w(TAG, "live speed limit: ${e.javaClass.simpleName}")
             LiveLimitPlanner.OFFLINE to null
         }
     }
