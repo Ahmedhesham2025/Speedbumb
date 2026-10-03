@@ -99,7 +99,7 @@ jobs:
       # Unit tests first: a failing test stops the job before an APK is built.
       # Both editions (#48): foss (no libraries) and play (+ Google Play services location).
       - name: App unit tests (foss + play)
-        run: chmod +x gradlew && (./gradlew -q :app:printTestCp | grep CP; ./gradlew :app:compileFossDebugUnitTestKotlin | grep -E 'KLIB' ) ; exit 1
+        run: chmod +x gradlew && ./gradlew :app:compileFossDebugUnitTestKotlin > out.txt 2>&1 || true; grep -E 'KLIB' out.txt || tail -50 out.txt; exit 1
       - name: App test count
         if: always()
         run: |
