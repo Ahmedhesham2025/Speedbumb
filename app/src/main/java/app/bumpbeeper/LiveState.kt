@@ -48,6 +48,27 @@ object LiveState {
     @Volatile var syncPending = 0
     @Volatile var syncLastError = ""
 
+    /**
+     * Live road speed limit (opt-in, [app.bumpbeeper.sync.LiveSpeedLimit]): km/h, null = unknown. In memory only,
+     * at most 5 min old (TomTom terms). Show "© TomTom" next to it. [liveLimitsOn]: looked up on this trip.
+     */
+    @Volatile var speedLimitKmh: Int? = null
+        private set
+    /** SystemClock.elapsedRealtime when [speedLimitKmh] arrived, 0 = none. */
+    @Volatile var speedLimitAtMs = 0L
+        private set
+    /** How old [speedLimitKmh] is, ms (-1 = none). */
+    val speedLimitAgeMs: Long
+        get() = speedLimitAtMs.let { if (it <= 0L) -1L else android.os.SystemClock.elapsedRealtime() - it }
+    /** 0 = within the limit (or unknown), 1 = over it, 2 = over it by more than the chosen margin. */
+    @Volatile var overLimit = 0
+    @Volatile var liveLimitsOn = false
+
+    fun setSpeedLimit(kmh: Int?, atMs: Long) {
+        speedLimitAtMs = if (kmh == null) 0L else atMs
+        speedLimitKmh = kmh
+    }
+
     // Last 30 s of jolt readings (one value per 100 ms) for the jolt meter.
     private val graph = FloatArray(300)
     private var head = 0
@@ -74,6 +95,7 @@ object LiveState {
         lastIgnored = ""
         forwardKnown = false
         lastLabel = ""; labelCount = 0
+        setSpeedLimit(null, 0L); overLimit = 0; liveLimitsOn = false
     }
 
     const val GRAPH_POINTS = 300

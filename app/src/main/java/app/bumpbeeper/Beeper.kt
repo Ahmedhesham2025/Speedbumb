@@ -26,6 +26,12 @@ class Beeper(private val ctx: Context) {
     /** Speed bump warning: [count] short high beeps. */
     fun beep(count: Int) = play(tones(DoubleArray(count) { 1046.5 }, 140, 90, 0.9))
 
+    /**
+     * Over the road's speed limit: a rising two-note chime (E5 → B5, ringing out), the opposite of the falling
+     * pothole "uh-oh" and unlike the flat bump beeps. The voice then says the limit, [SPEEDING_MS] after it starts.
+     */
+    fun speeding() = play(tones(doubleArrayOf(659.3, 987.8), 180, 40, 0.85, decayMs = 150.0))
+
     /** Harsh pothole without speech: a falling two-tone "uh-oh", so you can tell it apart without looking. */
     fun pothole() = play(tones(doubleArrayOf(784.0, 523.3), 220, 70, 0.9))
 
@@ -115,5 +121,7 @@ class Beeper(private val ctx: Context) {
 
     companion object {
         private const val SAMPLE_RATE = 44_100
+        /** Length of [speeding] (250 ms lead + 180 + 40 + 180 + 30), plus a little room before the voice. */
+        const val SPEEDING_MS = 800L
     }
 }
