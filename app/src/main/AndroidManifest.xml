@@ -4,7 +4,8 @@
     <!-- Where you are (to place bumps and know when one is ahead) -->
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
-    <!-- Auto start only: lets recording start while the app is closed, when the car's Bluetooth connects -->
+    <!-- Auto start only: lets recording start while the app is closed, when the car's Bluetooth connects
+         or (auto-detect driving) when the car starts moving -->
     <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" />
     <!-- Auto start only: see which Bluetooth device connected (is it the car?) -->
     <uses-permission android:name="android.permission.BLUETOOTH" android:maxSdkVersion="30" />
@@ -15,6 +16,8 @@
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
+    <!-- Auto-detect driving only: set the detection up again after a reboot (does nothing while it is off) -->
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <!-- The "update available" check (one GET of the latest GitHub release a day) and the online bump map:
          an anonymous sign-in, a rough position (about 1 km) to download confirmed bumps nearby and, only if you
          opt in to sharing, single bump/pothole points (never routes, never near where a trip starts or ends)
@@ -84,6 +87,16 @@
             <intent-filter>
                 <action android:name="android.bluetooth.device.action.ACL_CONNECTED" />
                 <action android:name="android.bluetooth.device.action.ACL_DISCONNECTED" />
+            </intent-filter>
+        </receiver>
+
+        <!-- Auto-detect driving: after a reboot or an update, start detecting again (only when switched on). -->
+        <receiver
+            android:name=".auto.BootReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
             </intent-filter>
         </receiver>
     </application>

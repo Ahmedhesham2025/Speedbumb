@@ -98,6 +98,21 @@ object Prefs {
     const val SPEED_LIMITS = "speed_limits"
     fun speedLimits(ctx: Context): Boolean = sp(ctx).getBoolean(SPEED_LIMITS, false)
 
+    /**
+     * Stop recording after the car has been parked this many minutes (0 = never). Only after real driving, and never
+     * while the car's Bluetooth is connected; see [app.bumpbeeper.auto.AutoStop].
+     */
+    const val AUTO_STOP_MIN = "auto_stop_minutes"
+    const val AUTO_STOP_DEFAULT_MIN = 5
+    fun autoStopMinutes(ctx: Context): Int = sp(ctx).getInt(AUTO_STOP_MIN, AUTO_STOP_DEFAULT_MIN).coerceIn(0, 30)
+
+    /**
+     * Start recording when driving is detected, no Bluetooth needed (#49). Off by default. Screens switch it with
+     * [app.bumpbeeper.auto.AutoDetect.setEnabled], which also starts or stops the detection.
+     */
+    const val AUTO_DETECT = "auto_detect_driving"
+    fun autoDetect(ctx: Context): Boolean = sp(ctx).getBoolean(AUTO_DETECT, false)
+
     fun autoStart(ctx: Context): Boolean = sp(ctx).getBoolean(AUTO_START, false)
     fun carAddress(ctx: Context): String? = sp(ctx).getString(CAR_ADDRESS, null)
     fun carName(ctx: Context): String? = sp(ctx).getString(CAR_NAME, null)

@@ -77,6 +77,11 @@ class TraceWriter(dir: File, meta: List<String> = emptyList()) {
         eventRow("battery", Double.NaN, Double.NaN, Double.NaN, Double.NaN, "", percent.toDouble(), "")
     }
 
+    /** Battery saving switched on (car stopped) or off (moving again), to read next to the battery rows. */
+    @Synchronized fun power(stopped: Boolean) {
+        eventRow("power", Double.NaN, Double.NaN, Double.NaN, Double.NaN, "", Double.NaN, if (stopped) "stopped" else "moving")
+    }
+
     private fun eventRow(type: String, lat: Double, lon: Double, kmh: Double, heading: Double, bumpId: String, peak: Double, note: String) {
         out.write(f(if (startMs < 0) 0.0 else (lastT - startMs) / 1000.0, 3)); out.write(",event,,,,,,,,")
         out.write(f(lat, 7)); out.write(","); out.write(f(lon, 7)); out.write(",")

@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- play edition only (merged into src/main's manifest). The foss edition never asks for this permission. -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- Auto-detect driving: Google's "in a vehicle" detection (optional; without it the built-in detection runs) -->
+    <uses-permission android:name="android.permission.ACTIVITY_RECOGNITION" />
+
+    <application>
+        <!-- IN_VEHICLE enter / exit from Google Play services, sent through our own PendingIntent. -->
+        <receiver
+            android:name="app.bumpbeeper.auto.VehicleActivityReceiver"
+            android:exported="false" />
+    </application>
+</manifest>
