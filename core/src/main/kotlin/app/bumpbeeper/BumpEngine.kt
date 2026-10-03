@@ -28,6 +28,18 @@ class EngineConfig {
     var potholeMaxSpeedKmh = 100.0
     /** Pothole score (-1..1) a fast jolt needs to be recorded as a pothole. */
     var fastPotholeMinScore = 0.6
+    /**
+     * Above [maxSpeedKmh] and up to this speed, a jolt is still learned if it clearly looks like a bump or pothole
+     * (gyroscope needed): shape |score| ≥ [fastJoltMinScore], peak within [fastJoltMinPeakMs2]..[fastJoltMaxPeakMs2]
+     * and the car really rocked (≥ [fastJoltMinRockRads]). A road joint or seam is a short sharp jolt that barely
+     * rocks the car. Such a spot is only a candidate like any other: it needs hits on later passes to stay.
+     */
+    var fastJoltMaxKmh = 60.0
+    var fastJoltMinScore = Bump.KIND_MARGIN
+    var fastJoltMinPeakMs2 = 4.0
+    var fastJoltMaxPeakMs2 = 16.0
+    /** Rocking (standard deviation of the roll or pitch rate, whichever is bigger) during the jolt, rad/s. */
+    var fastJoltMinRockRads = 0.2
 
     /** After the first crossing, keep looking for the peak for this long. */
     var peakWindowMs = 500L
@@ -111,6 +123,8 @@ class JoltShape(
     val rollRatio: Double,
     /** Which wheel hit it: -1 left, +1 right, 0 can't tell (no gyroscope, or the car didn't rock sideways). */
     val side: Int = 0,
+    /** How much the car rocked: the bigger of the roll and pitch rate standard deviations, rad/s. NaN without gyroscope. */
+    val rock: Double = Double.NaN,
 ) {
     val usedGyro: Boolean get() = !rollRatio.isNaN()
 
@@ -122,7 +136,8 @@ class JoltShape(
         }
         val roll = if (usedGyro) String.format(Locale.US, " roll/pitch=%.2f", rollRatio) else " no-gyro"
         val s = when (side) { -1 -> " side=left"; 1 -> " side=right"; else -> "" }
-        return String.format(Locale.US, "looks=%s score=%.2f first=%s%s%s", kind, score, if (firstDown) "down" else "up", roll, s)
+        val r = if (rock.isNaN()) "" else String.format(Locale.US, " rock=%.2f", rock)
+        return String.format(Locale.US, "looks=%s score=%.2f first=%s%s%s%s", kind, score, if (firstDown) "down" else "up", roll, s, r)
     }
 }
 
@@ -399,9 +414,10 @@ class BumpEngine(
 
         val shape = shapeOf(tMs, peak)
         if (speedKmh > cfg.maxSpeedKmh) {
-            // Too fast for a speed bump. Keep it only if it is clearly a pothole (needs the gyroscope to be sure).
+            // Too fast for a speed bump. Keep it only if it is clearly a pothole (needs the gyroscope to be sure),
+            // or, not much faster, clearly shaped like a bump or pothole.
             val pothole = speedKmh <= cfg.potholeMaxSpeedKmh && shape.usedGyro && shape.score >= cfg.fastPotholeMinScore
-            if (!pothole) { reject(tMs, peak, "too_fast", fix, shape.describe(), shape); return }
+            if (!pothole && !clearFastJolt(speedKmh, peak, shape)) { reject(tMs, peak, "too_fast", fix, shape.describe(), shape); return }
         }
 
         // GPS comes once a second; move that fix forward (or back, if it came after) to the moment of the jolt.
@@ -414,6 +430,14 @@ class BumpEngine(
 
         registerHit(tMs, pos[0], pos[1], speedKmh, peak, slowdownKmh, shape)
     }
+
+    /**
+     * A jolt above [EngineConfig.maxSpeedKmh] that still counts ([EngineConfig.fastJoltMaxKmh]). Without the gyroscope
+     * the score is only the sign of the first movement (always ±1), which a road joint has too, so it is never "clear".
+     */
+    private fun clearFastJolt(speedKmh: Double, peak: Double, shape: JoltShape): Boolean =
+        speedKmh <= cfg.fastJoltMaxKmh && shape.usedGyro && abs(shape.score) >= cfg.fastJoltMinScore &&
+            peak in cfg.fastJoltMinPeakMs2..cfg.fastJoltMaxPeakMs2 && shape.rock >= cfg.fastJoltMinRockRads
 
     private fun reject(tMs: Long, peak: Double, reason: String, fix: Fix?, note: String = "", shape: JoltShape? = null) {
         trip.rejected++
@@ -499,7 +523,7 @@ class BumpEngine(
                 if (abs(dev) >= 0.5 * maxDev) { side = if (dev > 0) 1 else -1; break }
             }
         }
-        return JoltShape(score, firstDown, ratio, side)
+        return JoltShape(score, firstDown, ratio, side, max(rollRms, pitchRms))
     }
 
     /** Unit vector of the car's forward direction in phone axes, or null while it is still unknown. */

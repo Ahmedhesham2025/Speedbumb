@@ -359,11 +359,15 @@ object Scenarios {
         check(d.score() in 0..70, "this trip should score 70 or less, got ${d.score()}")
     }
 
-    /** Two sudden left-right swerves at 50 km/h are counted as swerves (not as harsh cornering). */
+    /**
+     * Two sudden left-right swerves at 50 km/h are counted as swerves (not as harsh cornering).
+     * The simulated phone sits in a holder: "mounted" trusts the gyroscope unless the GPS heading turns the other way
+     * (a 0.7 s push barely shows in 1 Hz GPS with ±3° noise, so the stricter check for loose phones can miss one).
+     */
     fun swerving() {
         log("swerving")
         val sim = Simulator(53)
-        val r = sim.drive(MemoryStore(), DriveSpec(swervesAt = listOf(600.0, 1300.0)))
+        val r = sim.drive(MemoryStore(), DriveSpec(swervesAt = listOf(600.0, 1300.0)), drivingCfg = DrivingConfig().apply { placement = "mounted" })
         describeDriving("swerves", r.driving)
         check(r.driving.swerves == 2, "expected 2 swerves, got ${r.driving.swerves}")
         check(r.driving.harshCorners == 0, "swerves shouldn't also count as harsh cornering, got ${r.driving.harshCorners}")
@@ -390,6 +394,72 @@ object Scenarios {
         val r = sim.drive(MemoryStore(), DriveSpec(slowZonesAt = listOf(600.0), handlingAt = 600.0))
         describeDriving("phone", r.driving)
         check(r.driving.phoneUse == 1, "expected 1 phone use, got ${r.driving.phoneUse}")
+    }
+
+    /**
+     * The phone twisting in a pocket makes the gyroscope "turn" hard while the GPS heading stays straight:
+     * not harsh cornering, in any placement. (Before the GPS cross-check each twist counted as one.)
+     */
+    fun pocketShiftNotACorner() {
+        log("pocketShiftNotACorner")
+        for (place in listOf("unknown", "pocket", "mounted")) {
+            val r = Simulator(61).drive(MemoryStore(), DriveSpec(pocketTwistsAt = listOf(700.0, 1400.0)), drivingCfg = DrivingConfig().apply { placement = place })
+            describeDriving("twists, $place", r.driving)
+            r.forwardTrace.lastOrNull()?.let { log("    $it") }
+            check(r.driving.harshCorners == 0, "$place: a phone twisting in a pocket is not harsh cornering, got ${r.driving.harshCorners}")
+            check(r.driving.swerves == 0, "$place: a phone twisting in a pocket is not a swerve, got ${r.driving.swerves}")
+        }
+    }
+
+    /** A real sharp turn (and the turn back) is confirmed by the GPS heading and counted, even in pocket mode. */
+    fun sharpTurnCounted() {
+        log("sharpTurnCounted")
+        val r = Simulator(62).drive(MemoryStore(), DriveSpec(sharpTurnsAt = listOf(700.0)), drivingCfg = DrivingConfig().apply { placement = "pocket" })
+        describeDriving("sharp turn", r.driving)
+        r.forwardTrace.lastOrNull()?.let { log("    $it") }
+        check(r.driving.harshCorners == 2, "the turn and the turn back should both count, got ${r.driving.harshCorners}")
+        check(r.driving.swerves == 0, "two turns 6 s apart are not a swerve, got ${r.driving.swerves}")
+    }
+
+    /**
+     * Pocket mode: picking the phone out of a pocket is not counted as phone use. A phone that keeps shifting turns
+     * pocket mode on by itself: only the first jostle counts (then the 30 s pause), later handling doesn't.
+     */
+    fun pocketModeNoPhoneUse() {
+        log("pocketModeNoPhoneUse")
+        val pocket = DrivingConfig().apply { placement = "pocket" }
+        val r1 = Simulator(3).drive(MemoryStore(), DriveSpec(slowZonesAt = listOf(600.0), handlingAt = 600.0), drivingCfg = pocket)
+        describeDriving("pocket, handled", r1.driving)
+        check(r1.driving.phoneUse == 0, "in pocket mode handling is not phone use, got ${r1.driving.phoneUse}")
+        check("phone_moving" in r1.rejected && r1.newBumps == 0, "the handling jolts are still rejected: ${r1.rejected}")
+
+        val r2 = Simulator(63).drive(MemoryStore(), DriveSpec(jostlesAt = listOf(300.0, 450.0, 600.0, 750.0), handlingAt = 1300.0))
+        describeDriving("loose phone", r2.driving)
+        r2.forwardTrace.lastOrNull()?.let { log("    $it") }
+        check(r2.pocketMode, "four jostles in a minute should turn pocket mode on")
+        check(r2.driving.phoneUse == 1, "only the first jostle should count as phone use, got ${r2.driving.phoneUse}")
+    }
+
+    /**
+     * Above the bump speed (50 km/h) but under 60: a speed bump taken at 55 km/h rocks the car and is learned;
+     * a road joint at the same speed is a sharp jolt that barely rocks it, and stays rejected as too_fast.
+     * (The slow zone gives one braking + speeding up, which the engine needs to learn which way is forward.)
+     */
+    fun fastBumpVersusRoadJoint() {
+        log("fastBumpVersusRoadJoint")
+        val store = MemoryStore()
+        val bump = Simulator(64).drive(store, DriveSpec(bumpsAt = listOf(1100.0), bumpKmh = 55.0, cruiseKmh = 55.0, slowZonesAt = listOf(350.0)))
+        describe("bump at 55", bump)
+        store.events.filter { it.type == "new_bump" || it.type == "rejected" }.forEach { log("    ${it.type} ${f1(it.speedKmh)} km/h ${it.note}") }
+        check(bump.newBumps == 1 && "too_fast" !in bump.rejected, "a speed bump at 55 km/h should be learned: new=${bump.newBumps} ${bump.rejected}")
+        check(store.saved.single().kind == BumpKind.BUMP, "it should be a speed bump, got ${store.saved.single().kind}")
+
+        val store2 = MemoryStore()
+        val seam = Simulator(65).drive(store2, DriveSpec(seamsAt = listOf(1100.0), cruiseKmh = 55.0, slowZonesAt = listOf(350.0)))
+        describe("road joint at 55", seam)
+        store2.events.filter { it.type == "new_bump" || it.type == "rejected" }.forEach { log("    ${it.type} ${f1(it.speedKmh)} km/h ${it.note}") }
+        check(seam.newBumps == 0, "a road joint at 55 km/h must not be learned, got ${seam.newBumps}")
+        check("too_fast" in seam.rejected, "the road joint should be rejected as too_fast: ${seam.rejected}")
     }
 
     // ---------- shared online map ----------
@@ -707,6 +777,10 @@ object Scenarios {
         "swerving" to ::swerving,
         "speedBumpsTakenFast" to ::speedBumpsTakenFast,
         "phoneHandledWhileDriving" to ::phoneHandledWhileDriving,
+        "pocketShiftNotACorner" to ::pocketShiftNotACorner,
+        "sharpTurnCounted" to ::sharpTurnCounted,
+        "pocketModeNoPhoneUse" to ::pocketModeNoPhoneUse,
+        "fastBumpVersusRoadJoint" to ::fastBumpVersusRoadJoint,
         "potholeVsBump" to ::potholeVsBump,
         "potholeVsBumpNoGyro" to ::potholeVsBumpNoGyro,
         "fastPothole" to ::fastPothole,

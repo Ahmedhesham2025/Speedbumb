@@ -23,6 +23,34 @@ class DrivingConfig {
     var swerveMinKmh = 30.0
     /** Driving over a known speed bump faster than this. */
     var bumpFastKmh = 25.0
+
+    /** Where the phone sits: mounted | cupholder | pocket | unknown. (setting: Prefs.placement) */
+    @Volatile var placement = "unknown"
+    /**
+     * Pocket mode also turns on by itself, for the rest of the trip, after this many separate "phone moved" moments
+     * (more than 3 s apart, while driving) within [autoPocketWindowS]: a phone that shifts that often is loose.
+     */
+    var autoPocketEpisodes = 4
+    var autoPocketWindowS = 300.0
+
+    /**
+     * Cornering and swerving must be something the car did, not the phone turning in a pocket or holder.
+     * The sideways force from the gyroscope, a = v * omega_gyro, must be backed by the one from the GPS heading,
+     * a_gps = v * (heading change between two fixes / time between them), of a fix up to [lateralMatchBeforeS]
+     * before or [lateralMatchAfterS] after it (GPS lags):
+     *     a_gps * sign(a) >= |a| - (lateralTolFrac * |a| + lateralTolMs2)
+     * i.e. the GPS shows the car turning the same way, with at least the gyroscope's force minus the tolerance.
+     * One-sided: 1 Hz GPS smooths a short push, but a phone twisting in a pocket never makes the GPS turn.
+     * A swerve needs both its pushes backed. Mounted phones are trusted more (looser numbers: for a 2.5 m/s²
+     * swerve push the GPS then only must not turn the other way). Without a gyroscope the force comes from the GPS
+     * itself, so there is nothing to check.
+     */
+    var lateralTolFrac = 0.5
+    var lateralTolMs2 = 0.5
+    var lateralTolFracMounted = 0.7
+    var lateralTolMs2Mounted = 1.0
+    var lateralMatchBeforeS = 1.0
+    var lateralMatchAfterS = 2.5
 }
 
 /** Everything measured on one trip, and the score made from it. */
@@ -128,6 +156,10 @@ class DrivingStats {
  *  • Speeding: time above your speed limit.
  *  • Speed bumps taken too fast, and the phone being picked up while moving.
  *
+ * Cornering and swerving only count when the GPS heading agrees ([DrivingConfig.lateralTolFrac]). In pocket mode
+ * ([DrivingConfig.placement] = pocket, or a phone that keeps shifting, see [pocketMode]) moving the phone is not
+ * counted as phone use: a phone in a pocket moves with the driver's leg.
+ *
  * Feed it from the engine thread, right after the engine got the same sample.
  */
 class DrivingMonitor(
@@ -158,6 +190,20 @@ class DrivingMonitor(
     private var coolSwerveUntil = Long.MIN_VALUE / 4
     private var coolPhoneUntil = Long.MIN_VALUE / 4
     private var lastSeenUnstable = Long.MIN_VALUE / 4
+    /** Start of each "phone moved" moment while driving, for [pocketMode]. */
+    private val unstableEpisodes = ArrayDeque<Long>()
+    private var autoPocket = false
+    private var autoPocketAtMs = -1L
+    /** Sideways force from GPS heading changes (fix time, m/s², positive = to the left), the last few seconds. */
+    private val gpsLateral = ArrayDeque<Pair<Long, Double>>()
+    /** A sideways push from the gyroscope waiting for the GPS to confirm it ([DrivingConfig.lateralTolFrac]). */
+    private class Push(val tMs: Long, val lat: Double)
+    private var pendingCorner: Push? = null
+    private var pendingSwerve: Pair<Push, Push>? = null
+    private var lastLeftLat = 0.0
+    private var lastRightLat = 0.0
+    private var cornersIgnored = 0
+    private var swervesIgnored = 0
     private var speedingRunS = 0.0
     private var speedingRunMaxKmh = 0.0
     /** When the sensor-based braking check last ran, and since when it has been running without a break. */
@@ -167,7 +213,13 @@ class DrivingMonitor(
     private var fwdSamples = 0
     private var minLong = 0.0
     private var maxLong = 0.0
-    val debug: String get() = String.format(Locale.US, "fwdSamples=%d longLp min=%.2f max=%.2f", fwdSamples, minLong, maxLong)
+    val debug: String get() = String.format(
+        Locale.US, "fwdSamples=%d longLp min=%.2f max=%.2f cornersIgnored=%d swervesIgnored=%d autoPocketAt=%.0fs",
+        fwdSamples, minLong, maxLong, cornersIgnored, swervesIgnored, autoPocketAtMs / 1000.0,
+    )
+
+    /** Phone moves are not phone use: placement is "pocket", or the phone kept shifting on this trip. */
+    val pocketMode: Boolean get() = cfg.placement == "pocket" || autoPocket
 
     fun onGyro(x: Double, y: Double, z: Double) {
         gx = x; gy = y; gz = z
@@ -179,11 +231,13 @@ class DrivingMonitor(
         lastAccelMs = tMs
         val up = engine.upVector() ?: return
 
-        // Phone picked up while moving → distraction.
+        // Phone picked up while moving → distraction (not in pocket mode: there it moves with the driver's leg).
         val unstable = engine.lastUnstableMs
         if (unstable != lastSeenUnstable) {
+            val newEpisode = unstable - lastSeenUnstable > 3000
             lastSeenUnstable = unstable
-            if (unstable == tMs && speedMps * 3.6 >= 10 && tMs >= coolPhoneUntil) {
+            if (unstable == tMs && newEpisode && speedMps * 3.6 >= 10) noteUnstableEpisode(tMs)
+            if (unstable == tMs && speedMps * 3.6 >= 10 && tMs >= coolPhoneUntil && !pocketMode) {
                 stats.phoneUse++
                 coolPhoneUntil = tMs + 30_000
                 event("phone_use", 0.0, "phone moved while driving")
@@ -249,13 +303,23 @@ class DrivingMonitor(
             val a = (speedMps - prev.speedMps) / dt
             checkLongitudinal(f.timeMs, if (a > 0) a - 0.5 else a + 0.5, sustainMs = 0)
         }
+        // Sideways force from the GPS heading, to confirm (or not) what the gyroscope felt.
+        if (!f.bearingDeg.isNaN() && !prev.bearingDeg.isNaN() && speedMps >= 4.0 && !prev.speedMps.isNaN() && prev.speedMps >= 4.0) {
+            var d = f.bearingDeg - prev.bearingDeg
+            if (d > 180) d -= 360
+            if (d < -180) d += 360
+            gpsLateral.addLast(Pair(f.timeMs, (speedMps + prev.speedMps) / 2 * Math.toRadians(-d) / dt))
+        }
+        while (gpsLateral.isNotEmpty() && gpsLateral.first().first < f.timeMs - 10_000) gpsLateral.removeFirst()
+        resolvePending(f.timeMs)
+
         // Without a gyroscope, turning rate comes from the GPS heading.
         if (!gyroSeen && !f.bearingDeg.isNaN() && speedMps >= 4.0) {
             if (!lastBearing.isNaN()) {
                 var d = f.bearingDeg - lastBearing
                 if (d > 180) d -= 360
                 if (d < -180) d += 360
-                checkSideways(f.timeMs, speedMps * Math.toRadians(-d) / dt)   // bearing grows clockwise = turning right
+                checkSideways(f.timeMs, speedMps * Math.toRadians(-d) / dt, fromGps = true)   // bearing grows clockwise = turning right
             }
             lastBearing = f.bearingDeg
         }
@@ -270,6 +334,7 @@ class DrivingMonitor(
     }
 
     fun finish() {
+        resolvePending(Long.MAX_VALUE)
         if (speedingRunS >= 10) event("speeding", speedingRunMaxKmh, String.format(Locale.US, "%.0f s above %.0f km/h", speedingRunS, cfg.speedLimitKmh))
         speedingRunS = 0.0
     }
@@ -296,29 +361,81 @@ class DrivingMonitor(
         } else accelSinceMs = -1
     }
 
-    private fun checkSideways(tMs: Long, lat: Double) {
+    /** [fromGps]: the force comes from the GPS heading itself (no gyroscope), so there is nothing to cross-check. */
+    private fun checkSideways(tMs: Long, lat: Double, fromGps: Boolean = false) {
         if (speedMps * 3.6 < 15) { cornerSinceMs = -1; return }
         // Swerve: strong sideways push one way, then the other, within a couple of seconds.
-        if (lat >= cfg.swerveMs2) lastLeftMs = tMs
-        if (lat <= -cfg.swerveMs2) lastRightMs = tMs
+        if (lat >= cfg.swerveMs2) { lastLeftMs = tMs; lastLeftLat = lat }
+        if (lat <= -cfg.swerveMs2) { lastRightMs = tMs; lastRightLat = lat }
         if (speedMps * 3.6 >= cfg.swerveMinKmh && tMs >= coolSwerveUntil &&
             abs(lastLeftMs - lastRightMs) <= (cfg.swerveWindowS * 1000).toLong() && min(lastLeftMs, lastRightMs) > tMs - 5000
         ) {
-            stats.swerves++
             coolSwerveUntil = tMs + 4000
+            if (fromGps) countSwerve(abs(lat)) else pendingSwerve = Pair(Push(lastLeftMs, lastLeftLat), Push(lastRightMs, lastRightLat))
             lastLeftMs = Long.MIN_VALUE / 4; lastRightMs = Long.MIN_VALUE / 4
-            event("swerve", abs(lat), "sudden left-right")
             return
         }
         // Harsh cornering: strong sideways force held for half a second.
         if (abs(lat) >= cfg.harshCornerMs2) {
             if (cornerSinceMs < 0) cornerSinceMs = tMs
             if (tMs - cornerSinceMs >= 500 && tMs >= coolCornerUntil) {
-                stats.harshCorners++
                 coolCornerUntil = tMs + 4000
-                event("harsh_corner", abs(lat), String.format(Locale.US, "%.1f m/s² sideways", abs(lat)))
+                if (fromGps) countCorner(lat) else if (pendingCorner == null) pendingCorner = Push(tMs, lat)
             }
         } else cornerSinceMs = -1
+    }
+
+    private fun countSwerve(value: Double) {
+        stats.swerves++
+        event("swerve", value, "sudden left-right")
+    }
+
+    private fun countCorner(lat: Double) {
+        stats.harshCorners++
+        event("harsh_corner", abs(lat), String.format(Locale.US, "%.1f m/s² sideways", abs(lat)))
+    }
+
+    /** Count or drop the gyroscope pushes the GPS has had time to confirm, as of [nowMs]. */
+    private fun resolvePending(nowMs: Long) {
+        pendingCorner?.let { p ->
+            when (agrees(p, nowMs)) {
+                true -> { countCorner(p.lat); pendingCorner = null }
+                false -> { cornersIgnored++; pendingCorner = null }
+                null -> {}
+            }
+        }
+        pendingSwerve?.let { (l, r) ->
+            val a = agrees(l, nowMs)
+            val b = agrees(r, nowMs)
+            when {
+                a == true && b == true -> { countSwerve(max(abs(l.lat), abs(r.lat))); pendingSwerve = null }
+                a == false || b == false -> { swervesIgnored++; pendingSwerve = null }
+            }
+        }
+    }
+
+    /**
+     * Does the GPS heading back the gyroscope push [p] ([DrivingConfig.lateralTolFrac])? True or false,
+     * or null while a later fix could still confirm it.
+     */
+    private fun agrees(p: Push, nowMs: Long): Boolean? {
+        val mounted = cfg.placement == "mounted"
+        val tol = (if (mounted) cfg.lateralTolFracMounted else cfg.lateralTolFrac) * abs(p.lat) +
+            (if (mounted) cfg.lateralTolMs2Mounted else cfg.lateralTolMs2)
+        val from = p.tMs - (cfg.lateralMatchBeforeS * 1000).toLong()
+        val to = p.tMs + (cfg.lateralMatchAfterS * 1000).toLong()
+        val sign = if (p.lat >= 0) 1.0 else -1.0
+        for ((t, a) in gpsLateral) if (t in from..to && a * sign >= abs(p.lat) - tol) return true
+        return if (nowMs > to) false else null
+    }
+
+    private fun noteUnstableEpisode(tMs: Long) {
+        unstableEpisodes.addLast(tMs)
+        while (unstableEpisodes.first() < tMs - (cfg.autoPocketWindowS * 1000).toLong()) unstableEpisodes.removeFirst()
+        if (!autoPocket && unstableEpisodes.size >= cfg.autoPocketEpisodes) {
+            autoPocket = true
+            autoPocketAtMs = tMs
+        }
     }
 
     private fun event(type: String, value: Double, note: String) {
