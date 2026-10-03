@@ -1,3 +1,4 @@
+import java.util.zip.ZipFile
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 plugins {
@@ -156,13 +157,13 @@ tasks.register("printTestCp") {
         val cfg = configurations.getByName("fossDebugUnitTestCompileClasspath")
         val files = cfg.incoming.artifactView { attributes { attribute(org.gradle.api.attributes.Attribute.of("artifactType", String::class.java), "android-classes-jar") } }.files.files
         files.forEach { f ->
-            val hasJson = f.isFile && java.util.zip.ZipFile(f).use { z -> z.getEntry("org/json/JSONObject.class") != null }
+            val hasJson = f.isFile && ZipFile(f).use { z -> z.getEntry("org/json/JSONObject.class") != null }
             println("CP ${f.name} ${if (hasJson) "HAS_ORG_JSON" else ""}")
         }
     }
 }
 afterEvaluate {
     tasks.named<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>("compileFossDebugUnitTestKotlin") {
-        doFirst { libraries.files.forEach { f -> val j = f.isFile && f.name.endsWith(".jar") && java.util.zip.ZipFile(f).use { z -> z.getEntry("org/json/JSONObject.class") != null }; println("KLIB ${f.name} ${if (j) "HAS_ORG_JSON" else ""}") } }
+        doFirst { libraries.files.forEach { f -> val j = f.isFile && f.name.endsWith(".jar") && ZipFile(f).use { z -> z.getEntry("org/json/JSONObject.class") != null }; println("KLIB ${f.name} ${if (j) "HAS_ORG_JSON" else ""}") } }
     }
 }
