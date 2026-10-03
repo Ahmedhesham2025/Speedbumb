@@ -40,6 +40,8 @@ class DriveSpec(
     val slowZonesAt: List<Double> = emptyList(),
     /** Where a passenger picks the phone up out of the holder and shakes it around. */
     val handlingAt: Double? = null,
+    /** More places where the phone is picked up the same way (held 5 s, then put back). */
+    val moreHandlingsAt: List<Double> = emptyList(),
     /** Spots where the driver slows to bump speed but feels nothing (the bump was removed). */
     val silentBumpsAt: List<Double> = emptyList(),
     /** Bumps the driver crawls over at 8 km/h, so gently that nothing is felt. */
@@ -170,7 +172,7 @@ class Simulator(seed: Long) {
             spec.potholesLeftAt.map { Triple(travel(it), -1.0, 7.0) } +
             spec.smallPotholesAt.map { Triple(travel(it), 1.0, 4.2) }
         val zones = spec.slowZonesAt.map { travel(it) }
-        val handling = spec.handlingAt?.let { travel(it) }
+        val handlings = (listOfNotNull(spec.handlingAt) + spec.moreHandlingsAt).map { travel(it) }
 
         var s = 0.0
         var v = 0.0
@@ -283,7 +285,7 @@ class Simulator(seed: Long) {
                 if (s < sp && sNew >= sp) holeHits.add(doubleArrayOf(t, amp, side))                    // front wheel
                 if (s < sp + 2.6 && sNew >= sp + 2.6) holeHits.add(doubleArrayOf(t, 0.7 * amp, side))  // rear wheel, same side
             }
-            if (handling != null && handlingStart < 0 && s < handling && sNew >= handling) handlingStart = t
+            for (sh in handlings) if (s < sh && sNew >= sh) handlingStart = t
 
             s = sNew
             v = vNew

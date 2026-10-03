@@ -24,5 +24,6 @@ class BumpEngineTest {
     @Test fun pocketShiftNotACorner() = Scenarios.pocketShiftNotACorner()
     @Test fun sharpTurnCounted() = Scenarios.sharpTurnCounted()
     @Test fun pocketModeNoPhoneUse() = Scenarios.pocketModeNoPhoneUse()
+    @Test fun repeatedHandlingIsPhoneUse() = Scenarios.repeatedHandlingIsPhoneUse()
     @Test fun fastBumpVersusRoadJoint() = Scenarios.fastBumpVersusRoadJoint()
 }

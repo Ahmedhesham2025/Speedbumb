@@ -361,17 +361,23 @@ object Scenarios {
 
     /**
      * Two sudden left-right swerves at 50 km/h are counted as swerves (not as harsh cornering).
-     * The simulated phone sits in a holder: "mounted" trusts the gyroscope unless the GPS heading turns the other way
-     * (a 0.7 s push barely shows in 1 Hz GPS with ±3° noise, so the stricter check for loose phones can miss one).
+     * Default placement ("unknown", what the app ships with): each push must be backed by the GPS heading, and a 0.7 s
+     * push barely shows in 1 Hz GPS with ±3° noise, so with this seed only one of the two is confirmed. That recall
+     * drop is the price of not blaming pocket movement on the driver. "Mounted" trusts the gyroscope unless the GPS
+     * turns the other way, and finds both.
      */
     fun swerving() {
         log("swerving")
-        val sim = Simulator(53)
-        val r = sim.drive(MemoryStore(), DriveSpec(swervesAt = listOf(600.0, 1300.0)), drivingCfg = DrivingConfig().apply { placement = "mounted" })
+        val r = Simulator(53).drive(MemoryStore(), DriveSpec(swervesAt = listOf(600.0, 1300.0)))
         describeDriving("swerves", r.driving)
-        check(r.driving.swerves == 2, "expected 2 swerves, got ${r.driving.swerves}")
+        check(r.driving.swerves >= 1, "expected at least 1 swerve, got ${r.driving.swerves}")
         check(r.driving.harshCorners == 0, "swerves shouldn't also count as harsh cornering, got ${r.driving.harshCorners}")
         check(r.driving.score() < 95, "swerving should cost points, got ${r.driving.score()}")
+
+        val m = Simulator(53).drive(MemoryStore(), DriveSpec(swervesAt = listOf(600.0, 1300.0)), drivingCfg = DrivingConfig().apply { placement = "mounted" })
+        describeDriving("swerves, mounted", m.driving)
+        check(m.driving.swerves == 2, "mounted: expected 2 swerves, got ${m.driving.swerves}")
+        check(m.driving.harshCorners == 0, "mounted: swerves shouldn't also count as harsh cornering, got ${m.driving.harshCorners}")
     }
 
     /** Taking known speed bumps at 40 km/h counts against the score; at 15 km/h it doesn't. */
@@ -422,8 +428,9 @@ object Scenarios {
     }
 
     /**
-     * Pocket mode: picking the phone out of a pocket is not counted as phone use. A phone that keeps shifting turns
-     * pocket mode on by itself: only the first jostle counts (then the 30 s pause), later handling doesn't.
+     * Pocket mode: picking the phone out of a pocket is not counted as phone use. A phone that keeps jostling turns
+     * pocket mode on by itself: only the first jostle counts (the others fall in its 30 s pause), but holding the phone
+     * later still counts: pocket mode only excuses jostles.
      */
     fun pocketModeNoPhoneUse() {
         log("pocketModeNoPhoneUse")
@@ -433,11 +440,21 @@ object Scenarios {
         check(r1.driving.phoneUse == 0, "in pocket mode handling is not phone use, got ${r1.driving.phoneUse}")
         check("phone_moving" in r1.rejected && r1.newBumps == 0, "the handling jolts are still rejected: ${r1.rejected}")
 
-        val r2 = Simulator(63).drive(MemoryStore(), DriveSpec(jostlesAt = listOf(300.0, 450.0, 600.0, 750.0), handlingAt = 1300.0))
+        val r2 = Simulator(63).drive(MemoryStore(), DriveSpec(jostlesAt = listOf(300.0, 420.0, 540.0, 660.0), handlingAt = 1300.0))
         describeDriving("loose phone", r2.driving)
         r2.forwardTrace.lastOrNull()?.let { log("    $it") }
-        check(r2.pocketMode, "four jostles in a minute should turn pocket mode on")
-        check(r2.driving.phoneUse == 1, "only the first jostle should count as phone use, got ${r2.driving.phoneUse}")
+        check(r2.pocketMode, "four jostles in half a minute should turn pocket mode on")
+        check(r2.driving.phoneUse == 2, "the first jostle and the later hold should count as phone use, got ${r2.driving.phoneUse}")
+    }
+
+    /** Picking the phone up 4 times in 5 minutes is phone use 4 times, and must not turn pocket mode on. */
+    fun repeatedHandlingIsPhoneUse() {
+        log("repeatedHandlingIsPhoneUse")
+        val r = Simulator(66).drive(MemoryStore(), DriveSpec(handlingAt = 200.0, moreHandlingsAt = listOf(600.0, 1000.0, 1400.0), cruiseKmh = 30.0))
+        describeDriving("4 handlings", r.driving)
+        r.forwardTrace.lastOrNull()?.let { log("    $it") }
+        check(!r.pocketMode, "holding the phone is not a loose phone: pocket mode must stay off")
+        check(r.driving.phoneUse == 4, "each handling (48 s apart) is phone use, got ${r.driving.phoneUse}")
     }
 
     /**
@@ -780,6 +797,7 @@ object Scenarios {
         "pocketShiftNotACorner" to ::pocketShiftNotACorner,
         "sharpTurnCounted" to ::sharpTurnCounted,
         "pocketModeNoPhoneUse" to ::pocketModeNoPhoneUse,
+        "repeatedHandlingIsPhoneUse" to ::repeatedHandlingIsPhoneUse,
         "fastBumpVersusRoadJoint" to ::fastBumpVersusRoadJoint,
         "potholeVsBump" to ::potholeVsBump,
         "potholeVsBumpNoGyro" to ::potholeVsBumpNoGyro,
