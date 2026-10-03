@@ -12,7 +12,7 @@ import kotlin.math.cos
  *  remote_spots – the cache of confirmed shared-map spots the engine warns for (filled in the background)
  *  sync_state   – small key/value notes (last sync time, back-off, last position for the download)
  */
-class SyncStore(private val helper: SQLiteOpenHelper) {
+class SyncStore(internal val helper: SQLiteOpenHelper) {
 
     private val db: SQLiteDatabase get() = helper.writableDatabase
 
