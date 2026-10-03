@@ -38,7 +38,6 @@ object TrainingConsent {
     private const val MAX_BATCHES_PER_RUN = 10
     // sync_state keys
     internal const val PAUSED_UNTIL = "training_paused_until"
-    internal const val UPLOAD_AFTER = "training_upload_after"
     /** [Status.lastError] when a new anonymous session found the opt-in off on the server: it was switched off here. */
     const val SESSION_RESET = "session_reset"
 
@@ -82,11 +81,12 @@ object TrainingConsent {
 
     /**
      * Some trip's samples were queued (or released): upload 1 to 6 hours from now, at a random time, so request logs
-     * can't tie the pseudonym to when a trip ended. A later trip pushes it later. Call under [Sync.lock].
+     * can't tie the pseudonym to when a trip ended. A later trip pushes it later. Kept in Prefs (a synchronous write,
+     * no [Sync.lock]), so the engine thread sets it at trip end before the trip-end sync is scheduled.
      */
-    fun uploadLater(ctx: Context, state: SyncStore, now: Long, random: Random = Random.Default) {
-        val at = maxOf(state.getLong(UPLOAD_AFTER), now + HOUR_MS + random.nextLong(5 * HOUR_MS))
-        state.put(UPLOAD_AFTER, at)
+    fun uploadLater(ctx: Context, now: Long, random: Random = Random.Default) {
+        val at = maxOf(Prefs.trainingUploadAfter(ctx), now + HOUR_MS + random.nextLong(5 * HOUR_MS))
+        Prefs.setTrainingUploadAfter(ctx, at)
         schedule(ctx, JOB_UPLOAD, at - now)
     }
 
@@ -146,7 +146,7 @@ object TrainingConsent {
             store.prune(now)
             tellServer(ctx, api)
             if (active(ctx) && !Prefs.trainingWipePending(ctx) && !Prefs.trainingOnPending(ctx) &&
-                now >= state.getLong(UPLOAD_AFTER)
+                now >= Prefs.trainingUploadAfter(ctx)
             ) {
                 upload(ctx, api, store, state, now)
             }

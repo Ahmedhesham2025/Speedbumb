@@ -103,6 +103,8 @@ class TrainingSink(
     fun flush(ctx: Context, tripId: Long, endWallMs: Long, trip: TripStats?, drive: DrivingStats?, batteryEnd: Int) {
         val items = build(Prefs.trainingActive(ctx), endWallMs, trip, drive, batteryEnd)
         if (items.isEmpty()) return
+        // Set now, on this thread, so the trip-end sync (scheduled right after this) can never upload this trip.
+        TrainingConsent.uploadLater(ctx, endWallMs)
         val app = ctx.applicationContext ?: ctx
         Thread({
             try {
@@ -129,10 +131,7 @@ class TrainingSink(
          */
         fun queue(ctx: Context, items: List<TrainingStore.Item>, tripId: Long, now: Long): Int = synchronized(Sync.lock) {
             if (!Prefs.trainingActive(ctx)) return 0
-            Sync.withDb(ctx) {
-                TrainingStore(it).add(items, now, tripId.toString(), isHeld(tripId))
-                TrainingConsent.uploadLater(ctx, SyncStore(it), now)   // hours later, never at trip end
-            }
+            Sync.withDb(ctx) { TrainingStore(it).add(items, now, tripId.toString(), isHeld(tripId)) }
             items.size
         }
 
@@ -141,7 +140,7 @@ class TrainingSink(
             synchronized(Sync.lock) {
                 Sync.withDb(ctx) {
                     if (!Prefs.trainingActive(ctx)) TrainingStore(it).discard(tripKey)
-                    else { TrainingStore(it).release(tripKey); TrainingConsent.uploadLater(ctx, SyncStore(it), System.currentTimeMillis()) }
+                    else { TrainingStore(it).release(tripKey); TrainingConsent.uploadLater(ctx, System.currentTimeMillis()) }
                 }
             }
         }

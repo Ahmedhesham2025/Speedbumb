@@ -166,8 +166,9 @@ class TrainingUploadTest {
     @Test fun queuedTripsUploadHoursLaterNotAtTripEnd() {
         consented()
         val now = System.currentTimeMillis()
+        TrainingConsent.uploadLater(ctx, now)   // what TrainingSink.flush does on the engine thread
         TrainingSink.queue(ctx, listOf(TrainingStore.Item("s1", TrainingStore.SAMPLE, """{"client_sample_id":"s1"}""")), 3L, now)
-        val after = db { SyncStore(it).getLong(TrainingConsent.UPLOAD_AFTER) }
+        val after = Prefs.trainingUploadAfter(ctx)
         assertTrue(after >= now + 3_600_000L && after <= now + 6 * 3_600_000L)
         val atTripEnd = FakeBackend()
         Sync.run(ctx, false, 30.0, 31.0, atTripEnd)

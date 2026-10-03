@@ -99,6 +99,21 @@ object Prefs {
     fun speedLimits(ctx: Context): Boolean = sp(ctx).getBoolean(SPEED_LIMITS, false)
 
     /**
+     * Stop recording after the car has been parked this many minutes (0 = never). Only after real driving, and never
+     * while the car's Bluetooth is connected; see [app.bumpbeeper.auto.AutoStop].
+     */
+    const val AUTO_STOP_MIN = "auto_stop_minutes"
+    const val AUTO_STOP_DEFAULT_MIN = 5
+    fun autoStopMinutes(ctx: Context): Int = sp(ctx).getInt(AUTO_STOP_MIN, AUTO_STOP_DEFAULT_MIN).coerceIn(0, 30)
+
+    /**
+     * Start recording when driving is detected, no Bluetooth needed (#49). Off by default. Screens switch it with
+     * [app.bumpbeeper.auto.AutoDetect.setEnabled], which also starts or stops the detection.
+     */
+    const val AUTO_DETECT = "auto_detect_driving"
+    fun autoDetect(ctx: Context): Boolean = sp(ctx).getBoolean(AUTO_DETECT, false)
+
+    /**
      * "Help improve detection": upload compact learning samples. Separate opt-in, off by default; only used while
      * the network is allowed. Screens switch it with [app.bumpbeeper.sync.TrainingConsent.setEnabled].
      */
@@ -120,6 +135,10 @@ object Prefs {
     fun setTrainingWipePending(ctx: Context, v: Boolean) = sp(ctx).edit().putBoolean(TRAINING_WIPE_PENDING, v).commit()
     fun setTrainingOnPending(ctx: Context, v: Boolean) = sp(ctx).edit().putBoolean(TRAINING_ON_PENDING, v).commit()
     fun setTrainingNote(ctx: Context, v: String) = sp(ctx).edit().putString(TRAINING_NOTE, v).commit()
+    /** Training uploads wait until this time (epoch ms): 1-6 h after the last trip, see TrainingConsent.uploadLater. */
+    const val TRAINING_UPLOAD_AFTER = "training_upload_after"
+    fun trainingUploadAfter(ctx: Context): Long = sp(ctx).getLong(TRAINING_UPLOAD_AFTER, 0L)
+    fun setTrainingUploadAfter(ctx: Context, at: Long) = sp(ctx).edit().putLong(TRAINING_UPLOAD_AFTER, at).commit()
     /** All training choice fields in one write. */
     fun setTrainingState(ctx: Context, on: Boolean, version: Int, wipe: Boolean, sendOn: Boolean, note: String) =
         sp(ctx).edit().putBoolean(TRAINING_CONSENT, on).putInt(TRAINING_CONSENT_VERSION, version)
