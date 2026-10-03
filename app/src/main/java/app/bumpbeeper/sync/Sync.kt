@@ -174,6 +174,8 @@ object Sync {
     fun withdrawConsent(app: Context) {
         setChoice(app, Prefs.SYNC_UNSET)
         SpeedLimitSync.setEnabled(app, false)
+        // Live limits too: off, and the disclosure has to be accepted again.
+        Prefs.sp(app).edit().putBoolean(Prefs.LIVE_LIMITS, false).putInt(Prefs.LIVE_LIMITS_CONSENT_VERSION, 0).commit()
         TrainingConsent.forgetLocal(app)
     }
 

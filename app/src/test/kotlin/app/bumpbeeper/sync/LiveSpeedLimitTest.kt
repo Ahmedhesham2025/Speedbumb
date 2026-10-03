@@ -57,7 +57,15 @@ class LiveSpeedLimitTest {
             .putString(Prefs.SYNC_CHOICE, sync).commit()
     }
 
-    private fun live(net: Transport) = LiveSpeedLimit(ctx, Handler(Looper.getMainLooper()), { false }, net, { it.run() }, { t }, { wall })
+    private fun live(net: Transport, exec: java.util.concurrent.Executor = java.util.concurrent.Executor { it.run() }) =
+        LiveSpeedLimit(ctx, Handler(Looper.getMainLooper()), { false }, net, exec, { t }, { wall })
+
+    /** Holds the network calls until [run] is called: an answer that arrives late. */
+    private class LateExec : java.util.concurrent.Executor {
+        val queued = ArrayList<Runnable>()
+        override fun execute(r: Runnable) { queued.add(r) }
+        fun run() { queued.forEach { it.run() }; queued.clear(); shadowOf(Looper.getMainLooper()).idle() }
+    }
 
     /** [seconds] of driving north at 72 km/h, one fix a second. */
     private fun drive(l: LiveSpeedLimit, seconds: Int) = repeat(seconds) {
@@ -141,6 +149,76 @@ class LiveSpeedLimitTest {
         assertEquals(1, net.bodies.size)
         drive(l, 1)
         assertEquals(2, net.bodies.size)
+        assertNull(LiveState.speedLimitKmh)
+    }
+
+    @Test fun forgetMeTurnsLiveLimitsOffAndAsksAgain() {
+        consent(sync = Prefs.SYNC_SHARE)
+        assertTrue(LiveSpeedLimit.allowed(ctx))
+        Sync.withdrawConsent(ctx)
+        assertFalse(Prefs.liveLimits(ctx))
+        assertEquals(0, Prefs.liveLimitsConsentVersion(ctx))
+        assertFalse(LiveSpeedLimit.allowed(ctx))
+    }
+
+    @Test fun lateAnswerAfterTripEndShowsNothing() {
+        consent()
+        val exec = LateExec()
+        val l = live(FakeBackend(), exec)
+        drive(l, 25)
+        assertEquals(1, exec.queued.size)
+        LiveState.overLimit = 2
+        l.close()
+        exec.run()
+        assertNull(LiveState.speedLimitKmh)
+        assertEquals(0, LiveState.overLimit)
+        assertTrue(l.closed)
+        assertNull(l.planner.limit(t))
+    }
+
+    @Test fun lateAnswerAfterConsentLostShowsNothing() {
+        consent()
+        val exec = LateExec()
+        val l = live(FakeBackend(), exec)
+        drive(l, 25)
+        Prefs.sp(ctx).edit().putInt(Prefs.LIVE_LIMITS_CONSENT_VERSION, 0).commit()   // no fix in between
+        exec.run()
+        assertNull(LiveState.speedLimitKmh)
+        assertNull(l.planner.limit(t))
+        l.tick()
+        assertNull(LiveState.speedLimitKmh)
+        assertTrue(l.closed)
+    }
+
+    @Test fun switchedBackOnStartsAfresh() {
+        consent()
+        val l = live(FakeBackend())
+        drive(l, 25)
+        assertEquals(60, LiveState.speedLimitKmh)
+        val before = l.planner
+        Prefs.sp(ctx).edit().putBoolean(Prefs.LIVE_LIMITS, false).commit()
+        drive(l, 1)
+        assertTrue(l.closed)
+        Prefs.sp(ctx).edit().putBoolean(Prefs.LIVE_LIMITS, true).commit()
+        drive(l, 1)
+        assertFalse(l.closed)
+        assertTrue(before !== l.planner)
+        assertNull(LiveState.speedLimitKmh)
+    }
+
+    @Test fun anyFailureCountsAsOfflineNeverACrash() {
+        consent()
+        var calls = 0
+        val l = live(Transport { url, _, _ ->
+            if (!url.endsWith("/speed-limits")) HttpResult(200, """{"access_token":"jwt","expires_in":3600,"refresh_token":"r","user":{"id":"u"}}""")
+            else { calls++; throw IllegalStateException("boom") }
+        })
+        drive(l, 25)
+        assertEquals(1, calls)
+        drive(l, 295)
+        assertEquals(1, calls)
+        drive(l, 1)
+        assertEquals(2, calls)   // 5 min later, like offline
         assertNull(LiveState.speedLimitKmh)
     }
 }
