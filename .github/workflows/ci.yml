@@ -29,6 +29,7 @@ jobs:
       ci: ${{ steps.filter.outputs.ci }}
       replay: ${{ steps.filter.outputs.replay }}
       backend: ${{ steps.filter.outputs.backend }}
+      gradle: ${{ steps.filter.outputs.gradle }}
     steps:
       - uses: actions/checkout@v7
       - uses: dorny/paths-filter@v4
@@ -48,6 +49,10 @@ jobs:
               - 'tools/replay/**'
             backend:
               - 'supabase/**'
+            gradle:
+              - '*.gradle.kts'
+              - 'gradle/**'
+              - 'gradle.properties'
 
   core-test:
     needs: changes
@@ -224,17 +229,75 @@ jobs:
         if: always() && steps.present.outputs.found == 'true'
         run: supabase stop --no-backup || true
 
+  # iOS: core (Kotlin Multiplatform) as the BumpCore framework + core's common tests on an iPhone simulator. Mac runner
+  # (free for public repos), only when core or the Gradle build changes, so Android-only PRs never wait for it.
+  # It feeds ci-gate, so an engine change that breaks iOS is caught before merge.
+  ios-core:
+    needs: changes
+    if: >-
+      github.event_name != 'pull_request' ||
+      needs.changes.outputs.core == 'true' ||
+      needs.changes.outputs.gradle == 'true' ||
+      needs.changes.outputs.ci == 'true'
+    runs-on: macos-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: 17
+      - uses: gradle/actions/setup-gradle@v5
+      # The Kotlin/Native compiler and its LLVM/sysroot downloads (~1 GB) live in ~/.konan.
+      - uses: actions/cache@v4
+        with:
+          path: ~/.konan
+          key: konan-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('build.gradle.kts') }}
+      - name: Pick an iPhone simulator
+        id: sim
+        run: |
+          xcodebuild -version
+          udid=$(xcrun simctl list devices available -j | jq -r '[.devices[][] | select(.name | startswith("iPhone"))][0].udid')
+          if [ -z "$udid" ] || [ "$udid" = "null" ]; then echo "::error::No iPhone simulator on this runner."; exit 1; fi
+          echo "udid=$udid" >> "$GITHUB_OUTPUT"
+      - name: Common core tests on the iOS simulator
+        run: chmod +x gradlew && ./gradlew :core:iosSimulatorArm64Test -PiosSimulator=${{ steps.sim.outputs.udid }}
+      - name: iOS test count
+        if: always()
+        run: |
+          files=$(find core/build/test-results/iosSimulatorArm64Test -name 'TEST-*.xml' 2>/dev/null || true)
+          if [ -z "$files" ]; then echo "No iOS test results found."; exit 0; fi
+          sum() { grep -ho "<testsuite [^>]*" $files | grep -o " $1=\"[0-9]*\"" | grep -o '[0-9]*' | awk '{s+=$1} END {print s+0}'; }
+          line="core tests on iOS simulator: $(sum tests) run, $(sum failures) failed, $(sum errors) errors, $(sum skipped) skipped"
+          echo "$line"
+          echo "### $line" >> "$GITHUB_STEP_SUMMARY"
+      - name: Build BumpCore.xcframework (device + simulator, release)
+        run: ./gradlew :core:assembleBumpCoreReleaseXCFramework
+      - name: Framework size
+        run: |
+          cd core/build/XCFrameworks/release
+          ditto -c -k --sequesterRsrc --keepParent BumpCore.xcframework BumpCore.xcframework.zip
+          {
+            echo "### BumpCore.xcframework: $(du -sh BumpCore.xcframework | cut -f1) unpacked, $(du -h BumpCore.xcframework.zip | cut -f1) zipped"
+            for f in BumpCore.xcframework/*/BumpCore.framework/BumpCore; do echo "- $f: $(du -h "$f" | cut -f1)"; done
+          } | tee -a "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: BumpCore.xcframework
+          path: core/build/XCFrameworks/release/BumpCore.xcframework.zip
+          retention-days: 30
+
   # The one required check. Skipped jobs (nothing relevant changed) count as fine.
   ci-gate:
-    needs: [changes, core-test, app-build, backend]
+    needs: [changes, core-test, app-build, backend, ios-core]
     if: always()
     runs-on: ubuntu-latest
     steps:
       - name: All needed jobs passed or were skipped
         env:
-          RESULTS: ${{ needs.changes.result }} ${{ needs.core-test.result }} ${{ needs.app-build.result }} ${{ needs.backend.result }}
+          RESULTS: ${{ needs.changes.result }} ${{ needs.core-test.result }} ${{ needs.app-build.result }} ${{ needs.backend.result }} ${{ needs.ios-core.result }}
         run: |
-          echo "changes / core-test / app-build / backend: $RESULTS"
+          echo "changes / core-test / app-build / backend / ios-core: $RESULTS"
           for r in $RESULTS; do
             if [ "$r" = "failure" ] || [ "$r" = "cancelled" ]; then
               echo "::error::A required job ended with '$r'."

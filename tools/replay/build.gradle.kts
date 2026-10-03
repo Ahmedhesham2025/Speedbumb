@@ -12,9 +12,13 @@ java { sourceCompatibility = JavaVersion.VERSION_17; targetCompatibility = JavaV
 kotlin { compilerOptions { jvmTarget.set(JvmTarget.JVM_17) } }
 
 // The end-to-end tests drive core's simulator (gyroscope, tilted phone, lagging noisy GPS) and replay what it
-// recorded. It lives in core's tests, so it is copied (read-only) into this module's test sources at build time.
+// recorded. It lives in core's tests, so it is copied (read-only) into this module's test sources at build time,
+// with its JVM random generator (core's `actual` keyword dropped: this module is plain Kotlin/JVM).
 val coreSimulator = tasks.register<Copy>("coreSimulator") {
-    from(rootProject.file("core/src/test/kotlin/app/bumpbeeper/Simulator.kt"))
+    from(rootProject.file("core/src/commonTest/kotlin/app/bumpbeeper/Simulator.kt"))
+    from(rootProject.file("core/src/jvmTest/kotlin/app/bumpbeeper/SimRandom.jvm.kt")) {
+        filter { line: String -> line.replace("actual ", "") }
+    }
     into(layout.buildDirectory.dir("generated/coreSimulator"))
 }
 kotlin.sourceSets.named("test") { kotlin.srcDir(coreSimulator) }

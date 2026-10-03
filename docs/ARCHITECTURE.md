@@ -2,7 +2,7 @@
 
 ## Modules
 ```
-core/        Pure Kotlin (JVM). No Android. Engine + driving monitor + simulator + scenarios.
+core/        Pure Kotlin Multiplatform (JVM + iOS). No Android. Engine + driving monitor + simulator + scenarios.
   BumpEngine      sensors → jolts → bump/pothole (kind, side, harshness) → learned spots → warnings, passes, misses
   DrivingMonitor  sensors → speeding, harsh brake/accel, cornering, swerves, bumps taken fast, phone use → score 0–100
   Model, Geo, Phrases
@@ -40,3 +40,21 @@ DrivingMonitor ─► trips (local) ─► (fleet drivers on shift only) submit_
 - Map merging in SQL (`pg_cron`) so it is testable with pgTAP and runs next to the data.
 - Repo is public under GPL-3.0; real recordings are anonymized before they enter `testdata/`.
 - Releases are tags `vX.Y.Z` → signed APK on GitHub Releases; `versionCode = X*10000 + Y*100 + Z`.
+
+## iOS
+Goal: an iPhone version built for free, with no App Store and no paid Apple account. The owner installs it with
+AltStore or SideStore and a free Apple ID (re-signed every 7 days, at most 3 such apps).
+
+- **Shared engine (done).** `:core` is a Kotlin Multiplatform module: `commonMain` holds the engine, driving monitor,
+  geo, phrases, trace reader/writer and speed-limit scoring; `jvmMain`/`iosMain` hold only the small `Platform.kt`
+  helpers (number formatting, degrees/radians, rounding, UUIDs). On the JVM those are the exact Java calls the engine
+  always used, so Android and replay results are unchanged. iOS gets the `BumpCore` framework
+  (`./gradlew :core:assembleBumpCoreXCFramework`, Mac only); the CI job `ios-core` (macOS runner) builds it and runs
+  the common tests, scenarios included, on an iPhone simulator whenever `core/**` or the Gradle build changes.
+- **Next steps**
+  1. SwiftUI app (`ios/`) linking `BumpCore.xcframework`, English + Egyptian Arabic.
+  2. CoreMotion (50 Hz accelerometer + gyroscope) and CoreLocation (GPS, background while driving) feed `BumpEngine`
+     and `DrivingMonitor` as `BumpService` does on Android; spots in SQLite behind the same `BumpStore` contract.
+  3. Shared map and sync: Supabase over `URLSession`, same endpoints and JSON as the Android app.
+  4. CI builds an unsigned `.ipa` (`xcodebuild` with signing off) on a free macOS runner and attaches it to the release;
+     the owner signs and installs it with AltStore / SideStore.
