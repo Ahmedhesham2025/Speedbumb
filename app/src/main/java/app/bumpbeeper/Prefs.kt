@@ -69,8 +69,10 @@ object Prefs {
     /** Speed above which time counts as speeding, for the driving score (km/h). */
     fun speedLimit(ctx: Context): Int = sp(ctx).getInt(SPEED_LIMIT, 90)
 
+    /** Read at each trip start (BumpService builds a new config), so a placement change applies to the next trip. */
     fun applyTo(cfg: DrivingConfig, ctx: Context) {
         cfg.speedLimitKmh = speedLimit(ctx).toDouble()
+        cfg.placement = placement(ctx)   // same values as DrivingConfig: mounted | cupholder | pocket | unknown
     }
     fun debugRecording(ctx: Context): Boolean = sp(ctx).getBoolean(DEBUG_RECORDING, false)
 
