@@ -6,9 +6,12 @@ Roadmap: `ROADMAP.md`. Architecture: `docs/ARCHITECTURE.md`. Who owns which file
 ## Hard rules
 1. **Zero cost.** Use only free services: GitHub (public repo, Actions, Pages, Releases), Supabase Free, OpenFreeMap tiles,
    free app stores. Never add a paid service or anything that needs a credit card.
-2. **No runtime libraries in the app** (`foss` edition). The app ships only Android platform APIs plus `:core`. The `play`
-   edition may add exactly one library, `com.google.android.gms:play-services-location` (activity recognition), as
-   `playImplementation`, and must work without Google services. Test-only libraries are fine
+2. **foss: no runtime libraries except MapLibre Native (BSD-2).** The app ships only Android platform APIs, `:core` and
+   `org.maplibre.gl:android-sdk-opengl` (the street map, both editions; owner decision 2026-10-03) with the libraries it
+   pulls in itself, listed in `.github/foss-runtime-allowlist.txt` and enforced by CI. Map tiles come from OpenFreeMap
+   (free, no key, no account). The `play` edition may add exactly one more library,
+   `com.google.android.gms:play-services-location` (activity recognition), as `playImplementation`, and must work
+   without Google services. Test-only libraries are fine
    (`testImplementation` / `androidTestImplementation`). Supabase is reached with `HttpURLConnection` + `org.json`.
 3. **Edit only the files you own** (`contracts/OWNERSHIP.yml`). Need a change elsewhere? Open an issue labelled `needs:<owner>`.
 4. **Contracts first.** Interfaces in `core/` and formats in `contracts/` change in their own lead PR before code uses them.

@@ -58,7 +58,17 @@ is closed or not in use**. Before Android asks for location, the app shows what 
 ### 1. Update check (automatic)
 At most once a day the app asks GitHub (<https://github.com>) whether a newer version exists. Nothing about you, your
 phone or your drives is sent; GitHub sees an ordinary web request (your internet address and the app version). This is
-the only thing the app sends before you answer the shared-map question.
+the only thing the app sends to us or GitHub before you answer the shared-map question (map tiles, below, come from
+OpenFreeMap whenever a map is on screen).
+
+### 1b. Map tiles (whenever a map is on screen: Map tab, and the Drive screen's map if on)
+The street map is downloaded from **OpenFreeMap** (<https://openfreemap.org>, free, run by Hyperknot Software Kft., Hungary, possibly through the Cloudflare
+CDN), with map data © OpenStreetMap contributors. Like any website, OpenFreeMap sees your internet (IP) address
+and which map tiles you load, so it can tell roughly **which area you are looking at** (and, with the Drive screen's map,
+roughly where you are driving); its policy says it does not keep IP addresses in its normal logs. No account, no ID, no key, and none of your spots or trips are sent; the spots are
+drawn on top of the map on your phone. Tiles you have seen are cached on the phone (up to about 50 MB) so the map works
+without internet. OpenFreeMap's privacy notice: <https://openfreemap.org/privacy/>. Turn *Show map while driving* off in
+Settings to load no tiles while driving.
 
 ### 2. Shared map (asked once; Settings → Shared map)
 Until you choose, nothing is sent to our server.
@@ -264,7 +274,13 @@ Notes for the Play Store *Data safety* form and the F-Droid listing (store-docs 
   بيتلغي بنفس الطريقة.
 
 **التحقق من التحديثات (أوتوماتيك):** مرة في اليوم بالكتير بيسأل GitHub لو فيه نسخة أجدد، من غير أي بيانات عنك. ده
-الحاجة الوحيدة اللي بتتبعت قبل ما تجاوب على سؤال الخريطة المتشاركة.
+الحاجة الوحيدة اللي بتتبعت لينا أو لـ GitHub قبل ما تجاوب على سؤال الخريطة المتشاركة.
+
+**خريطة الشوارع (لما تكون الخريطة على الشاشة):** الخريطة بتنزل من OpenFreeMap (<https://openfreemap.org>، مجاني،
+وبيانات الخريطة © المساهمين في OpenStreetMap). زي أي موقع، OpenFreeMap بيشوف عنوان الإنترنت (IP) بتاعك والمنطقة اللي
+بتتفرّج عليها (ومع خريطة شاشة السواقة: تقريبًا انت سايق فين). من غير حساب ولا مُعرّف، ومطبّاتك ورحلاتك مش بتتبعت؛
+بتترسم على موبايلك. الخريطة اللي شفتها بتتحفظ على الموبايل (حوالي 50 ميجا) عشان تشتغل من غير نت. تقدر تقفل «اعرض
+الخريطة وانت سايق» من الإعدادات.
 
 **الخريطة المتشاركة (اختياري، بتتسأل مرة):** لحد ما تختار، مفيش حاجة بتتبعت لسيرفرنا.
 - «استقبل بس»: مُعرّف مجهول (تسجيل دخول عشوائي بيعمله التطبيق، مش رقم تليفونك)، نسخة التطبيق والأندرويد، ومكان

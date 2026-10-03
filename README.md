@@ -10,7 +10,7 @@ Android app that learns the speed bumps on your routes and warns you about them.
 - **Quiet when you're already slow:** no warning below 20 km/h (adjustable), since you've clearly seen it.
 - **Auto start/stop** when the phone connects to / disconnects from your car's Bluetooth.
 - **Start recording when I drive** (optional, off by default): notices driving without Bluetooth, from the motion sensor and short GPS checks (Google's in-vehicle detection in the Play edition), even with the app closed; needs location *Allow all the time*. Trips that started by themselves ask **"Was this a drive?"**: their bump points, speed-limit route and training samples stay on the phone until you say yes (the ~1 km rounded position at trip start and end is still sent with *Receive only* or *Share and receive*). Recording stops after the car is parked for a few minutes (adjustable).
-- **Your bumps:** offline map and list; open a spot in Google Maps, mute it, correct bump/pothole, delete it; **share** your map and **import** someone else's.
+- **Your bumps on a real street map (v1.8):** a dark street map (OpenStreetMap data via free OpenFreeMap tiles, no account) with your spots and the shared map's confirmed spots as icons on the road (orange bump, red pothole, dark red "!" harsh pothole, yellow unsure, grey muted), grouped when zoomed out. Tap one for its details, mute, correct or delete it; open it in Google Maps; **share** your map and **import** someone else's. Map areas you viewed stay cached (about 50 MB) for use without internet; your spots always show.
 - **Debug recording:** saves every sensor reading of a drive, to check afterwards what happened at a spot.
 - **Driving score out of 100** for every trip and overall (Trips tab): speeding, harsh braking / acceleration, harsh cornering, swerving, speed bumps taken fast, and handling the phone while moving. With tips, a trend chart, and a shareable trip report.
 - **Four tabs:** Drive (big Start/Stop, live speed, trip tiles, setup checklist; the screen stays on while recording) · Map · Trips · Settings. Dark theme for night driving.
@@ -33,7 +33,8 @@ Android 10 or newer. No sign-up: online features use an anonymous ID, never your
 - **Real speed limits (optional, off by default):** see *Driving score* above. Only route stretches go out, and only via our server to TomTom.
 - **Live speed limit (optional, off by default):** see *Driving score* above. The last ~300 m of GPS points while driving (about every kilometre, more often on a road change or when slow), via our server to TomTom.
 - **Help improve detection (optional, off by default, separate from the shared map):** short motion-sensor samples around possible bumps and route-free trip summaries, under a random ID that changes each time you turn it on; no coordinates. Kept 12 months; turning it off deletes them on the server.
-- **Update check (automatic, the only call before you choose):** at most once a day the app asks GitHub whether a newer version exists; nothing about you or your drives is sent.
+- **Update check (automatic):** at most once a day the app asks GitHub whether a newer version exists; nothing about you or your drives is sent.
+- **Map tiles (when a map is on screen):** the street map is downloaded from OpenFreeMap (<https://openfreemap.org>), which sees your internet address and the map area you look at, like any website. No account, no ID, no key; your spots are drawn on the phone and never sent for the map.
 
 Details: [privacy policy](docs/privacy/privacy-policy.md).
 
@@ -153,5 +154,6 @@ Practice ideas:
 ## Known limits
 - Tested in simulation, not yet on a real road. The thresholds are sensible starting points; use the jolt meter and the export to tune them for your car and phone.
 - Bump/pothole detection is also tested only in simulation. Speed bumps crossed at an angle, or potholes that span the whole lane, can look like the other kind; a spot gets surer with every pass, and you can correct it by hand.
-- The map in *Your bumps* has no streets (the app downloads no map tiles). Use *Open in Google Maps* for context.
+- The street map needs internet the first time you look at an area; after that it is cached (about 50 MB). Without internet and cache you see your spots on a plain dark background.
+- The APK is bigger since v1.8 (the MapLibre map engine for all phone types).
 - GPS is weaker between tall buildings and under bridges. Beeps may come a little early or late there.
