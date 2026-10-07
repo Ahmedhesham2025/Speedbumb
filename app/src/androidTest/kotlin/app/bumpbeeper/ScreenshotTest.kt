@@ -119,7 +119,7 @@ class ScreenshotTest {
                 db.insertBump(Bump(
                     0, s.lat, s.lon, s.heading, s.hits, s.passes, s.passes - s.hits, s.hits,
                     now - (30 - i) * day, now - i * day / 2, s.muted,
-                    s.kind, if (s.kind == 0.0) 0 else s.hits, s.side, if (s.side == 0.0) 0 else s.hits, s.jolt,
+                    peakAvg = s.jolt, sevIndex = s.jolt, legacy = s.kind >= 0.25,   // the demo potholes: old pothole spots
                 ))
             }
             // start (days ago), minutes, km, max km/h, speeding s, brakes, accels, corners, bumps fast, score

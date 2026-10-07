@@ -127,23 +127,21 @@ object Sharing {
         append("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<kml xmlns=\"http://www.opengis.net/kml/2.2\"><Document>\n")
         append("<name>Bump Beeper map</name>\n")
         // KML colours are aabbggrr.
-        for ((id, color) in listOf("bump" to "ff26a7ff", "pothole" to "ff5053ef", "harsh" to "ff2828b7", "unsure" to "ffc5beb0", "muted" to "80808080")) {
+        for ((id, color) in listOf("bump" to "ff26a7ff", "strong" to "ff2828b7", "unsure" to "ffc5beb0", "muted" to "80808080")) {
             append("<Style id=\"$id\"><IconStyle><color>$color</color><scale>1.0</scale>")
             append("<Icon><href>http://maps.google.com/mapfiles/kml/paddle/wht-blank.png</href></Icon></IconStyle></Style>\n")
         }
         for (b in bumps) {
             val style = when {
                 b.isMuted(cfg) -> "muted"
-                b.isHarsh(cfg) -> "harsh"
-                b.kind == BumpKind.POTHOLE -> "pothole"
-                b.kind == BumpKind.BUMP -> "bump"
-                else -> "unsure"
+                b.confidence(cfg) == Confidence.SOFT -> "unsure"
+                b.severity(cfg) == Severity.STRONG -> "strong"
+                else -> "bump"
             }
-            val name = when (style) { "harsh" -> "Harsh pothole"; "pothole" -> "Pothole"; "bump" -> "Speed bump"; "muted" -> "Muted spot"; else -> "Bump (unsure)" }
-            val side = if (b.kind == BumpKind.POTHOLE && b.side != Side.UNKNOWN) ", ${b.side.label}" else ""
+            val name = when (style) { "strong" -> "Strong bump"; "bump" -> "Speed bump"; "muted" -> "Muted spot"; else -> "Bump (maybe)" }
             val desc = String.format(
-                Locale.US, "%s%s. Felt %d of %d passes. Direction of travel %.0f°. Average jolt %.1f m/s².",
-                name, side, b.hits, b.passes, b.heading, b.peakAvg,
+                Locale.US, "%s. Felt %d of %d passes. Direction of travel %.0f°. Average jolt %.1f m/s².",
+                name, b.hits, b.passes, b.heading, b.peakAvg,
             )
             append("<Placemark><name>${esc("$name #${b.id}")}</name><description>${esc(desc)}</description>")
             append("<styleUrl>#$style</styleUrl><Point><coordinates>")
