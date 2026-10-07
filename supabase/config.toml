@@ -25,8 +25,7 @@ enabled = false
 enabled = false
 
 [storage]
-# On so the migrations can create the private `research` bucket and its upload policy, and pgTAP can test them.
-# (Storage's own tables exist only when it is enabled.) The free plan allows at most 50 MB per file.
+# On: the `research` bucket and its policy live in Storage's own tables (README). Free plan: at most 50 MB per file.
 enabled = true
 file_size_limit = "50MiB"
 
