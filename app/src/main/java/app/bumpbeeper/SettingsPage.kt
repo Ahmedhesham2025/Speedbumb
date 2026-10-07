@@ -492,7 +492,7 @@ class SettingsPage(private val a: MainActivity) : Page {
         val first = voice == null
         val v = voice ?: Voice(a) { ui.post { a.toast(a.getString(R.string.settings_toast_no_tts)) } }
             .also { voice = it }
-        ui.postDelayed({ v.pothole(Side.RIGHT) }, if (first) 1500L else 0L)
+        ui.postDelayed({ v.strongBump() }, if (first) 1500L else 0L)
     }
 
     private fun exportAll() {

@@ -11,16 +11,51 @@ val releaseKeystore: String? = System.getenv("BUMP_KEYSTORE")
 val releaseKeystorePassword: String? = System.getenv("BUMP_KEYSTORE_PASSWORD")
 val hasReleaseKey = !releaseKeystore.isNullOrEmpty() && !releaseKeystorePassword.isNullOrEmpty()
 
-// The version comes from the release tag (release.yml sets VERSION_NAME, e.g. "1.2.0").
-// versionCode = MAJOR*10000 + MINOR*100 + PATCH, so 1.2.0 → 10200: always above the old run-number builds (≤ ~17),
-// and every later tag installs over the earlier one.
-val versionNameFromTag: String? = System.getenv("VERSION_NAME")?.takeIf { it.isNotBlank() }
-val versionCodeFromTag: Int = versionNameFromTag?.let { name ->
-    val m = Regex("""^(\d+)\.(\d{1,2})\.(\d{1,2})$""").matchEntire(name)
-        ?: throw GradleException("VERSION_NAME '$name' must look like 1.2.0 (minor and patch below 100)")
+// The version comes from the release tag (release.yml sets VERSION_NAME): "1.8.0" for a stable release, "1.8.0-beta1"
+// for a beta (published as a GitHub pre-release).
+// versionCode = (MAJOR*10000 + MINOR*100 + PATCH) * 100 + (beta N, or 99 for a stable release), so
+// 1.7.1 → 1070199, 1.8.0-beta1 → 1080001, 1.8.0-beta2 → 1080002, 1.8.0 → 1080099. Each stable release is above its own
+// betas, each beta is above the stable release before it, and all are above the old codes (MAJOR*10000 + MINOR*100 +
+// PATCH: 1.7.1 was 10701), so every release installs over the one before.
+fun versionCodeOf(versionName: String): Int {
+    val m = Regex("""(\d{1,3})\.(\d{1,2})\.(\d{1,2})(?:-beta([1-9]\d?))?""").matchEntire(versionName)
+    val beta = m?.groupValues?.get(4)?.toIntOrNull()
+    if (m == null || (beta != null && beta > 98)) {
+        throw GradleException(
+            "VERSION_NAME '$versionName' must look like 1.2.0 or 1.2.0-beta1 " +
+                "(major below 1000, minor and patch below 100, beta 1 to 98)"
+        )
+    }
     val (major, minor, patch) = m.destructured
-    major.toInt() * 10000 + minor.toInt() * 100 + patch.toInt()
-} ?: 1
+    return (major.toInt() * 10000 + minor.toInt() * 100 + patch.toInt()) * 100 + (beta ?: 99)
+}
+
+val versionNameFromTag: String? = System.getenv("VERSION_NAME")?.takeIf { it.isNotBlank() }
+val versionCodeFromTag: Int = versionNameFromTag?.let { versionCodeOf(it) } ?: 1
+
+// The scheme above on fixed examples. It runs before every app build (preBuild), so CI and release.yml run it too.
+// On its own: ./gradlew :app:checkVersionCodes
+val checkVersionCodes = tasks.register("checkVersionCodes") {
+    group = "verification"
+    description = "Checks the release tag → versionCode scheme on fixed examples."
+    val expected = mapOf(
+        "1.7.1" to 1070199, "1.8.0-beta1" to 1080001, "1.8.0-beta98" to 1080098, "1.8.0" to 1080099,
+        "1.10.0" to 1100099, "2.0.0-beta1" to 2000001,
+    )
+    // Worked out here, so the action below only compares plain values.
+    val actual = expected.keys.associateWith { runCatching { versionCodeOf(it) }.getOrNull() }
+    val accepted = listOf("1.8.0-beta0", "1.8.0-beta99", "1.8.0-beta01", "1.8.0-rc1", "1.8", "1.100.0", "v1.8.0")
+        .filter { runCatching { versionCodeOf(it) }.isSuccess }
+    val thisBuild = versionNameFromTag?.let { "; this build: $it → $versionCodeFromTag" } ?: ""
+    doLast {
+        val problems = expected.filter { (name, code) -> actual[name] != code }
+            .map { (name, code) -> "$name → ${actual[name]}, expected $code" } +
+            accepted.map { "$it should be rejected" }
+        if (problems.isNotEmpty()) throw GradleException("versionCode scheme broken:\n" + problems.joinToString("\n"))
+        logger.lifecycle("versionCode scheme OK: " + actual.entries.joinToString { "${it.key} → ${it.value}" } + thisBuild)
+    }
+}
+tasks.named("preBuild") { dependsOn(checkVersionCodes) }
 
 android {
     namespace = "app.bumpbeeper"
