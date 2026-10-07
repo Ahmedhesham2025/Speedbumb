@@ -70,10 +70,18 @@ class DriveSpec(
     val sharpTurnsAt: List<Double> = emptyList(),
     /** The phone twists 50° about the vertical in 0.8 s (shifting in a pocket): the gyroscope turns, the car doesn't. */
     val pocketTwistsAt: List<Double> = emptyList(),
-    /** The phone is jostled (tipped 70° for a second and shaken), like a loose phone in a pocket. */
+    /** The phone is jostled (tipped 60° for half a second and shaken), like a loose phone in a pocket. */
     val jostlesAt: List<Double> = emptyList(),
     /** Road joints (expansion seams): a short sharp up-first jolt on both axles that barely rocks the car. */
     val seamsAt: List<Double> = emptyList(),
+    /** Length of the road, m. */
+    val roadM: Double = 2000.0,
+    /** The phone is picked up (tipped 70° in 0.3 s, shaken a little), held still for the given seconds and put back: (position, s). */
+    val holdsAt: List<Pair<Double, Double>> = emptyList(),
+    /** The phone feels 5 m/s² of braking for 1.2 s (it slides, or tips in a pocket) while the car keeps its speed. */
+    val brakeSpikesAt: List<Double> = emptyList(),
+    /** Sets the phone's own signals on every sample: (seconds driven, metres driven, the signals, sensor time ms). */
+    val phoneSignals: ((Double, Double, PhoneSignals, Long) -> Unit)? = null,
 )
 
 class TripResult(
@@ -94,6 +102,8 @@ class TripResult(
     val warnings: List<Warning> = emptyList(),
     /** "New spot recorded" ticks (rate-limited, one per new spot at most). */
     val ticks: Int = 0,
+    /** The engine's phone state at the end of the trip. */
+    val phone: PhoneStateDetector? = null,
 )
 
 /**
@@ -162,7 +172,7 @@ class Simulator(seed: Long) {
         /** Press "Mute last beep" right after every beep (at the next GPS fix, like the app's button would). */
         muteEveryBeep: Boolean = false,
     ): TripResult {
-        val len = roadLen
+        val len = spec.roadM
         fun travel(p: Double) = if (spec.westbound) len - p else p   // road position ↔ distance travelled
         val bumps = spec.bumpsAt.map { travel(it) }
         // (position, speed the driver slows to)
@@ -221,6 +231,12 @@ class Simulator(seed: Long) {
         val twists = spec.pocketTwistsAt.map { travel(it) }
         val jostles = spec.jostlesAt.map { travel(it) }
         val seams = spec.seamsAt.map { travel(it) }
+        val holds = spec.holdsAt.map { Pair(travel(it.first), it.second) }
+        val spikes = spec.brakeSpikesAt.map { travel(it) }
+        var holdStart = -1.0
+        var holdS = 0.0
+        var spikeStart = -1.0
+        var prevTilt = 0.0
         var forceBrakeUntil = -1.0
         var swerveStart = -1.0
         var turnStart = -1.0
@@ -265,6 +281,8 @@ class Simulator(seed: Long) {
             for (st in turns) if (s < st && s + v * dt >= st) turnStart = t
             for (sp in twists) if (s < sp && s + v * dt >= sp) twistStart = t
             for (sj in jostles) if (s < sj && s + v * dt >= sj) jostleStart = t
+            for ((sh, secs) in holds) if (s < sh && s + v * dt >= sh) { holdStart = t; holdS = secs }
+            for (sk in spikes) if (s < sk && s + v * dt >= sk) spikeStart = t
             val vNew = when {
                 t < forceBrakeUntil -> max(0.5, v - 6.5 * dt)
                 target > v -> min(target, v + maxAccel * dt)
@@ -348,21 +366,33 @@ class Simulator(seed: Long) {
             }
             if (jostleStart >= 0) {
                 val h = t - jostleStart
-                if (h < 1.8) extraTilt += degToRad(70.0) * when { h < 0.4 -> h / 0.4; h < 1.4 -> 1.0; else -> 1.0 - (h - 1.4) / 0.4 }
-                if (h < 0.8) shake = 4.0
+                if (h < 1.0) extraTilt += degToRad(60.0) * when { h < 0.25 -> h / 0.25; h < 0.75 -> 1.0; else -> 1.0 - (h - 0.75) / 0.25 }
+                if (h < 0.6) shake = 4.0
             }
+            if (holdStart >= 0) {
+                val h = t - holdStart
+                if (h < holdS + 0.6) extraTilt += degToRad(70.0) * when { h < 0.3 -> h / 0.3; h < 0.3 + holdS -> 1.0; else -> 1.0 - (h - 0.3 - holdS) / 0.3 }
+                if (h < 0.6 || (h > holdS + 0.2 && h < holdS + 0.8)) shake = max(shake, 2.0)
+            }
+            var spike = 0.0
+            if (spikeStart >= 0 && t - spikeStart < 1.2) spike = -5.0 * minOf(1.0, (t - spikeStart) / 0.15, (1.2 - (t - spikeStart)) / 0.15)
+            // The phone's own turning when it is tipped (the gyroscope feels it), about the axis the tilt turns around.
+            val tiltRate = (extraTilt - prevTilt) / dt
+            prevTilt = extraTilt
 
             // Specific force in car axes (fwd, left, up), then into the tilted phone's axes.
-            val fv = doubleArrayOf(aLong + 0.3 * av + gauss(0.2), lateral + gauss(0.2), 9.81 + av)
+            val fv = doubleArrayOf(aLong + 0.3 * av + gauss(0.2) + spike, lateral + gauss(0.2), 9.81 + av)
             val r = rot(yaw0 + twist, pitch0 + extraTilt, roll0)   // pitch axis is horizontal → tilts the phone 70° relative to gravity
             val ax = r[0][0] * fv[0] + r[1][0] * fv[1] + r[2][0] * fv[2] + gauss(shake)
             val ay = r[0][1] * fv[0] + r[1][1] * fv[1] + r[2][1] * fv[2] + gauss(shake)
             val az = r[0][2] * fv[0] + r[1][2] * fv[1] + r[2][2] * fv[2] + gauss(shake)
             val tMs = (t * 1000).toLong()
             recTMs = tMs
+            spec.phoneSignals?.invoke(t, s, engine.phone.signals, tMs)
             var rgx = Double.NaN; var rgy = Double.NaN; var rgz = Double.NaN
             if (spec.gyro) {
-                val w = doubleArrayOf(roll, pitch, yaw + twistRate)
+                val psi = yaw0 + twist
+                val w = doubleArrayOf(roll - sin(psi) * tiltRate, pitch + cos(psi) * tiltRate, yaw + twistRate)
                 val wx = r[0][0] * w[0] + r[1][0] * w[1] + r[2][0] * w[2] + gauss(shake * 0.3)
                 val wy = r[0][1] * w[0] + r[1][1] * w[1] + r[2][1] * w[2] + gauss(shake * 0.3)
                 val wz = r[0][2] * w[0] + r[1][2] * w[1] + r[2][2] * w[2] + gauss(shake * 0.3)
@@ -394,6 +424,6 @@ class Simulator(seed: Long) {
         }
         mon.finish()
         fwdTrace.add("monitor: ${mon.debug}")
-        return TripResult(beepIds, beepTrue, newBumps, knownHits, rejected, engine.trip, fwdTrace, mon.pocketMode, mon.stats, warnings, ticks)
+        return TripResult(beepIds, beepTrue, newBumps, knownHits, rejected, engine.trip, fwdTrace, mon.pocketMode, mon.stats, warnings, ticks, engine.phone)
     }
 }
