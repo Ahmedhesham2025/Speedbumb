@@ -163,6 +163,15 @@ object Prefs {
         sp(ctx).edit().putBoolean(TRAINING_CONSENT, on).putInt(TRAINING_CONSENT_VERSION, version)
             .putBoolean(TRAINING_WIPE_PENDING, wipe).putBoolean(TRAINING_ON_PENDING, sendOn).putString(TRAINING_NOTE, note).commit()
 
+    /**
+     * Research recording (Sprint 1): every useful phone sensor at full rate during trips, into local files
+     * ([app.bumpbeeper.research.ResearchRecorder]). Off by default. Read at each trip start; switching it off stops a
+     * running one at once. Its consent screen and upload come separately (P0-4).
+     */
+    const val RESEARCH_RECORDING = "research_recording"
+    fun researchRecording(ctx: Context): Boolean = sp(ctx).getBoolean(RESEARCH_RECORDING, false)
+    fun setResearchRecording(ctx: Context, on: Boolean) = sp(ctx).edit().putBoolean(RESEARCH_RECORDING, on).apply()
+
     fun autoStart(ctx: Context): Boolean = sp(ctx).getBoolean(AUTO_START, false)
     fun carAddress(ctx: Context): String? = sp(ctx).getString(CAR_ADDRESS, null)
     fun carName(ctx: Context): String? = sp(ctx).getString(CAR_NAME, null)
