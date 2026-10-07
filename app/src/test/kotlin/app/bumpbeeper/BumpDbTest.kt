@@ -111,9 +111,8 @@ class BumpDbTest {
         assertEquals(lat0, b.lat, 1e-9); assertEquals(lon0, b.lon, 1e-9); assertEquals(90.0, b.heading, 0.0)
         assertEquals(3, b.hits); assertEquals(4, b.passes); assertEquals(1, b.misses)
         assertEquals(1000L, b.firstSeen); assertEquals(2000L, b.lastSeen); assertTrue(b.userMuted)
-        // New columns start neutral: kind unsure, side unknown, no jolt average.
-        assertEquals(0.0, b.kindScore, 0.0); assertEquals(0, b.kindVotes); assertEquals(BumpKind.UNSURE, b.kind)
-        assertEquals(0.0, b.sideScore, 0.0); assertEquals(0, b.sideVotes); assertEquals(Side.UNKNOWN, b.side)
+        // New columns start neutral: not an old pothole spot, no jolt average.
+        assertFalse(b.legacy); assertEquals(0.0, b.sevIndex, 0.0)
         assertEquals(0.0, b.peakAvg, 0.0)
 
         // The old trip still shows, unscored (it was recorded before driving scores existed).
@@ -122,7 +121,8 @@ class BumpDbTest {
 
         // And the upgraded database takes new-style writes.
         val id = db.startTrip(700_000)
-        db.endTrip(id, 1_300_000, TripStats().apply { distanceM = 2000.0; potholes = 2 },
+        // The trips table's potholes column holds the strong bumps felt until DB v8 reworks it.
+        db.endTrip(id, 1_300_000, TripStats().apply { distanceM = 2000.0; strong = 2 },
             DrivingStats().apply { distanceM = 2000.0; movingS = 300.0 })
         val fresh = db.trips().first { it.id == id }
         assertEquals(2, fresh.potholes)
@@ -207,15 +207,14 @@ class BumpDbTest {
         val b = db.loadBumps().single()
         assertEquals(3, b.hits); assertEquals(5, b.passes); assertEquals(2, b.misses)
         assertFalse(b.userMuted)
-        assertEquals(0, b.kindVotes); assertEquals(0, b.sideVotes); assertEquals(0.0, b.peakAvg, 0.0)
+        assertFalse(b.legacy); assertEquals(0.0, b.peakAvg, 0.0)
     }
 
     @Test fun exportThenImportIntoEmptyDbGivesTheSameSpots() {
         val source = db()
         val spots = listOf(
-            Bump(0, lat0, lon0, 90.0, 4, 5, 1, 4, 1000, 2000, kindScore = -0.75, kindVotes = 4),
-            Bump(0, lat0 + 0.001, lon0, 180.0, 2, 2, 0, 2, 1000, 2000,
-                kindScore = 0.5, kindVotes = 2, sideScore = 1.0, sideVotes = 2, peakAvg = 7.25),
+            Bump(0, lat0, lon0, 90.0, 4, 5, 1, 4, 1000, 2000, peakAvg = 4.5, sevIndex = 4.5),
+            Bump(0, lat0 + 0.001, lon0, 180.0, 2, 2, 0, 2, 1000, 2000, peakAvg = 7.25, sevIndex = 7.25, legacy = true),
             Bump(0, lat0 + 0.002, lon0 + 0.001, 271.0, 1, 4, 3, 1, 1000, 2000, userMuted = true),
         )
         spots.forEach { source.insertBump(it) }
@@ -230,10 +229,8 @@ class BumpDbTest {
             assertEquals(a.lat, b.lat, 1e-7); assertEquals(a.lon, b.lon, 1e-7); assertEquals(a.heading, b.heading, 0.5)
             assertEquals(a.hits, b.hits); assertEquals(a.passes, b.passes); assertEquals(a.misses, b.misses)
             assertEquals(a.userMuted, b.userMuted)
-            assertEquals(a.kindScore, b.kindScore, 0.005); assertEquals(a.kindVotes, b.kindVotes)
-            assertEquals(a.sideScore, b.sideScore, 0.005); assertEquals(a.sideVotes, b.sideVotes)
-            assertEquals(a.peakAvg, b.peakAvg, 0.005)
-            assertEquals(a.kind, b.kind); assertEquals(a.side, b.side)
+            assertEquals(a.legacy, b.legacy)   // an old pothole spot stays one through the CSV
+            assertEquals(a.peakAvg, b.peakAvg, 0.005); assertEquals(a.sevIndex, b.sevIndex, 0.005)
         }
     }
 }

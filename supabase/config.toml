@@ -25,7 +25,9 @@ enabled = false
 enabled = false
 
 [storage]
-enabled = false
+# On: the `research` bucket and its policy live in Storage's own tables (README). Free plan: at most 50 MB per file.
+enabled = true
+file_size_limit = "50MiB"
 
 [edge_runtime]
 enabled = false

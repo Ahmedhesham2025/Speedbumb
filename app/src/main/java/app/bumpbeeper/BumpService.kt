@@ -544,8 +544,8 @@ class BumpService : Service(), SensorEventListener, LocationListener, EngineList
 
         db = BumpDb(this)
         beeper = Beeper(this)
-        // No speech available → the two-tone pothole sound instead, and no group announcements (EngineConfig.groupWarnings).
-        voice = Voice(this, { ok -> engine?.cfg?.groupWarnings = ok }) { beeper.pothole() }
+        // No speech available → the two-tone strong-bump sound instead, and no group announcements (EngineConfig.groupWarnings).
+        voice = Voice(this, { ok -> engine?.cfg?.groupWarnings = ok }) { beeper.strong() }
         tripId = db.startTrip(System.currentTimeMillis())
 
         val t = HandlerThread("bump-engine").also { it.start() }
@@ -850,11 +850,7 @@ class BumpService : Service(), SensorEventListener, LocationListener, EngineList
 
     // ---------------------------------------------------------------- engine events (engine thread)
 
-    private fun describe(b: Bump): String = when {
-        b.kind != BumpKind.POTHOLE -> b.kind.label
-        b.side == Side.UNKNOWN -> if (b.isHarsh(engine?.cfg ?: EngineConfig())) "harsh pothole" else "pothole"
-        else -> (if (b.isHarsh(engine?.cfg ?: EngineConfig())) "harsh pothole, " else "pothole, ") + b.side.label
-    }
+    private fun describe(b: Bump): String = b.describe(engine?.cfg ?: EngineConfig())
 
     override fun onNewBump(b: Bump) {
         LiveState.lastEvent = "New ${describe(b)} recorded (#${b.id})"
@@ -876,15 +872,16 @@ class BumpService : Service(), SensorEventListener, LocationListener, EngineList
     override fun onWarning(w: Warning) {
         lastHazardWarnMs = SystemClock.elapsedRealtime()
         val b = w.spot
-        val plain = { beeper.warn(w.sound, w.speedKmh) }
+        val plain = { beeper.warn(w.sound) }
         // The group line couldn't be spoken: play this spot's sound and let the silenced ones warn on their own.
         val groupFallback = { plain(); engine?.ungroup(); Unit }
         val v = voice
         when {
-            // Several spots close together: say it once ("3 bumps ahead"); the ones after it stay silent.
-            w.cluster != null && v != null -> v.cluster(w.cluster!!, groupFallback)
+            // Several spots close together: say it once ("3 bumps ahead"); the ones after it stay silent. A group of
+            // spots that are all only a "maybe" is not announced: each one plays its own soft beep instead.
+            w.cluster != null && w.cluster!!.anyFull && v != null -> v.cluster(w.cluster!!, groupFallback)
             w.cluster != null -> groupFallback()
-            w.sound == WarnSound.HARSH_POTHOLE && v != null -> v.pothole(b.side)
+            w.sound == WarnSound.STRONG && v != null -> v.strongBump()
             else -> plain()
         }
         val group = w.cluster?.let { " (group of ${it.count})" } ?: ""
@@ -902,7 +899,7 @@ class BumpService : Service(), SensorEventListener, LocationListener, EngineList
             "no_gps" -> "no GPS fix yet"
             "weak_gps" -> "GPS too inaccurate"
             "too_slow" -> "car (almost) stopped"
-            "too_fast" -> "too fast for a speed bump, and not clearly a pothole"
+            "too_fast" -> "too fast for a speed bump"
             "no_heading" -> "direction not known yet"
             else -> reason
         }
@@ -926,10 +923,11 @@ class BumpService : Service(), SensorEventListener, LocationListener, EngineList
         LiveState.tripBeeps = tr.beeps
         LiveState.tripMisses = tr.misses
         LiveState.tripKm = tr.distanceM / 1000.0
-        LiveState.tripPotholes = tr.potholes
-        LiveState.tripHarshPotholes = tr.harshPotholes
-        LiveState.potholesOnMap = eng.bumps.count { it.kind == BumpKind.POTHOLE }
-        LiveState.harshOnMap = eng.bumps.count { it.isHarsh(eng.cfg) }
+        // Until the Drive screen is reworked (A1), its pothole tile shows the strong bumps felt this trip.
+        LiveState.tripPotholes = tr.strong
+        LiveState.tripHarshPotholes = 0
+        LiveState.potholesOnMap = eng.bumps.count { it.legacy }
+        LiveState.harshOnMap = eng.bumps.count { it.severity(eng.cfg) == Severity.STRONG }
         monitor?.stats?.let { d ->
             LiveState.liveScore = d.score()
             LiveState.tripMovingS = d.movingS
