@@ -342,9 +342,12 @@ class DrivingMonitor(
         }
     }
 
-    /** A known spot was hit at [speedKmh]. Speed bumps taken too fast count against the score. */
+    /**
+     * A known spot was hit at [speedKmh]. Confirmed bumps (felt before, [Confidence.FULL]) taken too fast count against
+     * the score; a spot felt for the first time could be anything, so it doesn't.
+     */
     fun onBumpHit(b: Bump, speedKmh: Double) {
-        if (b.kind == BumpKind.BUMP && speedKmh > cfg.bumpFastKmh) {
+        if (b.confidence(engine.cfg) == Confidence.FULL && speedKmh > cfg.bumpFastKmh) {
             stats.bumpsFast++
             event("bump_fast", speedKmh, "speed bump #${b.id} at ${speedKmh.roundToInt()} km/h")
         }

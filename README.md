@@ -57,6 +57,15 @@ To get an APK file instead: **Build → Build App Bundle(s) / APK(s) → Build A
 
 Every build is signed with the same key and gets a higher version number, so **a new version installs over the old one and keeps your bumps**. Keep a backup of the key: without it, updates can't be installed over the app.
 
+### Beta builds
+New versions are tried out first as **betas** (tags like `v1.8.0-beta1`), published on GitHub as *pre-releases*. The app's own update check offers only stable versions, so to get the betas use [Obtainium](https://github.com/ImranR98/Obtainium) (free, open source):
+1. Install Obtainium and tap **Add app**.
+2. *App source URL:* `https://github.com/Ahmedhesham2025/Speedbumb`
+3. Turn on **Include prereleases**, then add the app. Obtainium now installs every beta and every stable version.
+4. Each release has two APKs: pick your edition when asked (the one ending in `-google.apk` uses Google Play services). To skip the question, set *Filter APKs by regular expression* to `-google\.apk$`, and for the other edition also turn on *Invert regular expression*.
+
+Betas are signed with the same key, so they install over your current version and keep your bumps, and the stable release installs over its betas. Going back to an older version needs an uninstall, which deletes the bumps on the phone, so export them first (*Share… → Bump file (CSV)*).
+
 ---
 
 ## First drive

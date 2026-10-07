@@ -92,7 +92,7 @@ class SyncDbTest {
         assertTrue(tables(sql).containsAll(setOf("outbox", "remote_spots", "sync_state")))
         val b = db.loadBumps().single()
         assertEquals(lat0, b.lat, 0.0)
-        assertEquals(0.8, b.kindScore, 0.0)
+        assertTrue(b.legacy)   // kind_score 0.8 from 3 votes: an old pothole spot
         assertEquals(7.5, b.peakAvg, 0.0)
         assertEquals(88, db.trips().single().score)
         assertEquals(1, sql.rawQuery("SELECT COUNT(*) FROM events", null).use { it.moveToFirst(); it.getInt(0) })
