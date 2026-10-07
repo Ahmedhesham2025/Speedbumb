@@ -9,10 +9,12 @@ migrations/20261005000001_core.sql   tables, RLS policies, RPCs, aggregation, pg
 migrations/20261005000002_speed_limit_quota.sql   call counters for the speed-limits function
 migrations/20261005000003_training_samples.sql    consented learning samples ("Help improve detection")
 migrations/20261005000004_speed_limit_quota_settings.sql   speed-limits caps read from app_settings (60/user, 2,000/project)
+migrations/20261007000002_research.sql   research recordings: consent, upload ledger, private `research` bucket + upload policy
 functions/speed-limits/              Edge Function: road speed limits from TomTom (lib.ts logic, lib_test.ts Deno tests)
 seed.sql                             sample fleets/spots for local runs and CI only (desert coordinates)
 tests/*.sql                          pgTAP tests, run by CI (`supabase test db`)
-config.toml                          local `supabase start` settings (anonymous sign-ins on)
+config.toml                          local `supabase start` settings (anonymous sign-ins on, Storage on for the research bucket)
+../tools/research/download_and_clear.ts   owner tool (Deno): download research files, delete them from Storage, free the quota
 ```
 
 ## Tables
@@ -29,6 +31,7 @@ config.toml                          local `supabase start` settings (anonymous 
 | `app_settings` | server knobs, e.g. `confirm_devices`, `speed_limit_user_daily`, `speed_limit_project_daily` | nobody (owner changes it with SQL) |
 | `crash_reports` | crash stacks (≤ 8 KB) | written only by `submit_crash_report`; nobody reads through the API |
 | `training_samples`, `training_trips`, `training_quota` | learning samples, trip summaries, daily counters (see *Training samples*) | nobody; only the training RPCs |
+| `research_uploads` | one row per reserved research file: name (`<user id>/rr_…csv.gz`), device, bytes, `created_at`, `cleared_at` (see *Research recordings*) | nobody; `research_reserve` writes it, the owner's tool reads it with the service role |
 
 `anon` (not signed in) has no table privileges and cannot call any RPC. The app always signs in anonymously first.
 
@@ -47,7 +50,10 @@ config.toml                          local `supabase start` settings (anonymous 
 - `submit_crash_report(app_version, model, stack)`: registered devices only; at most 20 per device per day (`54000`),
   stack ≤ 8 KB and version/model ≤ 40 characters (`22023`).
 - `forget_me()`: deletes the caller's device and its training samples/trips, and by cascade its observations, contributions, trips, crash reports and counters.
-  Merged spots stay because they no longer refer to anyone.
+  Merged spots stay because they no longer refer to anyone. Research files already uploaded stay too, until the owner
+  clears them (see *Research recordings*).
+- `set_research_consent(enabled, version) → boolean` and `research_reserve(name, bytes) → 'ok' | 'full' |
+  'device_daily' | 'no_consent'`: research recordings, see *Research recordings*.
 
 `aggregate_observations()` is server-only (not executable by clients). It matches each new observation to a spot within
 15 m and 45° of heading (or opens a candidate), updates contributors and counters, confirms a spot when
@@ -125,6 +131,74 @@ trip:   {"client_trip_id": uuid, "day": "YYYY-MM-DD", "placement": as above, "du
          "speeding_s": 0..86400|null, "battery_start", "battery_end", "score": 0..100|null}
 ```
 
+## Research recordings (full-sensor files in Storage)
+
+Complete recordings of the phone's sensors for offline research: gzip CSV, ~15–20 MB per hour, one file per 10-minute
+segment. A separate opt-in from the shared map and from "Help improve detection", offered to every user on a
+first-start consent screen; nothing uploads without "Yes". Phones upload on Wi-Fi only, after trimming the first and
+last 300 m of each trip.
+
+- **Consent**: `set_research_consent(enabled boolean, version int) → boolean` stores `devices.research_consent_version`
+  (the consent text agreed to; null = never or withdrawn) and `research_consent_at`. Registered devices only (`42501`);
+  turning it on needs a version 0..1000 (`22023`). Clients cannot set these columns directly. **Turning it off deletes
+  nothing**: new reservations and uploads stop at once, files already uploaded stay until the owner clears them, and
+  the owner deletes a user's files on request with the tool's `--forget` (below). `forget_me()` deletes the device row,
+  so the research consent goes with it (registering again starts without it); the files and their ledger rows (now
+  without a device) stay until the owner clears them.
+- **Reserve, then upload** (the phone, for each finished file):
+  1. `research_reserve(name, bytes) → text` with `name` = `<auth uid>/rr_<8 hex install id>_<yyyyMMdd'T'HHmmss UTC>_<segment, 1-4 digits>.csv.gz`
+     (ASCII digits, `Locale.US`) and `bytes` = the file's exact size, 1 byte..25 MB. Returns `ok` (upload now), `full`
+     (the un-cleared total would pass `research_cap_mb`), `device_daily` (this device would pass
+     `research_device_daily_mb` within 24 h) or `no_consent`. On `full` / `device_daily` **pause the queue and try again
+     the next day; nothing is deleted**. Another folder, another pattern or a bad size is `22023`: drop that file.
+     Reserving the same name again returns `ok` and charges nothing twice.
+  2. `POST /storage/v1/object/research/<name>` with the user's JWT (`Authorization: Bearer …`, `apikey: <anon key>`),
+     `Content-Type: application/gzip`, `Content-Length` = the reserved `bytes`, the raw file as the body (not multipart,
+     no `Content-Encoding`), no `x-upsert`. 200 = stored; 409 = stored by an earlier try (done); 403 = no live
+     reservation, consent off or bigger than reserved (reserve once more, then drop the file); 413 = over 25 MB.
+- **Caps** (`app_settings`, read on every reservation, MB = 1,048,576 bytes; a missing or non-numeric value falls back
+  to the default): `research_cap_mb` = **900** MB of un-cleared reservations in total (the free plan has 1 GB of
+  Storage; `0` pauses every upload) and `research_device_daily_mb` = **300** MB per device in any 24 h (cleared files
+  still count). Reservations are taken one at a time (advisory lock), so two phones can't both take the last room:
+
+  ```sql
+  update public.app_settings set value = '700' where key = 'research_cap_mb';
+  ```
+- **Bucket and policy**: private bucket `research` (25 MB per file, `application/gzip` or `application/octet-stream`),
+  created by the migration. One Storage policy: signed-in users may **insert** `<their auth uid>/<file>` only while they
+  hold a live reservation for exactly that name (not cleared, consent still on, and not bigger than reserved when
+  Storage reports the request size). No select, update or delete policy: phones can't list, download, overwrite or
+  delete research files; only the service role can. If Storage doesn't report the size, the 25 MB bucket limit applies.
+- **Owner: download and clear** (frees the room, so paused uploads resume). Run from the repo folder on the owner's PC
+  with [Deno](https://deno.com), the project URL and its secret key (Dashboard → Settings → API Keys; the legacy
+  `service_role` key works too). The key stays in the shell, never in a file or the repo. Download into a folder
+  **outside the repo** (real drives are never committed):
+
+  ```powershell
+  $env:SUPABASE_URL = "https://<project-ref>.supabase.co"
+  $env:SUPABASE_SERVICE_ROLE_KEY = "<secret key>"
+  $dir = "C:\BumpBeeper\research"
+  deno run --allow-net --allow-env=SUPABASE_URL,SUPABASE_SERVICE_ROLE_KEY --allow-read=$dir --allow-write=$dir tools/research/download_and_clear.ts --out $dir --dry-run
+  # the same command without --dry-run saves the files to $dir\<user id>\, deletes them from Storage and clears them
+  Remove-Item Env:SUPABASE_SERVICE_ROLE_KEY
+  ```
+
+  Reservations still without a file after a day (never uploaded) are cleared too; younger ones wait for the next run.
+  Files bigger than reserved or not gzip are reported. Always clear with the tool (or `research_mark_cleared(names)`,
+  service role only): deleting files in the dashboard does not free the quota. Downloads count toward the plan's egress.
+- **Deletion on request**: add `--forget <user id>`: that user's files are deleted from Storage without downloading them,
+  their ledger rows go, and so do the local copies under `--out`. Delete any other copies by hand.
+
+**Privacy notes for the app** (consent screen, Settings, privacy policy):
+- Say what is recorded: all motion sensors, the GPS track with speed (except the first and last 300 m of each trip) and
+  phone state (screen on/unlock, call in progress, never its content); no microphone, no camera. Files carry the
+  anonymous account id, never a name, email or phone number.
+- Nothing uploads without "Yes", and only on Wi-Fi.
+- Turning it off, and "Delete my shared data", stop uploads at once but do **not** delete files already uploaded: they
+  stay in a private store only the owner can read until the owner downloads and clears them, or deletes them on
+  request. Show the account id ("Research ID", copyable) in Settings and say how to ask for deletion.
+- The owner keeps downloaded files offline for research; the privacy policy must say for how long (owner decision).
+
 ## Edge Function `speed-limits` (road speed limits: live display/warnings and the driving score)
 
 The phone sends a stretch of its own drive; the function asks the TomTom Snap to Roads API which road each point is on
@@ -167,9 +241,14 @@ Tests: `deno test supabase/functions/speed-limits/` (offline; TomTom, auth and t
 
 ## Privacy
 
-- Only hazard **points** are stored, never tracks or routes; observation time is rounded down to the hour. The one
-  exception is `speed-limits`: with the user's opt-in it sends a trimmed route through our server to TomTom (times
-  rebased to 2000-01-01, so TomTom never learns when the user drove) and keeps nothing except a daily call count.
+- Only hazard **points** are stored in the database, never tracks or routes; observation time is rounded down to the
+  hour. The one exception is `speed-limits`: with the user's opt-in it sends a trimmed route through our server to
+  TomTom (times rebased to 2000-01-01, so TomTom never learns when the user drove) and keeps nothing except a daily
+  call count.
+- Research recordings (their own opt-in) are files, not database rows, and they **do** contain the GPS track, minus the
+  first and last 300 m of each trip, in a private bucket only the owner can read. They are never deleted
+  automatically (owner decision): withdrawal and `forget_me()` stop uploads but keep uploaded files until the owner
+  clears them or deletes them on request (see *Research recordings*).
 - Devices are anonymous auth users: no name, email or phone number.
 - Uploading needs `share_enabled = true` (the user's opt-in in the app).
 - Raw observations are deleted about a day after they are merged; contributor rows keep only counts, no times; `forget_me()` deletes a device's data at once.
@@ -187,7 +266,11 @@ roles with `set local role authenticated` + `request.jwt.claims` inside a rolled
 `07_speed_limit_quota.sql` (speed-limits counters: no client access, 60/user and 2,000/project per day by default, caps
 follow `app_settings`, pruning),
 `08_training_samples.sql` (consent, pseudonym rotation, validation, caps, size guard, withdrawal, forget_me, RLS deny,
-retention).
+retention),
+`10_research.sql` (research consent, name/size checks, idempotent reservations, `full` / `device_daily` store nothing,
+clearing frees room, withdrawal and forget_me keep files, the Storage policy: own folder + live reservation + size,
+no client read/update/delete, no client access to the ledger).
+Storage is enabled in `config.toml` because the research bucket and its policy live in Storage's own tables.
 The same job runs `deno test`, `deno check` and `deno lint` on `functions/`.
 
 ## Fleets
@@ -215,6 +298,9 @@ Agents never link or push to the hosted project. When the owner approves:
    a linked machine). Do **not** run `seed.sql` on the hosted project.
 4. Check: `select jobname, schedule from cron.job;` shows `aggregate-observations`, and the Security Advisor shows no
    "RLS disabled" errors.
+5. Research recordings: **Storage → Settings** keeps the global file size limit at 25 MB or more (Free: 50 MB). Apply
+   `migrations/20261007000002_research.sql`, then check that `select id, public, file_size_limit from storage.buckets;`
+   lists `research` as private with 26214400, and **Storage → Policies** shows only `research_insert_reserved` for it.
 
 Rollback (nothing depends on it yet): `drop schema public cascade` is too broad; instead drop the tables listed above,
 the eight functions and the `memberships_keep_last_owner` trigger, and `select cron.unschedule('aggregate-observations');`.
