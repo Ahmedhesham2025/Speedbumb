@@ -12,11 +12,14 @@ import java.util.IdentityHashMap
 import java.util.zip.GZIPOutputStream
 
 /**
- * The privacy trim before a research recording leaves the phone: every line recorded within the first and the last
- * [TripPrivacy.RADIUS_M] driven of a trip goes, whatever its code (sensors, phone state and GPS alike). The distance
- * comes from the trip's own GPS lines, speed × time as in [TripPrivacy.driven], so a GPS jump can't shorten the trim;
- * a trip shorter than twice that, without usable GPS, or not in the current format ([ResearchFormat.VERSION]) has
- * nothing to upload. Files are read with [ResearchReader], the way tools/replay reads them. Plain Kotlin (no Android).
+ * The privacy trim before a research recording leaves the phone: every line, whatever its code (sensors, phone state
+ * and GPS alike), recorded before the car has both driven [TripPrivacy.RADIUS_M] and left that radius around where the
+ * trip started, or after it came that close to where it ended (the rule of `sync.PrivacyZone` and
+ * [RouteSampler.sample]). Driven = speed × time from the trip's own GPS lines ([TripPrivacy.driven]), so a GPS jump
+ * can't shorten it; the radius ([TripPrivacy.anchors]) catches a parked phone whose speed jitter or wandering fixes add
+ * up to "distance". A trip shorter than twice the radius, without usable GPS, or not in the current format
+ * ([ResearchFormat.VERSION]) has nothing to upload. Files are read with [ResearchReader], as tools/replay reads them.
+ * Plain Kotlin (no Android).
  */
 internal object ResearchTrim {
     /** The part of a trip that may leave the phone: lines with [fromT] ≤ t ≤ [toT] (t in 0.1 ms, see [ResearchFormat]). */
@@ -56,8 +59,9 @@ internal object ResearchTrim {
     }
 
     /**
-     * From the first fix past [radiusM] driven to the last fix more than [radiusM] before the end. Null when the trip
-     * is shorter than 2 × [radiusM], has no usable GPS or isn't in the current format: then nothing of it may be uploaded.
+     * From the first fix past [radiusM] driven and outside [radiusM] of the trip's start and end ([TripPrivacy.anchors])
+     * to the last such fix more than [radiusM] before the end. Null when there is none (shorter than 2 × [radiusM], or
+     * never out of the zone), without usable GPS or not in the current format: then nothing of the trip is uploaded.
      */
     fun window(s: Scan, radiusM: Double = TripPrivacy.RADIUS_M): Window? {
         if (!s.known) return null
@@ -66,9 +70,11 @@ internal object ResearchTrim {
         val driven = TripPrivacy.driven(ordered)
         val total = driven.last()
         if (!(total >= 2 * radiusM)) return null   // NaN too
-        val from = driven.indexOfFirst { it > radiusM }
-        val to = driven.indexOfLast { total - it > radiusM }
-        if (from < 0 || to < 0 || s.t(ordered[from]) > s.t(ordered[to])) return null
+        val anchors = TripPrivacy.anchors(ordered)
+        fun away(i: Int) = TripPrivacy.outside(ordered[i].lat, ordered[i].lon, anchors, radiusM)
+        val from = driven.indices.firstOrNull { driven[it] > radiusM && away(it) } ?: return null
+        val to = driven.indices.lastOrNull { total - driven[it] > radiusM && away(it) } ?: return null
+        if (s.t(ordered[from]) > s.t(ordered[to])) return null
         return Window(s.t(ordered[from]), s.t(ordered[to]))
     }
 
@@ -85,7 +91,7 @@ internal object ResearchTrim {
      */
     fun prepare(src: File, w: Window, stats: Stats?, cacheDir: File): File? {
         val cached = File(cacheDir, src.name)
-        if (cached.exists()) return cached
+        if (cached.exists()) return cached   // made with this same window: a trip's window is found once and kept
         return when (plan(stats ?: scan(listOf(src)).stats[0], w)) {
             Plan.NOTHING -> null
             Plan.AS_IS -> src
