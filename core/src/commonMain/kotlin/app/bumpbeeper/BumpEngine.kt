@@ -170,6 +170,12 @@ class BumpEngine(
     val bumps: MutableList<Bump> = store.loadBumps().toMutableList()
     val trip = TripStats()
 
+    /**
+     * Whether the phone rests in a holder, rests loose or is being handled ([PhoneStateDetector]), fed with the same
+     * samples as the engine. The app fills in its [PhoneStateDetector.signals] (screen, unlock, calls, proximity, light).
+     */
+    val phone = PhoneStateDetector()
+
     /** Latest vertical acceleration with gravity removed, m/s². For the live graph. */
     var lastVertical = 0.0
         private set
@@ -309,12 +315,14 @@ class BumpEngine(
 
     /** Rotation rate in rad/s, phone axes. Optional: without it, a jolt's shape is judged from the jolt alone. */
     fun onGyro(tMs: Long, x: Double, y: Double, z: Double) {
+        phone.onGyro(tMs, x, y, z)
         gyroX = x; gyroY = y; gyroZ = z
         gyroSeen = true
     }
 
     /** [tMs] monotonic milliseconds; x, y, z raw accelerometer in m/s² (gravity included). */
     fun onAccel(tMs: Long, x: Double, y: Double, z: Double) {
+        phone.onAccel(tMs, x, y, z)
         if (!accelReady) {
             slowX = x; slowY = y; slowZ = z
             fastX = x; fastY = y; fastZ = z
@@ -672,6 +680,7 @@ class BumpEngine(
         fixes.addLast(f)
         while (fixes.size > 1 && f.timeMs - fixes.first().timeMs > 12_000) fixes.removeFirst()
         lastFix = f
+        phone.onFix(f)
 
         // GPS bearing is garbage when crawling; keep the last good one.
         if (!brg.isNaN() && speed >= 1.5) heading = brg
