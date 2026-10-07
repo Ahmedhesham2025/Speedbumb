@@ -343,7 +343,7 @@
     <string name="settings_shared_map_hint">Warnings about bumps and potholes found by other drivers. Only spots are shared, never your route.</string>
     <string name="settings_sync_delete">Delete my shared data</string>
     <string name="settings_sync_delete_title">Delete your shared data?</string>
-    <string name="settings_sync_delete_msg">Deletes this phone\'s record on the server, with the bumps and potholes it sent, its links to spots and its crash reports. Spots already merged into the shared map stay, with nothing linking them to this phone. Also clears downloaded warnings and turns the shared map, real speed limits and “Help improve detection” off, deleting its samples. Your own bump map and trips stay.</string>
+    <string name="settings_sync_delete_msg">Deletes this phone\'s record on the server, with the bumps and potholes it sent, its links to spots and its crash reports. Spots already merged into the shared map stay, with nothing linking them to this phone. Also clears downloaded warnings and turns the shared map, real speed limits and “Help improve detection” off, deleting its samples, and research recordings off: files already uploaded are erased within a week. Your own bump map and trips stay.</string>
     <string name="settings_sync_deleted">Deleted</string>
     <string name="settings_sync_deleted_local">Deleted on this phone. Couldn\'t reach the server: tap Delete again when you\'re online to finish.</string>
     <!-- Road speed limits (TomTom): Settings and Trips -->
@@ -419,4 +419,37 @@
     <string name="live_limit_sound">Tone and spoken limit</string>
     <string name="live_limit_sign_desc">Speed limit %1$s km/h</string>
     <string name="live_limit_sign_unknown">Speed limit unknown</string>
+    <!-- Research recordings (P0-4): first-start consent (version 1) and the Settings card -->
+    <string name="research_ask_kicker">Research recordings</string>
+    <string name="research_ask_title">Help improve detection with full sensor recordings</string>
+    <string name="research_ask_intro">During your trips the app can record all of the phone\'s sensors and send them to us over Wi-Fi, so we can make bump detection better. It stays off unless you say yes.</string>
+    <string name="research_ask_point_what">Recorded: all motion sensors (fast), your GPS route, and phone-use signals: screen on/off, unlock, lock state, call state, Bluetooth audio, charging and battery. Each file also names your phone\'s maker and model.</string>
+    <string name="research_ask_point_upload">Uploaded only on Wi-Fi, without the first and last 300 m of each trip, to our server (Supabase, Frankfurt): up to about 25–30 MB per hour of driving.</string>
+    <string name="research_ask_point_never">No microphone, no camera. No name, email or phone number.</string>
+    <string name="research_ask_point_use">Used only to improve detection. You can turn it off any time.</string>
+    <string name="research_ask_what">What exactly is recorded and kept?</string>
+    <string name="research_ask_details">Recorded during trips: all motion sensors up to 200 times a second (accelerometer, gyroscope, gravity, rotation, compass), pressure, light and proximity; every GPS fix with speed and accuracy, and satellite counts; screen on/off, unlock and lock state, call state and where sound goes (Bluetooth or wired; never what is said); car Bluetooth, charging and battery; your phone\'s maker and model and the Android and app versions, in each file.\n\nOn your phone: the full recording, with the whole GPS route, is kept up to 14 days (7 days after its upload) in app storage that is never backed up. “Share recordings” also saves a copy in %1$s, where other apps can read it.\n\nUploaded: only on Wi-Fi, without the first and last 300 m of each trip, and nothing of a trip shorter than 600 m. Trips that started by themselves wait until you confirm them. Files carry your anonymous Research ID (shown in Settings).\n\nThe app\'s owner downloads them for research and may keep downloaded copies (the privacy policy says for how long). Never sold, never used for ads.\n\nTurning this off stops recording and uploading at once. Files already uploaded stay until deleted on request: send your Research ID, or use “Delete my shared data”, which erases them within a week.</string>
+    <string name="research_ask_yes">Yes, record and upload</string>
+    <string name="research_ask_no">No thanks</string>
+    <string name="research_ask_footer">You can change this any time in Settings → Research recordings.</string>
+    <string name="settings_section_research">Research recordings</string>
+    <string name="research_switch">Help improve detection with full sensor recordings</string>
+    <string name="research_hint">Off by default. Records all sensors during trips and uploads them on Wi-Fi, without the first and last 300 m of each trip.</string>
+    <string name="research_on_toast">Thank you! Recordings will upload on Wi-Fi.</string>
+    <string name="research_off_toast">Turned off: recording and uploads stop. Files already uploaded stay until deleted on request.</string>
+    <string name="research_status_waiting">Waiting for Wi-Fi: %1$d files (%2$s MB)</string>
+    <string name="research_status_last">Last upload: %1$s</string>
+    <string name="research_status_last_never">Nothing uploaded yet</string>
+    <string name="research_status_paused_full">Paused (server storage full): tries again %1$s</string>
+    <string name="research_status_paused_daily">Paused (daily upload limit): tries again %1$s</string>
+    <string name="research_status_pending_on">Telling the server you turned this on (when online)</string>
+    <string name="research_status_pending_off">Telling the server you turned this off (when online)</string>
+    <string name="research_session_reset">Your anonymous ID was reset, so research recording was switched off; turn it on again if you like.</string>
+    <string name="research_share_hint">Packs the recordings on this phone (with their full GPS routes) into one zip, saves it in %1$s, then opens the share menu.</string>
+    <string name="research_id">Research ID: %1$s</string>
+    <string name="research_id_none">Research ID: none yet (made with the first upload)</string>
+    <string name="research_id_earlier">Earlier IDs: %1$s</string>
+    <string name="research_id_copy">Copy Research ID</string>
+    <string name="research_id_copied">Research ID copied</string>
+    <string name="research_id_hint">To have your uploaded files deleted, send this ID (see the privacy policy), or use “Delete my shared data”.</string>
 </resources>
