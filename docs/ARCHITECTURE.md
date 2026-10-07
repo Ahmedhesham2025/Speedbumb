@@ -39,7 +39,7 @@ DrivingMonitor ─► trips (local) ─► (fleet drivers on shift only) submit_
 - No runtime libraries in the app (smaller, fewer surprises, F-Droid friendly), except MapLibre Native (BSD-2) for the street map since v1.8, with free OpenFreeMap tiles. Two editions: `foss` (none) and `play` (+ Google activity recognition only); both detect driving with built-in sensors, `play` adds Google's IN_VEHICLE detection.
 - Map merging in SQL (`pg_cron`) so it is testable with pgTAP and runs next to the data.
 - Repo is public under GPL-3.0; real recordings are anonymized before they enter `testdata/`.
-- Releases are tags `vX.Y.Z` → signed APK on GitHub Releases; `versionCode = X*10000 + Y*100 + Z`.
+- Releases are tags `vX.Y.Z` (stable) or `vX.Y.Z-betaN` (beta, N 1–98, published as a GitHub pre-release) → signed APKs on GitHub Releases; `versionCode = (X*10000 + Y*100 + Z)*100 + (beta ? N : 99)`, e.g. 1.8.0-beta1 → 1080001, 1.8.0 → 1080099.
 
 ## iOS
 Goal: an iPhone version built for free, with no App Store and no paid Apple account. The owner installs it with

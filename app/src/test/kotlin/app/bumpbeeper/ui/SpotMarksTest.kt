@@ -14,27 +14,27 @@ import org.junit.Test
 class SpotMarksTest {
     private val cfg = EngineConfig()
 
-    /** kind: -1 bump … +1 pothole (0 votes = unsure); jolt m/s². */
-    private fun bump(id: Long, kind: Double?, jolt: Double = 3.0, muted: Boolean = false, hits: Int = 4, passes: Int = 5,
-                     lat: Double = 30.0444, lon: Double = 31.2357, side: Double = 0.0) = Bump(
-        id, lat, lon, 90.0, hits, passes, passes - hits, hits, 0L, 0L, muted,
-        kind ?: 0.0, if (kind == null) 0 else 5, side, if (side == 0.0) 0 else 5, jolt,
+    /** [legacy]: an old pothole spot not felt again; [soft]: felt once so far; jolt m/s² (also its severity index). */
+    private fun bump(id: Long, legacy: Boolean = false, soft: Boolean = false, jolt: Double = 3.0, muted: Boolean = false,
+                     hits: Int = if (soft) 1 else 4, passes: Int = if (soft) 1 else 5,
+                     lat: Double = 30.0444, lon: Double = 31.2357) = Bump(
+        id, lat, lon, 90.0, hits, passes, passes - hits, hits, 0L, 0L, muted, peakAvg = jolt, sevIndex = jolt, legacy = legacy,
     )
 
     private fun remote(id: Long, kind: BumpKind, severity: Double = 3.0, lat: Double = 30.05, lon: Double = 31.24) =
         RemoteSpot(id, lat, lon, 0.0, kind, Side.UNKNOWN, severity, 3)
 
     @Test fun iconForEachKind() {
-        assertEquals(SpotIcon.BUMP, SpotMarks.fromLocal(bump(1, -0.9), cfg).icon)
-        assertEquals(SpotIcon.POTHOLE, SpotMarks.fromLocal(bump(2, 0.9, jolt = 3.0), cfg).icon)
-        assertEquals(SpotIcon.HARSH, SpotMarks.fromLocal(bump(3, 0.9, jolt = 9.0), cfg).icon)
-        assertEquals(SpotIcon.UNSURE, SpotMarks.fromLocal(bump(4, null), cfg).icon)
-        assertEquals(SpotIcon.MUTED, SpotMarks.fromLocal(bump(5, 0.9, jolt = 9.0, muted = true), cfg).icon)
+        assertEquals(SpotIcon.BUMP, SpotMarks.fromLocal(bump(1), cfg).icon)
+        assertEquals(SpotIcon.POTHOLE, SpotMarks.fromLocal(bump(2, legacy = true, jolt = 3.0), cfg).icon)
+        assertEquals(SpotIcon.HARSH, SpotMarks.fromLocal(bump(3, legacy = true, jolt = 9.0), cfg).icon)
+        assertEquals(SpotIcon.UNSURE, SpotMarks.fromLocal(bump(4, soft = true), cfg).icon)
+        assertEquals(SpotIcon.MUTED, SpotMarks.fromLocal(bump(5, legacy = true, jolt = 9.0, muted = true), cfg).icon)
     }
 
     @Test fun autoMutedSpotIsGrey() {
         // Driven over 8 times, felt once: probably a false detection, muted by the engine.
-        val s = SpotMarks.fromLocal(bump(6, -0.9, hits = 1, passes = 8), cfg)
+        val s = SpotMarks.fromLocal(bump(6, hits = 1, passes = 8), cfg)
         assertTrue(s.muted)
         assertEquals(SpotIcon.MUTED, s.icon)
     }
@@ -49,8 +49,8 @@ class SpotMarksTest {
     }
 
     @Test fun sharedSpotHarshByTheSameRule() {
-        assertEquals(SpotIcon.HARSH, SpotMarks.fromShared(remote(7, BumpKind.POTHOLE, severity = cfg.harshPotholeMs2), cfg).icon)
-        assertEquals(SpotIcon.POTHOLE, SpotMarks.fromShared(remote(8, BumpKind.POTHOLE, severity = cfg.harshPotholeMs2 - 0.1), cfg).icon)
+        assertEquals(SpotIcon.HARSH, SpotMarks.fromShared(remote(7, BumpKind.POTHOLE, severity = cfg.sevStrongMin), cfg).icon)
+        assertEquals(SpotIcon.POTHOLE, SpotMarks.fromShared(remote(8, BumpKind.POTHOLE, severity = cfg.sevStrongMin - 0.1), cfg).icon)
         val s = SpotMarks.fromShared(remote(9, BumpKind.BUMP, severity = 99.0), cfg)
         assertEquals(SpotIcon.BUMP, s.icon)
         assertTrue(s.shared)
@@ -59,7 +59,7 @@ class SpotMarksTest {
     }
 
     @Test fun featurePropertiesCarryKeyAndIcon() {
-        val mine = SpotMarks.properties(SpotMarks.fromLocal(bump(42, 0.9, jolt = 9.0), cfg))
+        val mine = SpotMarks.properties(SpotMarks.fromLocal(bump(42, legacy = true, jolt = 9.0), cfg))
         assertEquals("m42", mine["key"])
         assertEquals("bb-harsh", mine["icon"])
         assertEquals(false, mine["shared"])
@@ -73,11 +73,11 @@ class SpotMarksTest {
 
     @Test fun filtersKeepTheOldMeaningAndAddMuted() {
         val spots = listOf(
-            SpotMarks.fromLocal(bump(1, -0.9), cfg),
-            SpotMarks.fromLocal(bump(2, null), cfg),
-            SpotMarks.fromLocal(bump(3, 0.9, jolt = 3.0), cfg),
-            SpotMarks.fromLocal(bump(4, 0.9, jolt = 9.0), cfg),
-            SpotMarks.fromLocal(bump(5, -0.9, muted = true), cfg),
+            SpotMarks.fromLocal(bump(1), cfg),
+            SpotMarks.fromLocal(bump(2, soft = true), cfg),
+            SpotMarks.fromLocal(bump(3, legacy = true, jolt = 3.0), cfg),
+            SpotMarks.fromLocal(bump(4, legacy = true, jolt = 9.0), cfg),
+            SpotMarks.fromLocal(bump(5, muted = true), cfg),
         )
         fun ids(f: Int) = spots.filter { SpotMarks.matches(it, f) }.map { it.localId }
         assertEquals(listOf(1L, 2L, 3L, 4L, 5L), ids(SpotMarks.ALL))
@@ -88,7 +88,7 @@ class SpotMarksTest {
     }
 
     @Test fun sharedSpotOnTopOfYoursIsDrawnOnce() {
-        val mine = listOf(SpotMarks.fromLocal(bump(1, -0.9, lat = 30.0, lon = 31.0), cfg))
+        val mine = listOf(SpotMarks.fromLocal(bump(1, lat = 30.0, lon = 31.0), cfg))
         val shared = listOf(
             SpotMarks.fromShared(remote(10, BumpKind.BUMP, lat = 30.0001, lon = 31.0), cfg),   // ~11 m away: the same bump
             SpotMarks.fromShared(remote(11, BumpKind.BUMP, lat = 30.001, lon = 31.0), cfg),    // ~110 m away: another one
@@ -99,9 +99,9 @@ class SpotMarksTest {
 
     @Test fun nearestFirstWithinRadius() {
         val spots = listOf(
-            SpotMarks.fromLocal(bump(1, -0.9, lat = 30.010, lon = 31.0), cfg),
-            SpotMarks.fromLocal(bump(2, -0.9, lat = 30.001, lon = 31.0), cfg),
-            SpotMarks.fromLocal(bump(3, -0.9, lat = 30.100, lon = 31.0), cfg),
+            SpotMarks.fromLocal(bump(1, lat = 30.010, lon = 31.0), cfg),
+            SpotMarks.fromLocal(bump(2, lat = 30.001, lon = 31.0), cfg),
+            SpotMarks.fromLocal(bump(3, lat = 30.100, lon = 31.0), cfg),
         )
         assertEquals(listOf(2L, 1L, 3L), SpotMarks.nearest(spots, 30.0, 31.0).map { it.localId })
         assertEquals(listOf(2L, 1L), SpotMarks.nearest(spots, 30.0, 31.0, radiusM = 2_000.0).map { it.localId })
