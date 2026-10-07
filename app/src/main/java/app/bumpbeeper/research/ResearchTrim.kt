@@ -128,7 +128,7 @@ internal object ResearchTrim {
             return kept
         } catch (e: UncheckedIOException) {
             tmp.delete()
-            throw e.cause
+            throw e.cause ?: IOException(e)
         } catch (e: Exception) {
             tmp.delete()
             throw e
