@@ -94,13 +94,13 @@ class ResearchUploaderTest {
             val from = seg * 60_000L
             val lines = ArrayList<String>()
             for (ms in from until minOf(toMs, from + 60_000) step 100) {
-                lines.add("$ms,a,10,20,9810")
-                if (ms % 1000 == 0L) lines.add("$ms,G,${300_000_000 + ms / 1000 * 898},312000000,,1000,0,400,,,,5")
+                lines.add("${ms * 10},a,10,20,9810")   // rr2: t in 0.1 ms
+                if (ms % 1000 == 0L) lines.add("${ms * 10},G,${300_000_000 + ms / 1000 * 898},312000000,,1000,0,400,,,,5")
             }
             val name = "rr_0a1b2c3d_${s}_00$seg.csv.gz" + if (part && seg == 1) ResearchWriter.PART else ""
             val f = File(ResearchFiles.dir(ctx).apply { mkdirs() }, name)
-            GZIPOutputStream(FileOutputStream(f)).use { it.write((listOf("# format=rr1") + lines).joinToString("\n", postfix = "\n").toByteArray()) }
-            f.setLastModified(now - 10 * 60_000)
+            GZIPOutputStream(FileOutputStream(f)).use { it.write((listOf("# format=rr2") + lines).joinToString("\n", postfix = "\n").toByteArray()) }
+            f.setLastModified(now - if (part && seg == 1) 1_000 else 10 * 60_000)   // an open file is flushed every 2 s
         }
     }
 
@@ -136,7 +136,7 @@ class ResearchUploaderTest {
             assertEquals("reserved bytes = body", body.size.toLong(), s.reserved[i].getLong("bytes"))
             val ts = GZIPInputStream(body.inputStream()).bufferedReader().readLines().filter { !it.startsWith("#") }
                 .map { it.substringBefore(',').toLong() }
-            assertTrue("nothing from the first or last 300 m", ts.isNotEmpty() && ts.all { it in 31_000L..89_000L })
+            assertTrue("nothing from the first or last 300 m", ts.isNotEmpty() && ts.all { it in 310_000L..890_000L })
         }
         assertTrue(uploaded(0) && uploaded(1))
         assertEquals(0, ResearchUploader.status.files)
