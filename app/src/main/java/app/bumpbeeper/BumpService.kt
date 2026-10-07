@@ -35,7 +35,6 @@ import app.bumpbeeper.auto.TripCheck
 import app.bumpbeeper.auto.TripHold
 import app.bumpbeeper.crash.CrashLog
 import app.bumpbeeper.research.ResearchFiles
-import app.bumpbeeper.research.ResearchRecorder
 import app.bumpbeeper.sync.CachedSpotSource
 import app.bumpbeeper.sync.LiveSpeedLimit
 import app.bumpbeeper.sync.OutboxSink
@@ -235,8 +234,6 @@ class BumpService : Service(), SensorEventListener, LocationListener, EngineList
     private var live: LiveSpeedLimit? = null            // only used on the engine thread: live road speed limit (opt-in)
     private var warner = SpeedWarner()                  // only used on the engine thread
     @Volatile private var lastHazardWarnMs = -1L        // elapsedRealtime of the last bump / pothole warning
-    /** Research recording (opt-in): all sensors into local files, on threads of its own; started and stopped with the trip. */
-    @Volatile private var research: ResearchRecorder? = null
     private var wakeLock: PowerManager.WakeLock? = null
     private var tripId = 0L
     private var sensorOffsetMs: Long? = null
@@ -287,11 +284,6 @@ class BumpService : Service(), SensorEventListener, LocationListener, EngineList
             val ms = Prefs.autoStopMinutes(this) * 60_000L
             handler?.post { autoStop?.stopAfterMs = ms }
         }
-        // Research recording switched off during a trip: stop it now (switched on, it starts with the next trip).
-        if ((key == Prefs.RESEARCH_RECORDING || key == null) && !Prefs.researchRecording(this)) {
-            research?.stop()
-            research = null
-        }
         if (!engineKey && key != Prefs.LABEL_MODE) return@OnSharedPreferenceChangeListener
         handler?.post {
             if (engineKey) {
@@ -335,15 +327,11 @@ class BumpService : Service(), SensorEventListener, LocationListener, EngineList
                 main.removeCallbacks(stopForCarGone)
                 main.postDelayed(stopForCarGone, CAR_GONE_GRACE_MS)
                 handler?.post { autoStop?.carConnected = false }
-                research?.carBluetooth(false)
                 LiveState.lastEvent = "Car disconnected: stopping in ${CAR_GONE_GRACE_MS / 1000} s"
             } else stopIfIdle()
             ACTION_WATCH -> startWatching()
             ACTION_UNWATCH -> stopWatching()
-            ACTION_WALKING -> if (running) {
-                handler?.post { autoStop?.leftVehicle() }
-                research?.activity(ResearchRecorder.ON_FOOT)
-            } else stopIfIdle()
+            ACTION_WALKING -> if (running) handler?.post { autoStop?.leftVehicle() } else stopIfIdle()
             else -> {
                 main.removeCallbacks(stopForCarGone)   // car came back (or Start pressed): keep going
                 startRecording(intent.getStringExtra(EXTRA_SOURCE))
@@ -452,7 +440,6 @@ class BumpService : Service(), SensorEventListener, LocationListener, EngineList
         val h = handler ?: return false
         if (!LiveState.labelMode) return false
         return h.post {
-            research?.label(kind)
             val tw = trace ?: return@post
             val f = engine?.lastFix
             try {
@@ -494,7 +481,6 @@ class BumpService : Service(), SensorEventListener, LocationListener, EngineList
         if (running) {
             if (source == SOURCE_CAR) {
                 LiveState.lastEvent = "Car reconnected: still recording"
-                research?.carBluetooth(true)
                 handler?.post {
                     autoStop?.carConnected = true
                     // The car's Bluetooth confirms it was a drive: nothing to ask, nothing to hold.
@@ -502,10 +488,7 @@ class BumpService : Service(), SensorEventListener, LocationListener, EngineList
                     sink?.held = false
                 }
             }
-            if (source == SOURCE_VEHICLE) {
-                handler?.post { autoStop?.backInVehicle() }
-                research?.activity(ResearchRecorder.IN_VEHICLE)
-            }
+            if (source == SOURCE_VEHICLE) handler?.post { autoStop?.backInVehicle() }
             return
         }
         createChannel()
@@ -614,9 +597,6 @@ class BumpService : Service(), SensorEventListener, LocationListener, EngineList
         LiveState.hasGyro = sm.getDefaultSensor(Sensor.TYPE_GYROSCOPE) != null
 
         requestGps(PowerPolicy.MOVING_GPS_MS, t.looper)
-        // Research recording (opt-in): every sensor at up to 200 Hz into local files, on threads of its own. Android then
-        // hands that rate to the listeners above too; the engine's filters go by sample time, so they cope.
-        research = ResearchRecorder.startIfEnabled(this, source)
 
         Prefs.sp(this).registerOnSharedPreferenceChangeListener(prefListener)
     }
@@ -631,8 +611,6 @@ class BumpService : Service(), SensorEventListener, LocationListener, EngineList
         Prefs.sp(this).unregisterOnSharedPreferenceChangeListener(prefListener)
         (getSystemService(Context.SENSOR_SERVICE) as SensorManager).unregisterListener(this)
         (getSystemService(Context.LOCATION_SERVICE) as LocationManager).removeUpdates(this)
-        research?.stop()
-        research = null
 
         val h = handler
         val t = thread
@@ -760,7 +738,6 @@ class BumpService : Service(), SensorEventListener, LocationListener, EngineList
     override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {}
 
     override fun onLocationChanged(location: Location) {
-        research?.onLocation(location)   // every fix, also those before the engine is ready
         val eng = engine ?: return
         val fix = Fix(
             location.elapsedRealtimeNanos / 1_000_000,

@@ -2,6 +2,7 @@ package app.bumpbeeper
 
 import android.content.Context
 import android.content.SharedPreferences
+import app.bumpbeeper.research.ResearchFiles
 
 /** User settings, stored on the phone. */
 object Prefs {
@@ -166,11 +167,15 @@ object Prefs {
     /**
      * Research recording (Sprint 1): every useful phone sensor at full rate during trips, into local files
      * ([app.bumpbeeper.research.ResearchRecorder]). Off by default. Read at each trip start; switching it off stops a
-     * running one at once. Its consent screen and upload come separately (P0-4).
+     * running one at once. Switching it on gets a new random research id, so files of different opt-ins can't be linked.
+     * Its consent screen and upload come separately (P0-4).
      */
     const val RESEARCH_RECORDING = "research_recording"
     fun researchRecording(ctx: Context): Boolean = sp(ctx).getBoolean(RESEARCH_RECORDING, false)
-    fun setResearchRecording(ctx: Context, on: Boolean) = sp(ctx).edit().putBoolean(RESEARCH_RECORDING, on).apply()
+    fun setResearchRecording(ctx: Context, on: Boolean) {
+        if (on && !researchRecording(ctx)) ResearchFiles.renewId(ctx)
+        sp(ctx).edit().putBoolean(RESEARCH_RECORDING, on).apply()
+    }
 
     fun autoStart(ctx: Context): Boolean = sp(ctx).getBoolean(AUTO_START, false)
     fun carAddress(ctx: Context): String? = sp(ctx).getString(CAR_ADDRESS, null)

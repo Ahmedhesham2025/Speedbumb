@@ -23,14 +23,17 @@ Only while a trip records, and only when `research_recording` is on (off by defa
 - gravity, linear acceleration and both rotation vectors at 100 Hz;
 - magnetometer, proximity, light, pressure and step detector at their normal rate.
 
-It also listens for GNSS status and for screen, unlock and battery broadcasts, and reads the audio mode and route every 2 s.
-It asks for no GPS of its own: it reuses the recording's fixes. Everything is unregistered when the trip stops.
-Code: `app/src/main/java/app/bumpbeeper/research/`.
+It also listens for GNSS status and for screen, unlock and battery broadcasts, and reads the lock state and the audio
+mode and route every 2 s. It asks for no GPS of its own: it reuses the recording's fixes. Everything is unregistered when
+the trip stops. Code: `app/src/main/java/app/bumpbeeper/research/`.
 
-Expected cost: about +1–2 % per hour on top of a normal recording. GPS and the wake lock are already on and cost more.
-Android delivers the fastest rate any listener asks for to every listener, so while research runs the engine's
-50 Hz listeners also get 200 Hz. The engine's filters go by sample time, so they cope; its CPU work grows about fourfold
-but stays small. To measure: research files hold a `bat` line at every percent step; compare a trip with research to a
+The sensors only research uses are batched (up to 1 s), so the sensor hub hands them over in bursts. The accelerometer
+and gyroscope are not: the engine reads them at once. The proximity sensor is Android's wake-up one; the trip's wake
+lock keeps the phone awake anyway, but its infrared emitter stays on for the whole trip. The file writer runs at
+background priority.
+
+Expected cost (not measured yet): about +1–2 % per hour on top of a normal recording. GPS and the wake lock are already
+on and cost more. To measure: research files hold a `bat` line at every percent step; compare a trip with research to a
 similar trip without it on the same phone.
 
 ## How to measure
