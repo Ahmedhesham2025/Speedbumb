@@ -6,6 +6,7 @@ import android.app.Application
 import android.os.Bundle
 import app.bumpbeeper.MainActivity
 import app.bumpbeeper.R
+import app.bumpbeeper.research.ResearchFiles
 import app.bumpbeeper.sync.RestoreReset
 
 /**
@@ -21,6 +22,8 @@ class AppStart : Application() {
         TripHold.installBuiltIns()
         TripHold.installTraining(this)
         if (RestoreReset.noticePending(this)) registerActivityLifecycleCallbacks(RestoreNotice())
+        // Research files: 14 days / 2 GB at most, also after research recording was switched off (background thread).
+        ResearchFiles.tidyLater(this)
     }
 
     /** "Restored from a backup: 'Help improve detection' was switched off", once, when the app is next opened. */
