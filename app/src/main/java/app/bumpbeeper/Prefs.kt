@@ -176,7 +176,6 @@ object Prefs {
         cfg.leadSeconds = leadSeconds(ctx).toDouble()
         cfg.quietBelowKmh = quietBelowKmh(ctx).toDouble()
         cfg.maxSpeedKmh = maxBumpKmh(ctx).toDouble()
-        cfg.warnPotholes = warnPotholes(ctx)
         cfg.harshPotholeMs2 = harshMs2(ctx).toDouble()
     }
 }

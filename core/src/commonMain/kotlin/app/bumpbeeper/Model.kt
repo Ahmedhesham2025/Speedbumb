@@ -240,24 +240,24 @@ interface BumpStore {
 
 /** How a warning should sound. The engine picks it (so it can be tested); the app plays it. */
 enum class WarnSound {
-    /** Speed bump: two high beeps. */
-    BUMP,
-    /** Pothole that is not harsh: two low "bong"s. */
-    POTHOLE,
-    /** Harsh pothole: the voice says which side it is on. */
-    HARSH_POTHOLE,
-    /** Not sure yet what it is: one mid beep. */
-    UNSURE,
+    /** A spot that is only a "maybe" ([Confidence.SOFT]), whatever its severity: one soft, short beep. */
+    SOFT,
+    /** Mild bump: one beep. */
+    MILD,
+    /** Moderate bump: two beeps. */
+    MODERATE,
+    /** Strong bump: the voice says "Strong bump ahead." ([Phrases.strongBump]). */
+    STRONG,
 }
 
 /** Several known spots close together ahead: announced once by voice ("3 bumps ahead") instead of one sound each. */
 class HazardCluster(
     /** Spots in the group, the warned one included (at least 3). */
     val count: Int,
-    /** What they all are, or null when mixed (or when any of them is unsure). */
-    val kind: BumpKind?,
-    /** Side of the nearest harsh pothole in the group, or null if there is none. */
-    val harshSide: Side?,
+    /** The strongest band in the group, "maybe" spots included. */
+    val maxSeverity: Severity,
+    /** At least one spot in the group is confirmed ([Confidence.FULL]). The app doesn't announce a group of maybes. */
+    val anyFull: Boolean,
 )
 
 /** One warning ahead of a spot. [cluster] is set when more spots follow closely; they then stay silent. */

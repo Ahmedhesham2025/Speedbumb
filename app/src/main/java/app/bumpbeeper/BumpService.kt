@@ -521,8 +521,8 @@ class BumpService : Service(), SensorEventListener, LocationListener, EngineList
 
         db = BumpDb(this)
         beeper = Beeper(this)
-        // No speech available → the two-tone pothole sound instead, and no group announcements (EngineConfig.groupWarnings).
-        voice = Voice(this, { ok -> engine?.cfg?.groupWarnings = ok }) { beeper.pothole() }
+        // No speech available → the two-tone strong-bump sound instead, and no group announcements (EngineConfig.groupWarnings).
+        voice = Voice(this, { ok -> engine?.cfg?.groupWarnings = ok }) { beeper.strong() }
         tripId = db.startTrip(System.currentTimeMillis())
 
         val t = HandlerThread("bump-engine").also { it.start() }
@@ -837,15 +837,16 @@ class BumpService : Service(), SensorEventListener, LocationListener, EngineList
     override fun onWarning(w: Warning) {
         lastHazardWarnMs = SystemClock.elapsedRealtime()
         val b = w.spot
-        val plain = { beeper.warn(w.sound, w.speedKmh) }
+        val plain = { beeper.warn(w.sound) }
         // The group line couldn't be spoken: play this spot's sound and let the silenced ones warn on their own.
         val groupFallback = { plain(); engine?.ungroup(); Unit }
         val v = voice
         when {
-            // Several spots close together: say it once ("3 bumps ahead"); the ones after it stay silent.
-            w.cluster != null && v != null -> v.cluster(w.cluster!!, groupFallback)
+            // Several spots close together: say it once ("3 bumps ahead"); the ones after it stay silent. A group of
+            // spots that are all only a "maybe" is not announced: each one plays its own soft beep instead.
+            w.cluster != null && w.cluster!!.anyFull && v != null -> v.cluster(w.cluster!!, groupFallback)
             w.cluster != null -> groupFallback()
-            w.sound == WarnSound.HARSH_POTHOLE && v != null -> v.pothole(b.side)
+            w.sound == WarnSound.STRONG && v != null -> v.strongBump()
             else -> plain()
         }
         val group = w.cluster?.let { " (group of ${it.count})" } ?: ""

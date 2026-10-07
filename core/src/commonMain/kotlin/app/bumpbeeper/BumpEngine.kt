@@ -62,8 +62,6 @@ class EngineConfig {
     var maxAlertDistM = 250.0
     /** Don't beep if you are already slower than this: you have clearly seen it. 0 = always beep. (setting) */
     @Volatile var quietBelowKmh = 20.0
-    /** Warn before potholes: low bongs, or the voice for harsh ones. Off = potholes are recorded and counted, but silent. (setting) */
-    @Volatile var warnPotholes = true
     /** A pothole whose hits average at least this jolt is "harsh" (≈ 0.5 g) and gets the voice. (setting) */
     @Volatile var harshPotholeMs2 = 5.0
     /**
@@ -160,7 +158,7 @@ class JoltShape(
  *
  * Shared map (both optional; null = behaves exactly as without them):
  *  - [spotSource]: confirmed spots from other phones warn like your own (same lead time, direction, quiet and
- *    harsh-pothole rules), logged as `beep` / `beep_quiet` with a note starting with `remote`; in those rows `bumpId` is the
+ *    severity rules), logged as `beep` / `beep_quiet` with a note starting with `remote`; in those rows `bumpId` is the
  *    shared map's server id, not a local spot id. They are never stored and never count passes. A spot of your
  *    own within [EngineConfig.matchRadiusM] and the same direction replaces its shared twin, so it warns once,
  *    and muting your spot silences the shared one too. [muteBump] on a shared spot stores a muted spot of your
@@ -946,11 +944,11 @@ class BumpEngine(
                 // never the silenced ones behind it.
                 lastBeepedId = b.id
                 trip.beeps++
-                val kind = b.kind.name.lowercase()
+                val sound = soundFor(b)
                 val cluster = clusterAhead(b, d, f)
-                val note = (if (remote) "remote $kind" else kind) + (if (cluster != null) " group of ${cluster.count}" else "")
+                val note = (if (remote) "remote " else "") + sound.name.lowercase() + (if (cluster != null) " group of ${cluster.count}" else "")
                 log("beep", logId, f.lat, f.lon, speedKmh, Double.NaN, Double.NaN, d, note)
-                listener.onWarning(Warning(b, d, speedKmh, soundFor(b), cluster))
+                listener.onWarning(Warning(b, d, speedKmh, sound, cluster))
             }
         }
     }
@@ -961,14 +959,17 @@ class BumpEngine(
      */
     fun ungroup() = grouped.clear()
 
-    /** Should this spot warn at all? Not when muted; potholes only with pothole warnings on. */
-    private fun warnable(b: Bump): Boolean = !b.isMuted(cfg) && (b.kind != BumpKind.POTHOLE || cfg.warnPotholes)
+    /** Should this spot warn at all? Not when muted. */
+    private fun warnable(b: Bump): Boolean = !b.isMuted(cfg)
 
-    private fun soundFor(b: Bump): WarnSound = when (b.kind) {
-        BumpKind.BUMP -> WarnSound.BUMP
-        BumpKind.POTHOLE -> if (b.isHarsh(cfg)) WarnSound.HARSH_POTHOLE else WarnSound.POTHOLE
-        BumpKind.UNSURE -> WarnSound.UNSURE
-    }
+    /** A "maybe" spot gets one soft beep whatever its severity; a confirmed one the sound of its band. */
+    private fun soundFor(b: Bump): WarnSound =
+        if (b.confidence(cfg) == Confidence.SOFT) WarnSound.SOFT
+        else when (b.severity(cfg)) {
+            Severity.MILD -> WarnSound.MILD
+            Severity.MODERATE -> WarnSound.MODERATE
+            Severity.STRONG -> WarnSound.STRONG
+        }
 
     /**
      * When [first] warns at [firstDist] m: the other warnable spots (your own and shared) that lie ahead in the same
@@ -1000,11 +1001,8 @@ class BumpEngine(
         // Silent until about when you get there (twice the time at today's speed, plus a margin); cleared
         // earlier if you turn round or drive away from it.
         for ((s, ds) in members) grouped[s.id] = f.timeMs + 2 * (ds / max(f.speedMps, 3.0) * 1000).toLong() + 30_000L
-        val all = listOf(first to firstDist) + members.sortedBy { it.second }
-        val kinds = all.mapTo(HashSet()) { it.first.kind }
-        val kind = kinds.singleOrNull()?.takeIf { it != BumpKind.UNSURE }
-        val harsh = all.firstOrNull { it.first.kind == BumpKind.POTHOLE && it.first.isHarsh(cfg) }?.first
-        return HazardCluster(all.size, kind, harsh?.side)
+        val all = listOf(first) + members.map { it.first }
+        return HazardCluster(all.size, all.maxOf { it.severity(cfg) }, all.any { it.confidence(cfg) == Confidence.FULL })
     }
 
     private fun finishPass(b: Bump, a: Approach, f: Fix) {

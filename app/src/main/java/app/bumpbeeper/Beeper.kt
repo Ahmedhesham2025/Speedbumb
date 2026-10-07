@@ -23,30 +23,27 @@ class Beeper(private val ctx: Context) {
     private val am = ctx.getSystemService(Context.AUDIO_SERVICE) as AudioManager
     private val main = Handler(Looper.getMainLooper())
 
-    /** Speed bump warning: [count] short high beeps. */
+    /** Bump warning: [count] short high beeps (mild 1, moderate 2). */
     fun beep(count: Int) = play(tones(DoubleArray(count) { 1046.5 }, 140, 90, 0.9))
+
+    /** A spot that is only a "maybe": one beep, quieter and shorter than the bump beeps. */
+    fun soft() = play(tones(doubleArrayOf(1046.5), 90, 0, 0.45))
 
     /**
      * Over the road's speed limit: a rising two-note chime (E5 → B5, ringing out), the opposite of the falling
-     * pothole "uh-oh" and unlike the flat bump beeps. The voice then says the limit, [SPEEDING_MS] after it starts.
+     * strong-bump "uh-oh" and unlike the flat bump beeps. The voice then says the limit, [SPEEDING_MS] after it starts.
      */
     fun speeding() = play(tones(doubleArrayOf(659.3, 987.8), 180, 40, 0.85, decayMs = 150.0))
 
-    /** Harsh pothole without speech: a falling two-tone "uh-oh", so you can tell it apart without looking. */
-    fun pothole() = play(tones(doubleArrayOf(784.0, 523.3), 220, 70, 0.9))
+    /** Strong bump without speech: a falling two-tone "uh-oh", so you can tell it apart without looking. */
+    fun strong() = play(tones(doubleArrayOf(784.0, 523.3), 220, 70, 0.9))
 
-    /** Pothole warning: two low, round "bong"s that ring out, clearly lower and softer-edged than the bump beeps. */
-    fun bong() = play(tones(doubleArrayOf(392.0, 392.0), 320, 110, 0.95, decayMs = 110.0))
-
-    /** Not sure yet what the spot is: one mid beep. */
-    fun unsure() = play(tones(doubleArrayOf(784.0), 160, 0, 0.9))
-
-    /** The sound for one warning (a harsh pothole's voice is played by [Voice]; this is its fallback). */
-    fun warn(sound: WarnSound, speedKmh: Double) = when (sound) {
-        WarnSound.BUMP -> beep(if (speedKmh >= 50) 3 else 2)
-        WarnSound.POTHOLE -> bong()
-        WarnSound.HARSH_POTHOLE -> pothole()
-        WarnSound.UNSURE -> unsure()
+    /** The sound for one warning (a strong bump's voice is played by [Voice]; this is its fallback). */
+    fun warn(sound: WarnSound) = when (sound) {
+        WarnSound.SOFT -> soft()
+        WarnSound.MILD -> beep(1)
+        WarnSound.MODERATE -> beep(2)
+        WarnSound.STRONG -> strong()
     }
 
     /** Soft tick when a new bump is recorded on the first pass. */

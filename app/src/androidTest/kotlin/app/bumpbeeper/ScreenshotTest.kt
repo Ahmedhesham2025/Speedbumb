@@ -166,7 +166,7 @@ class ScreenshotTest {
         LiveState.hasGyro = true
         LiveState.forwardKnown = true
         val lang = ctx.resources.configuration.locales[0].language
-        LiveState.lastEvent = Phrases.pothole(if (lang == "ar") "ar" else "en", Side.RIGHT)
+        LiveState.lastEvent = Phrases.strongBump(if (lang == "ar") "ar" else "en")
         // A calm road with two jolts in the last 30 s, for the jolt meter.
         for (i in 0 until LiveState.GRAPH_POINTS) {
             val bump = when (i) { in 120..126 -> 4.2f - (i - 123) * (i - 123) * 0.3f; in 230..234 -> 3.4f; else -> 0f }

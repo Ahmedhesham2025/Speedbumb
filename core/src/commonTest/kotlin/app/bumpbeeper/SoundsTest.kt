@@ -5,12 +5,12 @@ import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 import kotlin.test.Test
 
-/** Warning sounds: first-pass tick, a sound per kind, groups of spots announced once, and their phrases. */
+/** Warning sounds: first-pass tick, a sound per severity band (soft for a "maybe"), groups announced once, phrases. */
 class SoundsTest {
     @Test fun firstPassTick() = Scenarios.firstPassTick()
     @Test fun warningSounds() = Scenarios.warningSounds()
     @Test fun groupOfBumps() = Scenarios.groupOfBumps()
-    @Test fun mixedGroupNamesHarshPothole() = Scenarios.mixedGroupNamesHarshPothole()
+    @Test fun groupNamesStrongBump() = Scenarios.groupNamesStrongBump()
 
     @Test fun harshThresholdDefaultIs5() {
         val cfg = EngineConfig()
@@ -23,29 +23,25 @@ class SoundsTest {
     }
 
     @Test fun groupPhrasesEnglish() {
-        assertEquals("3 bumps ahead.", Phrases.cluster("en", 3, BumpKind.BUMP, null))
-        assertEquals("4 potholes ahead.", Phrases.cluster("en", 4, BumpKind.POTHOLE, null))
-        assertEquals("3 hazards ahead.", Phrases.cluster("en", 3, null, null))
-        assertEquals("3 hazards ahead, harsh pothole on the right.", Phrases.cluster("en", 3, null, Side.RIGHT))
-        assertEquals("5 potholes ahead, harsh pothole on the left.", Phrases.cluster("en", 5, BumpKind.POTHOLE, Side.LEFT))
-        assertEquals("3 hazards ahead, one harsh pothole.", Phrases.cluster("en", 3, null, Side.UNKNOWN))
-        // Unknown language falls back to English, like the pothole phrase.
-        assertEquals("3 bumps ahead.", Phrases.cluster("fr", 3, BumpKind.BUMP, null))
-        assertEquals(null, Phrases.cluster("en", 2, BumpKind.BUMP, null))   // fewer than 3: no group line
+        assertEquals("3 bumps ahead.", Phrases.cluster("en", 3, anyStrong = false))
+        assertEquals("4 bumps ahead, one strong.", Phrases.cluster("en", 4, anyStrong = true))
+        // Unknown language falls back to English.
+        assertEquals("3 bumps ahead.", Phrases.cluster("fr", 3, anyStrong = false))
+        assertEquals(null, Phrases.cluster("en", 2, anyStrong = true))   // fewer than 3: no group line
     }
 
     @Test fun groupPhrasesArabic() {
-        assertEquals("3 مطبات قدام.", Phrases.cluster("ar", 3, BumpKind.BUMP, null))
-        assertEquals("4 حفر قدام.", Phrases.cluster("ar", 4, BumpKind.POTHOLE, null))
-        assertEquals("3 عقبات قدام، حفرة عنيفة على اليمين.", Phrases.cluster("ar", 3, null, Side.RIGHT))
-        assertEquals("3 عقبات قدام، حفرة عنيفة على الشمال.", Phrases.cluster("ar", 3, null, Side.LEFT))
+        assertEquals("3 مطبات قدام.", Phrases.cluster("ar", 3, anyStrong = false))
+        assertEquals("4 مطبات قدام، منهم واحد قوي.", Phrases.cluster("ar", 4, anyStrong = true))
         // 11 and up take the singular in Arabic.
-        assertEquals("12 مطب قدام.", Phrases.cluster("ar", 12, BumpKind.BUMP, null))
+        assertEquals("12 مطب قدام.", Phrases.cluster("ar", 12, anyStrong = false))
+        assertEquals(null, Phrases.cluster("ar", 2, anyStrong = false))
     }
 
-    @Test fun potholePhraseUnchanged() {
-        assertEquals("Pothole on the right. Keep left.", Phrases.pothole("en", Side.RIGHT))
-        assertEquals("حفرة على اليمين. خليك شمال.", Phrases.pothole("ar", Side.RIGHT))
+    @Test fun strongBumpPhrase() {
+        assertEquals("Strong bump ahead.", Phrases.strongBump("en"))
+        assertEquals("مطب قوي قدام.", Phrases.strongBump("ar"))
+        assertEquals("Strong bump ahead.", Phrases.strongBump("fr"))
     }
 
     /** A listener that only knows [EngineListener.onBeep] (older code) still hears every warning. */
@@ -54,15 +50,34 @@ class SoundsTest {
         val l = object : EngineListener {
             override fun onBeep(b: Bump, distanceM: Double, speedKmh: Double) { beeps++ }
         }
-        l.onWarning(Warning(Bump(1, 0.0, 0.0, 0.0, 1, 1, 0, 1, 0, 0), 90.0, 50.0, WarnSound.BUMP, null))
+        l.onWarning(Warning(Bump(1, 0.0, 0.0, 0.0, 1, 1, 0, 1, 0, 0), 90.0, 50.0, WarnSound.MODERATE, null))
         assertEquals(1, beeps)
     }
 
     // ---------- groups, driven straight from GPS fixes (no simulator) ----------
 
     private fun at(p: Double) = Geo.move(30.0444, 31.2357, 90.0, p)
-    private fun shared(id: Long, p: Double, kind: BumpKind, heading: Double = 90.0) =
-        at(p).let { RemoteSpot(id, it[0], it[1], heading, kind, Side.RIGHT, 7.0, 3) }
+    private fun shared(id: Long, p: Double, kind: BumpKind, heading: Double = 90.0, severity: Double = 7.0, devices: Int = 3) =
+        at(p).let { RemoteSpot(id, it[0], it[1], heading, kind, Side.RIGHT, severity, devices) }
+
+    /**
+     * Confirmed spots (2+ phones) sound by their band: mild one beep, moderate two, strong the voice. A "maybe" (one
+     * phone only, or a shared pothole from before v2) gets the soft beep whatever its jolt.
+     */
+    @Test fun soundPerBandAndConfidence() {
+        val r = Run(listOf(
+            shared(11, 300.0, BumpKind.BUMP, severity = 3.0), shared(12, 650.0, BumpKind.BUMP, severity = 4.2),
+            shared(13, 1000.0, BumpKind.BUMP, severity = 7.0), shared(14, 1350.0, BumpKind.POTHOLE, severity = 7.0),
+            shared(15, 1700.0, BumpKind.BUMP, severity = 7.0, devices = 1),
+        ))
+        r.drive(0.0, 2000.0)
+        assertEquals(
+            listOf(WarnSound.MILD, WarnSound.MODERATE, WarnSound.STRONG, WarnSound.SOFT, WarnSound.SOFT),
+            r.warnings.map { it.sound }, r.describe(),
+        )
+        assertTrue(r.warnings.all { it.cluster == null })
+        assertEquals(listOf("mild", "moderate", "strong", "soft", "soft"), r.store.events.filter { it.type == "beep" }.map { it.note.removePrefix("remote ") })
+    }
 
     /** Shared bump, harsh pothole and unsure spot 60 m apart on an east-going road. */
     private val three = listOf(shared(1, 800.0, BumpKind.BUMP), shared(2, 860.0, BumpKind.POTHOLE), shared(3, 920.0, BumpKind.UNSURE))
