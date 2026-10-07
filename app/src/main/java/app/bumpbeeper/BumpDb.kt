@@ -109,7 +109,10 @@ class BumpDb(ctx: Context) : SQLiteOpenHelper(ctx, "bumps.db", null, 7), BumpSto
                     Bump(
                         c.getLong(0), c.getDouble(1), c.getDouble(2), c.getDouble(3),
                         c.getInt(4), c.getInt(5), c.getInt(6), c.getInt(7), c.getLong(8), c.getLong(9),
-                        c.getInt(10) != 0, c.getDouble(11), c.getInt(12), c.getDouble(13), c.getInt(14), c.getDouble(15),
+                        c.getInt(10) != 0, peakAvg = c.getDouble(15),
+                        // Until DB v8 has its own columns: the index is the average jolt (the same average for now),
+                        // and an old pothole spot is one whose old kind votes said pothole.
+                        sevIndex = c.getDouble(15), legacy = isOldPothole(c.getDouble(11), c.getInt(12)),
                     )
                 )
             }
@@ -132,9 +135,13 @@ class BumpDb(ctx: Context) : SQLiteOpenHelper(ctx, "bumps.db", null, 7), BumpSto
         put("hits", b.hits); put("passes", b.passes); put("misses", b.misses)
         put("n_pos", b.nPos); put("first_seen", b.firstSeen); put("last_seen", b.lastSeen)
         put("user_muted", if (b.userMuted) 1 else 0)
-        put("kind_score", b.kindScore); put("kind_votes", b.kindVotes)
-        put("side_score", b.sideScore); put("side_votes", b.sideVotes); put("peak_avg", b.peakAvg)
+        // Until DB v8: the old kind columns keep the "old pothole spot" flag, cleared once it is felt again.
+        put("kind_score", if (b.legacy) 1.0 else 0.0); put("kind_votes", if (b.legacy) 1 else 0)
+        put("peak_avg", b.peakAvg)
     }
+
+    /** A spot from before v2 whose kind votes said pothole ([Bump.legacy]): the old kind margin was 0.25. */
+    private fun isOldPothole(kindScore: Double, kindVotes: Int) = kindVotes > 0 && kindScore >= 0.25
 
     override fun logEvent(e: BumpEvent) {
         val v = ContentValues().apply {
@@ -161,7 +168,7 @@ class BumpDb(ctx: Context) : SQLiteOpenHelper(ctx, "bumps.db", null, 7), BumpSto
         val v = ContentValues().apply {
             put("end_ts", ts); put("hits", s.hits); put("new_bumps", s.newBumps); put("beeps", s.beeps)
             put("misses", s.misses); put("rejected", s.rejected); put("distance_m", s.distanceM)
-            put("potholes", s.potholes)
+            put("potholes", s.strong)   // until DB v8 / the trips screen rework: strong bumps felt
             if (d != null) {
                 put("moving_s", d.movingS); put("speeding_s", d.speedingS); put("speeding_excess", d.speedingExcess)
                 put("max_speed", d.maxSpeedKmh); put("harsh_brakes", d.harshBrakes); put("harsh_accels", d.harshAccels)
@@ -289,14 +296,15 @@ class BumpDb(ctx: Context) : SQLiteOpenHelper(ctx, "bumps.db", null, 7), BumpSto
 
     // ---------------- screen helpers ----------------
 
+    /** Until the screens are reworked: [potholes] = old pothole spots not felt again, [harsh] = strong, [unsure] = maybe. */
     class Counts(val total: Int, val muted: Int, val bumps: Int, val potholes: Int, val harsh: Int, val unsure: Int)
 
     fun counts(cfg: EngineConfig = EngineConfig()): Counts {
         val all = loadBumps()
         return Counts(
             all.size, all.count { it.isMuted(cfg) },
-            all.count { it.kind == BumpKind.BUMP }, all.count { it.kind == BumpKind.POTHOLE },
-            all.count { it.isHarsh(cfg) }, all.count { it.kind == BumpKind.UNSURE },
+            all.count { !it.legacy }, all.count { it.legacy },
+            all.count { it.severity(cfg) == Severity.STRONG }, all.count { it.confidence(cfg) == Confidence.SOFT },
         )
     }
 
@@ -345,10 +353,10 @@ class BumpDb(ctx: Context) : SQLiteOpenHelper(ctx, "bumps.db", null, 7), BumpSto
                 .append(b.hits).append(',').append(b.passes).append(',').append(b.misses).append(',')
                 .append(num(b.hitRate, 2)).append(',').append(if (b.isMuted(cfg)) 1 else 0).append(',')
                 .append(time(b.firstSeen)).append(',').append(time(b.lastSeen)).append(',')
-                .append(b.kind.name.lowercase()).append(',').append(num(b.kindScore, 2)).append(',')
-                .append(b.kindVotes).append(',').append(if (b.userMuted) 1 else 0).append(',')
-                .append(if (b.isHarsh(cfg)) 1 else 0).append(',').append(b.side.name.lowercase()).append(',')
-                .append(num(b.sideScore, 2)).append(',').append(b.sideVotes).append(',').append(num(b.peakAvg, 2)).append('\n')
+                // Same columns as before, so older versions still import it: kind_score / kind_votes carry the
+                // "old pothole spot" flag, harsh = strong; there is no side any more.
+                .append("bump,").append(if (b.legacy) "1.00,1," else "0.00,0,").append(if (b.userMuted) 1 else 0).append(',')
+                .append(if (b.severity(cfg) == Severity.STRONG) 1 else 0).append(",unknown,0.00,0,").append(num(b.peakAvg, 2)).append('\n')
         }
         return sb.toString()
     }
@@ -367,7 +375,7 @@ class BumpDb(ctx: Context) : SQLiteOpenHelper(ctx, "bumps.db", null, 7), BumpSto
         if (iLat < 0 || iLon < 0 || iHead < 0) return Triple(0, 0, lines.size - 1)
         val iHits = idx("hits"); val iPasses = idx("passes"); val iMisses = idx("misses")
         val iScore = idx("kind_score"); val iVotes = idx("kind_votes"); val iUserMuted = idx("user_muted")
-        val iSide = idx("side_score"); val iSideVotes = idx("side_votes"); val iPeak = idx("peak_avg_ms2")
+        val iPeak = idx("peak_avg_ms2")
 
         val known = loadBumps().toMutableList()
         var added = 0; var dup = 0; var bad = 0
@@ -388,14 +396,11 @@ class BumpDb(ctx: Context) : SQLiteOpenHelper(ctx, "bumps.db", null, 7), BumpSto
                 val hits = (n(iHits) ?: 1).coerceAtLeast(1)
                 val passes = (n(iPasses) ?: hits).coerceAtLeast(hits)
                 val misses = (n(iMisses) ?: (passes - hits)).coerceIn(0, passes)
+                val peak = (d(iPeak) ?: 0.0).coerceIn(0.0, 50.0)
                 val b = Bump(
                     0, lat, lon, hd, hits, passes, misses, hits, now, now,
-                    userMuted = (n(iUserMuted) ?: 0) != 0,
-                    kindScore = (d(iScore) ?: 0.0).coerceIn(-1.0, 1.0),
-                    kindVotes = (n(iVotes) ?: 0).coerceAtLeast(0),
-                    sideScore = (d(iSide) ?: 0.0).coerceIn(-1.0, 1.0),
-                    sideVotes = (n(iSideVotes) ?: 0).coerceAtLeast(0),
-                    peakAvg = (d(iPeak) ?: 0.0).coerceIn(0.0, 50.0),
+                    userMuted = (n(iUserMuted) ?: 0) != 0, peakAvg = peak, sevIndex = peak,
+                    legacy = isOldPothole(d(iScore) ?: 0.0, n(iVotes) ?: 0),
                 )
                 b.id = db.insert("bumps", null, values(b))
                 known.add(b)

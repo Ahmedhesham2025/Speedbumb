@@ -1,9 +1,29 @@
 package app.bumpbeeper
 
 /**
+ * The shared map's old spot kind (server column `kind`), as the app's cache still delivers it. Spots have a
+ * [Severity] and a [Confidence] now: the engine only reads [POTHOLE], which marks an old pothole spot ([Bump.legacy]).
+ */
+@Deprecated("Spots have a Severity and a Confidence now; only the shared map's cache still carries this (until spots_near_v2).")
+enum class BumpKind(val label: String) {
+    BUMP("speed bump"),
+    POTHOLE("pothole"),
+    UNSURE("bump (unsure)"),
+}
+
+/** The shared map's old pothole side (server column `side`). Not used any more: bumps have no side. */
+@Deprecated("Bumps have no side; only the shared map's cache still carries this (until spots_near_v2).")
+enum class Side(val label: String) {
+    LEFT("left side"),
+    RIGHT("right side"),
+    UNKNOWN("side not known yet"),
+}
+
+/**
  * A spot confirmed on the shared online map (hit by other phones), as the app's local cache holds it.
  * The engine warns for it like for a spot it learned itself, but never stores it or counts passes on it.
  */
+@Suppress("DEPRECATION")
 data class RemoteSpot(
     /** Server id (≥ 0). */
     val id: Long,
@@ -11,11 +31,13 @@ data class RemoteSpot(
     val lon: Double,
     /** Direction of travel it was hit in (degrees). It only warns for cars going this way. */
     val heading: Double,
+    /** The old kind: [BumpKind.POTHOLE] makes it an old pothole spot ([Bump.legacy], soft until felt); nothing else is read. */
     val kind: BumpKind,
+    /** Not used any more. */
     val side: Side,
-    /** Average jolt of its hits, m/s² (same unit as [Bump.peakAvg]); a pothole is harsh above [EngineConfig.harshPotholeMs2]. */
+    /** Average jolt of its hits, m/s² (same unit as [Bump.peakAvg]): the spot's [Bump.sevIndex]. */
     val severity: Double,
-    /** How many different phones confirmed it. */
+    /** How many different phones confirmed it: two or more make it [Confidence.FULL], one leaves it soft. */
     val nDevices: Int,
 )
 
@@ -46,9 +68,9 @@ data class Observation(
     val speedKmh: Double,
     /** Vertical jolt, m/s². For pass_clear: the strongest jolt felt near the spot (below the trigger). */
     val peak: Double,
-    /** This hit's pothole score, -1 (speed bump) .. +1 (pothole). 0 for pass_clear. */
+    /** This jolt's shape score, a diagnostic only ([JoltShape.score]): -1 up first and pitching .. +1 down first and rolling. 0 for pass_clear. */
     val kindScore: Double,
-    /** Which wheel: -1 left, +1 right, 0 unknown. 0 for pass_clear. */
+    /** Always 0 since v2 (bumps have no side); kept for the upload format. */
     val sideScore: Double,
     val wallTimeMs: Long,
 )

@@ -94,17 +94,15 @@ class MapPage(private val a: MainActivity) : Page {
         }.start()
     }
 
+    // Until this screen is reworked (A1), the old filters and tiles show old pothole spots not felt again and strong bumps.
     private fun matches(b: Bump) = when (filter) {
-        1 -> b.kind == BumpKind.BUMP || b.kind == BumpKind.UNSURE
-        2 -> b.kind == BumpKind.POTHOLE
-        3 -> b.isHarsh(cfg)
+        1 -> !b.legacy
+        2 -> b.legacy
+        3 -> b.severity(cfg) == Severity.STRONG
         else -> true
     }
 
-    private fun describe(b: Bump): String = when {
-        b.kind != BumpKind.POTHOLE -> b.kind.label
-        else -> a.getString(if (b.isHarsh(cfg)) R.string.map_describe_harsh_pothole else R.string.map_describe_pothole) + (if (b.side != Side.UNKNOWN) ", ${b.side.label}" else "")
-    }
+    private fun describe(b: Bump): String = b.describe(cfg)
 
     private fun lastLocation(): Location? {
         if (a.checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED &&
@@ -121,9 +119,9 @@ class MapPage(private val a: MainActivity) : Page {
             c.background = Ui.rounded(a, if (i == filter) Ui.ACCENT else Ui.SURFACE2, 20)
             c.setTextColor(if (i == filter) Ui.ON_ACCENT else Ui.TEXT)
         }
-        tiles[0].text = all.count { it.kind == BumpKind.BUMP }.toString()
-        tiles[1].text = all.count { it.kind == BumpKind.POTHOLE }.toString()
-        tiles[2].text = all.count { it.isHarsh(cfg) }.toString()
+        tiles[0].text = all.count { !it.legacy }.toString()
+        tiles[1].text = all.count { it.legacy }.toString()
+        tiles[2].text = all.count { it.severity(cfg) == Severity.STRONG }.toString()
         tiles[3].text = all.count { it.isMuted(cfg) }.toString()
 
         val shown = all.filter { matches(it) }
@@ -195,10 +193,6 @@ class MapPage(private val a: MainActivity) : Page {
         val actions = arrayOf(
             a.getString(R.string.map_action_open_maps),
             a.getString(if (b.userMuted) R.string.map_action_unmute else R.string.map_action_mute),
-            a.getString(R.string.map_action_is_bump),
-            a.getString(R.string.map_action_is_pothole),
-            a.getString(R.string.map_action_pothole_left),
-            a.getString(R.string.map_action_pothole_right),
             a.getString(R.string.common_delete),
         )
         AlertDialog.Builder(a)
@@ -207,11 +201,7 @@ class MapPage(private val a: MainActivity) : Page {
                 when (which) {
                     0 -> openInMaps(b)
                     1 -> edit(b) { it.userMuted = !it.userMuted }
-                    2 -> edit(b) { it.kindScore = -1.0; it.kindVotes = maxOf(it.kindVotes, 10) }
-                    3 -> edit(b) { it.kindScore = 1.0; it.kindVotes = maxOf(it.kindVotes, 10) }
-                    4 -> edit(b) { it.sideScore = -1.0; it.sideVotes = maxOf(it.sideVotes, 10) }
-                    5 -> edit(b) { it.sideScore = 1.0; it.sideVotes = maxOf(it.sideVotes, 10) }
-                    6 -> confirmDelete(b)
+                    2 -> confirmDelete(b)
                 }
             }
             .setNegativeButton(R.string.common_close, null)
