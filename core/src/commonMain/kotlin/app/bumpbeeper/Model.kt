@@ -14,6 +14,43 @@ enum class Side(val label: String) {
     UNKNOWN("side not known yet"),
 }
 
+/**
+ * How hard a spot hits, from [Bump.sevIndex]: mild below [EngineConfig.sevMildMax], strong from
+ * [EngineConfig.sevStrongMin], moderate in between. Mild warns with one beep, moderate with two, strong by voice.
+ */
+enum class Severity(val label: String) {
+    MILD("mild"),
+    MODERATE("moderate"),
+    STRONG("strong");
+
+    companion object {
+        /**
+         * The band of [index]. A spot stays in its [previous] band until the index is [EngineConfig.sevHysteresis]
+         * past an edge (up from edge × 1.1, down below edge × 0.9), so one odd hit next to an edge doesn't flip it.
+         * Without a previous band the plain edges apply.
+         */
+        fun of(index: Double, previous: Severity?, cfg: EngineConfig): Severity {
+            val h = cfg.sevHysteresis
+            // Each edge as seen from the previous band: harder to cross, whichever way the index moves.
+            val mildEdge = cfg.sevMildMax * when (previous) { null -> 1.0; Severity.MILD -> 1 + h; else -> 1 - h }
+            val strongEdge = cfg.sevStrongMin * when (previous) { null -> 1.0; Severity.STRONG -> 1 - h; else -> 1 + h }
+            return when {
+                index >= strongEdge -> Severity.STRONG
+                index >= mildEdge -> Severity.MODERATE
+                else -> Severity.MILD
+            }
+        }
+    }
+}
+
+/** How sure the app is about a spot: a [SOFT] one warns with one soft beep ("maybe"), a [FULL] one by its severity. */
+enum class Confidence(val label: String) {
+    /** Felt once, or an old pothole spot ([Bump.legacy]) not felt since. */
+    SOFT("soft"),
+    /** Felt at least twice, or one strong hit with both axles felt ([Bump.axleHits]). */
+    FULL("full"),
+}
+
 /** One speed bump (or pothole) on the map, learned from your own drives. */
 class Bump(
     var id: Long,
@@ -42,8 +79,47 @@ class Bump(
     var sideVotes: Int = 0,
     /** Average jolt of its hits, m/s². A pothole is "harsh" above [EngineConfig.harshPotholeMs2]. */
     var peakAvg: Double = 0.0,
+    /**
+     * What its [severity] is judged from: a running average over its hits. For now the same average of jolt peaks
+     * as [peakAvg] (m/s²); E2 feeds it a speed-normalised vibration index instead.
+     */
+    var sevIndex: Double = 0.0,
+    /** Hits where both axles were felt (front wheels, then the rear ones a wheelbase later). 0 until E2 detects them. */
+    var axleHits: Int = 0,
+    /** An old pothole spot (from before v2, your own or shared): only a soft "maybe" until it is felt again. */
+    var legacy: Boolean = false,
+    /** The band [severity] settled on when [sevIndex] last changed: the memory for its hysteresis. Null = none yet. */
+    var lastBand: Severity? = null,
 ) {
     val hitRate: Double get() = if (passes <= 0) 1.0 else hits.toDouble() / passes
+
+    /** How hard it hits: the band of [sevIndex], staying in [lastBand] inside the hysteresis ([Severity.of]). */
+    fun severity(cfg: EngineConfig): Severity = Severity.of(sevIndex, lastBand, cfg)
+
+    /**
+     * [Confidence.FULL] once felt twice, or after one strong hit with both axles felt ([axleHits], from E2).
+     * An old pothole spot ([legacy]) stays [Confidence.SOFT] until it is felt again.
+     */
+    fun confidence(cfg: EngineConfig): Confidence = when {
+        legacy -> Confidence.SOFT
+        hits >= 2 || (axleHits >= 1 && severity(cfg) == Severity.STRONG) -> Confidence.FULL
+        else -> Confidence.SOFT
+    }
+
+    /**
+     * Add one hit's severity index to the running average (same weights as [addPeak]) and settle the band.
+     * [hitsBefore] = hits counted before this one. A spot loaded without [lastBand] had the plain band of its index.
+     */
+    fun addSeverity(index: Double, hitsBefore: Int, cfg: EngineConfig) {
+        val before = lastBand ?: if (hitsBefore > 0) Severity.of(sevIndex, null, cfg) else null
+        val w = 1.0 / (minOf(hitsBefore, 9) + 1)
+        sevIndex += (index - sevIndex) * w
+        lastBand = Severity.of(sevIndex, before, cfg)
+    }
+
+    /** For screens and logs, in English: "moderate bump", "strong bump (maybe)". */
+    fun describe(cfg: EngineConfig): String =
+        severity(cfg).label + " bump" + if (confidence(cfg) == Confidence.SOFT) " (maybe)" else ""
 
     val kind: BumpKind
         get() = when {
@@ -93,7 +169,7 @@ class Bump(
 
     fun copy() = Bump(
         id, lat, lon, heading, hits, passes, misses, nPos, firstSeen, lastSeen, userMuted,
-        kindScore, kindVotes, sideScore, sideVotes, peakAvg,
+        kindScore, kindVotes, sideScore, sideVotes, peakAvg, sevIndex, axleHits, legacy, lastBand,
     )
 
     companion object {
@@ -145,6 +221,13 @@ class TripStats {
     var potholes = 0
     var newPotholes = 0
     var harshPotholes = 0
+    /** Spots felt this trip (new ones included, once per pass), by severity band after the hit... */
+    var mild = 0
+    var moderate = 0
+    var strong = 0
+    /** ...and by confidence after the hit: still a "maybe" (soft), or confirmed (full). */
+    var soft = 0
+    var full = 0
 }
 
 /** Where bumps and events are kept. SQLite on the phone, in-memory in tests. */

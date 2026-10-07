@@ -157,6 +157,49 @@ object Scenarios {
         check(r.knownHits == 2, "muted bump should still be recorded as hit")
     }
 
+    /** A spot felt once is a "maybe" (soft); felt again on a later trip it is confirmed (full). */
+    fun softThenFull() {
+        log("softThenFull")
+        val sim = Simulator(81)
+        val store = MemoryStore()
+        val cfg = EngineConfig()
+        val spec = DriveSpec(bumpsAt = listOf(500.0, 1100.0, 1600.0))
+        val t1 = sim.drive(store, spec, tripId = 1)
+        describe("trip 1", t1)
+        val s1 = t1.stats
+        check(t1.newBumps == 3 && s1.soft == 3 && s1.full == 0, "trip 1: 3 new spots, all soft, got new=${t1.newBumps} soft=${s1.soft} full=${s1.full}")
+        check(s1.mild + s1.moderate + s1.strong == 3, "each felt spot is counted in one band: ${s1.mild}/${s1.moderate}/${s1.strong}")
+        check(store.saved.all { it.confidence(cfg) == Confidence.SOFT && it.lastBand != null && it.sevIndex >= 3.0 }, "stored soft, with a band")
+
+        val t2 = sim.drive(store, spec, tripId = 2)
+        describe("trip 2", t2)
+        check(t2.knownHits == 3 && t2.stats.full == 3 && t2.stats.soft == 0, "felt again: full, got soft=${t2.stats.soft} full=${t2.stats.full}")
+        check(store.saved.all { it.confidence(cfg) == Confidence.FULL }, "stored as confirmed")
+    }
+
+    /** An old pothole spot (from before v2) is only a soft "maybe" until this engine feels it again. */
+    fun legacySpotSoftUntilFelt() {
+        log("legacySpotSoftUntilFelt")
+        val sim = Simulator(82)
+        val store = MemoryStore()
+        val cfg = EngineConfig()
+        sim.drive(store, DriveSpec(bumpsAt = listOf(800.0)), tripId = 1)
+        // What an upgraded phone loads: felt 3 of 3 times by the old version, as a pothole.
+        store.saved.single().apply { hits = 3; passes = 3; nPos = 3; legacy = true }
+        check(store.saved.single().confidence(cfg) == Confidence.SOFT, "an old pothole spot starts soft")
+
+        val t2 = sim.drive(store, DriveSpec(silentBumpsAt = listOf(800.0)), tripId = 2)   // driven over, nothing felt
+        describe("trip 2 (not felt)", t2)
+        val s2 = store.saved.single()
+        check(t2.warnings.size == 1 && s2.legacy && s2.confidence(cfg) == Confidence.SOFT, "warned, still soft: legacy=${s2.legacy} ${s2.hits}/${s2.passes}")
+
+        val t3 = sim.drive(store, DriveSpec(bumpsAt = listOf(800.0)), tripId = 3)   // felt again
+        describe("trip 3 (felt)", t3)
+        val s3 = store.saved.single()
+        check(t3.knownHits == 1 && !s3.legacy && s3.confidence(cfg) == Confidence.FULL, "felt again: an ordinary full bump, legacy=${s3.legacy} ${s3.hits}/${s3.passes}")
+        check(t3.stats.full == 1 && t3.stats.soft == 0, "counted as full: full=${t3.stats.full} soft=${t3.stats.soft}")
+    }
+
     private fun nearest(store: MemoryStore, sim: Simulator, p: Double, westbound: Boolean = false): Bump {
         val truth = sim.point(p, westbound)
         return store.saved.minByOrNull { Geo.distance(it.lat, it.lon, truth[0], truth[1]) }!!
@@ -482,10 +525,34 @@ object Scenarios {
     /** A shared-map spot at road position [p] (eastbound unless [westbound]). */
     private fun remoteAt(
         sim: Simulator, id: Long, p: Double, kind: BumpKind = BumpKind.BUMP, side: Side = Side.UNKNOWN,
-        severity: Double = 5.0, westbound: Boolean = false,
+        severity: Double = 5.0, westbound: Boolean = false, devices: Int = 3,
     ): RemoteSpot {
         val q = sim.point(p, westbound)
-        return RemoteSpot(id, q[0], q[1], if (westbound) 270.0 else 90.0, kind, side, severity, nDevices = 3)
+        return RemoteSpot(id, q[0], q[1], if (westbound) 270.0 else 90.0, kind, side, severity, nDevices = devices)
+    }
+
+    /** Shared spots: their severity gives the band, two or more phones make them full, a shared pothole is an old (soft) spot. */
+    fun remoteStandIns() {
+        log("remoteStandIns")
+        val sim = Simulator(83)
+        val cfg = EngineConfig()
+        val spots = listOf(
+            remoteAt(sim, 1, 300.0, severity = 3.0),
+            remoteAt(sim, 2, 700.0, severity = 4.2),
+            remoteAt(sim, 3, 1100.0, severity = 7.0),
+            remoteAt(sim, 4, 1500.0, BumpKind.POTHOLE, severity = 7.0),
+            remoteAt(sim, 5, 1800.0, severity = 4.2, devices = 1),
+        )
+        val t1 = sim.drive(MemoryStore(), DriveSpec(), tripId = 1, spotSource = ListSpotSource(spots))
+        describe("trip 1", t1)
+        check(t1.warnings.map { BumpEngine.remoteSpotId(it.spot.id) } == listOf(1L, 2L, 3L, 4L, 5L), "each shared spot warns once: ${t1.beepBumpIds}")
+        val got = t1.warnings.map { Triple(it.spot.severity(cfg), it.spot.confidence(cfg), it.spot.legacy) }
+        val want = listOf(
+            Triple(Severity.MILD, Confidence.FULL, false), Triple(Severity.MODERATE, Confidence.FULL, false),
+            Triple(Severity.STRONG, Confidence.FULL, false), Triple(Severity.STRONG, Confidence.SOFT, true),
+            Triple(Severity.MODERATE, Confidence.SOFT, false),
+        )
+        check(got == want, "band, confidence, old pothole: $got")
     }
 
     private fun remoteBeeps(store: MemoryStore, trip: Long) =
@@ -808,6 +875,9 @@ object Scenarios {
         "parkedAndNoGps" to ::parkedAndNoGps,
         "crawlVersusRemoved" to ::crawlVersusRemoved,
         "userMute" to ::userMute,
+        "softThenFull" to ::softThenFull,
+        "legacySpotSoftUntilFelt" to ::legacySpotSoftUntilFelt,
+        "remoteStandIns" to ::remoteStandIns,
         "remoteSpotsWarnFirstDrive" to ::remoteSpotsWarnFirstDrive,
         "localMuteSuppressesRemote" to ::localMuteSuppressesRemote,
         "remotePotholeRules" to ::remotePotholeRules,

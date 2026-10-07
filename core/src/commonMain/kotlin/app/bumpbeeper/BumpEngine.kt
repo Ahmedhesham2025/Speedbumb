@@ -66,6 +66,14 @@ class EngineConfig {
     @Volatile var warnPotholes = true
     /** A pothole whose hits average at least this jolt is "harsh" (≈ 0.5 g) and gets the voice. (setting) */
     @Volatile var harshPotholeMs2 = 5.0
+    /**
+     * Severity bands of a spot's [Bump.sevIndex] (for now its average jolt, m/s²): mild below [sevMildMax], strong
+     * from [sevStrongMin], moderate in between. A spot only changes band once its index is [sevHysteresis] (a fraction
+     * of the edge) past an edge. E2 replaces the index with a vibration dose and refits the edges from real drives.
+     */
+    var sevMildMax = 3.5
+    var sevStrongMin = 5.0
+    var sevHysteresis = 0.10
     /** At most one "new spot recorded" tick per this long, so a bumpy stretch doesn't machine-gun. */
     var tickGapMs = 1500L
     /** When a warning fires, known spots up to this far beyond the warned one count as one group... */
@@ -582,8 +590,10 @@ class BumpEngine(
             b.addKindVote(shape.score)
             if (shape.side != 0) b.addSideVote(shape.side)
             b.addPeak(peak, 0)
+            b.addSeverity(peak, 0, cfg)   // E2: the vibration index instead of the peak
             b.id = store.insertBump(b)
             if (b.kind == BumpKind.POTHOLE) countPothole(b, isNew = true)
+            countSpot(b)
             bumps.add(b)
             val a = Approach(tMs, 0.0)
             a.beeped = true; a.counted = true; a.hit = true
@@ -622,11 +632,14 @@ class BumpEngine(
         b.heading = Geo.blendAngle(b.heading, heading, w)
         b.nPos++
         b.addPeak(peak, b.hits)
+        b.addSeverity(peak, b.hits, cfg)
         b.hits++
+        b.legacy = false   // felt again: an old pothole spot is an ordinary bump from now on
         b.lastSeen = now
         b.addKindVote(shape.score)
         if (shape.side != 0) b.addSideVote(shape.side)
         if (b.kind == BumpKind.POTHOLE) countPothole(b, isNew = false)
+        countSpot(b)
 
         if (a != null) {
             a.hit = true
@@ -657,6 +670,16 @@ class BumpEngine(
         trip.potholes++
         if (isNew) trip.newPotholes++
         if (b.isHarsh(cfg)) trip.harshPotholes++
+    }
+
+    /** Every spot felt is counted once per pass, by its band and confidence after the hit. */
+    private fun countSpot(b: Bump) {
+        when (b.severity(cfg)) {
+            Severity.MILD -> trip.mild++
+            Severity.MODERATE -> trip.moderate++
+            Severity.STRONG -> trip.strong++
+        }
+        if (b.confidence(cfg) == Confidence.FULL) trip.full++ else trip.soft++
     }
 
     // =====================================================================
@@ -726,8 +749,10 @@ class BumpEngine(
             return   // a broken cache must not stop the engine; keep what we had
         }
         remoteAll = spots.filter { it.id in 0 until Long.MAX_VALUE / 2 }.map { r ->
+            // Felt once per phone that confirmed it: two phones make it FULL. A shared pothole is an old (soft) spot.
             Bump(
-                -2L - r.id, r.lat, r.lon, r.heading, hits = 0, passes = 0, misses = 0, nPos = 0, firstSeen = 0, lastSeen = 0,
+                -2L - r.id, r.lat, r.lon, r.heading, hits = r.nDevices.coerceAtLeast(0), passes = 0, misses = 0, nPos = 0,
+                firstSeen = 0, lastSeen = 0, sevIndex = r.severity, legacy = r.kind == BumpKind.POTHOLE,
                 kindScore = when (r.kind) { BumpKind.POTHOLE -> 1.0; BumpKind.BUMP -> -1.0; BumpKind.UNSURE -> 0.0 },
                 kindVotes = if (r.kind == BumpKind.UNSURE) 0 else 1,
                 sideScore = when (r.side) { Side.RIGHT -> 1.0; Side.LEFT -> -1.0; Side.UNKNOWN -> 0.0 },
@@ -1042,7 +1067,7 @@ class BumpEngine(
         val b = Bump(
             0, r.lat, r.lon, r.heading, hits = 0, passes = 0, misses = 0, nPos = 1, firstSeen = now, lastSeen = now,
             userMuted = true, kindScore = r.kindScore, kindVotes = r.kindVotes, sideScore = r.sideScore,
-            sideVotes = r.sideVotes, peakAvg = r.peakAvg,
+            sideVotes = r.sideVotes, peakAvg = r.peakAvg, sevIndex = r.sevIndex, legacy = r.legacy,
         )
         b.id = store.insertBump(b)
         bumps.add(b)

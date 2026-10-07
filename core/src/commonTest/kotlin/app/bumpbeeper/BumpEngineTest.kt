@@ -10,6 +10,8 @@ class BumpEngineTest {
     @Test fun parkedAndNoGps() = Scenarios.parkedAndNoGps()
     @Test fun crawlVersusRemoved() = Scenarios.crawlVersusRemoved()
     @Test fun userMute() = Scenarios.userMute()
+    @Test fun softThenFull() = Scenarios.softThenFull()
+    @Test fun legacySpotSoftUntilFelt() = Scenarios.legacySpotSoftUntilFelt()
     @Test fun potholeVsBump() = Scenarios.potholeVsBump()
     @Test fun potholeVsBumpNoGyro() = Scenarios.potholeVsBumpNoGyro()
     @Test fun potholeSidesAndCounts() = Scenarios.potholeSidesAndCounts()

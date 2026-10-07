@@ -27,6 +27,7 @@ class SharedMapTest {
     @Test fun observationsRecorded() = Scenarios.observationsRecorded()
     @Test fun remoteTwin18m() = Scenarios.remoteTwin18m()
     @Test fun muteSharedSpot() = Scenarios.muteSharedSpot()
+    @Test fun remoteStandIns() = Scenarios.remoteStandIns()
 
     /** An empty shared map and an outbox must not change anything the engine does. */
     @Test fun emptySourceChangesNothing() {
