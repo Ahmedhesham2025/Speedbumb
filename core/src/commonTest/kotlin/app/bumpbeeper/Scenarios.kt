@@ -86,7 +86,7 @@ object Scenarios {
         check(east.size == 3 && east.all { it.passes == 2 }, "eastbound bumps should still have 2 passes each: ${east.map { it.passes }}")
     }
 
-    /** A passenger grabbing the phone must not create a bump. */
+    /** A passenger grabbing the phone must not create a bump: its jolts are rejected as "handled". */
     fun handlingIgnored() {
         log("handlingIgnored")
         val sim = Simulator(3)
@@ -94,7 +94,22 @@ object Scenarios {
         val r = sim.drive(store, DriveSpec(slowZonesAt = listOf(600.0), handlingAt = 600.0))
         describe("drive", r)
         check(r.newBumps == 0, "handling the phone created ${r.newBumps} bump(s)")
-        check("phone_moving" in r.rejected, "expected a phone_moving rejection, got ${r.rejected}")
+        check("handled" in r.rejected, "expected a handled rejection, got ${r.rejected}")
+    }
+
+    /**
+     * Owner: "When I hold the phone, it counted as a bump." A real bump crossed while the phone is held still in a hand
+     * (8 s, no shaking at that moment) is not learned either: the hand's reading is not the road's. Before E3 only the
+     * pick-up and the put-down were rejected, and this jolt became a spot.
+     */
+    fun bumpWhileHoldingIsNotLearned() {
+        log("bumpWhileHoldingIsNotLearned")
+        val store = MemoryStore()
+        val r = Simulator(91).drive(store, DriveSpec(holdsAt = listOf(560.0 to 8.0), bumpsAt = listOf(600.0), cruiseKmh = 30.0))
+        describe("bump while holding", r)
+        check(r.newBumps == 0 && store.saved.isEmpty(), "nothing is learned while the phone is held, got ${r.newBumps}")
+        check(r.rejected.size == 3 && r.rejected.all { it == "handled" }, "pick-up, bump and put-down rejected as handled: ${r.rejected}")
+        check(r.driving.phoneUse == 1, "and it is phone use, got ${r.driving.phoneUse}")
     }
 
     /** Door slam while parked, and a jolt with no GPS yet: both ignored. */
@@ -482,6 +497,7 @@ object Scenarios {
         val r2 = Simulator(63).drive(MemoryStore(), DriveSpec(holdsAt = listOf(700.0 to 1.0)), drivingCfg = pocket)
         describeDriving("pocket, held 1 s", r2.driving)
         check(r2.driving.phoneUse == 0, "held 1 s in pocket mode is a jostle, got ${r2.driving.phoneUse}")
+        check("phone_moving" in r2.rejected && "handled" !in r2.rejected, "a pocket jostle's jolt is phone_moving: ${r2.rejected}")
 
         val r3 = Simulator(63).drive(MemoryStore(), DriveSpec(jostlesAt = listOf(300.0, 420.0, 540.0, 660.0), handlingAt = 1300.0))
         describeDriving("loose phone", r3.driving)
@@ -940,6 +956,7 @@ object Scenarios {
         "learnThenBeep" to ::learnThenBeep,
         "otherDirection" to ::otherDirection,
         "handlingIgnored" to ::handlingIgnored,
+        "bumpWhileHoldingIsNotLearned" to ::bumpWhileHoldingIsNotLearned,
         "parkedAndNoGps" to ::parkedAndNoGps,
         "crawlVersusRemoved" to ::crawlVersusRemoved,
         "userMute" to ::userMute,

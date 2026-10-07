@@ -862,6 +862,7 @@ class BumpService : Service(), SensorEventListener, LocationListener, EngineList
     override fun onJoltRejected(peak: Double, reason: String) {
         val why = when (reason) {
             "phone_moving" -> "phone was being moved"
+            "handled" -> "phone was in someone's hand"
             "no_gps" -> "no GPS fix yet"
             "weak_gps" -> "GPS too inaccurate"
             "too_slow" -> "car (almost) stopped"

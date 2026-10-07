@@ -42,8 +42,13 @@ class EngineConfig {
     var decideAfterMs = 1200L
     /** Ignore further jolts for this long (rear axle, suspension rebound). */
     var refractoryMs = 2500L
-    /** Angle between the fast and slow "down" estimates that means the phone is being moved. */
+    /** Angle between the fast and slow "down" estimates that means the phone turned: its gravity and forward are learned again. */
     var tiltRejectDeg = 25.0
+    /**
+     * A jolt is not the road's if the phone was handled ([BumpEngine.phone]) from this long before it until the
+     * decision; nor does a pass count when the phone was handled this close to the spot.
+     */
+    var handledMarginMs = 2000L
 
     /** A hit this close to a known bump (same direction) is that bump. */
     var matchRadiusM = 20.0
@@ -222,9 +227,6 @@ class BumpEngine(
     private var fastZ = 0.0
     private var accelReady = false
     private var lastAccelMs = 0L
-    /** Last time the phone was being moved (picked up, adjusted). */
-    var lastUnstableMs = Long.MIN_VALUE / 4
-        private set
     private var joltStartMs = -1L
     private var joltPeak = 0.0
     private var refractoryUntilMs = Long.MIN_VALUE / 4
@@ -376,10 +378,9 @@ class BumpEngine(
         if (bufCount < BUF) bufCount++
         ring?.let { addToRing(it, tMs, v) }
 
-        // Is the phone being moved (picked up, dropped, adjusted)?
+        // Is the phone turning (picked up, dropped, adjusted)? Whether it is handled is [phone]'s call.
         val cosTilt = ((slowX * fastX + slowY * fastY + slowZ * fastZ) / (g * f)).coerceIn(-1.0, 1.0)
         if (radToDeg(acos(cosTilt)) > cfg.tiltRejectDeg) {
-            lastUnstableMs = tMs
             // It may sit differently when it is put back: learn gravity and "forward" again.
             gravX = slowX; gravY = slowY; gravZ = slowZ
             gravSettledS = 0.0
@@ -405,7 +406,7 @@ class BumpEngine(
     private fun decide(tMs: Long, peak: Double) {
         // The decision comes 1.2 s after the jolt, so a newer fix may already be in. Use the one closest in time.
         val fix = fixes.minByOrNull { abs(it.timeMs - tMs) }
-        if (lastUnstableMs >= tMs - 1500) { reject(tMs, peak, "phone_moving", fix); return }
+        handledReason(tMs)?.let { reject(tMs, peak, it, fix); return }
         if (fix == null || abs(tMs - fix.timeMs) > cfg.maxFixAgeMs) { reject(tMs, peak, "no_gps", fix); return }
         if (fix.accuracyM > cfg.maxAccuracyM) { reject(tMs, peak, "weak_gps", fix); return }
         val speedKmh = fix.speedMps * 3.6
@@ -427,6 +428,17 @@ class BumpEngine(
         val slowdownKmh = max(0.0, (maxRecent - fix.speedMps) * 3.6)
 
         registerHit(tMs, pos[0], pos[1], speedKmh, peak, slowdownKmh, shape)
+    }
+
+    /**
+     * Why a jolt at [tMs] is the phone's and not the road's, or null: the phone was handled from
+     * [EngineConfig.handledMarginMs] before it until now (the decision waits [EngineConfig.decideAfterMs], so a pick-up
+     * that starts with the jolt is seen). A jostle in pocket mode is "phone_moving", anything else "handled".
+     * No new spot, no hit, while the phone is in someone's hand.
+     */
+    private fun handledReason(tMs: Long): String? {
+        if (!phone.handledDuring(tMs - cfg.handledMarginMs, lastAccelMs)) return null
+        return if (phone.pocketMode && phone.jostle) "phone_moving" else "handled"
     }
 
     /**
@@ -966,6 +978,12 @@ class BumpEngine(
     private fun finishPass(b: Bump, a: Approach, f: Fix) {
         if (ring != null && !a.hit) nearMs[b.id] = Near(a.minDistMs, passKmh(a, f), a.maxJoltNear)
         val nearNote = "strongest jolt nearby ${formatFixed(a.maxJoltNear, 1)} m/s²"
+        if (!a.counted && !a.hit && phone.handledDuring(a.minDistMs - cfg.handledMarginMs, a.minDistMs + cfg.handledMarginMs)) {
+            // The phone was in someone's hand over the spot: its jolts weren't trusted, so the pass says nothing.
+            log("pass_handled", b.id, f.lat, f.lon, passKmh(a, f), a.maxJoltNear, Double.NaN, a.minDist, "not counted, phone handled")
+            listener.onPassed(b, false)
+            return
+        }
         if (!a.counted && !a.hit && a.minSpeedNearMps * 3.6 < cfg.minInformativeKmh) {
             // Crawled over it without feeling anything: can't tell, so it counts neither way.
             log("pass_slow", b.id, f.lat, f.lon, a.minSpeedNearMps * 3.6, a.maxJoltNear, Double.NaN, a.minDist, "not counted, $nearNote")

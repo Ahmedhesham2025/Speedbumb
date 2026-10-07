@@ -135,7 +135,7 @@ class Fix(
 class BumpEvent(
     val wallTime: Long,
     val tripId: Long,
-    /** new_bump, hit, hit_repeat, miss, pass_slow, beep, beep_quiet, beep_grouped, rejected, user_mute */
+    /** new_bump, hit, hit_repeat, miss, pass_slow, pass_handled, beep, beep_quiet, beep_grouped, rejected, user_mute */
     val type: String,
     val bumpId: Long,
     val lat: Double,
