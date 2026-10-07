@@ -232,6 +232,7 @@ class BumpService : Service(), SensorEventListener, LocationListener, EngineList
     private var training: TrainingSink? = null          // only used on the engine thread; null = not helping improve detection
     private var live: LiveSpeedLimit? = null            // only used on the engine thread: live road speed limit (opt-in)
     private var warner = SpeedWarner()                  // only used on the engine thread
+    private var phoneFeed: PhoneFeed? = null            // only used on the engine thread: screen, unlock, calls… for the phone state
     @Volatile private var lastHazardWarnMs = -1L        // elapsedRealtime of the last bump / pothole warning
     private var wakeLock: PowerManager.WakeLock? = null
     private var tripId = 0L
@@ -572,6 +573,8 @@ class BumpService : Service(), SensorEventListener, LocationListener, EngineList
                 logStore.logEvent(BumpEvent(System.currentTimeMillis(), tripId, type, -1, lat, lon, kmh, Double.NaN, value, Double.NaN, Double.NaN, note))
                 LiveState.lastDriveEvent = DriveText.event(type, note)
             }
+            // Screen, unlock, proximity, light, calls, charging: is the phone in someone's hand? (phone use, E3)
+            phoneFeed = PhoneFeed(this, h, eng.phone.signals).also { it.start() }
             publish(eng, force = true)
         }
 
@@ -616,6 +619,8 @@ class BumpService : Service(), SensorEventListener, LocationListener, EngineList
         val database = db
         h?.removeCallbacks(parkedCheck)
         h?.post {
+            phoneFeed?.stop()
+            phoneFeed = null
             autoStop = null
             // Again on this thread: a fix handled just before stopRecording may have re-requested GPS (applyPower).
             (getSystemService(Context.LOCATION_SERVICE) as LocationManager).removeUpdates(this)
