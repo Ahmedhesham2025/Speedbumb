@@ -48,10 +48,14 @@ class BumpMapView(ctx: Context) : View(ctx) {
         textSize = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_SP, 11f, resources.displayMetrics)
     }
 
-    fun colorOf(b: Bump): Int = when (b.kind) {
-        BumpKind.BUMP -> 0xFFFFA726.toInt()
-        BumpKind.POTHOLE -> 0xFFEF5350.toInt()
-        BumpKind.UNSURE -> 0xFFB0BEC5.toInt()
+    /** The band edges [colorOf] judges by (not a setting). */
+    private val bands = EngineConfig()
+
+    /** Grey for a "maybe" spot, red for a strong bump, orange for the others. */
+    fun colorOf(b: Bump): Int = when {
+        b.confidence(bands) == Confidence.SOFT -> 0xFFB0BEC5.toInt()
+        b.severity(bands) == Severity.STRONG -> 0xFFEF5350.toInt()
+        else -> 0xFFFFA726.toInt()
     }
 
     private fun pxPerM(): Double = (height / 2.0) / radiusM

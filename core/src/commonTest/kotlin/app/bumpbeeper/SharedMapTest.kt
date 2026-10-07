@@ -23,7 +23,7 @@ class ListSink : ObservationSink {
 class SharedMapTest {
     @Test fun remoteSpotsWarnFirstDrive() = Scenarios.remoteSpotsWarnFirstDrive()
     @Test fun localMuteSuppressesRemote() = Scenarios.localMuteSuppressesRemote()
-    @Test fun remotePotholeRules() = Scenarios.remotePotholeRules()
+    @Test fun remoteOldPotholesAreSoft() = Scenarios.remoteOldPotholesAreSoft()
     @Test fun observationsRecorded() = Scenarios.observationsRecorded()
     @Test fun remoteTwin18m() = Scenarios.remoteTwin18m()
     @Test fun muteSharedSpot() = Scenarios.muteSharedSpot()
