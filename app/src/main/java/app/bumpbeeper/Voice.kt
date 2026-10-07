@@ -9,7 +9,7 @@ import android.speech.tts.UtteranceProgressListener
 import java.util.Locale
 
 /**
- * Spoken pothole warnings ("Pothole on the right. Keep left."), using the phone's own text-to-speech
+ * Spoken warnings ("Strong bump ahead.", "3 bumps ahead."), using the phone's own text-to-speech
  * (works offline once the voice is installed). Like the beeps, it plays as navigation voice: through the car's
  * Bluetooth if connected, music ducks. [onUnavailable] is used if speech isn't ready (e.g. no voice installed).
  */
@@ -46,12 +46,12 @@ class Voice(
         })
     }
 
-    /** Warn about a pothole ahead, telling which side it is on and which way to keep. */
-    fun pothole(side: Side) = say(Phrases.pothole(Prefs.voiceLang(app), side))
+    /** Warn about a strong bump ahead ("Strong bump ahead."). */
+    fun strongBump() = say(Phrases.strongBump(Prefs.voiceLang(app)))
 
     /** Announce a group of spots ahead ("3 bumps ahead."); [fallback] plays instead if speech isn't available. */
     fun cluster(c: HazardCluster, fallback: () -> Unit) {
-        val text = Phrases.cluster(Prefs.voiceLang(app), c.count, c.kind, c.harshSide)
+        val text = Phrases.cluster(Prefs.voiceLang(app), c.count, c.maxSeverity == Severity.STRONG)
         if (text == null) fallback() else say(text, fallback)
     }
 
