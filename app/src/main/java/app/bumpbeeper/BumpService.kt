@@ -36,6 +36,7 @@ import app.bumpbeeper.auto.TripHold
 import app.bumpbeeper.crash.CrashLog
 import app.bumpbeeper.research.RateAverager
 import app.bumpbeeper.research.ResearchFiles
+import app.bumpbeeper.research.ResearchQueue
 import app.bumpbeeper.research.ResearchRecorder
 import app.bumpbeeper.sync.CachedSpotSource
 import app.bumpbeeper.sync.LiveSpeedLimit
@@ -623,6 +624,8 @@ class BumpService : Service(), SensorEventListener, LocationListener, EngineList
         // hands that rate to the listeners above too, so while it runs the engine gets ≤ 100 Hz averages (onSensorChanged).
         research = ResearchRecorder.startIfEnabled(this, source, tripId)
         if (research != null) h.post { accelAvg = RateAverager(); gyroAvg = RateAverager() }
+        // The upload queue learns the trip and whether it may be held ("Was this a drive?"). Engine thread: file I/O.
+        research?.let { r -> val id = tripId; h.post { ResearchQueue.tripStarted(this, r.stamp, id, guessed) } }
 
         Prefs.sp(this).registerOnSharedPreferenceChangeListener(prefListener)
     }
@@ -637,6 +640,7 @@ class BumpService : Service(), SensorEventListener, LocationListener, EngineList
         Prefs.sp(this).unregisterOnSharedPreferenceChangeListener(prefListener)
         (getSystemService(Context.SENSOR_SERVICE) as SensorManager).unregisterListener(this)
         (getSystemService(Context.LOCATION_SERVICE) as LocationManager).removeUpdates(this)
+        val researchStamp = research?.stamp
         research?.stop()
         research = null
 
@@ -656,6 +660,8 @@ class BumpService : Service(), SensorEventListener, LocationListener, EngineList
             // Started by itself and never confirmed: hold everything that would leave the phone (#49).
             val ask = unconfirmed && engine != null
             if (ask) TripHold.hold(this, tripId)
+            // Only after the hold may the trip's research files be uploaded: the uploader then sees it held.
+            researchStamp?.let { ResearchQueue.tripEnded(this, it) }
             // Privacy zone filter, then into the outbox; the upload runs later in the background.
             try {
                 sink?.flush(Prefs.shareBumps(this), System.currentTimeMillis())

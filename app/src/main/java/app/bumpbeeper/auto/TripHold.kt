@@ -3,6 +3,7 @@ package app.bumpbeeper.auto
 import android.content.Context
 import android.util.Log
 import app.bumpbeeper.BumpDb
+import app.bumpbeeper.research.ResearchQueue
 import app.bumpbeeper.sync.SpeedLimitSync
 import app.bumpbeeper.sync.Sync
 import app.bumpbeeper.sync.SyncStore
@@ -13,7 +14,8 @@ import java.util.concurrent.atomic.AtomicBoolean
 /**
  * Trips that started by themselves (motion detection / Google, #49) are **held** until the user answers
  * "Was this a drive?" ([TripCheck]). Nothing from a held trip may leave the phone. One generic API for every kind of
- * held data: shared-map points and the speed-limit route ([installBuiltIns]) and training samples ([installTraining]).
+ * held data: shared-map points and the speed-limit route ([installBuiltIns]), training samples ([installTraining]) and
+ * research recordings ([installResearch]).
  * One exception: live speed-limit lookups ([app.bumpbeeper.sync.LiveSpeedLimit]) run during a held trip, because the
  * user opted in to them and the screen says so; they keep and log nothing.
  *
@@ -38,6 +40,7 @@ object TripHold {
     private val expired = CopyOnWriteArrayList<Listener>()
     private val builtIns = AtomicBoolean(false)
     private val training = AtomicBoolean(false)
+    private val research = AtomicBoolean(false)
     /** One answer at a time per process: check-and-remove of a hold is atomic. */
     private val lock = Any()
     private const val TAG = "BumpBeeper"
@@ -161,6 +164,7 @@ object TripHold {
         confirmed.clear(); rejected.clear(); expired.clear()
         builtIns.set(false)
         training.set(false)
+        research.set(false)
     }
 
     /** Shared-map points ([SyncStore.holdAdd]) and the speed-limit route ([SpeedLimitSync]). Once per process. */
@@ -188,6 +192,16 @@ object TripHold {
         val discard = Listener { c, id -> TrainingSink.discard(c, id.toString()) }
         onRejected(discard)
         onExpired(discard)
+    }
+
+    /**
+     * Research recordings ([ResearchQueue]): a held trip's files wait (the uploader checks [mustHold]); "No" and no
+     * answer in time delete them ([ResearchQueue.discardTrip] throws if it couldn't). Once per process.
+     */
+    fun installResearch() {
+        if (!research.compareAndSet(false, true)) return
+        onRejected { c, id -> ResearchQueue.discardTrip(c, id, "no") }
+        onExpired { c, id -> ResearchQueue.discardTrip(c, id, "expired") }
     }
 
     private fun <T> withStore(ctx: Context, block: (SyncStore) -> T): T {
