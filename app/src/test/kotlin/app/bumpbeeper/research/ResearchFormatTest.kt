@@ -4,6 +4,7 @@ import app.bumpbeeper.TraceReader
 import app.bumpbeeper.TraceSample
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Assume.assumeTrue
 import org.junit.Test
@@ -15,14 +16,14 @@ import java.util.zip.GZIPInputStream
 import java.util.zip.GZIPOutputStream
 import kotlin.math.sqrt
 
-/** The rr1 research format: what the encoder writes is what the reader gets back, in physical units. */
+/** The research format: what the encoder writes is what the reader gets back, in physical units. */
 class ResearchFormatTest {
-    private fun file(block: (LineEncoder) -> Unit): ResearchFile {
+    private fun file(meta: List<String> = listOf("device=Acme/Phone"), block: (LineEncoder) -> Unit): ResearchFile {
         val enc = LineEncoder(1 shl 16)
         block(enc)
         val out = ByteArrayOutputStream()
         GZIPOutputStream(out).use { z ->
-            for (h in ResearchFormat.header(listOf("device=Acme/Phone"))) z.write((h + "\n").toByteArray())
+            for (h in ResearchFormat.header(meta)) z.write((h + "\n").toByteArray())
             z.write(enc.bytes, 0, enc.size)
         }
         return ResearchReader.read(out.toByteArray().inputStream())
@@ -30,9 +31,8 @@ class ResearchFormatTest {
 
     @Test fun everyCodeRoundTripsInPhysicalUnits() {
         val rnd = Random(7)
-        val sent = ResearchFormat.ALL.filter { c -> c.scales.none { it == 0.0 } }
-            .map { c -> c to DoubleArray(c.scales.size) { (rnd.nextDouble() - 0.5) * 40 } }
-        val f = file { enc -> sent.forEachIndexed { i, (c, v) -> enc.sample(i * 5L, c, v) } }
+        val sent = ResearchFormat.ALL.filter { it.numeric }.map { c -> c to DoubleArray(c.scales.size) { (rnd.nextDouble() - 0.5) * 40 } }
+        val f = file { enc -> sent.forEachIndexed { i, (c, v) -> enc.sample(i * 50L, c, v) } }
         assertFalse(f.truncated)
         assertEquals(sent.size, f.records.size)
         for ((r, s) in f.records.zip(sent)) {
@@ -45,13 +45,14 @@ class ResearchFormatTest {
 
     @Test fun sensorValuesAreWrittenAsFixedPointIntegers() {
         val (a, g, rv, pa, sd) = file { enc ->
-            enc.sample(1234, ResearchFormat.ACCEL, floatArrayOf(0.1234f, -9.80665f, 0f))
-            enc.sample(1239, ResearchFormat.GYRO, floatArrayOf(0.0123f, -0.0004f, 1.5f))
-            enc.sample(1240, ResearchFormat.ROTATION, floatArrayOf(0.1f, 0.2f, 0.3f, 0.927362f))   // no heading accuracy
-            enc.sample(1300, ResearchFormat.PRESSURE, floatArrayOf(1013.2512f))
-            enc.sample(1301, ResearchFormat.STEP, floatArrayOf(1f))
+            enc.sample(12_345, ResearchFormat.ACCEL, floatArrayOf(0.1234f, -9.80665f, 0f))
+            enc.sample(12_395, ResearchFormat.GYRO, floatArrayOf(0.0123f, -0.0004f, 1.5f))
+            enc.sample(12_400, ResearchFormat.ROTATION, floatArrayOf(0.1f, 0.2f, 0.3f, 0.927362f))   // no heading accuracy
+            enc.sample(13_000, ResearchFormat.PRESSURE, floatArrayOf(1013.2512f))
+            enc.sample(13_001, ResearchFormat.STEP, floatArrayOf(1f))
         }.records
-        assertEquals(1234L, a.tMs)
+        assertEquals(12_345L, a.tDms)
+        assertEquals(1234.5, a.tMs, 1e-9)                                // 0.1 ms resolution
         assertEquals(listOf("123", "-9807", "0"), a.fields)              // mm/s²
         assertEquals(listOf("12", "0", "1500"), g.fields)                // mrad/s
         assertEquals(listOf("1000", "2000", "3000", "9274", ""), rv.fields)
@@ -60,25 +61,45 @@ class ResearchFormatTest {
         assertEquals(emptyList<String>(), sd.fields)
     }
 
+    @Test fun timesAreTenthsOfAMillisecondRoundedDown() {
+        assertEquals(12_345L, ResearchFormat.t(1_234_567_890L))
+        assertEquals(-2L, ResearchFormat.t(-150_000L))   // before the start: still rounded down, so time never runs backwards
+        assertEquals(0L, ResearchFormat.t(99_999L))
+    }
+
     @Test fun missingValuesStayEmptyAndReadAsNaN() {
         val fix = doubleArrayOf(30.0444, 31.2357, Double.NaN, 12.5, Double.NaN, 4.0, Double.NaN, Double.NaN, Double.NaN, 180.0)
-        val r = file { it.sample(5000, ResearchFormat.GPS, fix) }.records.single()
+        val r = file { it.sample(50_000, ResearchFormat.GPS, fix) }.records.single()
         assertEquals(listOf("300444000", "312357000", "", "1250", "", "400", "", "", "", "180"), r.fields)
         assertEquals(30.0444, r.value(0), 1e-9)
         assertTrue(r.value(2).isNaN())
         assertEquals(12.5, r.value(3), 1e-9)
     }
 
-    @Test fun textCannotBreakALine() {
-        val r = file { it.start(1, ResearchFormat.LABEL.code).text("bump, big\nمطب").end() }.records.single()
-        assertEquals(listOf("bump_ big____"), r.fields)
-        assertTrue(r.value(0).isNaN())
+    @Test fun textCodesGoThroughTextNeverThroughSample() {
+        val enc = LineEncoder(LineEncoder.MAX_LINE)
+        assertThrows(IllegalArgumentException::class.java) { enc.sample(1, ResearchFormat.LABEL, DoubleArray(1)) }
+        assertThrows(IllegalArgumentException::class.java) { enc.sample(1, ResearchFormat.ACCURACY, FloatArray(2)) }
+        val (ac, lbl) = file {
+            it.start(7, ResearchFormat.ACCURACY.code).text(ResearchFormat.MAGNETIC.code).int(3).end()
+            it.start(8, ResearchFormat.LABEL.code).text("bump, big\nمطب").end()
+        }.records
+        assertEquals("m", ac.text(0))
+        assertEquals(3.0, ac.value(1), 0.0)
+        assertTrue(ac.value(0).isNaN())
+        assertEquals(listOf("bump_ big____"), lbl.fields)   // commas, line breaks and non-ASCII can't break the line
     }
 
     @Test fun negativeTimesAndValuesSurvive() {
-        val r = file { it.start(-1500, ResearchFormat.PROXIMITY.code).int(-3).end() }.records.single()
-        assertEquals(-1500L, r.tMs)
+        val r = file { it.start(-15_000, ResearchFormat.PROXIMITY.code).int(-3).end() }.records.single()
+        assertEquals(-15_000L, r.tDms)
         assertEquals(-3.0, r.value(0), 0.0)
+    }
+
+    @Test fun theLongestLineFitsMaxLine() {
+        val enc = LineEncoder(1024)
+        enc.sample(Long.MIN_VALUE + 1, ResearchFormat.GPS, DoubleArray(10) { -1e300 })   // 20 characters everywhere
+        assertTrue("${enc.size} bytes", enc.size <= LineEncoder.MAX_LINE)
     }
 
     @Test fun digitsStayAsciiOnAnArabicPhone() {
@@ -86,17 +107,18 @@ class ResearchFormatTest {
         try {
             Locale.setDefault(Locale("ar", "EG"))
             val enc = LineEncoder(LineEncoder.MAX_LINE)
-            enc.sample(12345, ResearchFormat.ACCEL, floatArrayOf(1.5f, -2.25f, 9.81f))
-            assertEquals("12345,a,1500,-2250,9810\n", String(enc.bytes, 0, enc.size, Charsets.US_ASCII))
+            enc.sample(123_456, ResearchFormat.ACCEL, floatArrayOf(1.5f, -2.25f, 9.81f))
+            assertEquals("123456,a,1500,-2250,9810\n", String(enc.bytes, 0, enc.size, Charsets.US_ASCII))
         } finally {
             Locale.setDefault(before)
         }
     }
 
     @Test fun everyFileStartsWithItsFormatAndCodeTable() {
-        val f = file {}
-        assertEquals("rr1", f.meta["format"])
-        assertEquals("Acme/Phone", f.meta["device"])
+        val f = file(listOf("device=Acme\nPhone", "${ResearchFormat.TRIP_ID}=42")) {}
+        assertEquals("rr2", f.meta["format"])
+        assertEquals("a line break can't start a new line", "Acme Phone", f.meta["device"])
+        assertEquals("42", f.meta[ResearchFormat.TRIP_ID])
         for (c in ResearchFormat.ALL) assertTrue(c.code, f.meta["code.${c.code}"]?.isNotEmpty() == true)
         assertEquals("codes are unique", ResearchFormat.ALL.size, ResearchFormat.ALL.map { it.code }.toSet().size)
     }
@@ -118,14 +140,15 @@ class ResearchFormatTest {
             assertTrue("cut at $cut", f.truncated)
             assertTrue("cut at $cut: ${f.records.size} lines", f.records.size >= 100)
             assertTrue("no half lines", f.records.all { it.fields.size == 3 })
-            assertEquals((0L until f.records.size).toList(), f.records.map { it.tMs })
+            assertEquals((0L until f.records.size).toList(), f.records.map { it.tDms })
         }
     }
 
     /**
-     * Size per hour, measured on the real anonymized drive01 (pocket, ~100 Hz accelerometer + gyroscope) re-encoded as
-     * rr1, plus the streams a phone derives from the same motion (uncalibrated, gravity, linear, rotation vectors,
-     * compass at 5 Hz). The recorder's 200 Hz doubles the four raw streams; the PR has the projection.
+     * Size per hour, measured on the real anonymized drive01 (pocket, ~100 Hz accelerometer + gyroscope) re-encoded,
+     * plus the streams a phone derives from the same motion (uncalibrated, gravity, linear, rotation vectors, compass
+     * at 5 Hz). drive01 has whole milliseconds, so a random 0.1 ms digit stands in for the real sub-millisecond times
+     * (the worst case for gzip). The recorder's 200 Hz doubles the four raw streams; the PR has the projection.
      */
     @Test fun sizePerHourOnARealDrive() {
         val trace = File("../testdata/real/drive01_pocket.csv.gz")
@@ -141,7 +164,7 @@ class ResearchFormatTest {
         var prev = s[0].tMs
         var flushedAt = s[0].tMs
         for (p in s) {
-            val t = p.tMs - s[0].tMs
+            val t = (p.tMs - s[0].tMs) * ResearchFormat.T_PER_MS + rnd.nextInt(10)
             val dt = (p.tMs - prev) / 1000.0
             prev = p.tMs
             val k = dt / (0.5 + dt)
@@ -161,7 +184,7 @@ class ResearchFormatTest {
             enc.sample(t, ResearchFormat.LINEAR, doubleArrayOf(p.ax - grav[0], p.ay - grav[1], p.az - grav[2]))
             enc.sample(t, ResearchFormat.GAME_ROTATION, q)
             enc.sample(t, ResearchFormat.ROTATION, doubleArrayOf(q[0], q[1], q[2], q[3], 0.524))
-            if (t % 200 < 10) {
+            if ((p.tMs - s[0].tMs) % 200 < 10) {
                 enc.sample(t, ResearchFormat.MAGNETIC, doubleArrayOf(25 + rnd.nextGaussian() * 0.4, -12 + rnd.nextGaussian() * 0.4, 38 + rnd.nextGaussian() * 0.4))
             }
             val flush = p.tMs - flushedAt >= 2000
@@ -175,7 +198,7 @@ class ResearchFormatTest {
         z.close()
         val hours = (s.last().tMs - s[0].tMs) / 3_600_000.0
         val mbPerHour = out.size() / 1e6 / hours
-        println(String.format(Locale.US, "research size: %.1f MB/h at %.0f Hz (drive01 re-encoded as rr1, all streams at that rate)", mbPerHour, s.size / (hours * 3600)))
+        println(String.format(Locale.US, "research size: %.1f MB/h at %.0f Hz (drive01 re-encoded as rr2, all streams at that rate)", mbPerHour, s.size / (hours * 3600)))
         assertTrue(String.format(Locale.US, "research files grew: %.1f MB/h", mbPerHour), mbPerHour < 40)
     }
 }
