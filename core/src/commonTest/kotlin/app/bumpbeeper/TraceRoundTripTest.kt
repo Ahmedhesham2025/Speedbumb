@@ -30,20 +30,22 @@ class TraceRoundTripTest {
         val a = original.saved.sortedBy { it.lon }
         val b = replayed.saved.sortedBy { it.lon }
         assertEquals(a.size, b.size, "same number of spots")
+        val cfg = EngineConfig()
         for (i in a.indices) {
             val d = Geo.distance(a[i].lat, a[i].lon, b[i].lat, b[i].lon)
-            println("    ${a[i].kind} vs ${b[i].kind}, ${formatFixed(d, 2)} m apart")
-            assertEquals(a[i].kind, b[i].kind, "spot $i kind")
+            println("    ${a[i].describe(cfg)} vs ${b[i].describe(cfg)}, ${formatFixed(d, 2)} m apart")
+            assertEquals(a[i].severity(cfg), b[i].severity(cfg), "spot $i band")
+            assertEquals(a[i].sevIndex, b[i].sevIndex, 0.05, "spot $i severity index")
             assertTrue(d <= 1.0, "spot $i moved ${d} m")
         }
     }
 
-    @Test fun bumpsAndPotholeSurviveTheCsv() = roundTrip(
-        41, DriveSpec(bumpsAt = listOf(300.0, 1100.0), potholesAt = listOf(700.0), cruiseKmh = 40.0),
+    @Test fun bumpsAndDipSurviveTheCsv() = roundTrip(
+        41, DriveSpec(bumpsAt = listOf(300.0, 1100.0), dipsAt = listOf(700.0), cruiseKmh = 40.0),
     )
 
     @Test fun noGyroDriveSurvivesTheCsv() = roundTrip(
-        12, DriveSpec(bumpsAt = listOf(500.0, 1500.0), potholesLeftAt = listOf(1000.0), cruiseKmh = 40.0, gyro = false),
+        12, DriveSpec(bumpsAt = listOf(500.0, 1500.0), dipsAt = listOf(1000.0), cruiseKmh = 40.0, gyro = false),
     )
 
     @Test fun writerMatchesAppFormat() {
@@ -103,10 +105,19 @@ class TraceRoundTripTest {
             TraceSample.Event(2950, "new_bump", 1, 5.0, "bump"),
         )
         val labels = TraceReader.labels(s)
-        assertEquals(listOf("bump", "pothole_r"), labels.map { it.kind })
+        // Recordings from before v2 may hold pothole labels: they are read as bumps.
+        assertEquals(listOf("bump", "bump"), labels.map { it.kind })
         assertEquals(30.0, labels[0].lat, 1e-9)
         assertEquals(31.2, labels[1].lon, 1e-9)
         // A leading undo has nothing to remove.
         assertEquals(0, TraceReader.labels(listOf(TraceSample.Event(0, "label", -1, Double.NaN, "undo"))).size)
+    }
+
+    @Test fun v2LabelKindsAreKeptAsWritten() {
+        val s = listOf(TraceSample.Gps(1000, 30.0, 31.0, 40.0, 90.0, 5.0)) +
+            listOf("bump_mild", "bump_moderate", "bump_strong", "nothing", "rough", "pothole_l")
+                .mapIndexed { i, k -> TraceSample.Event(1100L + i, "label", -1, Double.NaN, k) }
+        assertEquals(listOf("bump_mild", "bump_moderate", "bump_strong", "nothing", "rough", "bump"), TraceReader.labels(s).map { it.kind })
+        assertTrue(TraceReader.labels(s).all { it.kind in TraceReader.LABELS })
     }
 }

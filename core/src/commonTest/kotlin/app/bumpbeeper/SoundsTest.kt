@@ -1,7 +1,8 @@
+@file:Suppress("DEPRECATION")   // RemoteSpot still carries the shared map's old kind and side
+
 package app.bumpbeeper
 
 import kotlin.test.assertEquals
-import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 import kotlin.test.Test
 
@@ -11,16 +12,6 @@ class SoundsTest {
     @Test fun warningSounds() = Scenarios.warningSounds()
     @Test fun groupOfBumps() = Scenarios.groupOfBumps()
     @Test fun groupNamesStrongBump() = Scenarios.groupNamesStrongBump()
-
-    @Test fun harshThresholdDefaultIs5() {
-        val cfg = EngineConfig()
-        assertEquals(5.0, cfg.harshPotholeMs2, 0.0)
-        fun pothole(peak: Double) = Bump(1, 0.0, 0.0, 0.0, 1, 1, 0, 1, 0, 0, kindScore = 1.0, kindVotes = 1, peakAvg = peak)
-        assertTrue(pothole(5.0).isHarsh(cfg))
-        assertFalse(pothole(4.9).isHarsh(cfg))
-        cfg.harshPotholeMs2 = 6.0   // a user's own setting still wins
-        assertFalse(pothole(5.5).isHarsh(cfg))
-    }
 
     @Test fun groupPhrasesEnglish() {
         assertEquals("3 bumps ahead.", Phrases.cluster("en", 3, anyStrong = false))
@@ -79,7 +70,7 @@ class SoundsTest {
         assertEquals(listOf("mild", "moderate", "strong", "soft", "soft"), r.store.events.filter { it.type == "beep" }.map { it.note.removePrefix("remote ") })
     }
 
-    /** Shared bump, harsh pothole and unsure spot 60 m apart on an east-going road. */
+    /** Three shared spots (old kinds bump, pothole, unsure) 60 m apart on an east-going road. */
     private val three = listOf(shared(1, 800.0, BumpKind.BUMP), shared(2, 860.0, BumpKind.POTHOLE), shared(3, 920.0, BumpKind.UNSURE))
 
     private class Run(spots: List<RemoteSpot>, val cfg: EngineConfig = EngineConfig(), val store: MemoryStore = MemoryStore()) {
@@ -152,7 +143,7 @@ class SoundsTest {
         val store = MemoryStore()
         val q = at(862.0)
         store.insertBump(Bump(0, q[0], q[1], 90.0, hits = 2, passes = 2, misses = 0, nPos = 2, firstSeen = 0, lastSeen = 0,
-            kindScore = 1.0, kindVotes = 2, peakAvg = 7.0))
+            peakAvg = 7.0, sevIndex = 7.0))
         val r = Run(three + shared(4, 890.0, BumpKind.BUMP, heading = 270.0), store = store)
         r.drive(0.0, 1200.0)
         assertEquals(1, r.warnings.size, r.describe())

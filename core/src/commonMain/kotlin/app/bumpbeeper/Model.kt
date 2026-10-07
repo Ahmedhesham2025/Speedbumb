@@ -1,19 +1,5 @@
 package app.bumpbeeper
 
-/** What a spot on the map is, judged from how the car moved each time it was hit. */
-enum class BumpKind(val label: String) {
-    BUMP("speed bump"),
-    POTHOLE("pothole"),
-    UNSURE("bump (unsure)"),
-}
-
-/** Which side of the car hits a pothole, seen in its direction of travel. */
-enum class Side(val label: String) {
-    LEFT("left side"),
-    RIGHT("right side"),
-    UNKNOWN("side not known yet"),
-}
-
 /**
  * How hard a spot hits, from [Bump.sevIndex]: mild below [EngineConfig.sevMildMax], strong from
  * [EngineConfig.sevStrongMin], moderate in between. Mild warns with one beep, moderate with two, strong by voice.
@@ -51,7 +37,7 @@ enum class Confidence(val label: String) {
     FULL("full"),
 }
 
-/** One speed bump (or pothole) on the map, learned from your own drives. */
+/** One bump on the map, learned from your own drives. Every jolt is a bump; how hard it hits is its [severity]. */
 class Bump(
     var id: Long,
     var lat: Double,
@@ -70,14 +56,7 @@ class Bump(
     var lastSeen: Long,
     /** You pressed "Mute last beep" for this one. */
     var userMuted: Boolean = false,
-    /** Average pothole score of all hits: -1 = clearly a speed bump, +1 = clearly a pothole. */
-    var kindScore: Double = 0.0,
-    /** How many hits the score is averaged from. */
-    var kindVotes: Int = 0,
-    /** Which wheel hits it: average of -1 (left) / +1 (right) over the hits where it could be told. */
-    var sideScore: Double = 0.0,
-    var sideVotes: Int = 0,
-    /** Average jolt of its hits, m/s². A pothole is "harsh" above [EngineConfig.harshPotholeMs2]. */
+    /** Average jolt of its hits, m/s². */
     var peakAvg: Double = 0.0,
     /**
      * What its [severity] is judged from: a running average over its hits. For now the same average of jolt peaks
@@ -121,45 +100,12 @@ class Bump(
     fun describe(cfg: EngineConfig): String =
         severity(cfg).label + " bump" + if (confidence(cfg) == Confidence.SOFT) " (maybe)" else ""
 
-    val kind: BumpKind
-        get() = when {
-            kindVotes == 0 -> BumpKind.UNSURE
-            kindScore >= KIND_MARGIN -> BumpKind.POTHOLE
-            kindScore <= -KIND_MARGIN -> BumpKind.BUMP
-            else -> BumpKind.UNSURE
-        }
-
     /**
      * Silent but kept on the map: either you muted it, or it is probably a false detection
      * (passed several times but rarely felt).
      */
     fun isMuted(cfg: EngineConfig): Boolean =
         userMuted || (passes >= cfg.muteAfterPasses && hitRate < cfg.muteBelowHitRate)
-
-    val side: Side
-        get() = when {
-            sideVotes == 0 -> Side.UNKNOWN
-            sideScore >= SIDE_MARGIN -> Side.RIGHT
-            sideScore <= -SIDE_MARGIN -> Side.LEFT
-            else -> Side.UNKNOWN
-        }
-
-    /** A pothole worth a voice warning. */
-    fun isHarsh(cfg: EngineConfig): Boolean = kind == BumpKind.POTHOLE && peakAvg >= cfg.harshPotholeMs2
-
-    /** Add one hit's pothole score to the running average (recent hits keep at least 1/10 weight). */
-    fun addKindVote(score: Double) {
-        val w = 1.0 / (minOf(kindVotes, 9) + 1)
-        kindScore += (score - kindScore) * w
-        kindVotes++
-    }
-
-    /** Add one hit's side (-1 left, +1 right). */
-    fun addSideVote(side: Int) {
-        val w = 1.0 / (minOf(sideVotes, 9) + 1)
-        sideScore += (side - sideScore) * w
-        sideVotes++
-    }
 
     /** Add one hit's jolt to the average. [hitsBefore] = hits counted before this one. */
     fun addPeak(peak: Double, hitsBefore: Int) {
@@ -169,13 +115,8 @@ class Bump(
 
     fun copy() = Bump(
         id, lat, lon, heading, hits, passes, misses, nPos, firstSeen, lastSeen, userMuted,
-        kindScore, kindVotes, sideScore, sideVotes, peakAvg, sevIndex, axleHits, legacy, lastBand,
+        peakAvg, sevIndex, axleHits, legacy, lastBand,
     )
-
-    companion object {
-        const val KIND_MARGIN = 0.25
-        const val SIDE_MARGIN = 0.3
-    }
 }
 
 /** One GPS reading. [timeMs] is on the same monotonic clock as the accelerometer samples. */
@@ -217,10 +158,6 @@ class TripStats {
     var misses = 0
     var rejected = 0
     var distanceM = 0.0
-    /** Potholes driven into this trip (every one, harsh or not). */
-    var potholes = 0
-    var newPotholes = 0
-    var harshPotholes = 0
     /** Spots felt this trip (new ones included, once per pass), by severity band after the hit... */
     var mild = 0
     var moderate = 0

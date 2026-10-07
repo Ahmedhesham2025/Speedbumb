@@ -33,7 +33,7 @@ class DriveSpec(
     val westbound: Boolean = false,
     /** Real speed bumps: the driver sees them and slows to 15 km/h. */
     val bumpsAt: List<Double> = emptyList(),
-    /** One-off jolts that are NOT bumps (a pothole you hit once, something dropped). Felt only on this drive. */
+    /** One-off jolts that are NOT real bumps (something on the road, something dropped). Felt only on this drive. */
     val oneOffJoltsAt: List<Double> = emptyList(),
     /** Places the driver slows to 25 km/h (junction, traffic). */
     val slowZonesAt: List<Double> = emptyList(),
@@ -47,12 +47,17 @@ class DriveSpec(
     val crawlAt: List<Double> = emptyList(),
     /** Speed the driver slows to for bumps. */
     val bumpKmh: Double = 15.0,
-    /** Harsh potholes under the right wheels: the driver doesn't slow down; the car rolls, down-first jolt. */
-    val potholesAt: List<Double> = emptyList(),
-    /** Harsh potholes under the left wheels. */
-    val potholesLeftAt: List<Double> = emptyList(),
-    /** Small potholes (right wheels): felt and recorded, but not harsh. */
-    val smallPotholesAt: List<Double> = emptyList(),
+    /**
+     * Dips in the road under the right wheels (7 m/s²): the driver doesn't slow down; the wheel drops first, so the
+     * jolt is down first and the car rolls. The engine records them as bumps like any other jolt.
+     */
+    val dipsAt: List<Double> = emptyList(),
+    /** Small dips (right wheels, 4.2 m/s²). */
+    val smallDipsAt: List<Double> = emptyList(),
+    /** Old name of [dipsAt] (potholes are bumps since v2): the same down-first jolts, still recorded as bumps. */
+    @Deprecated("No potholes since v2: use dipsAt") val potholesAt: List<Double> = emptyList(),
+    /** Dips under the left wheels (old name; the side no longer matters to the engine). */
+    @Deprecated("No potholes since v2: use dipsAt") val potholesLeftAt: List<Double> = emptyList(),
     /** Cruising speed between bumps. */
     val cruiseKmh: Double = 50.0,
     /** Phone has a gyroscope. */
@@ -73,15 +78,13 @@ class DriveSpec(
 
 class TripResult(
     val beepBumpIds: List<Long>,
-    /** What kind each warned-about spot was at the moment of the warning. */
-    val beepKinds: List<BumpKind>,
     /** Real distance from the car to the bump's stored position at the moment of each beep. */
     val beepTrueDistM: List<Double>,
     val newBumps: Int,
     val knownHits: Int,
     val rejected: List<String>,
     val stats: TripStats,
-    /** Snapshots of the engine's forward-direction learning (for debugging the bump/pothole tests). */
+    /** Snapshots of the engine's forward-direction learning (for debugging the shape tests). */
     val forwardTrace: List<String> = emptyList(),
     /** The driving monitor was in pocket mode at the end of the trip. */
     val pocketMode: Boolean = false,
@@ -122,8 +125,8 @@ class Simulator(seed: Long) {
         }
     }
 
-    /** Pothole: the wheel drops (down) for 60 ms, then slams into the far edge (up). */
-    private fun potholePulse(tau: Double, amp: Double): Double = when {
+    /** Dip: the wheel drops (down) for 60 ms, then slams into the far edge (up). */
+    private fun dipPulse(tau: Double, amp: Double): Double = when {
         tau < 0 -> 0.0
         tau < 0.06 -> -0.6 * amp * sin(PI * tau / 0.06)
         tau < 0.11 -> amp * sin(PI * (tau - 0.06) / 0.05)
@@ -167,9 +170,10 @@ class Simulator(seed: Long) {
             spec.crawlAt.map { Pair(travel(it), 8 / 3.6) }
         val jolts = spec.oneOffJoltsAt.map { travel(it) }
         // (distance travelled, side: +1 right / -1 left, jolt size)
-        val potholes = spec.potholesAt.map { Triple(travel(it), 1.0, 7.0) } +
+        @Suppress("DEPRECATION")
+        val dips = (spec.dipsAt + spec.potholesAt).map { Triple(travel(it), 1.0, 7.0) } +
             spec.potholesLeftAt.map { Triple(travel(it), -1.0, 7.0) } +
-            spec.smallPotholesAt.map { Triple(travel(it), 1.0, 4.2) }
+            spec.smallDipsAt.map { Triple(travel(it), 1.0, 4.2) }
         val zones = spec.slowZonesAt.map { travel(it) }
         val handlings = (listOfNotNull(spec.handlingAt) + spec.moreHandlingsAt).map { travel(it) }
 
@@ -177,7 +181,6 @@ class Simulator(seed: Long) {
         var v = 0.0
         var t = 0.0
         val beepIds = ArrayList<Long>()
-        val beepKinds = ArrayList<BumpKind>()
         val beepTrue = ArrayList<Double>()
         val warnings = ArrayList<Warning>()
         var ticks = 0
@@ -203,7 +206,6 @@ class Simulator(seed: Long) {
                 val car = point(travel(s), spec.westbound)
                 beepIds.add(b.id)
                 if (muteEveryBeep) mutePending = true
-                beepKinds.add(b.kind)
                 beepTrue.add(Geo.distance(car[0], car[1], b.lat, b.lon))
             }
             override fun onJoltRejected(peak: Double, reason: String) { rejected.add(reason) }
@@ -280,7 +282,7 @@ class Simulator(seed: Long) {
                 if (s < ss && sNew >= ss) seamHits.add(doubleArrayOf(t, 6.0))
                 if (s < ss + 2.6 && sNew >= ss + 2.6) seamHits.add(doubleArrayOf(t, 5.0))
             }
-            for ((sp, side, amp) in potholes) {
+            for ((sp, side, amp) in dips) {
                 if (s < sp && sNew >= sp) holeHits.add(doubleArrayOf(t, amp, side))                    // front wheel
                 if (s < sp + 2.6 && sNew >= sp + 2.6) holeHits.add(doubleArrayOf(t, 0.7 * amp, side))  // rear wheel, same side
             }
@@ -295,12 +297,12 @@ class Simulator(seed: Long) {
             var av = gauss(0.35)
             if (rnd.nextDouble() < 0.002) av += if (rnd.nextBoolean()) 1.5 else -1.5
             for (c in crossings) av += pulse(t - c[0], c[1])
-            for (c in holeHits) av += potholePulse(t - c[0], c[1])
+            for (c in holeHits) av += dipPulse(t - c[0], c[1])
             for (c in seamHits) av += pulse(t - c[0], c[1])
 
             // Rotation (car axes: roll about forward, pitch about left, yaw about up), rad/s.
-            // Bumps tip the car nose-up/down (pitch); a pothole under one wheel rocks it sideways (roll).
-            // Positive roll (about the forward axis) = left side up, right side down: a right-wheel pothole starts positive.
+            // Bumps tip the car nose-up/down (pitch); a dip under one wheel rocks it sideways (roll).
+            // Positive roll (about the forward axis) = left side up, right side down: a right-wheel dip starts positive.
             var roll = gauss(0.02)
             var pitch = gauss(0.02)
             var yaw = gauss(0.01)
@@ -392,6 +394,6 @@ class Simulator(seed: Long) {
         }
         mon.finish()
         fwdTrace.add("monitor: ${mon.debug}")
-        return TripResult(beepIds, beepKinds, beepTrue, newBumps, knownHits, rejected, engine.trip, fwdTrace, mon.pocketMode, mon.stats, warnings, ticks)
+        return TripResult(beepIds, beepTrue, newBumps, knownHits, rejected, engine.trip, fwdTrace, mon.pocketMode, mon.stats, warnings, ticks)
     }
 }

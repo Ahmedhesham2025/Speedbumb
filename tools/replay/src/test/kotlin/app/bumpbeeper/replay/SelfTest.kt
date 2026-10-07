@@ -118,8 +118,8 @@ class SelfTest {
         assertEquals(2, r.labelsFast)                  // both potholes, hit at 40 km/h
         assertEquals(1.0, r.recallFast, 1e-9)
         assertEquals(1.0, r.kindAccuracy, 1e-9)
-        assertEquals(2, r.sideChecked)
-        assertEquals(1.0, r.sideAccuracy, 1e-9)        // left and right told apart by the gyroscope
+        assertEquals(0, r.sideChecked)                 // pothole labels read as bumps since E1: no side to check
+        assertTrue(r.sideAccuracy.isNaN())
     }
 
     @Test fun twoRunsOnOneMap() {

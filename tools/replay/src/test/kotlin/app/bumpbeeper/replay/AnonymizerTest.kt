@@ -85,7 +85,7 @@ class AnonymizerTest {
         for (i in before.indices) assertEquals(before[i].tMs - before[0].tMs, after[i].tMs)
         val l1 = TraceReader.labels(before)
         val l2 = TraceReader.labels(after)
-        assertEquals(listOf("pothole_l", "pothole_r", "rough"), l2.map { it.kind })
+        assertEquals(listOf("bump", "bump", "rough"), l2.map { it.kind })   // pothole labels read as bumps since E1
         assertEquals(l1.map { it.kind }, l2.map { it.kind })
     }
 

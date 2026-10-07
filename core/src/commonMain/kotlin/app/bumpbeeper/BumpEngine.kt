@@ -21,20 +21,16 @@ class EngineConfig {
 
     /** Slower than this = parked, door slams, getting in. */
     var minSpeedKmh = 3.0
-    /** Faster than this = more likely a pothole or road joint than a speed bump. (setting) */
+    /** Faster than this = more likely a road joint or a rough patch than a speed bump. (setting) */
     @Volatile var maxSpeedKmh = 50.0
-    /** Above [maxSpeedKmh], a jolt is still recorded if it is clearly a pothole, up to this speed. */
-    var potholeMaxSpeedKmh = 100.0
-    /** Pothole score (-1..1) a fast jolt needs to be recorded as a pothole. */
-    var fastPotholeMinScore = 0.6
     /**
-     * Above [maxSpeedKmh] and up to this speed, a jolt is still learned if it clearly looks like a bump or pothole
+     * Above [maxSpeedKmh] and up to this speed, a jolt is still learned if it has a clear shape, up or down first
      * (gyroscope needed): shape |score| ≥ [fastJoltMinScore], peak within [fastJoltMinPeakMs2]..[fastJoltMaxPeakMs2]
      * and the car really rocked (≥ [fastJoltMinRockRads]). A road joint or seam is a short sharp jolt that barely
      * rocks the car. Such a spot is only a candidate like any other: it needs hits on later passes to stay.
      */
     var fastJoltMaxKmh = 60.0
-    var fastJoltMinScore = Bump.KIND_MARGIN
+    var fastJoltMinScore = 0.25
     var fastJoltMinPeakMs2 = 4.0
     var fastJoltMaxPeakMs2 = 16.0
     /** Rocking (standard deviation of the roll or pitch rate, whichever is bigger) during the jolt, rad/s. */
@@ -62,8 +58,6 @@ class EngineConfig {
     var maxAlertDistM = 250.0
     /** Don't beep if you are already slower than this: you have clearly seen it. 0 = always beep. (setting) */
     @Volatile var quietBelowKmh = 20.0
-    /** A pothole whose hits average at least this jolt is "harsh" (≈ 0.5 g) and gets the voice. (setting) */
-    @Volatile var harshPotholeMs2 = 5.0
     /**
      * Severity bands of a spot's [Bump.sevIndex] (for now its average jolt, m/s²): mild below [sevMildMax], strong
      * from [sevStrongMin], moderate in between. A spot only changes band once its index is [sevHysteresis] (a fraction
@@ -117,32 +111,25 @@ class EngineConfig {
 }
 
 /**
- * How one jolt looked, used to tell a speed bump from a pothole.
- * [score] runs from -1 (clearly a speed bump) to +1 (clearly a pothole).
+ * How one jolt looked: diagnostics for the event log, training samples and research. Nothing decides a spot's type
+ * from them (every jolt is a bump); only a fast jolt needs a clear shape to count ([EngineConfig.fastJoltMinScore]).
+ * [score] runs from -1 (up first, the car pitching) to +1 (down first, the car rolling).
  */
 class JoltShape(
     val score: Double,
-    /** The first big movement was downwards (a wheel dropping into a hole). */
+    /** The first big movement was downwards (a wheel dropping into a dip). */
     val firstDown: Boolean,
     /** Side-to-side rocking ÷ front-to-back rocking. NaN if the gyroscope or the car's forward direction is unknown. */
     val rollRatio: Double,
-    /** Which wheel hit it: -1 left, +1 right, 0 can't tell (no gyroscope, or the car didn't rock sideways). */
-    val side: Int = 0,
     /** How much the car rocked: the bigger of the roll and pitch rate standard deviations, rad/s. NaN without gyroscope. */
     val rock: Double = Double.NaN,
 ) {
     val usedGyro: Boolean get() = !rollRatio.isNaN()
 
     fun describe(): String {
-        val kind = when {
-            score >= Bump.KIND_MARGIN -> "pothole"
-            score <= -Bump.KIND_MARGIN -> "bump"
-            else -> "unsure"
-        }
         val roll = if (usedGyro) " roll/pitch=" + formatFixed(rollRatio, 2) else " no-gyro"
-        val s = when (side) { -1 -> " side=left"; 1 -> " side=right"; else -> "" }
         val r = if (rock.isNaN()) "" else " rock=" + formatFixed(rock, 2)
-        return "looks=$kind score=${formatFixed(score, 2)} first=${if (firstDown) "down" else "up"}$roll$s$r"
+        return "score=${formatFixed(score, 2)} first=${if (firstDown) "down" else "up"}$roll$r"
     }
 }
 
@@ -151,7 +138,7 @@ class JoltShape(
  *
  * Feed it accelerometer samples ([onAccel], ~50 per second), gyroscope samples ([onGyro], optional)
  * and GPS fixes ([onFix], ~1 per second), always from the same thread. It will:
- *  1. find vertical jolts that look like a speed bump or pothole, and tell which of the two it is,
+ *  1. find vertical jolts that look like a bump, and how hard they hit (its severity),
  *  2. put new ones on the map, or add a hit to a spot it already knows,
  *  3. while you drive, watch the known spots ahead of you and beep before you reach one,
  *  4. count every pass (felt or not), so spots that are rarely felt get muted.
@@ -320,7 +307,7 @@ class BumpEngine(
     // 1. Accelerometer → jolt detection
     // =====================================================================
 
-    /** Rotation rate in rad/s, phone axes. Optional: without a gyroscope, bump/pothole is judged from the jolt alone. */
+    /** Rotation rate in rad/s, phone axes. Optional: without it, a jolt's shape is judged from the jolt alone. */
     fun onGyro(tMs: Long, x: Double, y: Double, z: Double) {
         gyroX = x; gyroY = y; gyroZ = z
         gyroSeen = true
@@ -406,7 +393,7 @@ class BumpEngine(
         }
     }
 
-    /** A big jolt happened at [tMs]. Is it a speed bump or pothole? */
+    /** A big jolt happened at [tMs]. Is it a bump? */
     private fun decide(tMs: Long, peak: Double) {
         // The decision comes 1.2 s after the jolt, so a newer fix may already be in. Use the one closest in time.
         val fix = fixes.minByOrNull { abs(it.timeMs - tMs) }
@@ -418,11 +405,9 @@ class BumpEngine(
         if (heading.isNaN()) { reject(tMs, peak, "no_heading", fix); return }
 
         val shape = shapeOf(tMs, peak)
-        if (speedKmh > cfg.maxSpeedKmh) {
-            // Too fast for a speed bump. Keep it only if it is clearly a pothole (needs the gyroscope to be sure),
-            // or, not much faster, clearly shaped like a bump or pothole.
-            val pothole = speedKmh <= cfg.potholeMaxSpeedKmh && shape.usedGyro && shape.score >= cfg.fastPotholeMinScore
-            if (!pothole && !clearFastJolt(speedKmh, peak, shape)) { reject(tMs, peak, "too_fast", fix, shape.describe(), shape); return }
+        // Too fast for a speed bump: kept only if, not much faster, it has a clear shape (needs the gyroscope).
+        if (speedKmh > cfg.maxSpeedKmh && !clearFastJolt(speedKmh, peak, shape)) {
+            reject(tMs, peak, "too_fast", fix, shape.describe(), shape); return
         }
 
         // GPS comes once a second; move that fix forward (or back, if it came after) to the moment of the jolt.
@@ -456,16 +441,14 @@ class BumpEngine(
     }
 
     // =====================================================================
-    // 1b. Speed bump or pothole?
+    // 1b. How the jolt looked (diagnostics)
     // =====================================================================
     //
-    // Two clues, both measured on the front-axle hit:
-    //  • Which way the car moves first. A speed bump pushes the car UP first; a pothole drops a wheel DOWN first,
-    //    then slams it into the far edge.
-    //  • How the car rocks (gyroscope). A speed bump spans the lane, so both front wheels rise together and the car
-    //    pitches nose-up/nose-down. A pothole usually catches one wheel, so the car rolls side to side.
-    // Each hit gives a score from -1 (bump) to +1 (pothole); the map keeps a running average per spot,
-    // so one odd reading doesn't change what a spot is.
+    // Two clues, both measured on the front-axle hit, kept for the event log, training samples and research:
+    //  • Which way the car moves first: up (a hump) or down (a wheel dropping into a dip, then hitting its far edge).
+    //  • How the car rocks (gyroscope): pitching nose-up/nose-down (both front wheels together) or rolling side to side
+    //    (one wheel). The score runs from -1 (up first, pitching) to +1 (down first, rolling).
+    // Every jolt is a bump whatever its shape; only a fast one needs a clear shape to count ([clearFastJolt]).
 
     private fun shapeOf(start: Long, peak: Double): JoltShape {
         // First big movement: up or down?
@@ -474,7 +457,7 @@ class BumpEngine(
             val k = (bufHead - bufCount + i + BUF) % BUF
             val t = bufT[k]
             if (t < start - 100 || t > start + 600) continue
-            // The drop into a hole is softer than the slam out of it, so a third of the peak already counts.
+            // The drop into a dip is softer than the hit on its far edge, so a third of the peak already counts.
             if (abs(bufV[k]) >= 0.35 * peak) { firstDown = bufV[k] < 0; break }
         }
         val signScore = if (firstDown) 1.0 else -1.0
@@ -508,27 +491,7 @@ class BumpEngine(
         val ratio = rollRms / max(pitchRms, 0.03)
         val rollScore = (ln(max(ratio, 1e-3)) / ln(3.0)).coerceIn(-1.0, 1.0)   // 3× more roll → +1, 3× more pitch → -1
         val score = (signScore + 2.0 * rollScore) / 3.0
-
-        // Which wheel? The car first tips towards the wheel that drops into the hole.
-        // Rotation about the forward axis is positive when the left side rises and the right side drops
-        // (right-hand rule: forward × left = up), so a positive first swing means the right wheel hit it.
-        var side = 0
-        if (ratio >= 1.5) {
-            val mean = sr / n
-            var maxDev = 0.0
-            for (i in 0 until bufCount) {
-                val k = (bufHead - bufCount + i + BUF) % BUF
-                if (bufT[k] < start - 100 || bufT[k] > start + 400) continue
-                maxDev = max(maxDev, abs(bufGx[k] * fx + bufGy[k] * fy + bufGz[k] * fz - mean))
-            }
-            for (i in 0 until bufCount) {
-                val k = (bufHead - bufCount + i + BUF) % BUF
-                if (bufT[k] < start - 100 || bufT[k] > start + 400) continue
-                val dev = bufGx[k] * fx + bufGy[k] * fy + bufGz[k] * fz - mean
-                if (abs(dev) >= 0.5 * maxDev) { side = if (dev > 0) 1 else -1; break }
-            }
-        }
-        return JoltShape(score, firstDown, ratio, side, max(rollRms, pitchRms))
+        return JoltShape(score, firstDown, ratio, max(rollRms, pitchRms))
     }
 
     /** Unit vector of the car's forward direction in phone axes, or null while it is still unknown. */
@@ -585,12 +548,9 @@ class BumpEngine(
         if (best == null) {
             // First time here → record it. No beep: we are already on top of it.
             val b = Bump(0, lat, lon, heading, hits = 1, passes = 1, misses = 0, nPos = 1, firstSeen = now, lastSeen = now)
-            b.addKindVote(shape.score)
-            if (shape.side != 0) b.addSideVote(shape.side)
             b.addPeak(peak, 0)
             b.addSeverity(peak, 0, cfg)   // E2: the vibration index instead of the peak
             b.id = store.insertBump(b)
-            if (b.kind == BumpKind.POTHOLE) countPothole(b, isNew = true)
             countSpot(b)
             bumps.add(b)
             val a = Approach(tMs, 0.0)
@@ -599,8 +559,8 @@ class BumpEngine(
             lastHitMs[b.id] = tMs
             trip.newBumps++
             trip.hits++
-            log("new_bump", b.id, lat, lon, speedKmh, peak, slowdownKmh, 0.0, "${b.kind.name.lowercase()} ${shape.describe()}")
-            observe("jolt", lat, lon, speedKmh, peak, shape.score, shape.side.toDouble(), now)
+            log("new_bump", b.id, lat, lon, speedKmh, peak, slowdownKmh, 0.0, "bump ${bandNote(b)} ${shape.describe()}")
+            observe("jolt", lat, lon, speedKmh, peak, shape.score, now)
             sample("learned", null, tMs, speedKmh, peak, shape, null, lat, lon, b.id)
             if (remoteAll.isNotEmpty()) dedupRemote()   // the new spot of your own replaces its shared twin from now on
             listener.onNewBump(b)
@@ -634,9 +594,6 @@ class BumpEngine(
         b.hits++
         b.legacy = false   // felt again: an old pothole spot is an ordinary bump from now on
         b.lastSeen = now
-        b.addKindVote(shape.score)
-        if (shape.side != 0) b.addSideVote(shape.side)
-        if (b.kind == BumpKind.POTHOLE) countPothole(b, isNew = false)
         countSpot(b)
 
         if (a != null) {
@@ -656,19 +613,15 @@ class BumpEngine(
         trip.hits++
         log(
             "hit", b.id, lat, lon, speedKmh, peak, slowdownKmh, bestD,
-            "hits ${b.hits}/${b.passes} now=${b.kind.name.lowercase()} ${shape.describe()}",
+            "hits ${b.hits}/${b.passes} now=bump ${bandNote(b)} ${shape.describe()}",
         )
-        observe("known_hit", lat, lon, speedKmh, peak, shape.score, shape.side.toDouble(), now)
+        observe("known_hit", lat, lon, speedKmh, peak, shape.score, now)
         sample("hit", null, tMs, speedKmh, peak, shape, null, lat, lon, b.id)
         listener.onKnownBumpHit(b)
     }
 
-    /** Every pothole driven into is counted, harsh or not. */
-    private fun countPothole(b: Bump, isNew: Boolean) {
-        trip.potholes++
-        if (isNew) trip.newPotholes++
-        if (b.isHarsh(cfg)) trip.harshPotholes++
-    }
+    /** For the event log: the spot's band and confidence after this hit ("sev=moderate conf=soft"). */
+    private fun bandNote(b: Bump) = "sev=${b.severity(cfg).label} conf=${b.confidence(cfg).label}"
 
     /** Every spot felt is counted once per pass, by its band and confidence after the hit. */
     private fun countSpot(b: Bump) {
@@ -748,14 +701,10 @@ class BumpEngine(
         }
         remoteAll = spots.filter { it.id in 0 until Long.MAX_VALUE / 2 }.map { r ->
             // Felt once per phone that confirmed it: two phones make it FULL. A shared pothole is an old (soft) spot.
+            @Suppress("DEPRECATION") val old = r.kind == BumpKind.POTHOLE
             Bump(
                 -2L - r.id, r.lat, r.lon, r.heading, hits = r.nDevices.coerceAtLeast(0), passes = 0, misses = 0, nPos = 0,
-                firstSeen = 0, lastSeen = 0, sevIndex = r.severity, legacy = r.kind == BumpKind.POTHOLE,
-                kindScore = when (r.kind) { BumpKind.POTHOLE -> 1.0; BumpKind.BUMP -> -1.0; BumpKind.UNSURE -> 0.0 },
-                kindVotes = if (r.kind == BumpKind.UNSURE) 0 else 1,
-                sideScore = when (r.side) { Side.RIGHT -> 1.0; Side.LEFT -> -1.0; Side.UNKNOWN -> 0.0 },
-                sideVotes = if (r.side == Side.UNKNOWN) 0 else 1,
-                peakAvg = r.severity,
+                firstSeen = 0, lastSeen = 0, peakAvg = r.severity, sevIndex = r.severity, legacy = old,
             )
         }
         dedupRemote()
@@ -776,12 +725,13 @@ class BumpEngine(
     }
 
     private fun observe(
-        kind: String, lat: Double, lon: Double, speedKmh: Double, peak: Double, kindScore: Double, sideScore: Double, now: Long,
+        kind: String, lat: Double, lon: Double, speedKmh: Double, peak: Double, shapeScore: Double, now: Long,
         dir: Double = heading,
     ) {
         val sink = observationSink ?: return
         try {
-            sink.record(Observation(randomUuid(), kind, lat, lon, dir, speedKmh, peak, kindScore, sideScore, now))
+            // The shape score goes up as a diagnostic in the old kind_score field; bumps have no side (0).
+            sink.record(Observation(randomUuid(), kind, lat, lon, dir, speedKmh, peak, shapeScore, 0.0, now))
         } catch (e: Exception) {
             // A full or broken outbox must not stop detection.
         }
@@ -802,25 +752,24 @@ class BumpEngine(
 
     /**
      * Hands one judged candidate to the [sampleSink] with its window around [centerMs]. [spotKey] is the spot's id in
-     * this engine (own, or shared stand-in), [dir] the direction used to find a confirmed shared twin.
+     * this engine (own, or shared stand-in), [dir] the direction used to find a confirmed shared twin. A jolt that was
+     * looked at ([shape]) is classified by its own band; a pass or mute by the spot's [band].
      */
     private fun sample(
         decision: String, reason: String?, centerMs: Long, speedKmh: Double, peak: Double, shape: JoltShape?,
-        kind: BumpKind?, lat: Double, lon: Double, spotKey: Long?, dir: Double = heading,
+        band: Severity?, lat: Double, lon: Double, spotKey: Long?, dir: Double = heading,
     ) {
         val r = ring ?: return
         if (spotKey != null) nearMs[spotKey] = Near(centerMs, speedKmh, peak)
         // Jolts are cut at the decision (1.2 s after the trigger); passes later, so they get the full 2 s after.
         val w = r.window(centerMs) ?: return
         val fix = fixes.minByOrNull { abs(it.timeMs - centerMs) }
-        val cls = shape?.let {
-            when { it.score >= Bump.KIND_MARGIN -> "pothole"; it.score <= -Bump.KIND_MARGIN -> "bump"; else -> "unsure" }
-        } ?: kind?.name?.lowercase()
+        // E2: the jolt's vibration index instead of its peak.
+        val cls = (if (shape != null) Severity.of(peak, null, cfg) else band)?.label
         val shared = spotKey?.let { remoteSpotId(it) } ?: if (lat.isNaN()) null else sharedIdAt(lat, lon, dir)
         val s = JoltSample(
             decision, reason, cls, if (speedKmh.isNaN()) 0.0 else speedKmh, headingChange(centerMs), fix?.accuracyM ?: Double.NaN,
-            peak, shape?.score ?: Double.NaN, shape?.firstDown, shape?.rollRatio ?: Double.NaN,
-            if (shape != null && shape.usedGyro) shape.side.toDouble() else Double.NaN,
+            peak, shape?.score ?: Double.NaN, shape?.firstDown, shape?.rollRatio ?: Double.NaN, Double.NaN,
             shared, lat, lon, wallClock(), w,
         )
         emit(s)
@@ -836,7 +785,7 @@ class BumpEngine(
         val at = nearMs[key]
         if (at == null || r.window(at.ms) == null) { pendingMute.add(newKey); return }
         // Speed and jolt of the event the mute labels (the hit or the pass), not of the moment the button was pressed.
-        sample("user_mute", null, at.ms, at.kmh, at.peak, null, b.kind, b.lat, b.lon, null, b.heading)
+        sample("user_mute", null, at.ms, at.kmh, at.peak, null, b.severity(cfg), b.lat, b.lon, null, b.heading)
         nearMs[newKey] = at
     }
 
@@ -1025,8 +974,8 @@ class BumpEngine(
                     "miss", b.id, f.lat, f.lon, f.speedMps * 3.6, a.maxJoltNear, Double.NaN, a.minDist,
                     "hits ${b.hits}/${b.passes}, $nearNote",
                 )
-                observe("pass_clear", b.lat, b.lon, a.minSpeedNearMps * 3.6, a.maxJoltNear, 0.0, 0.0, wallClock(), b.heading)
-                sample("miss", null, a.minDistMs, passKmh(a, f), a.maxJoltNear, null, b.kind, b.lat, b.lon, b.id, b.heading)
+                observe("pass_clear", b.lat, b.lon, a.minSpeedNearMps * 3.6, a.maxJoltNear, 0.0, wallClock(), b.heading)
+                sample("miss", null, a.minDistMs, passKmh(a, f), a.maxJoltNear, null, b.severity(cfg), b.lat, b.lon, b.id, b.heading)
             }
             store.updateBump(b)
         }
@@ -1040,8 +989,8 @@ class BumpEngine(
     private fun finishRemotePass(b: Bump, a: Approach, f: Fix) {
         if (ring != null) nearMs[b.id] = Near(a.minDistMs, passKmh(a, f), a.maxJoltNear)
         if (a.hit || a.minSpeedNearMps * 3.6 < cfg.minInformativeKmh) return
-        observe("pass_clear", b.lat, b.lon, a.minSpeedNearMps * 3.6, a.maxJoltNear, 0.0, 0.0, wallClock(), b.heading)
-        sample("pass_clear", null, a.minDistMs, passKmh(a, f), a.maxJoltNear, null, b.kind, b.lat, b.lon, b.id, b.heading)
+        observe("pass_clear", b.lat, b.lon, a.minSpeedNearMps * 3.6, a.maxJoltNear, 0.0, wallClock(), b.heading)
+        sample("pass_clear", null, a.minDistMs, passKmh(a, f), a.maxJoltNear, null, b.severity(cfg), b.lat, b.lon, b.id, b.heading)
     }
 
     /**
@@ -1064,8 +1013,7 @@ class BumpEngine(
         val now = wallClock()
         val b = Bump(
             0, r.lat, r.lon, r.heading, hits = 0, passes = 0, misses = 0, nPos = 1, firstSeen = now, lastSeen = now,
-            userMuted = true, kindScore = r.kindScore, kindVotes = r.kindVotes, sideScore = r.sideScore,
-            sideVotes = r.sideVotes, peakAvg = r.peakAvg, sevIndex = r.sevIndex, legacy = r.legacy,
+            userMuted = true, peakAvg = r.peakAvg, sevIndex = r.sevIndex, legacy = r.legacy,
         )
         b.id = store.insertBump(b)
         bumps.add(b)

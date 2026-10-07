@@ -63,7 +63,7 @@ object Prefs {
     /** Jolts above this speed aren't speed bumps (unless clearly a pothole), km/h. */
     fun maxBumpKmh(ctx: Context): Int = sp(ctx).getInt(MAX_BUMP_KMH, 50)
     fun warnPotholes(ctx: Context): Boolean = sp(ctx).getBoolean(WARN_POTHOLES, true)
-    /** Potholes with an average jolt of at least this many m/s² get a voice warning (4–10). Default = [EngineConfig.harshPotholeMs2]. */
+    /** Potholes with an average jolt of at least this many m/s² got a voice warning (4–10). Not used since v2: no potholes. */
     fun harshMs2(ctx: Context): Int = sp(ctx).getInt(HARSH_MS2, 5)
     fun voiceLang(ctx: Context): String = sp(ctx).getString(VOICE_LANG, "en") ?: "en"
     /** Speed above which time counts as speeding, for the driving score (km/h). */
@@ -176,6 +176,5 @@ object Prefs {
         cfg.leadSeconds = leadSeconds(ctx).toDouble()
         cfg.quietBelowKmh = quietBelowKmh(ctx).toDouble()
         cfg.maxSpeedKmh = maxBumpKmh(ctx).toDouble()
-        cfg.harshPotholeMs2 = harshMs2(ctx).toDouble()
     }
 }
