@@ -64,12 +64,14 @@ object ResearchConsent {
             withdrawAsync(app)
         }
         if (pending(app)) schedule(app)
+        ResearchUploader.ensurePeriodic(app)   // the 6-hourly upload while on, none while off
     }
 
     /** "Delete my shared data": the server forgets the device (its research files go at the owner's next run). */
     fun forgetLocal(ctx: Context) {
         Prefs.setResearchState(ctx, false, 0, offPending = false, onPending = false, serverOn = false, note = "")
         withdrawAsync(ctx.applicationContext ?: ctx)
+        ResearchUploader.ensurePeriodic(ctx)
     }
 
     /**
@@ -81,17 +83,20 @@ object ResearchConsent {
         if (Prefs.researchRecording(ctx)) Prefs.setResearchAsked(ctx, 0)
         Prefs.setResearchState(ctx, false, 0, offPending = false, onPending = false, serverOn = false, note = "")
         ResearchQueue.clear(ctx)
+        ResearchUploader.ensurePeriodic(ctx)
     }
 
     /** The server no longer has this phone's consent (a new anonymous ID): off here too, and Settings says why. */
     internal fun sessionReset(ctx: Context) {
         Prefs.setResearchState(ctx, false, Prefs.researchConsentVersion(ctx), offPending = false, onPending = false, serverOn = false, note = SESSION_RESET)
         ResearchQueue.withdraw(ctx)
+        ResearchUploader.ensurePeriodic(ctx)
     }
 
-    /** App start: a choice not yet told (the job may have been lost with a reboot) is sent when online. */
+    /** App start: a choice not yet told (the job may have been lost with a reboot) is sent when online; uploads go on. */
     fun onAppStart(ctx: Context) {
         if (pending(ctx)) schedule(ctx)
+        ResearchUploader.ensurePeriodic(ctx)
     }
 
     /** The consent job ([SyncJob]): tell the server. True = retry later. */
@@ -102,6 +107,7 @@ object ResearchConsent {
         val auth = SupabaseAuth(ctx, BuildConfig.SUPABASE_URL, BuildConfig.SUPABASE_KEY, transport, mayCreate = mayCreate)
         try {
             tellServer(ctx, SupabaseApi(BuildConfig.SUPABASE_URL, BuildConfig.SUPABASE_KEY, auth, transport))
+            if (active(ctx)) ResearchUploader.scheduleNow(ctx)   // the server has "on": files may go
             false
         } catch (e: ApiException) {
             Log.w(TAG, "research consent: ${e.message}")
