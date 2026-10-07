@@ -15,12 +15,14 @@ insert into public.drivers (fleet_id, display_name, vehicle_id) values
   (1, 'Driver B', 2),
   (2, 'Driver C', 3);
 
-insert into public.spots (geom, heading, kind, side, severity, n_devices, n_hits, n_clear, status, last_hit)
+-- Severity in m/s²; the pothole is an old (legacy) spot, soft until a v2 phone feels it (bump_severity migration).
+insert into public.spots (geom, heading, kind, side, severity, severity_band, confidence, legacy_pothole,
+                          n_devices, n_hits, n_clear, status, last_hit)
 values
-  ('SRID=4326;POINT(30.0000 25.0000)', 90, 'bump', 'both', 0.6, 4, 9, 1, 'confirmed', now()),
-  ('SRID=4326;POINT(30.0050 25.0010)', 90, 'pothole', 'right', 0.8, 3, 5, 2, 'confirmed', now()),
-  ('SRID=4326;POINT(30.0100 25.0020)', 270, 'bump', 'both', 0.4, 3, 4, 0, 'confirmed', now()),
-  ('SRID=4326;POINT(30.0150 25.0030)', 0, 'bump', 'left', 0.3, 1, 1, 0, 'candidate', now());
+  ('SRID=4326;POINT(30.0000 25.0000)', 90, 'bump', 'both', 4.2, 'moderate', 'full', false, 4, 9, 1, 'confirmed', now()),
+  ('SRID=4326;POINT(30.0050 25.0010)', 90, 'pothole', 'right', 6.1, 'strong', 'soft', true, 3, 5, 2, 'confirmed', now()),
+  ('SRID=4326;POINT(30.0100 25.0020)', 270, 'bump', null, 2.4, 'mild', 'full', false, 3, 4, 0, 'confirmed', now()),
+  ('SRID=4326;POINT(30.0150 25.0030)', 0, 'bump', null, 5.6, 'strong', 'soft', false, 1, 1, 0, 'candidate', now());
 
 -- Keep the identity sequences ahead of the explicit ids above.
 select setval(pg_get_serial_sequence('public.fleets', 'id'), 100);
