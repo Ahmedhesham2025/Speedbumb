@@ -58,8 +58,6 @@ class EngineConfig {
     var maxAlertDistM = 250.0
     /** Don't beep if you are already slower than this: you have clearly seen it. 0 = always beep. (setting) */
     @Volatile var quietBelowKmh = 20.0
-    /** A pothole whose hits average at least this jolt is "harsh" (≈ 0.5 g). Only for the app's screens until 4/4. (setting) */
-    @Volatile var harshPotholeMs2 = 5.0
     /**
      * Severity bands of a spot's [Bump.sevIndex] (for now its average jolt, m/s²): mild below [sevMildMax], strong
      * from [sevStrongMin], moderate in between. A spot only changes band once its index is [sevHysteresis] (a fraction

@@ -1,9 +1,29 @@
 package app.bumpbeeper
 
 /**
+ * The shared map's old spot kind (server column `kind`), as the app's cache still delivers it. Spots have a
+ * [Severity] and a [Confidence] now: the engine only reads [POTHOLE], which marks an old pothole spot ([Bump.legacy]).
+ */
+@Deprecated("Spots have a Severity and a Confidence now; only the shared map's cache still carries this (until spots_near_v2).")
+enum class BumpKind(val label: String) {
+    BUMP("speed bump"),
+    POTHOLE("pothole"),
+    UNSURE("bump (unsure)"),
+}
+
+/** The shared map's old pothole side (server column `side`). Not used any more: bumps have no side. */
+@Deprecated("Bumps have no side; only the shared map's cache still carries this (until spots_near_v2).")
+enum class Side(val label: String) {
+    LEFT("left side"),
+    RIGHT("right side"),
+    UNKNOWN("side not known yet"),
+}
+
+/**
  * A spot confirmed on the shared online map (hit by other phones), as the app's local cache holds it.
  * The engine warns for it like for a spot it learned itself, but never stores it or counts passes on it.
  */
+@Suppress("DEPRECATION")
 data class RemoteSpot(
     /** Server id (≥ 0). */
     val id: Long,
