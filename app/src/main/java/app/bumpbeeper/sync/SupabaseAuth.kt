@@ -26,9 +26,14 @@ class SupabaseAuth(
     val userId: String? get() = sp.getString(USER_ID, null)
     val signedIn: Boolean get() = sp.getString(REFRESH, null) != null
 
-    /** A valid access token: the stored one, a refreshed one, or a new anonymous sign-in. Throws [ApiException]. */
-    @Synchronized
-    fun accessToken(forceRefresh: Boolean = false): String {
+    /**
+     * A valid access token: the stored one, a refreshed one, or a new anonymous sign-in. Throws [ApiException].
+     * One at a time in the whole process, whichever instance asks: refresh tokens rotate, and two refreshes of the same
+     * one at once (a sync and a research upload) could otherwise lose the session and sign in as a new device.
+     */
+    fun accessToken(forceRefresh: Boolean = false): String = synchronized(LOCK) { token(forceRefresh) }
+
+    private fun token(forceRefresh: Boolean): String {
         val token = sp.getString(ACCESS, null)
         val expiresAt = sp.getLong(EXPIRES_AT, 0L)
         if (!forceRefresh && token != null && now() < expiresAt - 60_000) return token
@@ -73,10 +78,11 @@ class SupabaseAuth(
 
     /** Forget the session; the next call signs in as a new anonymous device. Background thread. */
     fun clear() {
-        sp.edit().clear().commit()
+        synchronized(LOCK) { sp.edit().clear().commit() }
     }
 
     companion object {
+        private val LOCK = Any()
         /** File name `sync_auth.xml`; excluded from backups by name. */
         const val PREFS = "sync_auth"
         private const val ACCESS = "access_token"
