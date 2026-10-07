@@ -14,7 +14,10 @@ class JoltSample(
     val decision: String,
     /** Why, in `[a-z_]{1,24}` (e.g. the reject reason, `same_pass`), or null. */
     val reason: String?,
-    /** This jolt's shape (bump | pothole | unsure), or the spot's kind for a pass; null when not looked at. */
+    /**
+     * This jolt's severity band (mild | moderate | strong, [Severity.label]), or the spot's band for a pass or mute;
+     * null when the jolt was rejected before it was looked at.
+     */
     val classification: String?,
     val speedKmh: Double,
     /** Signed change of the GPS heading over the ~4 s before, degrees (-180..180). NaN = unknown. */
@@ -23,12 +26,12 @@ class JoltSample(
     val gpsAccuracyM: Double,
     /** Vertical jolt, m/s² (for a pass: the strongest one felt near the spot). NaN = none. */
     val peak: Double,
-    /** -1 (speed bump) .. +1 (pothole). NaN = not looked at. */
+    /** The jolt's shape, a diagnostic ([JoltShape.score]): -1 up first and pitching .. +1 down first and rolling. NaN = not looked at. */
     val shapeScore: Double,
     val firstDown: Boolean?,
     /** Roll ÷ pitch rocking; NaN without gyroscope or forward direction. */
     val rollPitchRatio: Double,
-    /** -1 left .. +1 right, NaN when not looked at or without gyroscope. */
+    /** Always NaN since v2 (bumps have no side); kept for the upload format. */
     val sideScore: Double,
     /** Server id of the confirmed shared spot this happened at, or null. Never a local spot id. */
     val sharedSpotId: Long?,
