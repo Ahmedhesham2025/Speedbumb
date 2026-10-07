@@ -11,6 +11,7 @@ import java.io.OutputStream
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import java.util.zip.Deflater
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 
@@ -115,10 +116,12 @@ class TraceWriter(dir: File, meta: List<String> = emptyList()) {
 
         /**
          * Packs [files] into one zip written to [out] (flat, one entry per file), so many recordings go to
-         * Google Drive / WhatsApp as a single attachment. CSV text shrinks to about a fifth.
+         * Google Drive / WhatsApp as a single attachment. CSV text shrinks to about a fifth. Files that are gzip
+         * already (research recordings) pass [level] = NO_COMPRESSION: squeezing them again only costs time.
          */
-        fun zipTo(files: List<File>, out: OutputStream) {
+        fun zipTo(files: List<File>, out: OutputStream, level: Int = Deflater.DEFAULT_COMPRESSION) {
             val zip = ZipOutputStream(out)
+            zip.setLevel(level)
             for (f in files) {
                 zip.putNextEntry(ZipEntry(f.name).apply { time = f.lastModified() })
                 f.inputStream().use { it.copyTo(zip, 64 * 1024) }
