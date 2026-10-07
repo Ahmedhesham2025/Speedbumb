@@ -10,27 +10,20 @@ import java.util.concurrent.atomic.AtomicLong
 import java.util.zip.GZIPOutputStream
 
 /**
- * Writes research lines into gzip segment files on its own thread ("research-io"), so a slow disk never holds up the
- * thread that receives the sensors (Android silently drops sensor events a listener is too slow for; here every lost
- * line is counted).
+ * Writes research lines into gzip segment files on its own background thread ("research-io"), so a slow disk never
+ * holds up the thread that receives the sensors (Android silently drops events a listener is too slow for; here every
+ * lost line is counted). The one producer thread asks [room] for a buffer before each line; full buffers go to the
+ * writer, and [tick] (every 2 s) hands over a partly filled one and flushes the file. When all 16 buffers of 64 KB
+ * (about 25 s at full rate) wait for the disk, [room] returns null: that line is dropped and counted ([dropped]).
  *
- * One producer thread asks [room] for a buffer before each line. Full buffers go to the writer thread, and [tick]
- * (every 2 s) also hands over a partly filled one and flushes the file. When every buffer is still waiting for the disk,
- * [room] returns null: that line is dropped and counted ([dropped]), never waited for. 16 buffers of 64 KB hold about
- * 25 s of data at full rate.
- *
- * The open segment is `<name>.part` and gets its final name when it closes. A new segment, with the full header, starts
- * at the first [tick] after [segmentMs]. Plain Kotlin (no Android).
+ * The open segment is `<name>.part` until it closes; a new one, with the full header, starts at the first [tick] after
+ * [segmentMs]. Times are t units (0.1 ms), like the lines. Plain Kotlin (no Android).
  */
 class ResearchWriter(
-    /** Final file of segment n (0, 1, …). Writer thread. */
-    private val file: (Int) -> File,
-    /** Complete `#` lines that start segment n. Writer thread. */
-    private val header: (Int) -> List<String>,
-    /** Writer thread, before each new segment: pruning old files. */
-    private val beforeSegment: () -> Unit = {},
-    /** Don't start a segment with less free space than this. */
-    private val minFreeBytes: Long = 0L,
+    private val file: (Int) -> File,             // final file of segment n (writer thread)
+    private val header: (Int) -> List<String>,   // complete `#` lines that start segment n (writer thread)
+    private val beforeSegment: () -> Unit = {},  // writer thread, before each new segment: pruning
+    private val minFreeBytes: Long = 0L,         // don't start a segment with less free space than this
     private val segmentMs: Long = SEGMENT_MS,
     chunkBytes: Int = 64 * 1024,
     chunks: Int = 16,
@@ -41,6 +34,7 @@ class ResearchWriter(
         var flush = false
         var endSegment = false
         var last = false
+        fun reset() { enc.clear(); flush = false; endSegment = false; last = false }
     }
 
     private val free = ArrayBlockingQueue<Chunk>(chunks)
@@ -48,15 +42,15 @@ class ResearchWriter(
     private val full = ArrayBlockingQueue<Chunk>(chunks + 1)
     private val drops = AtomicLong()
     private val lost = AtomicLong()   // lines the writer could not put on disk
+    private val segmentT = segmentMs * ResearchFormat.T_PER_MS
     private var cur: Chunk? = null    // producer only, like the four below
-    private var segStartMs = 0L
+    private var segStart = 0L
     private var noted = 0L            // drops already written as a `drop` line
     private var sent = 0L
     private var finished = false
 
     /** Why the writer stopped writing ("storage_full", "io: …"); null while all is well. */
-    @Volatile
-    var failure: String? = null
+    @Volatile var failure: String? = null
         private set
 
     /** Lines that never reached the file: no buffer was free, or the disk failed. */
@@ -71,34 +65,30 @@ class ResearchWriter(
         repeat(chunks) { free.add(Chunk(chunkBytes)) }
     }
 
-    // Declared last: the thread starts once everything above is set up.
-    private val thread = Thread({ drain() }, "research-io").apply { start() }
+    // Declared last: the thread starts once everything above is set up. Background priority: with 25 s of buffers it
+    // never needs to compete with the engine thread.
+    private val thread = Thread({ drain() }, "research-io").apply {
+        priority = BACKGROUND_PRIORITY
+        start()
+    }
 
     /** Producer: the buffer to write one line into (at most [LineEncoder.MAX_LINE] bytes), or null: drop the line. */
     fun room(): LineEncoder? {
         if (finished) return null
-        val c = cur
-        if (c != null) {
-            if (c.enc.room >= LineEncoder.MAX_LINE) return c.enc
-            send(c)
-        }
-        val next = free.poll()
-        if (next == null) {
-            drops.incrementAndGet()
-            return null
-        }
+        cur?.let { if (it.enc.room >= LineEncoder.MAX_LINE) return it.enc else send(it) }
+        val next = free.poll() ?: run { drops.incrementAndGet(); return null }
         cur = next
         return next.enc
     }
 
-    /** Producer, every 2 s: hands over what is buffered (the writer flushes it); a new segment after [segmentMs]. */
-    fun tick(tMs: Long) {
+    /** Producer, every 2 s, at line time [t]: hands over what is buffered (the writer flushes it); a new segment after [segmentMs]. */
+    fun tick(t: Long) {
         if (finished) return
         val d = drops.get()
-        if (d != noted) room()?.let { it.start(tMs, ResearchFormat.DROP.code).int(d).end(); noted = d }
+        if (d != noted) room()?.let { it.start(t, ResearchFormat.DROP.code).int(d).end(); noted = d }
         val c = cur ?: return   // nothing buffered since the last tick: nothing to flush, a new segment waits
-        val roll = tMs - segStartMs >= segmentMs
-        if (roll) segStartMs = tMs
+        val roll = t - segStart >= segmentT
+        if (roll) segStart = t
         c.flush = true
         c.endSegment = roll
         send(c)
@@ -108,20 +98,18 @@ class ResearchWriter(
     fun finish(footer: List<String> = emptyList()) {
         if (finished) return
         finished = true
-        // The disk may be stuck with every buffer: then a small one of its own carries the footer.
-        val c = cur ?: free.poll(2, TimeUnit.SECONDS) ?: Chunk(LineEncoder.MAX_LINE * 4)
+        // The footer must fit: a nearly full buffer goes first. A disk stuck with every buffer: a small one of its own.
+        cur?.let { if (it.enc.room < LineEncoder.MAX_LINE * footer.size) send(it) }
+        val c = cur ?: free.poll(2, TimeUnit.SECONDS) ?: Chunk(LineEncoder.MAX_LINE * (footer.size + 1))
         cur = null
-        for (f in footer) if (c.enc.room >= LineEncoder.MAX_LINE) c.enc.comment(f)
+        for (f in footer) c.enc.comment(f)
         c.flush = true
         c.last = true
         full.put(c)
     }
 
     /** Waits (at most [ms]) until the last file is closed. */
-    fun awaitClosed(ms: Long): Boolean {
-        thread.join(ms)
-        return !thread.isAlive
-    }
+    fun awaitClosed(ms: Long): Boolean = thread.join(ms).let { !thread.isAlive }
 
     private fun send(c: Chunk) {
         cur = null
@@ -131,66 +119,66 @@ class ResearchWriter(
 
     private fun drain() {
         var out: OutputStream? = null
-        var part: File? = null
         var seg = 0
         while (true) {
             val c = try { full.take() } catch (e: InterruptedException) { return }
             val e = c.enc
-            try {
-                if (e.size > 0) {
-                    if (out == null && failure == null) {
-                        try { beforeSegment() } catch (x: Exception) { /* pruning is best effort */ }
-                        val p = File(file(seg).path + PART)
-                        p.parentFile?.mkdirs()
-                        if ((p.parentFile?.usableSpace ?: 0L) < minFreeBytes) {
-                            failure = "storage_full"
-                        } else {
-                            val o = GZIPOutputStream(open(p), 64 * 1024, true)   // syncFlush: flush() really flushes
-                            part = p
-                            out = o
-                            for (h in header(seg)) o.write((h + "\n").toByteArray(Charsets.UTF_8))
-                        }
-                    }
+            if (e.size > 0) {
+                try {
+                    if (out == null && failure == null) out = openSegment(seg)
                     val o = out
-                    if (o == null) {
-                        lost.addAndGet(e.lines.toLong())
-                    } else {
-                        o.write(e.bytes, 0, e.size)
-                        if (c.flush) o.flush()
-                    }
+                    if (o == null) lost.addAndGet(e.lines.toLong()) else { o.write(e.bytes, 0, e.size); if (c.flush) o.flush() }
+                } catch (x: Exception) {
+                    failure = "io: ${x.javaClass.simpleName} ${x.message}"
+                    lost.addAndGet(e.lines.toLong())
+                    out?.let { close(it, seg) }
+                    out = null
                 }
-            } catch (x: Exception) {
-                failure = "io: ${x.javaClass.simpleName} ${x.message}"
-                lost.addAndGet(e.lines.toLong())
-                out?.let { close(it, part) }
-                out = null
-                part = null
             }
             val o = out
             if ((c.endSegment || c.last) && o != null) {
-                close(o, part)
+                close(o, seg)
                 out = null
-                part = null
                 seg++
             }
             val last = c.last
-            e.clear()
-            c.flush = false
-            c.endSegment = false
-            c.last = false
+            c.reset()
             free.offer(c)   // the extra footer buffer may not fit: then it is simply let go
             if (last) return
         }
     }
 
-    private fun close(o: OutputStream, p: File?) {
+    /** Segment [seg] as a `.part` file with its header, after pruning; null (and [failure]) when storage is short. */
+    private fun openSegment(seg: Int): OutputStream? {
+        try { beforeSegment() } catch (x: Exception) { /* pruning is best effort */ }
+        val p = part(seg)
+        p.parentFile?.mkdirs()
+        if ((p.parentFile?.usableSpace ?: 0L) < minFreeBytes) {
+            failure = "storage_full"
+            return null
+        }
+        val o = GZIPOutputStream(open(p), 64 * 1024, true)   // syncFlush: flush() really flushes
+        try {
+            for (h in header(seg)) o.write((h + "\n").toByteArray(Charsets.UTF_8))
+        } catch (x: IOException) {
+            close(o, seg)
+            throw x
+        }
+        return o
+    }
+
+    private fun part(seg: Int) = File(file(seg).path + PART)
+
+    private fun close(o: OutputStream, seg: Int) {
         try { o.close() } catch (_: IOException) {}
-        if (p != null) p.renameTo(File(p.path.removeSuffix(PART)))
+        part(seg).renameTo(file(seg))
     }
 
     companion object {
         /** A new file every 10 minutes. */
         const val SEGMENT_MS = 10 * 60_000L
         const val PART = ".part"
+        /** Java priority 4 = Android's THREAD_PRIORITY_BACKGROUND (nice 10, background scheduling group). */
+        private const val BACKGROUND_PRIORITY = 4
     }
 }

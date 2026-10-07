@@ -34,6 +34,7 @@ import app.bumpbeeper.auto.PowerPolicy
 import app.bumpbeeper.auto.TripCheck
 import app.bumpbeeper.auto.TripHold
 import app.bumpbeeper.crash.CrashLog
+import app.bumpbeeper.research.ResearchFiles
 import app.bumpbeeper.research.ResearchRecorder
 import app.bumpbeeper.sync.CachedSpotSource
 import app.bumpbeeper.sync.LiveSpeedLimit
@@ -696,6 +697,7 @@ class BumpService : Service(), SensorEventListener, LocationListener, EngineList
         voice = null
         LiveState.recording = false
         LiveState.labelMode = false
+        ResearchFiles.tidyLater(this)   // research files' 14 days / 2 GB, whether research recording is on or off
         if (!LiveState.lastEvent.startsWith("Car disconnected") && !LiveState.lastEvent.startsWith("Parked")) {
             LiveState.lastEvent = "Stopped"
         }
