@@ -65,8 +65,11 @@ class PhoneStateConfig {
     var resettleDeg = 10.0
     /** The gyroscope-tracked gravity leans towards the accelerometer with this time constant, s. */
     var gravityTauS = 10.0
-    /** Where the phone rests follows slowly while it is stable, s. */
+    /** Where the phone rests follows slowly while it is stable, s... */
     var baselineTauS = 30.0
+    /** ...but quickly ([settleTauS], s) for [settleMs] after a handling: the phone is still settling where it was put. */
+    var settleMs = 5000L
+    var settleTauS = 1.0
     /** Mounted: the tilt RMS over this window (s) stays below [mountedTiltDeg] ([mountedTiltDegCharging] when charging, [mountedTiltDegPlaced] with placement "mounted"). */
     var mountedWindowS = 30.0
     var mountedTiltDeg = 1.5
@@ -313,7 +316,7 @@ class PhoneStateDetector(val cfg: PhoneStateConfig = PhoneStateConfig(), val sig
             else if (t - lastSignMs >= cfg.calmMs) end(t)
         } else {
             val dt = dtMs / 1000.0
-            val k = dt / (cfg.baselineTauS + dt)
+            val k = dt / ((if (t - lastHandledEndMs < cfg.settleMs) cfg.settleTauS else cfg.baselineTauS) + dt)
             setB(bx + k * (cx - bx), by + k * (cy - by), bz + k * (cz - bz))
             tiltMs2 += dt / (cfg.mountedWindowS + dt) * (tiltDeg * tiltDeg - tiltMs2)
             state = stableState(t)
