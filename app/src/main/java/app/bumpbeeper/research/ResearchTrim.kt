@@ -9,6 +9,7 @@ import java.io.File
 import java.io.FileOutputStream
 import java.io.IOException
 import java.io.InputStream
+import java.util.IdentityHashMap
 import java.util.zip.GZIPInputStream
 import java.util.zip.GZIPOutputStream
 
@@ -16,19 +17,31 @@ import java.util.zip.GZIPOutputStream
  * The privacy trim before a research recording leaves the phone: every line recorded within the first and the last
  * [TripPrivacy.RADIUS_M] driven of a trip goes, whatever its code (sensors, phone state and GPS alike). The distance
  * comes from the trip's own GPS lines, speed × time as in [TripPrivacy.driven], so a GPS jump can't shorten the trim;
- * a trip shorter than twice that has nothing to upload. Works on bytes (a 10-minute segment holds ~700,000 lines).
- * Plain Kotlin (no Android).
+ * a trip shorter than twice that, without usable GPS, or in a format whose time unit isn't known here has nothing to
+ * upload. Works on bytes (a 10-minute segment holds ~700,000 lines). Plain Kotlin (no Android).
  */
 internal object ResearchTrim {
-    /** The part of a trip that may leave the phone: lines with [fromT] ≤ t ≤ [toT] (ms since the trip started). */
+    /** The part of a trip that may leave the phone: lines with [fromT] ≤ t ≤ [toT], in the files' own t units. */
     class Window(val fromT: Long, val toT: Long)
 
-    /** One segment's data lines: time range and count, and whether the file was cut off (the app was killed). */
-    class Stats(val minT: Long, val maxT: Long, val lines: Int, val truncated: Boolean)
+    /**
+     * One segment's data lines: time range (its own t units) and count, whether the file was cut off (the app was
+     * killed), and its t units per millisecond from `# format=` (rr1: 1, rr2: 10; 0 = unknown, never uploaded).
+     */
+    class Stats(val minT: Long, val maxT: Long, val lines: Int, val truncated: Boolean, val tPerMs: Long = 1)
+
+    /** What [scan] read: the trip's GPS fixes (times in ms, for [TripPrivacy.driven]), each fix's own t, each file's [Stats]. */
+    class Scan(val fixes: List<Fix>, private val ownT: IdentityHashMap<Fix, Long>, val stats: List<Stats>) {
+        fun t(f: Fix): Long = ownT.getValue(f)
+        /** Every file is in a format whose time unit is known. */
+        val known: Boolean get() = stats.all { it.tPerMs > 0 }
+    }
 
     /** A segment is uploaded as it is, as a trimmed copy, or not at all. */
     enum class Plan { AS_IS, TRIM, NOTHING }
 
+    /** t units per millisecond of each known format (ResearchFormat.VERSION). */
+    private val T_PER_MS = mapOf("rr1" to 1L, "rr2" to 10L)
     private const val NL: Byte = 10
     private const val CR: Byte = 13
     private const val HASH: Byte = 35
@@ -40,45 +53,51 @@ internal object ResearchTrim {
     /** [time] of a line that has none: a `#` line, an empty or an unreadable one. */
     private const val NO_TIME = Long.MIN_VALUE
 
-    /** Reads the segments of one trip (in order): the trip's GPS fixes, and each segment's [Stats]. */
-    fun scan(segments: List<File>): Pair<List<Fix>, List<Stats>> {
+    /** Reads the segments of one trip (in order): its GPS fixes and each segment's [Stats]. */
+    fun scan(segments: List<File>): Scan {
         val fixes = ArrayList<Fix>()
+        val ownT = IdentityHashMap<Fix, Long>()
         val stats = segments.map { f ->
             var min = Long.MAX_VALUE
             var max = Long.MIN_VALUE
             var n = 0
+            var tPerMs = 0L
             val cut = eachLine(f) { b, len ->
                 val t = time(b, len)
                 if (t != NO_TIME) {
                     n++
                     if (t < min) min = t
                     if (t > max) max = t
-                    gps(b, len, t)?.let(fixes::add)
+                    if (tPerMs > 0) gps(b, len, t, tPerMs)?.let { fixes.add(it); ownT[it] = t }
+                } else if (len > 9 && b[0] == HASH) {
+                    val s = String(b, 0, len, Charsets.US_ASCII)
+                    if (s.startsWith("# format=")) tPerMs = T_PER_MS[s.substring(9).trim()] ?: 0L
                 }
             }
-            Stats(min, max, n, cut)
+            Stats(min, max, n, cut, tPerMs)
         }
-        return fixes to stats
+        return Scan(fixes, ownT, stats)
     }
 
     /**
      * From the first fix past [radiusM] driven to the last fix more than [radiusM] before the end. Null when the trip
-     * is shorter than 2 × [radiusM] or has no usable GPS: then nothing of it may be uploaded.
+     * is shorter than 2 × [radiusM], has no usable GPS or a format not known here: then nothing of it may be uploaded.
      */
-    fun window(fixes: List<Fix>, radiusM: Double = TripPrivacy.RADIUS_M): Window? {
-        val ordered = RouteSampler.inTimeOrder(fixes)
+    fun window(s: Scan, radiusM: Double = TripPrivacy.RADIUS_M): Window? {
+        if (!s.known) return null
+        val ordered = RouteSampler.inTimeOrder(s.fixes)
         if (ordered.size < 2) return null
         val driven = TripPrivacy.driven(ordered)
         val total = driven.last()
         if (!(total >= 2 * radiusM)) return null   // NaN too
         val from = driven.indexOfFirst { it > radiusM }
         val to = driven.indexOfLast { total - it > radiusM }
-        if (from < 0 || to < 0 || ordered[from].timeMs > ordered[to].timeMs) return null
-        return Window(ordered[from].timeMs, ordered[to].timeMs)
+        if (from < 0 || to < 0 || s.t(ordered[from]) > s.t(ordered[to])) return null
+        return Window(s.t(ordered[from]), s.t(ordered[to]))
     }
 
     fun plan(s: Stats, w: Window): Plan = when {
-        s.lines == 0 || s.maxT < w.fromT || s.minT > w.toT -> Plan.NOTHING
+        s.lines == 0 || s.tPerMs <= 0L || s.maxT < w.fromT || s.minT > w.toT -> Plan.NOTHING
         s.minT >= w.fromT && s.maxT <= w.toT && !s.truncated -> Plan.AS_IS
         else -> Plan.TRIM   // a cut-off file is always re-written: the copy is a complete gzip
     }
@@ -91,7 +110,7 @@ internal object ResearchTrim {
     fun prepare(src: File, w: Window, stats: Stats?, cacheDir: File): File? {
         val cached = File(cacheDir, src.name)
         if (cached.exists()) return cached
-        return when (plan(stats ?: scan(listOf(src)).second[0], w)) {
+        return when (plan(stats ?: scan(listOf(src)).stats[0], w)) {
             Plan.NOTHING -> null
             Plan.AS_IS -> src
             Plan.TRIM -> if (copy(src, cached, w) > 0) cached else null
@@ -101,7 +120,7 @@ internal object ResearchTrim {
     /**
      * Writes the lines of [src] inside [w] to [dst] as a new, complete gzip file: `#` lines (header and footer) stay,
      * every data line outside [w] goes (and any line without a readable time), and `# trim_…` lines record what was
-     * done. Returns the data lines kept; with none, [dst] is not created.
+     * done (times in the file's own t units). Returns the data lines kept; with none, [dst] is not created.
      */
     fun copy(src: File, dst: File, w: Window): Int {
         dst.parentFile?.mkdirs()
@@ -115,7 +134,7 @@ internal object ResearchTrim {
                     if (noted) return
                     noted = true
                     out.write(ascii("# trim=first_and_last_${TripPrivacy.RADIUS_M.toInt()}m_driven\n" +
-                        "# trim_from_t_ms=${w.fromT}\n# trim_to_t_ms=${w.toT}\n"))
+                        "# trim_from_t=${w.fromT}\n# trim_to_t=${w.toT}\n"))
                 }
                 val cut = eachLine(src) { b, len ->
                     val t = time(b, len)
@@ -159,8 +178,8 @@ internal object ResearchTrim {
             val gzip = raw.read() == 0x1f && raw.read() == 0x8b
             raw.reset()
             val buf = ByteArray(64 * 1024)
+            val src: InputStream = if (gzip) GZIPInputStream(raw, 64 * 1024) else raw
             try {
-                val src: InputStream = if (gzip) GZIPInputStream(raw, 64 * 1024) else raw
                 while (true) {
                     val k = src.read(buf)
                     if (k < 0) break
@@ -179,6 +198,8 @@ internal object ResearchTrim {
                 }
             } catch (e: IOException) {
                 cut = true   // "Unexpected end of ZLIB input stream": the writer never closed it
+            } finally {
+                if (src !== raw) try { src.close() } catch (_: IOException) {}   // frees the Inflater's native memory
             }
         }
         return cut || n > 0 || junk
@@ -201,8 +222,11 @@ internal object ResearchTrim {
         return if (neg) -v else v
     }
 
-    /** A `G` line (`t,G,lat,lon,alt,speed,bearing,accuracy,…`, fixed units of [ResearchFormat.GPS]) as a fix at [t]. */
-    private fun gps(b: ByteArray, len: Int, t: Long): Fix? {
+    /**
+     * A `G` line (`t,G,lat,lon,alt,speed,bearing,accuracy,…` in the fixed units of [ResearchFormat.GPS]) as a fix whose
+     * time is [t] in milliseconds ([tPerMs] t units each).
+     */
+    private fun gps(b: ByteArray, len: Int, t: Long, tPerMs: Long): Fix? {
         var i = 0
         while (i < len && b[i] != COMMA) i++
         if (i + 2 >= len || b[i + 1] != G || b[i + 2] != COMMA) return null
@@ -229,6 +253,6 @@ internal object ResearchTrim {
         if (!has[0] || !has[1]) return null
         val s = ResearchFormat.GPS.scales
         fun value(k: Int) = if (has[k]) v[k] / s[k] else Double.NaN
-        return Fix(t, value(0), value(1), value(3), value(4), value(5))
+        return Fix(Math.floorDiv(t, tPerMs), value(0), value(1), value(3), value(4), value(5))
     }
 }
