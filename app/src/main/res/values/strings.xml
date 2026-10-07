@@ -440,8 +440,8 @@
     <string name="research_status_waiting">Waiting for Wi-Fi: %1$d files (%2$s MB)</string>
     <string name="research_status_last">Last upload: %1$s</string>
     <string name="research_status_last_never">Nothing uploaded yet</string>
-    <string name="research_status_paused_full">Paused (server storage full): tries again %1$s</string>
-    <string name="research_status_paused_daily">Paused (daily upload limit): tries again %1$s</string>
+    <string name="research_status_paused_full">Paused (server storage full). Next try: %1$s</string>
+    <string name="research_status_paused_daily">Paused (daily upload limit). Next try: %1$s</string>
     <string name="research_status_pending_on">Telling the server you turned this on (when online)</string>
     <string name="research_status_pending_off">Telling the server you turned this off (when online)</string>
     <string name="research_session_reset">Your anonymous ID was reset, so research recording was switched off; turn it on again if you like.</string>

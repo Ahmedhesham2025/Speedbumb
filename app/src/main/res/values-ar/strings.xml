@@ -453,8 +453,8 @@
     <string name="research_status_waiting">مستني واي فاي: %1$d ملف (%2$s ميجا)</string>
     <string name="research_status_last">آخر رفع: %1$s</string>
     <string name="research_status_last_never">لسه ما اترفعش حاجة</string>
-    <string name="research_status_paused_full">واقف (مساحة السيرفر مليانة): هيحاول تاني %1$s</string>
-    <string name="research_status_paused_daily">واقف (حد الرفع اليومي): هيحاول تاني %1$s</string>
+    <string name="research_status_paused_full">واقف (مساحة السيرفر مليانة). المحاولة الجاية: %1$s</string>
+    <string name="research_status_paused_daily">واقف (حد الرفع اليومي). المحاولة الجاية: %1$s</string>
     <string name="research_status_pending_on">بيقول للسيرفر إنك فتحته (لما يبقى فيه نت)</string>
     <string name="research_status_pending_off">بيقول للسيرفر إنك قفلته (لما يبقى فيه نت)</string>
     <string name="research_session_reset">المُعرّف المجهول بتاعك اتغيّر، فتسجيل البحث اتقفل؛ افتحه تاني لو حابب.</string>

@@ -44,8 +44,8 @@ class ResearchChoiceTest {
         Prefs.setResearchState(ctx, true, 1, offPending = false, onPending = false, serverOn = true, note = "")
         assertEquals("Waiting for Wi-Fi: 3 files (12.5 MB)\nLast upload: 2 hours ago",
             status(files = 3, bytes = 12_500_000, last = now - 2 * hour).first)
-        assertEquals("Paused (server storage full): tries again in 5 hours", status(until = now + 5 * hour, why = "full").second)
-        assertEquals("Paused (daily upload limit): tries again in 5 hours", status(until = now + 5 * hour, why = "device_daily").second)
+        assertEquals("Paused (server storage full). Next try: In 5 hours", status(until = now + 5 * hour, why = "full").second)
+        assertEquals("Paused (daily upload limit). Next try: In 5 hours", status(until = now + 5 * hour, why = "device_daily").second)
         assertEquals("a pause that is over says nothing", "", status(until = now - 1, why = "full").second)
         ResearchConsent.sessionReset(ctx)
         assertTrue(status().second.startsWith("Your anonymous ID was reset"))
