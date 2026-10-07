@@ -3,8 +3,12 @@ package app.bumpbeeper.sync
 import android.app.job.JobParameters
 import android.app.job.JobService
 import android.util.Log
+import app.bumpbeeper.research.ResearchConsent
 
-/** Runs [Sync.run] (or [SpeedLimitSync.run]) on its own thread when JobScheduler says there is network. Scheduled by [Sync] and [SpeedLimitSync]. */
+/**
+ * Runs [Sync.run] (or [SpeedLimitSync.run], the training or research jobs) on its own thread when JobScheduler says
+ * there is network. Scheduled by [Sync], [SpeedLimitSync], [TrainingConsent] and [ResearchConsent].
+ */
 class SyncJob : JobService() {
 
     override fun onStartJob(params: JobParameters): Boolean {
@@ -12,7 +16,8 @@ class SyncJob : JobService() {
         val app = applicationContext
         Thread({
             val retry = try {
-                if (extras.getInt(SpeedLimitSync.EXTRA_JOB, 0) == 1) SpeedLimitSync.run(app)
+                if (extras.getInt(ResearchConsent.EXTRA_JOB, 0) == ResearchConsent.JOB_CONSENT) ResearchConsent.run(app)
+                else if (extras.getInt(SpeedLimitSync.EXTRA_JOB, 0) == 1) SpeedLimitSync.run(app)
                 else if (extras.getInt(TrainingConsent.EXTRA_JOB, 0) == 1) TrainingConsent.run(app)
                 else Sync.run(
                     app, extras.getInt(Sync.EXTRA_PULL_ONLY, 0) == 1,

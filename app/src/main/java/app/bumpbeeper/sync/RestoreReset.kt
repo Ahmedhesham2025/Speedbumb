@@ -5,6 +5,7 @@ import android.util.Log
 import app.bumpbeeper.LiveState
 import app.bumpbeeper.Prefs
 import app.bumpbeeper.auto.TripHold
+import app.bumpbeeper.research.ResearchConsent
 import java.io.File
 import java.util.UUID
 
@@ -13,8 +14,9 @@ import java.util.UUID
  * shared-map sign-in (sync_auth) doesn't: this phone signs in as a new anonymous device that never agreed to
  * "Help improve detection". So before any network call the training choice is switched off here (nothing to tell
  * the server: the new device never consented), its outbox, pending flags and upload time are cleared, and held data of
- * unconfirmed trips is dropped. The shared-map choice and road speed limits stay as chosen (waiting routes live in
- * noBackupFilesDir and never move); the new device registers itself on its first sync.
+ * unconfirmed trips is dropped. Research recording is switched off the same way and its upload queue forgotten (its
+ * files live in noBackupFilesDir and never move). The shared-map choice and road speed limits stay as chosen (waiting
+ * routes live in noBackupFilesDir and never move); the new device registers itself on its first sync.
  *
  * A restore is noticed by a random install id in noBackupFilesDir, which neither backup nor transfer copies:
  * settings present but no id = restored data.
@@ -48,6 +50,8 @@ object RestoreReset {
     }
 
     internal fun reset(ctx: Context) {
+        // Research: off, nothing pending, queue forgotten, first-start question again if it was on. No server call.
+        ResearchConsent.resetAfterRestore(ctx)
         val wasOn = Prefs.trainingConsent(ctx)
         // Version 0: this anonymous device never agreed to any consent text.
         Prefs.setTrainingState(ctx, false, 0, wipe = false, sendOn = false, note = "")
@@ -70,7 +74,7 @@ object RestoreReset {
             Log.w(TAG, "restore: outbox not cleared: ${e.javaClass.simpleName}")
         }
         LiveState.trainingQueued = 0
-        Log.i(TAG, "restored from a backup: training switched off, held data dropped")
+        Log.i(TAG, "restored from a backup: training and research switched off, held data dropped")
     }
 
     fun noticePending(ctx: Context): Boolean = notice(ctx).exists()

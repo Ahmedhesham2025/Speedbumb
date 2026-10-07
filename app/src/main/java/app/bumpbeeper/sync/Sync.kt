@@ -16,6 +16,7 @@ import app.bumpbeeper.Prefs
 import app.bumpbeeper.auto.TripHold
 import app.bumpbeeper.TraceWriter
 import app.bumpbeeper.crash.CrashLog
+import app.bumpbeeper.research.ResearchConsent
 import org.json.JSONArray
 import org.json.JSONObject
 import java.util.Calendar
@@ -64,6 +65,7 @@ object Sync {
             ensureDaily(ctx)
             schedule(ctx, JOB_NOW, false, Double.NaN, Double.NaN)
         }
+        ResearchConsent.onAppStart(ctx)   // its own opt-in: needs no shared-map answer
         val app = ctx.applicationContext ?: ctx
         Thread({
             try {
@@ -177,6 +179,8 @@ object Sync {
         // Live limits too: off, and the disclosure has to be accepted again.
         Prefs.sp(app).edit().putBoolean(Prefs.LIVE_LIMITS, false).putInt(Prefs.LIVE_LIMITS_CONSENT_VERSION, 0).commit()
         TrainingConsent.forgetLocal(app)
+        // Research recording stops at once; forget_me has the server erase its uploaded files.
+        ResearchConsent.forgetLocal(app)
     }
 
     fun forgetMe(ctx: Context, callback: (Boolean) -> Unit) {
