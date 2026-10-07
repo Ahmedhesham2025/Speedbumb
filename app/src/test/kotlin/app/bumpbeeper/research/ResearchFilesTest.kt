@@ -4,6 +4,7 @@ import android.content.Context
 import app.bumpbeeper.sync.RestoreReset
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -50,17 +51,15 @@ class ResearchFilesTest {
         }
     }
 
-    @Test fun installShortIsTheStartOfTheInstallId() {
-        RestoreReset.marker(ctx).writeText("3F2A9C1E-7B4D-4E2A-9F1C-0123456789AB")
-        assertEquals("3f2a9c1e", ResearchFiles.installShort(ctx))
-    }
-
-    @Test fun withoutAnInstallIdItKeepsOneOfItsOwn() {
-        RestoreReset.marker(ctx).delete()
-        val id = ResearchFiles.installShort(ctx)
+    @Test fun theResearchIdIsRandomUsedForNothingElseAndRenewedOnRequest() {
+        RestoreReset.marker(ctx).writeText("3f2a9c1e-7b4d-4e2a-9f1c-0123456789ab")
+        val id = ResearchFiles.researchId(ctx)
         assertTrue(id, Regex("[0-9a-f]{8}").matches(id))
-        assertEquals("the same id every time", id, ResearchFiles.installShort(ctx))
-        assertFalse("restore detection is left alone", RestoreReset.marker(ctx).exists())
+        assertNotEquals("not taken from the install id", "3f2a9c1e", id)
+        assertEquals("the same until renewed", id, ResearchFiles.researchId(ctx))
+        val next = ResearchFiles.renewId(ctx)
+        assertNotEquals(id, next)
+        assertEquals(next, ResearchFiles.researchId(ctx))
     }
 
     @Test fun tidyRecoversLeftoversThenPrunesByAgeThenBySize() {
@@ -68,7 +67,9 @@ class ResearchFilesTest {
         file("rr_a_20261001T080000_000.csv.gz", 100, 15 * day, now)        // older than 14 days
         file("rr_a_20261003T080000_000.csv.gz", 400, 5 * day, now)         // oldest of the rest: over the size cap
         file("rr_a_20261004T080000_000.csv.gz", 300, 4 * day, now)
+        file("rr_a_20261005T080000_000.csv.gz", 0, 3 * day, now)           // empty: the server refuses it
         file("rr_a_20261006T080000_001.csv.gz.part", 200, 1 * day, now)   // the app was killed while writing it
+        file("rr_a_20261007T080000_000.csv.gz.part", 50, 1000, now)        // being written right now: left alone
         file("notes.txt", 10, 30 * day, now)                               // not a research file: left alone
         ResearchFiles.tidy(dir, now, maxBytes = 600)
         assertEquals(
@@ -76,7 +77,16 @@ class ResearchFilesTest {
             ResearchFiles.list(ctx).map { it.name },
         )
         assertEquals(500L, ResearchFiles.size(ctx))
+        assertTrue(File(dir, "rr_a_20261007T080000_000.csv.gz.part").exists())
         assertTrue(File(dir, "notes.txt").exists())
+    }
+
+    @Test fun tidyLaterKeepsTheLimitsInTheBackground() {
+        val old = file("rr_a_20260901T080000_000.csv.gz", 10, 20 * day, System.currentTimeMillis())
+        ResearchFiles.tidyLater(ctx)   // what app start and every trip end call, research on or off
+        val until = System.currentTimeMillis() + 5000
+        while (old.exists() && System.currentTimeMillis() < until) Thread.sleep(10)
+        assertFalse(old.exists())
     }
 
     @Test fun theDefaultsAreTwoWeeksAndTwoGigabytes() {

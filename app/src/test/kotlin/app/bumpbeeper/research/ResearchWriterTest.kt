@@ -22,7 +22,7 @@ class ResearchWriterTest {
     private fun writer(
         dir: File, segmentMs: Long = ResearchWriter.SEGMENT_MS, chunkBytes: Int = 64 * 1024, chunks: Int = 16,
         minFree: Long = 0L, open: (File) -> OutputStream = { FileOutputStream(it) },
-    ) = ResearchWriter({ File(dir, name(it)) }, { listOf("# format=rr1", "# segment=$it") }, {}, minFree, segmentMs, chunkBytes, chunks, open)
+    ) = ResearchWriter({ File(dir, name(it)) }, { ResearchFormat.header(listOf("segment=$it")) }, {}, minFree, segmentMs, chunkBytes, chunks, open)
 
     private fun line(w: ResearchWriter, t: Long) {
         w.room()?.sample(t, ResearchFormat.ACCEL, floatArrayOf(0.1f, 0.2f, 9.8f))
@@ -30,10 +30,7 @@ class ResearchWriterTest {
 
     private fun waitFor(what: String, ok: () -> Boolean) {
         val until = System.currentTimeMillis() + 5000
-        while (!ok()) {
-            assertTrue(what, System.currentTimeMillis() < until)
-            Thread.sleep(10)
-        }
+        while (!ok()) { assertTrue(what, System.currentTimeMillis() < until); Thread.sleep(10) }
     }
 
     @Test fun linesReachTheFileUnderItsHeader() {
@@ -46,16 +43,34 @@ class ResearchWriterTest {
         assertEquals(listOf(name(0)), dir.list()!!.toList())   // no .part left
         val f = ResearchReader.read(File(dir, name(0)))
         assertFalse(f.truncated)
-        assertEquals("rr1", f.meta["format"])
+        assertEquals("rr2", f.meta["format"])
         assertEquals("0", f.meta["segment"])
-        assertEquals((0L until 1000L).toList(), f.records.map { it.tMs })
+        assertEquals((0L until 1000L).toList(), f.records.map { it.tDms })
         assertEquals("1000", f.meta["end_lines"])
+        assertEquals("0", f.meta["end_dropped"])
+    }
+
+    @Test fun theFooterIsWrittenEvenWhenTheLastBufferIsNearlyFull() {
+        val dir = tmp.newFolder()
+        val w = writer(dir, chunkBytes = 1024)
+        var lines = 0
+        while (true) {   // fill the buffer until less than a line's worth of room is left
+            val e = w.room()!!
+            e.start(lines.toLong(), ResearchFormat.ACCEL.code).int(1).int(2).int(3).end()
+            lines++
+            if (e.room < LineEncoder.MAX_LINE) break
+        }
+        w.finish(listOf("end_lines=$lines", "end_dropped=0"))
+        assertTrue(w.awaitClosed(5000))
+        val f = ResearchReader.read(File(dir, name(0)))
+        assertEquals(lines, f.records.size)
+        assertEquals("$lines", f.meta["end_lines"])
         assertEquals("0", f.meta["end_dropped"])
     }
 
     @Test fun aNewFileEverySegmentAndTheClockRunsOn() {
         val dir = tmp.newFolder()
-        val w = writer(dir, segmentMs = 1000)
+        val w = writer(dir, segmentMs = 100)   // 1,000 t units of 0.1 ms
         for (t in 0L until 3000L step 10) {
             line(w, t)
             if (t % 500 == 0L) w.tick(t)
@@ -66,7 +81,7 @@ class ResearchWriterTest {
         assertEquals(listOf(name(0), name(1), name(2)), names)
         val files = names.map { ResearchReader.read(File(dir, it)) }
         assertEquals(listOf("0", "1", "2"), files.map { it.meta["segment"] })
-        assertEquals((0L until 3000L step 10).toList(), files.flatMap { f -> f.records.map { it.tMs } })
+        assertEquals((0L until 3000L step 10).toList(), files.flatMap { f -> f.records.map { it.tDms } })
     }
 
     @Test fun theOpenFileIsAPartFileThatCanAlreadyBeRead() {
@@ -88,10 +103,7 @@ class ResearchWriterTest {
         val disk = CountDownLatch(1)
         val w = writer(dir, chunkBytes = 1024, chunks = 2, open = { f ->
             object : FilterOutputStream(FileOutputStream(f)) {
-                override fun write(b: ByteArray, off: Int, len: Int) {
-                    disk.await()   // a stuck disk
-                    out.write(b, off, len)
-                }
+                override fun write(b: ByteArray, off: Int, len: Int) = disk.await().let { out.write(b, off, len) }   // a stuck disk
             }
         })
         var kept = 0
