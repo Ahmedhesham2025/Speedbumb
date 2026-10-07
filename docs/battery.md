@@ -32,6 +32,13 @@ and gyroscope are not: the engine reads them at once. The proximity sensor is An
 lock keeps the phone awake anyway, but its infrared emitter stays on for the whole trip. The file writer runs at
 background priority.
 
+Android delivers the fastest rate any listener asks for to every listener of a sensor, so the engine's own accelerometer
+and gyroscope listeners would get 200 Hz too: more bandwidth in its raw jolt peaks, a training ring that covers a
+quarter of the time, and four times the work. While research runs, BumpService therefore averages them into bins of at
+least 10 ms (≤ 100 Hz, about what phones deliver without research) before the engine, the driving monitor and the
+debug recording see them (`research/RateAverager.kt`). Still to check: replay the first research drive's 200 Hz `a`
+stream against the averaged one to pin the jolt trigger's difference.
+
 Expected cost (not measured yet): about +1–2 % per hour on top of a normal recording. GPS and the wake lock are already
 on and cost more. To measure: research files hold a `bat` line at every percent step; compare a trip with research to a
 similar trip without it on the same phone.
