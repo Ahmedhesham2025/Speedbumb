@@ -2,9 +2,11 @@ package app.bumpbeeper.ui
 
 import app.bumpbeeper.Bump
 import app.bumpbeeper.BumpKind
+import app.bumpbeeper.Confidence
 import app.bumpbeeper.EngineConfig
 import app.bumpbeeper.Geo
 import app.bumpbeeper.RemoteSpot
+import app.bumpbeeper.Severity
 import app.bumpbeeper.Side
 
 /** Which icon a spot gets on the street map. [color] is the icon's fill; [mark] is drawn on it. */
@@ -76,16 +78,21 @@ object SpotMarks {
         else -> CLUSTER_SIZES[2]
     }
 
+    /**
+     * Until the map is reworked it keeps its icons: an old pothole spot not felt again ([Bump.legacy]) is drawn as a
+     * pothole (harsh when strong), a "maybe" as unsure, the others as bumps.
+     */
     fun fromLocal(b: Bump, cfg: EngineConfig) = MapSpot(
-        key = "m${b.id}", lat = b.lat, lon = b.lon, heading = b.heading, kind = b.kind, side = b.side,
-        harsh = b.isHarsh(cfg), muted = b.isMuted(cfg), jolt = b.peakAvg,
+        key = "m${b.id}", lat = b.lat, lon = b.lon, heading = b.heading,
+        kind = when { b.legacy -> BumpKind.POTHOLE; b.confidence(cfg) == Confidence.SOFT -> BumpKind.UNSURE; else -> BumpKind.BUMP },
+        side = Side.UNKNOWN, harsh = b.severity(cfg) == Severity.STRONG, muted = b.isMuted(cfg), jolt = b.peakAvg,
         hits = b.hits, clears = b.misses, devices = 0, localId = b.id,
     )
 
     /** Shared spots can't be muted here (the engine has no mute for them); a pothole is harsh by the same rule as yours. */
     fun fromShared(r: RemoteSpot, cfg: EngineConfig) = MapSpot(
         key = "s${r.id}", lat = r.lat, lon = r.lon, heading = r.heading, kind = r.kind, side = r.side,
-        harsh = r.kind == BumpKind.POTHOLE && r.severity >= cfg.harshPotholeMs2, muted = false, jolt = r.severity,
+        harsh = r.kind == BumpKind.POTHOLE && r.severity >= cfg.sevStrongMin, muted = false, jolt = r.severity,
         hits = 0, clears = 0, devices = r.nDevices, sharedId = r.id,
     )
 

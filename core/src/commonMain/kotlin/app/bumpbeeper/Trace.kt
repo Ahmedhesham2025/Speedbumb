@@ -35,7 +35,10 @@ sealed class TraceSample {
     ) : TraceSample()
 }
 
-/** Something the driver marked by hand while driving: bump, pothole_l, pothole_r, rough. Placed at the nearest GPS fix. */
+/**
+ * Something the driver marked by hand while driving ([TraceReader.LABELS]): a bump (with its band when given), nothing
+ * (a jolt that was no bump), or a rough stretch. Placed at the nearest GPS fix.
+ */
 data class Label(val tMs: Long, val kind: String, val lat: Double, val lon: Double)
 
 /**
@@ -90,13 +93,19 @@ object TraceReader {
         }
     }
 
-    /** User labels in time order; an "undo" label removes the label before it. */
+    /** Label kinds: a bump without or with its band, "nothing" (not a bump), "rough" (a stretch, not one spot). */
+    val LABELS = listOf("bump", "bump_mild", "bump_moderate", "bump_strong", "nothing", "rough")
+
+    /** Labels of older recordings: potholes are bumps since v2, whichever side they were marked on. */
+    private val OLD_LABELS = mapOf("pothole_l" to "bump", "pothole_r" to "bump")
+
+    /** User labels in time order (old kinds read as their v2 kind); an "undo" label removes the label before it. */
     fun labels(samples: List<TraceSample>): List<Label> {
         val fixes = samples.filterIsInstance<TraceSample.Gps>()
         val out = ArrayList<Label>()
         for (e in samples.filterIsInstance<TraceSample.Event>().sortedBy { it.tMs }) {
             if (e.type != "label") continue
-            val kind = e.note.trim()
+            val kind = e.note.trim().let { OLD_LABELS[it] ?: it }
             if (kind == "undo") {
                 if (out.isNotEmpty()) out.removeAt(out.size - 1)
                 continue
