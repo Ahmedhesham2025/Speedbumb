@@ -28,8 +28,9 @@ class DrivingConfig {
     @Volatile var placement = "unknown"
     /**
      * Phone use: the phone handled ([PhoneStateDetector.movingMs]: tilted, or held by a sign other than its motion) for
-     * at least [phoneUseS] while driving at [PhoneStateConfig.movingKmh] or faster, in any placement (pocket mode only
-     * excuses a jostle, see [PhoneStateDetector.jostle]); an unlock (not in a holder) or a hand-held call seen while
+     * at least [phoneUseS] while driving at [PhoneStateConfig.movingKmh] or faster, in any placement. Pocket mode only
+     * excuses a jostle ([PhoneStateConfig.jostleMaxMs]): motion alone in a pocket may last up to 2 s, a pick-up with a
+     * sign of coming out of it (proximity, light, screen, unlock, call) counts at the same bar. An unlock (not in a holder) or a hand-held call seen while
      * driving at that moment ([PhoneStateDetector.movingCauses]). Never: a mounted phone with its screen on
      * (navigation), an unlock at a red light, a Bluetooth / wired / speaker call. Once per handling, and at most once
      * per [phoneUseGapS].
