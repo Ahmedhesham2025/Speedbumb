@@ -3,14 +3,13 @@
 Android app that learns the speed bumps on your routes and warns you about them.
 
 - **First pass over a bump:** the phone feels the jolt and saves the spot. No beep.
-- **Every pass after that:** 2 beeps about 6 seconds before you reach it (3 beeps above 50 km/h). It keeps recording while it beeps.
-- **Keeps improving:** each pass refines the bump's position. A spot you pass 3+ times but feel less than half the time is muted automatically, and **Mute last warning** silences a false alarm with one tap.
-- **Speed bump or pothole:** told apart from how the car moves (see *How it works*). Every pothole is recorded and counted; it also learns **which side** it's on (which wheel hits it) and **how harsh** it is.
-- **Voice warning for harsh potholes only**, saying which way to go around it: *"Pothole on the right. Keep left."* (English or Egyptian Arabic, offline text-to-speech). Smaller potholes are counted but stay silent.
+- **Every pass after that:** a warning a few seconds before you reach it (adjustable), by how strong the bump is: **1 beep** for a mild bump, **2 beeps** for a moderate one, and a **voice** for a strong one: *"Strong bump ahead."* (English or Egyptian Arabic, offline text-to-speech). Three or more close together: *"3 bumps ahead."* A spot that isn't confirmed yet gets one soft beep, a "maybe". It keeps recording while it warns.
+- **How strong:** every spot gets a severity (mild, moderate or strong) from how hard it shakes the car, averaged over your passes, so one odd reading doesn't change it (see *How it works*).
+- **Keeps improving:** each pass refines the bump's position and its severity. A spot you pass 3+ times but feel less than half the time is muted automatically, and **Mute last warning** silences a false alarm with one tap.
 - **Quiet when you're already slow:** no warning below 20 km/h (adjustable), since you've clearly seen it.
 - **Auto start/stop** when the phone connects to / disconnects from your car's Bluetooth.
 - **Start recording when I drive** (optional, off by default): notices driving without Bluetooth, from the motion sensor and short GPS checks (Google's in-vehicle detection in the Play edition), even with the app closed; needs location *Allow all the time*. Trips that started by themselves ask **"Was this a drive?"**: their bump points, speed-limit route and training samples stay on the phone until you say yes (the ~1 km rounded position at trip start and end is still sent with *Receive only* or *Share and receive*). Recording stops after the car is parked for a few minutes (adjustable).
-- **Your bumps on a real street map (v1.8):** a dark street map (OpenStreetMap data via free OpenFreeMap tiles, no account) with your spots and the shared map's confirmed spots as icons on the road (orange bump, red pothole, dark red "!" harsh pothole, yellow unsure, grey muted), grouped when zoomed out. Tap one for its details, mute, correct or delete it; open it in Google Maps; **share** your map and **import** someone else's. Map areas you viewed stay cached (about 50 MB) for use without internet; your spots always show.
+- **Your bumps on a real street map (v1.8):** a dark street map (OpenStreetMap data via free OpenFreeMap tiles, no account) with your spots and the shared map's confirmed spots as icons on the road (orange bump, yellow not sure yet, grey muted; red for old spots from earlier versions not felt again since), grouped when zoomed out. Tap one for its details, mute, correct or delete it; open it in Google Maps; **share** your map and **import** someone else's. Map areas you viewed stay cached (about 50 MB) for use without internet; your spots always show.
 - **Debug recording:** saves every sensor reading of a drive, to check afterwards what happened at a spot.
 - **Driving score out of 100** for every trip and overall (Trips tab): speeding, harsh braking / acceleration, harsh cornering, swerving, speed bumps taken fast, and handling the phone while moving. With tips, a trend chart, and a shareable trip report.
 - **Four tabs:** Drive (big Start/Stop, live speed, trip tiles, setup checklist; the screen stays on while recording) · Map · Trips · Settings. Dark theme for night driving.
@@ -29,10 +28,11 @@ Braking and acceleration come from the phone's sensors once it knows which way i
 **Live speed limit & warning (optional, off by default, v1.7).** A separate switch in *Settings → Driving score*. After you agree to its notice, while you drive the app sends your last few GPS points (about the last 300 m) through our server to TomTom (about every kilometre, more often on a road change or when driving slowly: at most every 30 s, about every 2 min when slow; never below 10 km/h), and shows the road's limit as a round sign next to your speed (with "© TomTom"; "– –" when unknown or older than 5 minutes). The speed turns orange when you're over the limit and red when you're over it by your margin (+5, +10 or +20 km/h); after 3 s over the margin you hear a tone and then the limit spoken. Nothing is sent in the first 300 m of a trip or within 300 m of where it started, but the end of a trip can't be protected (the app doesn't know where you'll stop). TomTom never gets your phone ID or IP address, and the times it gets are shifted to the year 2000; our server keeps only a daily count of lookups (30 days). The limit is kept only in memory (at most 5 min). Up to 60 lookups a day, shared with the after-trip lookup (live stops when 4 are left). Also works on trips that started by themselves, before you answer "Was this a drive?".
 
 Android 10 or newer. No sign-up: online features use an anonymous ID, never your name, email or phone number. Your bump map, trips and scores are kept on the phone (and in your Google backup if Android backup is on). What goes online:
-- **Shared map (optional, asked once):** *Receive only* downloads confirmed bumps near you (the app sends a rough position, rounded to about 1 km, when a recording starts and when a trip ends). *Share and receive* also uploads the bump and pothole **points** you find (never your route, nothing near where trips start or end) and crash reports. Until you answer, nothing goes to our server.
+- **Shared map (optional, asked once):** *Receive only* downloads confirmed bumps near you (the app sends a rough position, rounded to about 1 km, when a recording starts and when a trip ends). *Share and receive* also uploads the bump **points** you find (never your route, nothing near where trips start or end) and crash reports. Until you answer, nothing goes to our server.
 - **Real speed limits (optional, off by default):** see *Driving score* above. Only route stretches go out, and only via our server to TomTom.
 - **Live speed limit (optional, off by default):** see *Driving score* above. The last ~300 m of GPS points while driving (about every kilometre, more often on a road change or when slow), via our server to TomTom.
 - **Help improve detection (optional, off by default, separate from the shared map):** short motion-sensor samples around possible bumps and route-free trip summaries, under a random ID that changes each time you turn it on; no coordinates. Kept 12 months; turning it off deletes them on the server.
+- **Research recordings (optional, asked once, off unless you say yes):** full sensor recordings of your trips, GPS track included, so detection can be improved offline. Uploaded **only over Wi-Fi**, never the first or last 300 m of a trip; on the phone they are kept 14 days at most. Turning it off stops recording and uploading at once.
 - **Update check (automatic):** at most once a day the app asks GitHub whether a newer version exists; nothing about you or your drives is sent.
 - **Map tiles (when a map is on screen):** the street map is downloaded from OpenFreeMap (<https://openfreemap.org>), which sees your internet address and the map area you look at, like any website. No account, no ID, no key; your spots are drawn on the phone and never sent for the map.
 
@@ -93,7 +93,7 @@ GPS 1/s ────────────┘        │        known bump? +1
 | `BumpDb.kt` | SQLite on the phone: `bumps`, `events`, `trips`. |
 | `MainActivity.kt` | The screen. |
 | `Beeper.kt` | Generates the beep tone. It plays like navigation voice (car Bluetooth, music ducks). |
-| `app/src/test/…/Simulator.kt` | Fake drives (road noise, braking, GPS lag and error, phone tilted in a holder) used to test the engine. |
+| `core/src/commonTest/…/Simulator.kt` | Fake drives (road noise, braking, GPS lag and error, phone tilted in a holder) used to test the engine. |
 
 **Detecting a bump.** The phone can sit at any angle, so the engine first works out which way is "up". It averages the accelerometer over about 1 second; that average is gravity. It then projects each reading onto "up" and subtracts gravity, which leaves the pure vertical jolt. A jolt counts as a bump when:
 - it is above the threshold (3.0 m/s², about 0.3 g, on *Normal*),
@@ -111,13 +111,9 @@ GPS 1/s ────────────┘        │        known bump? +1
 - within `speed × 7 s` (at least 40 m, at most 250 m; the 7 s is a setting),
 - and you're not already slower than the "don't warn below" setting (20 km/h by default; logged as `beep_quiet`).
 
-**Speed bump or pothole?** Each hit is scored from −1 (speed bump) to +1 (pothole) from two clues:
-- *Which way the car moves first.* A speed bump pushes the car up first. A pothole drops a wheel down first, then slams it into the far edge.
-- *How the car rocks* (gyroscope). A speed bump spans the lane, so both front wheels rise together and the car pitches nose-up/nose-down. A pothole usually catches one wheel, so the car rolls sideways. To separate roll from pitch the engine needs to know which way the car's nose points in phone coordinates; it learns that by matching the accelerometer's horizontal push with GPS speed changes (speeding up and braking), so it's ready after a few of those. It re-learns if the phone is moved in its holder.
+**How strong.** Every spot is a bump with a severity. Each spot keeps a severity index, for now the average jolt of its hits (m/s²; the first ten count equally, later ones a tenth each). Its band decides the warning: *mild* below 3.5 (1 beep), *strong* from 5.0 (the voice), *moderate* in between (2 beeps). A spot only changes band once its index is 10 % past an edge, so one odd hit next to an edge doesn't flip it. A spot felt once is a "maybe" (one soft beep) until it is felt again. Spots kept from older versions start as a "maybe" until you drive over them again.
 
-Each spot keeps a running average of its hits' scores, so one odd reading doesn't flip it. Above the speed bump limit (50 km/h), a jolt is still recorded if it is clearly a pothole (score ≥ 0.6 with the gyroscope), up to 100 km/h. Without a gyroscope only the first clue is used. You can correct a spot by hand in *Your bumps*.
-
-**Which side, and how harsh.** A pothole usually catches the wheels on one side, so the car first tips towards that side. With the forward direction known, the gyroscope's roll says which: right side dropping first = pothole on the right. Each spot keeps a running average of the sides seen, plus its average jolt; it is *harsh* when that average is at least 6 m/s² (setting). The phone can tell *which wheel* hit it, not its exact position across the lane (GPS is only good to a few metres), so "keep left" means move left within your lane.
+**Fast jolts.** Above the speed bump limit (50 km/h), a jolt is still learned if it has a clear shape, up to 60 km/h. Reading the shape needs the gyroscope and the direction the car's nose points in phone coordinates, which the engine learns by matching the accelerometer's horizontal push with GPS speed changes (speeding up and braking); it's ready after a few of those and re-learns if the phone is moved in its holder.
 
 **Auto start.** Android announces every Bluetooth connection, even to closed apps. When it's the car you picked, recording starts; when it disconnects, recording stops after 60 s (so a short drop doesn't end the trip). Starting from the background needs location *Allow all the time*; if Android still refuses, you get a notification that starts recording with one tap.
 
@@ -128,28 +124,22 @@ Every number above is in `EngineConfig` at the top of `BumpEngine.kt`.
 ---
 
 ## Run the tests (no phone needed)
-In Android Studio, right-click `app/src/test/java/app/bumpbeeper/BumpEngineTest.kt` → **Run**. GitHub also runs them on every build. Seventeen simulated scenarios (the driving-score ones: **calmDrivingScoresHigh**, **speedingAndHardBraking**, **swerving**, **speedBumpsTakenFast**, **phoneHandledWhileDriving**), including:
+The engine's tests are in `core/src/commonTest` and the app's in `app/src/test`; in Android Studio, right-click a test file → **Run**. GitHub runs them on every pull request. The engine tests drive simulated cars over simulated roads (road noise, braking, GPS lag and error, a phone tilted in a holder) and check, among others, that:
 
-- **learnThenBeep:** 4 drives over 3 bumps and one one-off pothole hit. The first drive is silent. Drives 2–4 beep about 65–95 m before each bump. After 4 passes each bump's position is within about 3 m, and the one-off spot is muted.
-- **otherDirection:** eastbound bumps don't beep westbound.
-- **handlingIgnored:** a passenger grabbing the phone isn't recorded as a bump.
-- **parkedAndNoGps:** a door slam while parked, or a jolt before the first GPS fix, is ignored.
-- **crawlVersusRemoved:** a crawled-over bump stays active; a removed bump gets muted.
-- **userMute:** after *Mute last warning*, that bump stays silent.
-- **potholeVsBump:** two speed bumps and a pothole are classified correctly on the first drive, warn with the right sound on the second, and the pothole stays silent with *Warn for potholes* off.
-- **potholeSidesAndCounts:** a right-side and a left-side harsh pothole get the right side; a small pothole is counted but silent; trip counts are right.
-- **potholeVsBumpNoGyro:** same, on a phone without a gyroscope.
-- **fastPothole:** at 70 km/h a pothole is still recorded, an ordinary jolt is rejected.
-- **quietWhenSlow:** at 18 km/h there's no warning (logged as `beep_quiet`); with the setting at 0 it warns.
-- **missReportsNearbyJolt:** a miss records the strongest jolt felt near the bump.
+- the first drive over a bump is silent and later drives warn before it;
+- a bump only warns in the direction it was hit;
+- a passenger grabbing the phone, a door slam while parked, or a jolt before the first GPS fix isn't learned as a bump;
+- a crawled-over bump stays active, a removed one gets muted, and *Mute last warning* keeps a bump silent;
+- the warning matches the bump's severity band, and there is none when you're already slow;
+- the driving score reacts to speeding, hard braking, swerving, fast bumps and phone handling.
 
 ---
 
 ## Tuning with your own data
 **Export CSV** writes two files to `Downloads/BumpBeeper`:
 
-- `bumps_….csv`: the map. It has `lat`, `lon`, `hits`, `passes`, `hit_rate`, `muted`, `kind` (speed bump / pothole / unsure) and `kind_score`. Import it into **Google My Maps** to see your bumps on a map, or into the app on another phone (*Your bumps → Import map*).
-- `events_….csv`: one row per event: `new_bump`, `hit`, `miss`, `pass_slow`, `beep`, `beep_quiet`, `rejected` (with the reason in `note`) and `user_mute`. Each row has `peak_ms2` (jolt size), `speed_kmh` and `slowdown_kmh` (how much you braked in the previous 10 s). Hits and new bumps carry the bump/pothole clues in `note` (`score`, `first=up/down`, `roll/pitch`). For a `miss`, `peak_ms2` is the strongest jolt felt near the bump: just under the trigger means *raise the sensitivity*.
+- `bumps_….csv`: the map. It has `lat`, `lon`, `hits`, `passes`, `hit_rate`, `muted`, `sev_index` (how strong), `last_band` (mild / moderate / strong) and `legacy` (a spot from an earlier version, not felt again since). Import it into **Google My Maps** to see your bumps on a map, or into the app on another phone (*Your bumps → Import map*).
+- `events_….csv`: one row per event: `new_bump`, `hit`, `miss`, `pass_slow`, `beep`, `beep_quiet`, `rejected` (with the reason in `note`) and `user_mute`. Each row has `peak_ms2` (jolt size), `speed_kmh` and `slowdown_kmh` (how much you braked in the previous 10 s). Hits and new bumps carry the jolt's shape in `note` (`score`, `first=up/down`, `roll/pitch`). For a `miss`, `peak_ms2` is the strongest jolt felt near the bump: just under the trigger means *raise the sensitivity*.
 
 **Debug recording** (setting, off by default) writes one file per drive with every accelerometer and gyroscope sample, every GPS fix and every event (`type` = `accel` / `gps` / `event`). **Export recordings** copies them to `Downloads/BumpBeeper/recordings`. The last 20 drives are kept, about 12 MB per hour.
 
@@ -162,7 +152,7 @@ Practice ideas:
 
 ## Known limits
 - Tested in simulation, not yet on a real road. The thresholds are sensible starting points; use the jolt meter and the export to tune them for your car and phone.
-- Bump/pothole detection is also tested only in simulation. Speed bumps crossed at an angle, or potholes that span the whole lane, can look like the other kind; a spot gets surer with every pass, and you can correct it by hand.
+- How strong a bump feels depends on the car, its speed and the phone's holder, so the same bump can land in a different band on another car. A spot gets surer with every pass, and you can mute or delete it by hand.
 - The street map needs internet the first time you look at an area; after that it is cached (about 50 MB). Without internet and cache you see your spots on a plain dark background.
 - The APK is bigger since v1.8 (the MapLibre map engine for all phone types).
 - GPS is weaker between tall buildings and under bridges. Beeps may come a little early or late there.
