@@ -12,6 +12,7 @@ import org.json.JSONObject
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -40,11 +41,15 @@ class ResearchUploaderTest {
         val reserved = ArrayList<JSONObject>()
         /** Each upload: url, headers, the body sent. */
         val sent = ArrayList<Triple<String, Map<String, String>, ByteArray>>()
+        /** The refresh token is dead (revoked, or its user deleted): GoTrue answers 400. */
+        var deadSession = false
         override fun post(url: String, headers: Map<String, String>, body: String): HttpResult {
             val name = url.substringAfterLast('/').substringBefore('?')
             calls.add(name)
             return when (name) {
-                "signup", "token" -> HttpResult(200, """{"access_token":"a","expires_in":3600,"refresh_token":"r","user":{"id":"0F8FAD5B-D9CB-469F-A165-70867728950E"}}""")
+                "token" -> if (deadSession) HttpResult(400, """{"error":"invalid_grant"}""")
+                    else HttpResult(200, """{"access_token":"a","expires_in":3600,"refresh_token":"r","user":{"id":"0F8FAD5B-D9CB-469F-A165-70867728950E"}}""")
+                "signup" -> HttpResult(200, """{"access_token":"a","expires_in":3600,"refresh_token":"r","user":{"id":"0F8FAD5B-D9CB-469F-A165-70867728950E"}}""")
                 "research_reserve" -> {
                     reserved.add(JSONObject(body))
                     when (val a = reserve.removeFirstOrNull() ?: "ok") {
@@ -77,6 +82,7 @@ class ResearchUploaderTest {
         TripHold.forgetAll(ctx)
         TripHold.reset()
         TripHold.installResearch()
+        idFile().apply { setWritable(true); deleteRecursively() }
         Prefs.setResearchState(ctx, true, 1, offPending = false, onPending = false, serverOn = true, note = "")
         // Signed in, as the consent call left it: the uploader itself never signs in as a new device.
         SupabaseAuth(ctx, BuildConfig.SUPABASE_URL, BuildConfig.SUPABASE_KEY, Server()).accessToken()
@@ -267,6 +273,43 @@ class ResearchUploaderTest {
         TripHold.confirm(ctx, 7)
         run(Server())
         assertTrue(uploaded(0) && uploaded(1))
+    }
+
+    private fun idFile() = File(ctx.noBackupFilesDir, "research_id")
+
+    @Test fun anUnreadableResearchIdCleansNothingUp() {
+        trip()
+        idFile().apply { delete(); mkdirs() }   // reading it now fails
+        assertTrue("no upload", quiet())
+        assertEquals("the current trip's files are kept", 2, ResearchFiles.list(ctx).size)
+        idFile().delete()
+    }
+
+    @Test fun anIdNotSavedAtOptInMakesNothingCurrentUntilOneIs() {
+        trip()   // under the id saved at the last opt-in
+        idFile().setWritable(false)
+        Prefs.setResearchState(ctx, false, 1, offPending = false, onPending = false, serverOn = true, note = "")
+        Prefs.setResearchState(ctx, true, 1, offPending = false, onPending = false, serverOn = true, note = "")   // new opt-in: not saved
+        assertNull(ResearchFiles.storedId(ctx))
+        assertFalse("the old id is gone with the failed save", idFile().exists())
+        assertTrue("so nothing counts as current: no upload", quiet())
+        assertEquals(2, ResearchFiles.list(ctx).size)
+        idFile().setWritable(true)
+        ResearchFiles.researchId(ctx)   // what the next recording does: saves a new id
+        assertTrue("then the earlier opt-in's files never upload", quiet())
+        assertTrue("and are deleted", ResearchFiles.list(ctx).isEmpty())
+    }
+
+    @Test fun aDeadSessionSwitchesResearchOffAndMakesNoNewDevice() {
+        trip()
+        SupabaseAuth.prefs(ctx).edit().putLong("expires_at", 0L).commit()   // the token must be refreshed
+        val s = Server().apply { deadSession = true }
+        assertFalse(run(s))
+        assertTrue(s.calls.contains("token"))
+        assertFalse("never a new sign-up", s.calls.contains("signup"))
+        assertFalse(Prefs.researchRecording(ctx))
+        assertEquals(ResearchConsent.SESSION_RESET, Prefs.researchNote(ctx))
+        assertTrue(s.reserved.isEmpty())
     }
 
     @Test fun aShortTripOrAnOversizedFileUploadsNothing() {

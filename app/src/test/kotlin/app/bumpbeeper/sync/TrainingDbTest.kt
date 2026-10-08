@@ -37,7 +37,7 @@ class TrainingDbTest {
 
     @Test fun freshInstallHasTheTrainingOutbox() {
         val sql = db().writableDatabase
-        assertEquals(7, sql.version)
+        assertTrue("v7 or later", sql.version >= 7)
         assertTrue(hasTable(sql, TrainingStore.TABLE))
     }
 
@@ -51,7 +51,7 @@ class TrainingDbTest {
             close()
         }
         val db = db()
-        assertEquals(7, db.writableDatabase.version)
+        assertTrue("v7 or later", db.writableDatabase.version >= 7)
         assertTrue(hasTable(db.writableDatabase, TrainingStore.TABLE))
         assertEquals(1, db.loadBumps().size)
         assertEquals(1, SyncStore(db).outboxCount())

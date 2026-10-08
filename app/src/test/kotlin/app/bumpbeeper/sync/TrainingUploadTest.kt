@@ -184,7 +184,7 @@ class TrainingUploadTest {
         val net = FakeBackend()
         TrainingConsent.run(ctx, net)
         assertEquals("the same opt-in, the new text", listOf(true), net.consents)
-        assertEquals(TrainingConsent.TRAINING_CONSENT_VERSION, JSONObject(net.bodies["set_training_consent"]!!).getInt("version"))
+        assertEquals("the text with uploads right after each drive is version 2", 2, JSONObject(net.bodies["set_training_consent"]!!).getInt("version"))
         assertTrue(TrainingConsent.uploadsRightAway(ctx))
     }
 

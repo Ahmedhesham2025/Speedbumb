@@ -121,7 +121,8 @@ object ResearchUploader {
             if (ResearchConsent.pending(ctx) && ResearchConsent.run(ctx, transport)) return true
             if (!ResearchConsent.active(ctx)) return false
             ResearchQueue.tidy(ctx, now)   // also finishes a `.part` a killed app left (untouched for a minute)
-            val id = ResearchFiles.researchId(ctx)
+            // Unreadable, or not saved at the last opt-in: nothing counts as current, so no clean-up and no upload.
+            val id = ResearchFiles.storedId(ctx) ?: return false
             deleteWithdrawn(ctx, id)
             if (now < ResearchQueue.read(ctx) { it.pausedUntil } || metered()) return false
             // Never a new device: a dead session takes this phone's consent with it ([failed]).

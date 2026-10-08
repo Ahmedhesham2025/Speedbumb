@@ -5,7 +5,9 @@ import app.bumpbeeper.sync.RestoreReset
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
+import org.junit.Assert.fail
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -14,6 +16,7 @@ import org.robolectric.RuntimeEnvironment
 import org.robolectric.annotation.Config
 import java.io.ByteArrayOutputStream
 import java.io.File
+import java.io.IOException
 import java.util.Calendar
 import java.util.Locale
 import java.util.TimeZone
@@ -60,6 +63,39 @@ class ResearchFilesTest {
         val next = ResearchFiles.renewId(ctx)
         assertNotEquals(id, next)
         assertEquals(next, ResearchFiles.researchId(ctx))
+    }
+
+    private fun idFile() = File(ctx.noBackupFilesDir, "research_id")
+
+    @Test fun aSavedIdThatCantBeReadIsNeverReplaced() {
+        val id = ResearchFiles.renewId(ctx)
+        idFile().setReadable(false)   // a read failure: a new id would make this opt-in's unsent trips look withdrawn
+        try {
+            ResearchFiles.researchId(ctx)
+            fail("expected IOException: the recorder then records nothing this trip")
+        } catch (_: IOException) {
+        } finally {
+            idFile().setReadable(true)
+        }
+        assertEquals("still this opt-in's id", id, ResearchFiles.researchId(ctx))
+        assertEquals(id, ResearchFiles.storedId(ctx))
+    }
+
+    @Test fun anIdThatCantBeSavedLeavesNoOldIdBehind() {
+        ResearchFiles.renewId(ctx)
+        idFile().setWritable(false)   // writing fails (say a full disk); deleting the file still works
+        ResearchFiles.renewId(ctx)
+        assertFalse("no old id left to count as current, even if the flag is lost with a restart", idFile().exists())
+        assertNull(ResearchFiles.storedId(ctx))
+        val next = ResearchFiles.researchId(ctx)   // the next recording saves one
+        assertEquals(next, ResearchFiles.storedId(ctx))
+    }
+
+    @Test fun noIdYetMakesOne() {
+        idFile().delete()
+        val id = ResearchFiles.researchId(ctx)
+        assertTrue(idFile().exists())
+        assertEquals(id, ResearchFiles.storedId(ctx))
     }
 
     @Test fun tidyRecoversLeftoversThenPrunesByAgeThenBySize() {
