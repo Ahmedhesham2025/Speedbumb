@@ -31,4 +31,17 @@ class RateAverager(private val binMs: Long = 10) {
         lastOutMs = tMs
         return true
     }
+
+    companion object {
+        /** The rate research recording asks for: 200 Hz ([ResearchRecorder]). */
+        const val RESEARCH_PERIOD_US = 5_000
+
+        /**
+         * For an engine that asked for [periodUs] ([app.bumpbeeper.Prefs.sensorPeriodUs]): bins of that period, at most
+         * 10 ms as before (50 Hz asked → ≤ 100 Hz, unchanged). Null when it asked for research's rate or faster: research
+         * then adds nothing it didn't ask for, so its samples pass as they come.
+         */
+        fun forPeriod(periodUs: Int): RateAverager? =
+            if (periodUs <= RESEARCH_PERIOD_US) null else RateAverager((periodUs / 1000L).coerceIn(1L, 10L))
+    }
 }

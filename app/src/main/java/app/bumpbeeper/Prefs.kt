@@ -217,4 +217,13 @@ object Prefs {
         cfg.quietBelowKmh = quietBelowKmh(ctx).toDouble()
         cfg.maxSpeedKmh = maxBumpKmh(ctx).toDouble()
     }
+
+    /**
+     * The period (µs) BumpService asks for the engine's accelerometer and gyroscope: 20 000 = 50 Hz, as always. Not on
+     * any screen; there for a faster stream later (E2). Kept within 5 000..100 000 µs (200..10 Hz).
+     */
+    const val SENSOR_PERIOD_US = "sensor_period_us"
+    const val DEFAULT_SENSOR_PERIOD_US = 20_000
+    fun sensorPeriodUs(ctx: Context): Int =
+        sp(ctx).getInt(SENSOR_PERIOD_US, DEFAULT_SENSOR_PERIOD_US).coerceIn(5_000, 100_000)
 }

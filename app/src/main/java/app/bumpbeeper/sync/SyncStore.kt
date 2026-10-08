@@ -9,7 +9,7 @@ import org.json.JSONObject
 import kotlin.math.cos
 
 /**
- * The sync tables inside bumps.db (database version 5):
+ * The sync tables inside bumps.db (database version 5; v8 added the spots_near_v2 columns of remote_spots):
  *  outbox       – hazard observations waiting for upload (already privacy-filtered), one JSON element each
  *  remote_spots – the cache of confirmed shared-map spots the engine warns for (filled in the background)
  *  sync_state   – small key/value notes (last sync time, back-off, last position for the download), and the
@@ -110,14 +110,15 @@ class SyncStore(internal val helper: SQLiteOpenHelper) {
         val dLat = radiusM / 111_000.0
         val dLon = radiusM / (111_000.0 * cos(Math.toRadians(lat)).coerceAtLeast(0.01))
         return db.rawQuery(
-            "SELECT id, lat, lon, heading, kind, side, severity, n_devices FROM remote_spots " +
+            "SELECT id, lat, lon, heading, kind, side, severity, n_devices, severity_band, confidence, n_hits FROM remote_spots " +
                 "WHERE lat BETWEEN ? AND ? AND lon BETWEEN ? AND ?",
             arrayOf((lat - dLat).toString(), (lat + dLat).toString(), (lon - dLon).toString(), (lon + dLon).toString()),
         ).use { c ->
             val out = ArrayList<SpotRow>()
             while (c.moveToNext()) {
                 out.add(SpotRow(c.getLong(0), c.getDouble(1), c.getDouble(2), c.getDouble(3), c.getString(4), c.getString(5),
-                    if (c.isNull(6)) null else c.getDouble(6), c.getInt(7)))
+                    if (c.isNull(6)) null else c.getDouble(6), c.getInt(7), c.getString(8), c.getString(9),
+                    if (c.isNull(10)) null else c.getInt(10)))
             }
             out
         }
@@ -140,6 +141,7 @@ class SyncStore(internal val helper: SQLiteOpenHelper) {
                     put("id", r.id); put("lat", r.lat); put("lon", r.lon); put("heading", heading)
                     put("kind", r.kind); put("side", r.side); put("severity", r.severity ?: 0.0)
                     put("n_devices", r.nDevices); put("fetched_at", now)
+                    put("severity_band", r.band); put("confidence", r.confidence); put("n_hits", r.nHits)
                 }, SQLiteDatabase.CONFLICT_REPLACE)
             }
             val gone = remoteSpotsInBox(lat, lon, radiusM)
@@ -200,6 +202,17 @@ class SyncStore(internal val helper: SQLiteOpenHelper) {
             )
             db.execSQL("CREATE INDEX IF NOT EXISTS remote_spots_lat ON remote_spots(lat)")
             db.execSQL("CREATE TABLE IF NOT EXISTS sync_state(key TEXT PRIMARY KEY, value TEXT)")
+        }
+
+        /**
+         * Version 8: what `spots_near_v2` adds to a cached spot (band, confidence, hits in total). Null = fetched with
+         * `spots_near` (an older answer, or a server without v2). Adds only the columns missing, so it is safe to repeat.
+         */
+        fun addSpotColumns(db: SQLiteDatabase) {
+            val have = db.rawQuery("PRAGMA table_info(remote_spots)", null).use { c -> buildSet { while (c.moveToNext()) add(c.getString(1)) } }
+            for (c in listOf("severity_band TEXT", "confidence TEXT", "n_hits INTEGER")) {
+                if (c.substringBefore(' ') !in have) db.execSQL("ALTER TABLE remote_spots ADD COLUMN $c")
+            }
         }
     }
 }
