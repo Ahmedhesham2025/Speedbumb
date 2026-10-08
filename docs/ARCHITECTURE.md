@@ -5,6 +5,10 @@
 core/        Pure Kotlin Multiplatform (JVM + iOS). No Android. Engine + driving monitor + simulator + scenarios.
   BumpEngine      sensors → jolts → bump/pothole (kind, side, harshness) → learned spots → warnings, passes, misses
   DrivingMonitor  sensors → speeding, harsh brake/accel, cornering, swerves, bumps taken fast, phone use → score 0–100
+  PhoneStateDetector  owned by BumpEngine (`engine.phone`): is the phone mounted, loose or HANDLED (tilt from its resting
+                  gravity, rotation the GPS heading doesn't explain, unlock, screen, hand-held call, out of a pocket; the app
+                  fills in PhoneSignals). While HANDLED no spot is learned, hit or missed and no harsh event counts;
+                  holding it while driving is phone use. Jostles (< 2 s, motion only) settle after 0.5 s.
   Model, Geo, Phrases
 app/         Android app (only platform APIs + :core)
   BumpService     foreground location service; feeds 50 Hz accel/gyro + 1 Hz GPS into engine + monitor on a HandlerThread

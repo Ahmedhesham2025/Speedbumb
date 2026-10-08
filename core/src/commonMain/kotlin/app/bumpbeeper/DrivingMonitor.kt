@@ -27,17 +27,32 @@ class DrivingConfig {
     /** Where the phone sits: mounted | cupholder | pocket | unknown. (setting: Prefs.placement) */
     @Volatile var placement = "unknown"
     /**
-     * "Phone moved" moments: unstable readings less than [episodeGapS] apart are one moment. A moment shorter than
-     * [jostleMaxS] (first to last unstable reading) is a jostle; a longer one is the phone being held or handled.
-     * Pocket mode turns on by itself, for the rest of the trip, after [autoPocketEpisodes] jostles while driving within
-     * [autoPocketWindowS]: a phone that keeps jostling is loose. Long holds never count towards it, and are always
-     * phone use (unless placement is "pocket"), so picking the phone up often can't switch the phone-use check off.
-     * (A hold kept still shows only its pick-up and put-down, a few seconds apart: hence the 6 s gap.)
+     * Phone use: the phone handled ([PhoneStateDetector.movingMs]: tilted, or held by a sign other than its motion) for
+     * at least [phoneUseS] while driving at [PhoneStateConfig.movingKmh] or faster, in any placement. Pocket mode only
+     * excuses a jostle ([PhoneStateConfig.jostleMaxMs]): motion alone in a pocket may last up to 2 s, a pick-up with a
+     * sign of coming out of it (proximity, light, screen, unlock, call) counts at the same bar. An unlock (not in a holder) or a hand-held call seen while
+     * driving at that moment ([PhoneStateDetector.movingCauses]). Never: a mounted phone with its screen on
+     * (navigation), an unlock at a red light, a Bluetooth / wired / speaker call. Once per handling, and at most once
+     * per [phoneUseGapS].
      */
-    var autoPocketEpisodes = 4
-    var autoPocketWindowS = 300.0
-    var jostleMaxS = 2.0
-    var episodeGapS = 6.0
+    var phoneUseS = 1.5
+    var phoneUseGapS = 30.0
+    /**
+     * No braking, speeding up, cornering or swerving is judged from the sensors while the phone is handled, nor
+     * [handledMarginS] after; a push waiting for the GPS is dropped if a handling began less than [handledAfterS] after
+     * it. Braking and speeding up are then judged from the GPS speed alone (it is the car's, whatever the phone does).
+     */
+    var handledMarginS = 2.0
+    var handledAfterS = 1.0
+    /**
+     * Braking and speeding up felt by the phone must show in the GPS speed: a = (v2 - v1) / dt between two fixes,
+     * up to [longMatchS] before or after the push, with a_gps * sign(a) >= |a| - (longTolFrac * |a| + longTolMs2).
+     * A phone tipping in a pocket or sliding in a holder never changes the GPS speed. (Without the forward axis the
+     * check is the GPS itself.)
+     */
+    var longTolFrac = 0.5
+    var longTolMs2 = 0.5
+    var longMatchS = 1.5
 
     /**
      * Cornering and swerving must be something the car did, not the phone turning in a pocket or holder.
@@ -78,6 +93,9 @@ class DrivingStats {
     /** Cornering / swerves the gyroscope saw but the GPS heading did not back ([DrivingConfig.lateralTolFrac]). */
     var cornersIgnored = 0
     var swervesIgnored = 0
+    /** Braking / speeding up the phone felt but the GPS speed did not back ([DrivingConfig.longTolFrac]). */
+    var brakesIgnored = 0
+    var accelsIgnored = 0
     /** Strongest sideways force from GPS heading changes on the trip, m/s². */
     var maxGpsLateralMs2 = 0.0
 
@@ -145,6 +163,7 @@ class DrivingStats {
         harshBrakes = o.harshBrakes; harshAccels = o.harshAccels; harshCorners = o.harshCorners
         swerves = o.swerves; bumpsFast = o.bumpsFast; phoneUse = o.phoneUse
         cornersIgnored = o.cornersIgnored; swervesIgnored = o.swervesIgnored; maxGpsLateralMs2 = o.maxGpsLateralMs2
+        brakesIgnored = o.brakesIgnored; accelsIgnored = o.accelsIgnored
         limitKnownShare = o.limitKnownShare; limitKnownS = o.limitKnownS
         overLimit10S = o.overLimit10S; overLimit20S = o.overLimit20S; overLimit30S = o.overLimit30S
         maxOverLimitKmh = o.maxOverLimitKmh
@@ -168,11 +187,12 @@ class DrivingStats {
  *    or GPS speed changes until then.
  *  • Cornering / swerving: sideways force = speed × turning rate (gyroscope around "up", or GPS heading changes).
  *  • Speeding: time above your speed limit.
- *  • Speed bumps taken too fast, and the phone being picked up while moving.
+ *  • Speed bumps taken too fast, and phone use ([DrivingConfig.phoneUseS]).
  *
- * Cornering and swerving only count when the GPS heading agrees ([DrivingConfig.lateralTolFrac]). In pocket mode
- * ([DrivingConfig.placement] = pocket, or a phone that keeps shifting, see [pocketMode]) moving the phone is not
- * counted as phone use: a phone in a pocket moves with the driver's leg.
+ * Cornering and swerving only count when the GPS heading agrees ([DrivingConfig.lateralTolFrac]), braking and speeding
+ * up when the GPS speed agrees ([DrivingConfig.longTolFrac]). While the phone is handled ([BumpEngine.phone]) and for
+ * [DrivingConfig.handledMarginS] after, nothing is judged from the sensors (the readings are the hand's, not the car's);
+ * braking and speeding up then come from the GPS speed alone.
  *
  * Feed it from the engine thread, right after the engine got the same sample.
  */
@@ -203,23 +223,23 @@ class DrivingMonitor(
     private var coolLongUntil = Long.MIN_VALUE / 4
     private var coolSwerveUntil = Long.MIN_VALUE / 4
     private var coolPhoneUntil = Long.MIN_VALUE / 4
-    private var lastSeenUnstable = Long.MIN_VALUE / 4
-    /** End of each jostle while driving, for [pocketMode]. */
-    private val unstableEpisodes = ArrayDeque<Long>()
-    /** The "phone moved" moment going on: first and last unstable reading (-1 = none), and if the car was moving. */
-    private var epStartMs = -1L
-    private var epLastMs = -1L
-    private var epMoving = false
-    private var autoPocket = false
-    private var autoPocketAtMs = -1L
+    /** The last handling judged for phone use ([PhoneStateDetector.episode]). */
+    private var phoneEpisode = 0
+    private val phone = engine.phone
     /** Sideways force from GPS heading changes (fix time, m/s², positive = to the left), the last few seconds. */
     private val gpsLateral = ArrayDeque<Pair<Long, Double>>()
-    /** A sideways push from the gyroscope waiting for the GPS to confirm it ([DrivingConfig.lateralTolFrac]). */
+    /** Speed change from one fix to the next (fix time, m/s², positive = faster), the last few seconds. */
+    private val gpsLong = ArrayDeque<Pair<Long, Double>>()
+    /** A push (sideways, or along the car) from the sensors waiting for the GPS to confirm it. */
     private class Push(val tMs: Long, val lat: Double)
     private var pendingCorner: Push? = null
     private var pendingSwerve: Pair<Push, Push>? = null
+    /** Braking (negative) or speeding up waiting for the GPS speed to confirm it ([DrivingConfig.longTolFrac]). */
+    private var pendingLong: Push? = null
     private var lastLeftLat = 0.0
     private var lastRightLat = 0.0
+    /** Judging was paused for a handling. */
+    private var gated = false
     private var speedingRunS = 0.0
     private var speedingRunMaxKmh = 0.0
     /** When the sensor-based braking check last ran, and since when it has been running without a break. */
@@ -230,10 +250,15 @@ class DrivingMonitor(
     private var minLong = 0.0
     private var maxLong = 0.0
     val debug: String get() = "fwdSamples=$fwdSamples longLp min=${formatFixed(minLong, 2)} max=${formatFixed(maxLong, 2)} " +
-        "cornersIgnored=${stats.cornersIgnored} swervesIgnored=${stats.swervesIgnored} autoPocketAt=${formatFixed(autoPocketAtMs / 1000.0, 0)}s"
+        "cornersIgnored=${stats.cornersIgnored} swervesIgnored=${stats.swervesIgnored} brakesIgnored=${stats.brakesIgnored} " +
+        "accelsIgnored=${stats.accelsIgnored} pocketMode=${phone.pocketMode}"
 
-    /** Phone jostles are not phone use: placement is "pocket", or the phone kept jostling on this trip. */
-    val pocketMode: Boolean get() = cfg.placement == "pocket" || autoPocket
+    /** Pocket mode ([PhoneStateDetector.pocketMode]): placement "pocket", or a phone that kept jostling on this trip. */
+    val pocketMode: Boolean get() = phone.pocketMode
+
+    init {
+        phone.placement = cfg.placement
+    }
 
     fun onGyro(x: Double, y: Double, z: Double) {
         gx = x; gy = y; gz = z
@@ -243,22 +268,18 @@ class DrivingMonitor(
     fun onAccel(tMs: Long, x: Double, y: Double, z: Double) {
         val dt = if (lastAccelMs < 0) 0.02 else ((tMs - lastAccelMs).coerceIn(1L, 200L) / 1000.0)
         lastAccelMs = tMs
+        checkPhoneUse()
         val up = engine.upVector() ?: return
-
-        // Phone picked up while moving → distraction, judged once the moment is over (see [DrivingConfig.jostleMaxS]).
-        val unstable = engine.lastUnstableMs
-        if (unstable != lastSeenUnstable) {
-            lastSeenUnstable = unstable
-            if (unstable == tMs) {
-                if (epStartMs >= 0 && tMs - epLastMs <= (cfg.episodeGapS * 1000).toLong()) epLastMs = tMs
-                else {
-                    closeEpisode()
-                    epStartMs = tMs; epLastMs = tMs; epMoving = speedMps * 3.6 >= 10
-                }
-            }
+        if (handledNear(tMs)) {   // the readings are the hand's, not the car's
+            gated = true
+            return
         }
-        if (epStartMs >= 0 && tMs - epLastMs > (cfg.episodeGapS * 1000).toLong()) closeEpisode()
-        if (engine.lastUnstableMs >= tMs - 1500) return   // readings meaningless while the phone is handled
+        if (gated) {   // judging again after a handling: nothing measured before it carries over
+            gated = false
+            yawLp = 0.0
+            cornerSinceMs = -1; brakeSinceMs = -1; accelSinceMs = -1
+            lastLeftMs = Long.MIN_VALUE / 4; lastRightMs = Long.MIN_VALUE / 4
+        }
 
         // Turning rate around "up" → sideways force = speed × turning rate.
         if (gyroSeen) {
@@ -287,6 +308,7 @@ class DrivingMonitor(
     fun onFix(f: Fix) {
         val prev = lastFix
         lastFix = f
+        phone.placement = cfg.placement
         speedMps = f.speedMps.takeIf { !it.isNaN() } ?: 0.0
         val kmh = speedMps * 3.6
         if (prev == null) return
@@ -313,11 +335,16 @@ class DrivingMonitor(
         // Until the sensor-based check has been running for 2 s, judge braking / speeding up from GPS
         // (a bit less exact, so a higher bar). The forward axis is often learned *during* a hard brake;
         // without this hand-over, that brake would be missed by both checks.
-        val sensorReady = fwdSinceMs >= 0 && f.timeMs - lastFwdMs <= 1000 && lastFwdMs - fwdSinceMs >= 2000
-        if (!sensorReady && f.accuracyM <= 30 && !prev.speedMps.isNaN()) {
-            val a = (speedMps - prev.speedMps) / dt
-            checkLongitudinal(f.timeMs, if (a > 0) a - 0.5 else a + 0.5, sustainMs = 0)
+        // The same GPS judgement while the phone is handled: the hand moves the sensors, not the GPS speed.
+        val handled = handledNear(f.timeMs)
+        var aGps = Double.NaN
+        var sensorReady = false
+        if (f.accuracyM <= 30 && !prev.speedMps.isNaN()) {
+            aGps = (speedMps - prev.speedMps) / dt
+            gpsLong.addLast(Pair(f.timeMs, aGps))
+            sensorReady = fwdSinceMs >= 0 && f.timeMs - lastFwdMs <= 1000 && lastFwdMs - fwdSinceMs >= 2000
         }
+        while (gpsLong.isNotEmpty() && gpsLong.first().first < f.timeMs - 10_000) gpsLong.removeFirst()
         // Sideways force from the GPS heading, to confirm (or not) what the gyroscope felt.
         if (!f.bearingDeg.isNaN() && !prev.bearingDeg.isNaN() && speedMps >= 4.0 && !prev.speedMps.isNaN() && prev.speedMps >= 4.0) {
             var d = f.bearingDeg - prev.bearingDeg
@@ -329,10 +356,13 @@ class DrivingMonitor(
         }
         while (gpsLateral.isNotEmpty() && gpsLateral.first().first < f.timeMs - 10_000) gpsLateral.removeFirst()
         resolvePending(f.timeMs)
+        if (!aGps.isNaN() && (!sensorReady || handled)) {
+            checkLongitudinal(f.timeMs, if (aGps > 0) aGps - 0.5 else aGps + 0.5, sustainMs = 0, fromGps = true)
+        }
 
         // Without a gyroscope, turning rate comes from the GPS heading.
         if (!gyroSeen && !f.bearingDeg.isNaN() && speedMps >= 4.0) {
-            if (!lastBearing.isNaN()) {
+            if (!lastBearing.isNaN() && !handled) {
                 var d = f.bearingDeg - lastBearing
                 if (d > 180) d -= 360
                 if (d < -180) d += 360
@@ -355,39 +385,53 @@ class DrivingMonitor(
 
     fun finish() {
         resolvePending(Long.MAX_VALUE)
-        closeEpisode()
         if (speedingRunS >= 10) event("speeding", speedingRunMaxKmh, "${formatFixed(speedingRunS, 0)} s above ${formatFixed(cfg.speedLimitKmh, 0)} km/h")
         speedingRunS = 0.0
     }
 
-    private fun checkLongitudinal(tMs: Long, a: Double, sustainMs: Long) {
+    /** [fromGps]: the push comes from the GPS speed itself (no forward axis yet), so there is nothing to cross-check. */
+    private fun checkLongitudinal(tMs: Long, a: Double, sustainMs: Long, fromGps: Boolean = false) {
         if (tMs < coolLongUntil) return
         if (a <= -cfg.harshBrakeMs2) {
             if (brakeSinceMs < 0) brakeSinceMs = tMs
             if (tMs - brakeSinceMs >= sustainMs) {
-                stats.harshBrakes++
                 coolLongUntil = tMs + 3000
                 brakeSinceMs = -1
-                event("harsh_brake", abs(a), "${formatFixed(abs(a), 1)} m/s²")
+                if (fromGps) countLong(a) else if (pendingLong == null) pendingLong = Push(tMs, a)
             }
         } else brakeSinceMs = -1
         if (a >= cfg.harshAccelMs2) {
             if (accelSinceMs < 0) accelSinceMs = tMs
             if (tMs - accelSinceMs >= sustainMs) {
-                stats.harshAccels++
                 coolLongUntil = tMs + 3000
                 accelSinceMs = -1
-                event("harsh_accel", a, "${formatFixed(a, 1)} m/s²")
+                if (fromGps) countLong(a) else if (pendingLong == null) pendingLong = Push(tMs, a)
             }
         } else accelSinceMs = -1
+    }
+
+    private fun countLong(a: Double) {
+        if (a < 0) {
+            stats.harshBrakes++
+            event("harsh_brake", abs(a), "${formatFixed(abs(a), 1)} m/s²")
+        } else {
+            stats.harshAccels++
+            event("harsh_accel", a, "${formatFixed(a, 1)} m/s²")
+        }
     }
 
     /** [fromGps]: the force comes from the GPS heading itself (no gyroscope), so there is nothing to cross-check. */
     private fun checkSideways(tMs: Long, lat: Double, fromGps: Boolean = false) {
         if (speedMps * 3.6 < 15) { cornerSinceMs = -1; return }
-        // Swerve: strong sideways push one way, then the other, within a couple of seconds.
-        if (lat >= cfg.swerveMs2) { lastLeftMs = tMs; lastLeftLat = lat }
-        if (lat <= -cfg.swerveMs2) { lastRightMs = tMs; lastRightLat = lat }
+        // Swerve: strong sideways push one way, then the other, within a couple of seconds (each push: its peak).
+        if (lat >= cfg.swerveMs2) {
+            lastLeftLat = if (tMs - lastLeftMs > 500) lat else max(lastLeftLat, lat)
+            lastLeftMs = tMs
+        }
+        if (lat <= -cfg.swerveMs2) {
+            lastRightLat = if (tMs - lastRightMs > 500) lat else min(lastRightLat, lat)
+            lastRightMs = tMs
+        }
         if (speedMps * 3.6 >= cfg.swerveMinKmh && tMs >= coolSwerveUntil &&
             abs(lastLeftMs - lastRightMs) <= (cfg.swerveWindowS * 1000).toLong() && min(lastLeftMs, lastRightMs) > tMs - 5000
         ) {
@@ -416,24 +460,56 @@ class DrivingMonitor(
         event("harsh_corner", abs(lat), "${formatFixed(abs(lat), 1)} m/s² sideways")
     }
 
-    /** Count or drop the gyroscope pushes the GPS has had time to confirm, as of [nowMs]. */
+    /**
+     * Count or drop the sensor pushes the GPS has had time to confirm, as of [nowMs]. A push close to a handling of
+     * the phone ([handledAround]) is dropped either way: it was the hand.
+     */
     private fun resolvePending(nowMs: Long) {
         pendingCorner?.let { p ->
-            when (agrees(p, nowMs)) {
-                true -> { countCorner(p.lat); pendingCorner = null }
-                false -> { stats.cornersIgnored++; pendingCorner = null }
-                null -> {}
-            }
+            val ok = agrees(p, nowMs) ?: return@let
+            pendingCorner = null
+            if (handledAround(p.tMs, p.tMs)) return@let
+            if (ok) countCorner(p.lat) else stats.cornersIgnored++
         }
         pendingSwerve?.let { (l, r) ->
             val a = agrees(l, nowMs)
             val b = agrees(r, nowMs)
+            if (!(a == true && b == true) && a != false && b != false) return@let
+            pendingSwerve = null
+            if (handledAround(min(l.tMs, r.tMs), max(l.tMs, r.tMs))) return@let
+            if (a == true && b == true) countSwerve(max(abs(l.lat), abs(r.lat))) else stats.swervesIgnored++
+        }
+        pendingLong?.let { p ->
+            val ok = longAgrees(p, nowMs) ?: return@let
+            pendingLong = null
+            if (handledAround(p.tMs, p.tMs)) {
+                coolLongUntil = p.tMs   // the hand's push: the GPS speed alone judges this stop (onFix)
+                return@let
+            }
             when {
-                a == true && b == true -> { countSwerve(max(abs(l.lat), abs(r.lat))); pendingSwerve = null }
-                a == false || b == false -> { stats.swervesIgnored++; pendingSwerve = null }
+                ok -> countLong(p.lat)
+                p.lat < 0 -> stats.brakesIgnored++
+                else -> stats.accelsIgnored++
             }
         }
     }
+
+    /** Does the GPS speed back the braking / speeding up [p] ([DrivingConfig.longTolFrac])? Null while it still may. */
+    private fun longAgrees(p: Push, nowMs: Long): Boolean? {
+        val tol = cfg.longTolFrac * abs(p.lat) + cfg.longTolMs2
+        val from = p.tMs - (cfg.longMatchS * 1000).toLong()
+        val to = p.tMs + (cfg.longMatchS * 1000).toLong()
+        val sign = if (p.lat >= 0) 1.0 else -1.0
+        for ((t, a) in gpsLong) if (t in from..to && a * sign >= abs(p.lat) - tol) return true
+        return if (nowMs > to) false else null
+    }
+
+    /** The phone was handled between [DrivingConfig.handledMarginS] before [fromMs] and [DrivingConfig.handledAfterS] after [toMs]. */
+    private fun handledAround(fromMs: Long, toMs: Long) =
+        phone.handledDuring(fromMs - (cfg.handledMarginS * 1000).toLong(), toMs + (cfg.handledAfterS * 1000).toLong())
+
+    /** Handled now, or less than [DrivingConfig.handledMarginS] ago. */
+    private fun handledNear(tMs: Long) = phone.handledDuring(tMs - (cfg.handledMarginS * 1000).toLong(), tMs)
 
     /**
      * Does the GPS heading back the gyroscope push [p] ([DrivingConfig.lateralTolFrac])? True or false,
@@ -451,31 +527,24 @@ class DrivingMonitor(
     }
 
     /**
-     * The "phone moved" moment is over. A jostle counts towards pocket mode and is excused in it; a longer hold is
-     * phone use unless the placement is "pocket". At most one phone use per 30 s.
+     * Phone use ([DrivingConfig.phoneUseS]), judged on every sample of a handling: a hand-held call or an unlock (when
+     * not in a holder, see [PhoneStateDetector]) seen while driving, or handled long enough while driving. Pocket mode
+     * excuses only a jostle. Once per handling, at most once per [DrivingConfig.phoneUseGapS].
      */
-    private fun closeEpisode() {
-        if (epStartMs < 0) return
-        val start = epStartMs
-        val jostle = epLastMs - start < (cfg.jostleMaxS * 1000).toLong()
-        epStartMs = -1
-        if (!epMoving) return
-        if (jostle) noteUnstableEpisode(epLastMs)
-        val excused = cfg.placement == "pocket" || (jostle && pocketMode)
-        if (!excused && start >= coolPhoneUntil) {
-            stats.phoneUse++
-            coolPhoneUntil = start + 30_000
-            event("phone_use", 0.0, if (jostle) "phone moved while driving" else "phone held while driving")
+    private fun checkPhoneUse() {
+        val p = phone
+        if (p.episode == 0 || p.episode == phoneEpisode) return
+        val note = when {
+            (p.movingCauses and PhoneStateDetector.CALL) != 0 -> "hand-held call while driving"
+            (p.movingCauses and PhoneStateDetector.UNLOCK) != 0 -> "phone unlocked while driving"
+            p.movingMs >= (cfg.phoneUseS * 1000).toLong() && !(p.pocketMode && p.jostle) -> "phone held while driving"
+            else -> return
         }
-    }
-
-    private fun noteUnstableEpisode(tMs: Long) {
-        unstableEpisodes.addLast(tMs)
-        while (unstableEpisodes.first() < tMs - (cfg.autoPocketWindowS * 1000).toLong()) unstableEpisodes.removeFirst()
-        if (!autoPocket && unstableEpisodes.size >= cfg.autoPocketEpisodes) {
-            autoPocket = true
-            autoPocketAtMs = tMs
-        }
+        phoneEpisode = p.episode
+        if (p.episodeStartMs < coolPhoneUntil) return
+        coolPhoneUntil = p.episodeStartMs + (cfg.phoneUseGapS * 1000).toLong()
+        stats.phoneUse++
+        event("phone_use", 0.0, note)
     }
 
     private fun event(type: String, value: Double, note: String) {
