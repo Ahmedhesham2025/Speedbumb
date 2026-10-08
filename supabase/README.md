@@ -11,6 +11,7 @@ migrations/20261005000003_training_samples.sql    consented learning samples ("H
 migrations/20261005000004_speed_limit_quota_settings.sql   speed-limits caps read from app_settings (60/user, 2,000/project)
 migrations/20261007000002_research.sql   research recordings: consent, ledger, erasure queue, private bucket + policy
 migrations/20261008000001_bump_severity.sql   v2 bumps: severity band + confidence, legacy potholes, spots_near_v2
+migrations/20261008000002_severity_average.sql   spot severity averaged like the app's (first 10 hits equally, then 1/10)
 functions/speed-limits/              Edge Function: road speed limits from TomTom (lib.ts logic, lib_test.ts Deno tests)
 tools/research/                      owner tool (Deno): download, clear and erase research files, plus its smoke test
 seed.sql                             sample fleets/spots for local runs and CI only (desert coordinates)
@@ -55,6 +56,8 @@ config.toml                          local `supabase start` settings (anonymous 
 - `spots_near_v2(lat, lon, radius_m default 3000)` (v2 builds): the same spots (confirmed, 10 km cap, at most 5000, by
   id) as `{"id", "lat", "lon", "heading": 0..359 | null, "severity": m/s² | null, "severity_band": "mild" | "moderate" |
   "strong" | null, "confidence": "soft" | "full", "n_devices", "n_hits": hits in total, "legacy": boolean}`.
+  **Client requirement:** a v2 build must fall back to `spots_near` when `spots_near_v2` is missing (HTTP 404 /
+  `PGRST202`), so it still gets shared spots from a project where the migration isn't applied yet or was rolled back.
 - `submit_crash_report(app_version, model, stack)`: registered devices only; at most 20 per device per day (`54000`),
   stack ≤ 8 KB and version/model ≤ 40 characters (`22023`).
 - `forget_me()`: deletes the caller's device and its training samples/trips, and by cascade its observations, contributions, trips, crash reports and counters.
@@ -69,9 +72,11 @@ confirmed spot `stale` when that ratio falls, and deletes processed observations
 ### Severity and confidence (v2 bumps, `20261008000001_bump_severity.sql`)
 
 There are no potholes any more: the aggregation makes every new spot a bump (`kind = 'bump'`, `side` null).
-- **Severity**: running average of the hits (`0.8 × old + 0.2 × new`) of each hit's `sev_index`, or its `peak` when a
-  phone sends none. **Band** (`public.severity_band`, plain edges, no hysteresis): mild < `severity_moderate_min` (3.5) ≤
-  moderate < `severity_strong_min` (5.0) ≤ strong. Both edges are `app_settings` rows (missing or non-numeric = default).
+- **Severity**: running average of each hit's `sev_index`, or its `peak` when a phone sends none, weighted like the app's
+  (`Bump.addSeverity`, `20261008000002_severity_average.sql`): the first 10 hits count equally, then each new one 1/10,
+  `new = old + (x − old) / min(n, 10)` with n = the spot's hits so far, this one included. **Band**
+  (`public.severity_band`, plain edges, no hysteresis): mild < `severity_moderate_min` (3.5) ≤ moderate <
+  `severity_strong_min` (5.0) ≤ strong. Both edges are `app_settings` rows (missing or non-numeric = default).
 - **Confidence** (`public.spot_confidence`, the engine's rule): `full` after 2 hits in total (one phone twice counts:
   `n_hits`, not `n_devices`) or after one axle hit (`axle_hits`, hits with `axle` ≥ 0.6) on a strong bump; else `soft`.
   A legacy pothole is always `soft`.
@@ -79,7 +84,7 @@ There are no potholes any more: the aggregation makes every new spot a bump (`ki
   `'pothole'` to 1.7.x phones). A hit from a v2 phone (`schema` ≥ 2) or an axle hit clears it and the spot becomes an
   ordinary bump (`kind = 'bump'`, `side` null). `kind` is `'pothole'` exactly while `legacy_pothole` is set.
 - `confirm_devices` and the stale rule are unchanged. To move the band edges (after a refit of the app's
-  `DetectionConfig`), run once in the SQL editor, then re-band every spot:
+  `EngineConfig.sevMildMax` / `sevStrongMin`), run once in the SQL editor, then re-band every spot:
 
 ```sql
 update public.app_settings set value = '4.0' where key = 'severity_moderate_min';
@@ -96,6 +101,10 @@ confirmed spot is re-checked against the new value (and may turn `stale`) the ne
 ```sql
 update public.app_settings set value = '3' where key = 'confirm_devices';
 ```
+
+**Raise it before a public v2 launch.** The hosted project runs with `1` (owner decision: share after one phone).
+Confidence counts total hits, so with `1` a single phone makes a spot confirmed **and** `full` by hitting it twice, or once
+with an axle hit on a strong bump. Keep the anonymous sign-in rate limit low as well (step 1 below).
 
 ## Training samples ("Help improve detection")
 
@@ -272,8 +281,10 @@ roles with `set local role authenticated` + `request.jwt.claims` inside a rolled
 follow `app_settings`, pruning),
 `08_training_samples.sql` (consent, pseudonym rotation, validation, caps, size guard, withdrawal, forget_me, RLS deny,
 retention), `09_bump_severity.sql` (band edges, backfill, 1.7 and v2 payloads, no new potholes, legacy cleared by a v2
-hit, axle + strong = full, total hits, `spots_near` compatibility, `spots_near_v2`, training bands, moving the edges), `10_research.sql` (consent, reservations and caps, the Storage policy against foreign folders, missing or
-oversized Content-Length, signed-URL and S3 uploads, no client read/update/delete, clearing, forget_me queueing).
+hit, axle + strong = full, total hits, the app's severity average, `spots_near` compatibility including a null kind,
+`spots_near_v2`, helpers closed to clients, training bands, moving the edges), `10_research.sql` (consent,
+reservations and caps, the Storage policy against foreign folders, missing or oversized Content-Length, signed-URL and S3
+uploads, no client read/update/delete, clearing, forget_me queueing).
 The same job runs `deno test`, `deno check` and `deno lint` on `functions/`.
 
 ## Fleets
@@ -304,14 +315,21 @@ Agents never link or push to the hosted project. When the owner approves:
 5. Research: first check `select to_regprocedure('storage.allow_only_operation(text)');` is not null (the policy needs
    it). Apply `migrations/20261007000002_research.sql`; check the `research` bucket is private with 10485760 bytes and
    Storage → Policies shows only `research_insert_reserved` for it; then try one upload from a phone or with curl.
-6. Bump severity: apply `migrations/20261008000001_bump_severity.sql` **before any v2.0 build uploads** (before the first
-   `v2.0.0-beta` is published). It needs the core and training migrations, not the research one. Until it is applied,
-   v2 builds would lose training batches (a band in `classification` breaks the old CHECK, so the app drops the batch),
-   find no `spots_near_v2`, and the old aggregation would keep turning `kind_score` ≥ 0.5 into potholes. 1.7.x and E1
-   builds keep working with it (same `spots_near` and `submit_observations` contracts). Check:
-   `select legacy_pothole, confidence, count(*) from public.spots group by 1, 2;` shows the old potholes as legacy/soft,
-   and after the next aggregation run `select count(*) from public.spots where kind = 'pothole' and not legacy_pothole;`
-   is 0.
+6. Bump severity, **after step 5 (research is applied first), in file order**: `migrations/20261008000001_bump_severity.sql`,
+   then `migrations/20261008000002_severity_average.sql`. Both **before any v2.0 build uploads** (before the first
+   `v2.0.0-beta` is published, and before #114's `CLASSES` change ships). Until then v2 builds would lose training batches
+   (a band in `classification` breaks the old CHECK, so the app drops the batch), find no `spots_near_v2`, and the old
+   aggregation would keep turning `kind_score` ≥ 0.5 into potholes. 1.7.x and E1 builds keep working with it (same
+   `spots_near` and `submit_observations` contracts).
+   - Pre-check: `select conname from pg_constraint where conrelid = 'public.training_samples'::regclass and conname in
+     ('training_samples_classification_check', 'training_samples_label_check');` returns both names (otherwise the
+     migration stops at the training CHECKs and changes nothing).
+   - Apply between two aggregation runs: the cron job runs at :00, :10, :20 …, so start at about :05, :15 … A run that
+     starts while the migration holds its locks still uses the old function and can add a non-legacy `'pothole'` spot.
+   - Check: `select legacy_pothole, confidence, count(*) from public.spots group by 1, 2;` shows the old potholes as
+     legacy/soft, and after the next aggregation run `select count(*) from public.spots where kind = 'pothole' and not
+     legacy_pothole;` is 0. If a `'pothole'` spot slipped in, run `select public.backfill_bump_severity();` (safe to
+     repeat; it makes it a legacy spot) and check again.
 
 Rollback (nothing depends on it yet): `drop schema public cascade` is too broad; instead drop the tables listed above,
 the eight functions and the `memberships_keep_last_owner` trigger, and `select cron.unschedule('aggregate-observations');`.
@@ -319,7 +337,9 @@ the eight functions and the `memberships_keep_last_owner` trigger, and `select c
 Rollback of bump severity only (the data stays usable by the old functions):
 1. While the cron job keeps running, re-create `submit_observations`, `spots_near` and `aggregate_observations` from
    `20261005000001_core.sql` (as `create or replace`). Same signatures, so no client notices; the old `spots_near` reads
-   `kind`, which is still `'pothole'` exactly for the legacy spots. v2 builds fall back to `spots_near`.
+   `kind`, which is still `'pothole'` exactly for the legacy spots. **Client requirement:** v2 builds must then fall
+   back to `spots_near` (on `PGRST202` / 404 from `spots_near_v2`), see *RPCs*. To undo only the averaging change,
+   re-create `aggregate_observations` from `20261008000001_bump_severity.sql` instead.
 2. Then `drop function public.spots_near_v2(double precision, double precision, int); drop type public.spot_v2;
    drop function public.backfill_bump_severity(), public.spot_confidence(boolean, int, int, text),
    public.severity_band(real);`, drop the four new `spots` columns and the three new `observations` columns, and delete
