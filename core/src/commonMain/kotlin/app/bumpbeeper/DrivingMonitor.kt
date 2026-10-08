@@ -27,16 +27,21 @@ class DrivingConfig {
     /** Where the phone sits: mounted | cupholder | pocket | unknown. (setting: Prefs.placement) */
     @Volatile var placement = "unknown"
     /**
-     * Phone use: the phone HANDLED ([PhoneStateDetector]) for at least [phoneUseS] while driving at
-     * [PhoneStateConfig.movingKmh] or faster, in any placement (pocket mode only excuses a jostle, see
-     * [PhoneStateDetector.jostle]); an unlock while driving when not in a holder; a hand-held call while driving.
-     * Never: a mounted phone with its screen on (navigation), or a Bluetooth / wired call. Once per handling, and at
-     * most once per [phoneUseGapS].
+     * Phone use: the phone handled ([PhoneStateDetector.movingMs]: tilted, or held by a sign other than its motion) for
+     * at least [phoneUseS] while driving at [PhoneStateConfig.movingKmh] or faster, in any placement (pocket mode only
+     * excuses a jostle, see [PhoneStateDetector.jostle]); an unlock (not in a holder) or a hand-held call seen while
+     * driving at that moment ([PhoneStateDetector.movingCauses]). Never: a mounted phone with its screen on
+     * (navigation), an unlock at a red light, a Bluetooth / wired / speaker call. Once per handling, and at most once
+     * per [phoneUseGapS].
      */
     var phoneUseS = 1.5
     var phoneUseGapS = 30.0
-    /** No braking, speeding up, cornering or swerving is judged while the phone is handled, nor this long after. */
+    /**
+     * No braking, speeding up, cornering or swerving is judged while the phone is handled, nor [handledMarginS] after;
+     * a push waiting for the GPS is dropped if a handling began less than [handledAfterS] after it.
+     */
     var handledMarginS = 2.0
+    var handledAfterS = 1.0
     /**
      * Braking and speeding up felt by the phone must show in the GPS speed: a = (v2 - v1) / dt between two fixes,
      * up to [longMatchS] before or after the push, with a_gps * sign(a) >= |a| - (longTolFrac * |a| + longTolMs2).
@@ -230,6 +235,8 @@ class DrivingMonitor(
     private var pendingLong: Push? = null
     private var lastLeftLat = 0.0
     private var lastRightLat = 0.0
+    /** Judging was paused for a handling. */
+    private var gated = false
     private var speedingRunS = 0.0
     private var speedingRunMaxKmh = 0.0
     /** When the sensor-based braking check last ran, and since when it has been running without a break. */
@@ -260,7 +267,16 @@ class DrivingMonitor(
         lastAccelMs = tMs
         checkPhoneUse()
         val up = engine.upVector() ?: return
-        if (handledNear(tMs)) return   // the readings are the hand's, not the car's
+        if (handledNear(tMs)) {   // the readings are the hand's, not the car's
+            gated = true
+            return
+        }
+        if (gated) {   // judging again after a handling: nothing measured before it carries over
+            gated = false
+            yawLp = 0.0
+            cornerSinceMs = -1; brakeSinceMs = -1; accelSinceMs = -1
+            lastLeftMs = Long.MIN_VALUE / 4; lastRightMs = Long.MIN_VALUE / 4
+        }
 
         // Turning rate around "up" → sideways force = speed × turning rate.
         if (gyroSeen) {
@@ -399,9 +415,15 @@ class DrivingMonitor(
     /** [fromGps]: the force comes from the GPS heading itself (no gyroscope), so there is nothing to cross-check. */
     private fun checkSideways(tMs: Long, lat: Double, fromGps: Boolean = false) {
         if (speedMps * 3.6 < 15) { cornerSinceMs = -1; return }
-        // Swerve: strong sideways push one way, then the other, within a couple of seconds.
-        if (lat >= cfg.swerveMs2) { lastLeftMs = tMs; lastLeftLat = lat }
-        if (lat <= -cfg.swerveMs2) { lastRightMs = tMs; lastRightLat = lat }
+        // Swerve: strong sideways push one way, then the other, within a couple of seconds (each push: its peak).
+        if (lat >= cfg.swerveMs2) {
+            lastLeftLat = if (tMs - lastLeftMs > 500) lat else max(lastLeftLat, lat)
+            lastLeftMs = tMs
+        }
+        if (lat <= -cfg.swerveMs2) {
+            lastRightLat = if (tMs - lastRightMs > 500) lat else min(lastRightLat, lat)
+            lastRightMs = tMs
+        }
         if (speedMps * 3.6 >= cfg.swerveMinKmh && tMs >= coolSwerveUntil &&
             abs(lastLeftMs - lastRightMs) <= (cfg.swerveWindowS * 1000).toLong() && min(lastLeftMs, lastRightMs) > tMs - 5000
         ) {
@@ -471,9 +493,9 @@ class DrivingMonitor(
         return if (nowMs > to) false else null
     }
 
-    /** The phone was handled between [DrivingConfig.handledMarginS] before [fromMs] and 1 s after [toMs]. */
+    /** The phone was handled between [DrivingConfig.handledMarginS] before [fromMs] and [DrivingConfig.handledAfterS] after [toMs]. */
     private fun handledAround(fromMs: Long, toMs: Long) =
-        phone.handledDuring(fromMs - (cfg.handledMarginS * 1000).toLong(), toMs + 1000)
+        phone.handledDuring(fromMs - (cfg.handledMarginS * 1000).toLong(), toMs + (cfg.handledAfterS * 1000).toLong())
 
     /** Handled now, or less than [DrivingConfig.handledMarginS] ago. */
     private fun handledNear(tMs: Long) = phone.handledDuring(tMs - (cfg.handledMarginS * 1000).toLong(), tMs)
@@ -495,16 +517,15 @@ class DrivingMonitor(
 
     /**
      * Phone use ([DrivingConfig.phoneUseS]), judged on every sample of a handling: a hand-held call or an unlock (when
-     * not in a holder, see [PhoneStateDetector]) while driving, or handled long enough while driving. Pocket mode
+     * not in a holder, see [PhoneStateDetector]) seen while driving, or handled long enough while driving. Pocket mode
      * excuses only a jostle. Once per handling, at most once per [DrivingConfig.phoneUseGapS].
      */
     private fun checkPhoneUse() {
         val p = phone
         if (p.episode == 0 || p.episode == phoneEpisode) return
-        val moving = speedMps * 3.6 >= p.cfg.movingKmh
         val note = when {
-            (p.causes and PhoneStateDetector.CALL) != 0 && moving -> "hand-held call while driving"
-            (p.causes and PhoneStateDetector.UNLOCK) != 0 && moving -> "phone unlocked while driving"
+            (p.movingCauses and PhoneStateDetector.CALL) != 0 -> "hand-held call while driving"
+            (p.movingCauses and PhoneStateDetector.UNLOCK) != 0 -> "phone unlocked while driving"
             p.movingMs >= (cfg.phoneUseS * 1000).toLong() && !(p.pocketMode && p.jostle) -> "phone held while driving"
             else -> return
         }

@@ -42,8 +42,6 @@ class EngineConfig {
     var decideAfterMs = 1200L
     /** Ignore further jolts for this long (rear axle, suspension rebound). */
     var refractoryMs = 2500L
-    /** Angle between the fast and slow "down" estimates that means the phone turned: its gravity and forward are learned again. */
-    var tiltRejectDeg = 25.0
 
     /** A hit this close to a known bump (same direction) is that bump. */
     var matchRadiusM = 20.0
@@ -375,9 +373,9 @@ class BumpEngine(
         if (bufCount < BUF) bufCount++
         ring?.let { addToRing(it, tMs, v) }
 
-        // Is the phone turning (picked up, dropped, adjusted)? Whether it is handled is [phone]'s call.
+        // Is the phone turning (picked up, dropped, adjusted)? Whether it is handled is [phone]'s call; the angle is its fast turn.
         val cosTilt = ((slowX * fastX + slowY * fastY + slowZ * fastZ) / (g * f)).coerceIn(-1.0, 1.0)
-        if (radToDeg(acos(cosTilt)) > cfg.tiltRejectDeg) {
+        if (radToDeg(acos(cosTilt)) > phone.cfg.turnDeg) {
             // It may sit differently when it is put back: learn gravity and "forward" again.
             gravX = slowX; gravY = slowY; gravZ = slowZ
             gravSettledS = 0.0

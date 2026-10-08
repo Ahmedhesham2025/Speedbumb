@@ -82,8 +82,14 @@ class DriveSpec(
     val holdsAt: List<Pair<Double, Double>> = emptyList(),
     /** The phone feels 5 m/s² of braking for 1.2 s (it slides, or tips in a pocket) while the car keeps its speed. */
     val brakeSpikesAt: List<Double> = emptyList(),
-    /** Sets the phone's own signals on every sample: (seconds driven, metres driven, the signals, sensor time ms). */
-    val phoneSignals: ((Double, Double, PhoneSignals, Long) -> Unit)? = null,
+    /** The driver stops there (a red light) and waits: (position, seconds). */
+    val stopsAt: List<Pair<Double, Double>> = emptyList(),
+    /** The phone tips by that many degrees in 0.3 s (slips in its holder) and stays there: (position, degrees). */
+    val slipsAt: List<Pair<Double, Double>> = emptyList(),
+    /** The phone twists 40° about the vertical and straight back, 0.6 s each way: the gyroscope turns both ways. */
+    val wigglesAt: List<Double> = emptyList(),
+    /** Sets the phone's own signals on every sample: (seconds driven, metres driven, speed m/s, the signals, sensor time ms). */
+    val phoneSignals: ((Double, Double, Double, PhoneSignals, Long) -> Unit)? = null,
 )
 
 class TripResult(
@@ -106,6 +112,10 @@ class TripResult(
     val ticks: Int = 0,
     /** The engine's phone state at the end of the trip. */
     val phone: PhoneStateDetector? = null,
+    /** Share of the samples after the first minute with the phone [PhoneState.STABLE_MOUNTED]. */
+    val mountedShare: Double = 0.0,
+    /** Seconds the phone was [PhoneState.HANDLED] on the trip. */
+    val handledS: Double = 0.0,
 )
 
 /**
@@ -235,6 +245,14 @@ class Simulator(seed: Long) {
         val seams = spec.seamsAt.map { travel(it) }
         val holds = spec.holdsAt.map { Pair(travel(it.first), it.second) }
         val spikes = spec.brakeSpikesAt.map { travel(it) }
+        val stops = spec.stopsAt.map { doubleArrayOf(travel(it.first), it.second, -1.0, 0.0) }   // (where, seconds, leave at, gone)
+        val slips = spec.slipsAt.map { Pair(travel(it.first), it.second) }
+        val slipStart = DoubleArray(slips.size) { -1.0 }
+        val wiggles = spec.wigglesAt.map { travel(it) }
+        var wiggleStart = -1.0
+        var samplesAfter1Min = 0
+        var mountedSamples = 0
+        var handledSamples = 0
         var holdStart = -1.0
         var holdS = 0.0
         var spikeStart = -1.0
@@ -285,6 +303,17 @@ class Simulator(seed: Long) {
             for (sj in jostles) if (s < sj && s + v * dt >= sj) jostleStart = t
             for ((sh, secs) in holds) if (s < sh && s + v * dt >= sh) { holdStart = t; holdS = secs }
             for (sk in spikes) if (s < sk && s + v * dt >= sk) spikeStart = t
+            for (st in stops) {
+                if (st[3] > 0) continue
+                val ds = st[0] - s
+                if (ds < 150) target = min(target, sqrt(2 * maxDecel * 0.8 * max(0.0, ds - 2)))
+                if (v <= 0.0 && ds < 10) {
+                    if (st[2] < 0) st[2] = t + st[1]
+                    if (t >= st[2]) st[3] = 1.0 else target = 0.0
+                }
+            }
+            for ((i, sl) in slips.withIndex()) if (s < sl.first && s + v * dt >= sl.first) slipStart[i] = t
+            for (sw in wiggles) if (s < sw && s + v * dt >= sw) wiggleStart = t
             val vNew = when {
                 t < forceBrakeUntil -> max(0.5, v - 6.5 * dt)
                 target > v -> min(target, v + maxAccel * dt)
@@ -345,6 +374,11 @@ class Simulator(seed: Long) {
                 twistRate = if (k < 0.8) degToRad(50.0) / 0.8 else 0.0
                 twist = degToRad(50.0) * min(1.0, k / 0.8)
             }
+            if (wiggleStart >= 0 && t - wiggleStart < 1.2) {
+                val k = t - wiggleStart
+                twistRate += degToRad(40.0) / 0.6 * (if (k < 0.6) 1.0 else -1.0)
+                twist += degToRad(40.0) * (if (k < 0.6) k / 0.6 else 1.0 - (k - 0.6) / 0.6)
+            }
             val lateral = v * (yaw)   // sideways (to the left) force from turning
             for (c in crossings) pitch += swing(t - c[0], 0.05 * c[1], 0.2)
             for (c in holeHits) { roll += c[2] * swing(t - c[0], 0.08 * c[1], 0.15); pitch += swing(t - c[0], 0.015 * c[1], 0.15) }
@@ -377,6 +411,11 @@ class Simulator(seed: Long) {
                 if (h < holdS + 0.6) extraTilt += degToRad(70.0) * when { h < 0.3 -> h / 0.3; h < 0.3 + holdS -> 1.0; else -> 1.0 - (h - 0.3 - holdS) / 0.3 }
                 if (h < 0.6 || (h > holdS + 0.2 && h < holdS + 0.8)) shake = max(shake, 2.0)
             }
+            for ((i, st) in slipStart.withIndex()) {
+                if (st < 0) continue
+                extraTilt += degToRad(slips[i].second) * min(1.0, (t - st) / 0.3)
+                if (t - st < 0.4) shake = max(shake, 1.0)
+            }
             var spike = 0.0
             if (spikeStart >= 0 && t - spikeStart < 1.2) spike = -5.0 * minOf(1.0, (t - spikeStart) / 0.15, (1.2 - (t - spikeStart)) / 0.15)
             // The phone's own turning when it is tipped (the gyroscope feels it), about the axis the tilt turns around.
@@ -391,7 +430,7 @@ class Simulator(seed: Long) {
             val az = r[0][2] * fv[0] + r[1][2] * fv[1] + r[2][2] * fv[2] + gauss(shake)
             val tMs = (t * 1000).toLong()
             recTMs = tMs
-            spec.phoneSignals?.invoke(t, s, engine.phone.signals, tMs)
+            spec.phoneSignals?.invoke(t, s, v, engine.phone.signals, tMs)
             var rgx = Double.NaN; var rgy = Double.NaN; var rgz = Double.NaN
             if (spec.gyro) {
                 val psi = yaw0 + twist
@@ -406,6 +445,11 @@ class Simulator(seed: Long) {
             engine.onAccel(tMs, ax, ay, az)
             mon.onAccel(tMs, ax, ay, az)
             recorder?.add(TraceSample.Accel(tMs, ax, ay, az, rgx, rgy, rgz, engine.lastVertical))
+            if (engine.phone.state == PhoneState.HANDLED) handledSamples++
+            if (t >= 60.0) {
+                samplesAfter1Min++
+                if (engine.phone.state == PhoneState.STABLE_MOUNTED) mountedSamples++
+            }
 
             // GPS once a second, reporting where the car was 0.8 s ago, with ±3 m noise.
             if (t - lastFixT >= 1.0 - 1e-9) {
@@ -427,6 +471,10 @@ class Simulator(seed: Long) {
         }
         mon.finish()
         fwdTrace.add("monitor: ${mon.debug}")
-        return TripResult(beepIds, beepTrue, newBumps, knownHits, rejected, engine.trip, fwdTrace, mon.pocketMode, mon.stats, warnings, ticks, engine.phone)
+        val mountedShare = if (samplesAfter1Min > 0) mountedSamples.toDouble() / samplesAfter1Min else 0.0
+        return TripResult(
+            beepIds, beepTrue, newBumps, knownHits, rejected, engine.trip, fwdTrace, mon.pocketMode, mon.stats, warnings, ticks,
+            engine.phone, mountedShare, handledSamples * dt,
+        )
     }
 }
