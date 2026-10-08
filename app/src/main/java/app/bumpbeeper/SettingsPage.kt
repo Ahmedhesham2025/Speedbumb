@@ -137,12 +137,10 @@ class SettingsPage(private val a: MainActivity) : Page {
             if (code == Prefs.voiceLang(a)) rb.isChecked = true
         }
         lang.setOnCheckedChangeListener { g, id -> sp.edit().putString(Prefs.VOICE_LANG, g.findViewById<RadioButton>(id)?.tag as? String ?: "en").apply() }
-        card(a.getString(R.string.settings_section_potholes),
-            hint(a.getString(R.string.settings_potholes_hint)),
-            Ui.toggle(a, a.getString(R.string.settings_potholes_voice), null, Prefs.warnPotholes(a)) { sp.edit().putBoolean(Prefs.WARN_POTHOLES, it).apply() },
-            Ui.slider(a, 4, 10, 1, Prefs.harshMs2(a), {
-                a.getString(R.string.settings_harsh, it, a.getString(when { it <= 5 -> R.string.settings_harsh_most; it <= 7 -> R.string.settings_harsh_feel; else -> R.string.settings_harsh_worst }))
-            }) { sp.edit().putInt(Prefs.HARSH_MS2, it).apply() },
+        // The old pothole voice switch and "harsh" slider are gone: since v2 every spot is a bump, and the voice is
+        // for strong ones (Prefs.WARN_POTHOLES / HARSH_MS2 are no longer read).
+        card(a.getString(R.string.settings_section_voice),
+            hint(a.getString(R.string.settings_voice_hint)),
             Ui.text(a, 15f, Ui.TEXT, value = a.getString(R.string.settings_voice_language)),
             lang,
         )

@@ -148,7 +148,7 @@ class DrivePage(private val a: MainActivity) : Page {
         add(Ui.section(a, a.getString(R.string.drive_section_this_trip)))
         val tiles = listOf(
             R.string.drive_tile_distance, R.string.drive_tile_time, R.string.drive_tile_score,
-            R.string.drive_tile_warnings, R.string.drive_tile_bumps, R.string.drive_tile_potholes,
+            R.string.drive_tile_warnings, R.string.drive_tile_bumps, R.string.drive_tile_strong,
         ).map { Ui.tile(a, a.getString(it)) }
         tDist = tiles[0].second; tTime = tiles[1].second; tScore = tiles[2].second
         tWarn = tiles[3].second; tBumps = tiles[4].second; tHoles = tiles[5].second
@@ -202,10 +202,8 @@ class DrivePage(private val a: MainActivity) : Page {
         fun btn(kind: String, bg: Int, fg: Int) = Ui.bigButton(a, labelName(kind), bg, fg) { v -> tapLabel(v, kind) }
         fun gap() = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
             .apply { topMargin = dp(8) }
+        // No pothole buttons since v2: every spot is a bump (replay reads old pothole labels as bumps).
         labelCard.addView(Ui.row(a, btn(Labels.BUMP, Ui.ACCENT, Ui.ON_ACCENT), btn(Labels.ROUGH, 0xFFB0BEC5.toInt(), 0xFF101418.toInt())))
-        labelCard.addView(Ui.row(a,
-            btn(Labels.POTHOLE_LEFT, Ui.BLUE, 0xFF06121F.toInt()), btn(Labels.POTHOLE_RIGHT, Ui.BLUE, 0xFF06121F.toInt()),
-        ), gap())
         labelCard.addView(btn(Labels.UNDO, 0xFF3A1F22.toInt(), Ui.RED), gap())
         labelStatus = Ui.text(a, 15f, Ui.TEXT, bold = true).apply { setPadding(dp(4), dp(10), 0, 0) }
         labelCard.addView(labelStatus)
@@ -234,8 +232,6 @@ class DrivePage(private val a: MainActivity) : Page {
 
     private fun labelName(kind: String): String = when (kind) {
         Labels.BUMP -> a.getString(R.string.drive_label_bump)
-        Labels.POTHOLE_LEFT -> a.getString(R.string.drive_label_pothole_left)
-        Labels.POTHOLE_RIGHT -> a.getString(R.string.drive_label_pothole_right)
         Labels.ROUGH -> a.getString(R.string.drive_label_rough)
         Labels.UNDO -> a.getString(R.string.drive_label_undo)
         else -> kind
@@ -343,8 +339,7 @@ class DrivePage(private val a: MainActivity) : Page {
         tScore.setTextColor(if (rec) Ui.scoreColor(s) else Ui.TEXT)
         tWarn.text = if (rec) LiveState.tripBeeps.toString() else "–"
         tBumps.text = if (rec) LiveState.tripHits.toString() else "–"
-        val harsh = if (LiveState.tripHarshPotholes > 0) a.getString(R.string.drive_potholes_harsh, LiveState.tripHarshPotholes) else ""
-        tHoles.text = if (rec) "${LiveState.tripPotholes}$harsh" else "–"
+        tHoles.text = if (rec) LiveState.tripPotholes.toString() else "–"   // strong bumps felt (the old field name)
 
         lastEvent.text = LiveState.lastEvent.ifEmpty { a.getString(R.string.drive_nothing_yet) }
         driveEvent.text = LiveState.lastDriveEvent

@@ -16,7 +16,7 @@
     <string name="drive_tile_score">درجة السواقة</string>
     <string name="drive_tile_warnings">التحذيرات</string>
     <string name="drive_tile_bumps">المطبّات اللي عدّيت عليها</string>
-    <string name="drive_tile_potholes">الحفر</string>
+    <string name="drive_tile_strong">مطبّات قوية</string>
     <string name="drive_mute_last">اكتم آخر تحذير (إنذار كاذب)</string>
     <string name="drive_meter_hint">المطبّات المفروض تعدّي الخط المتقطّع، والسواقة العادية تفضل تحته. لو مش كده، غيّر الحساسية من الإعدادات.</string>
     <string name="drive_label_header">الراكب: اضغط على اللي لسه عدّيت عليه</string>
@@ -27,8 +27,6 @@
     <string name="drive_label_last_one">آخر واحد: %1$s · %2$d تصنيف</string>
     <string name="drive_label_last_many">آخر واحد: %1$s · %2$d تصنيفات</string>
     <string name="drive_label_bump">مطبّ</string>
-    <string name="drive_label_pothole_left">حفرة شمال</string>
-    <string name="drive_label_pothole_right">حفرة يمين</string>
     <string name="drive_label_rough">طريق وعر</string>
     <string name="drive_label_undo">تراجع</string>
     <string name="drive_meter_open">"عدّاد الهزّات  ▾"</string>
@@ -56,11 +54,10 @@
     <string name="drive_gps_looking">بندوّر على الـ GPS… (اطلع بره أو قرّب من شباك)</string>
     <string name="drive_last_trip">"آخر رحلة: %1$d/100 · %2$s  ›  شوف الرحلات"</string>
     <string name="drive_km">%1$s كم</string>
-    <string name="drive_potholes_harsh">" (%1$d عنيفة)"</string>
     <string name="drive_nothing_yet">لسه مفيش حاجة</string>
     <string name="drive_update_available">إصدار جديد %1$s متاح</string>
-    <string name="drive_detect_no_gyro">جهة الحفرة: مفيش جيروسكوب</string>
-    <string name="drive_detect_ready">كشف الحفر جاهز</string>
+    <string name="drive_detect_no_gyro">مفيش جيروسكوب: الكشف أقل تأكيد</string>
+    <string name="drive_detect_ready">الكشف جاهز</string>
     <string name="drive_detect_learning">بيتعلّم (زوّد السرعة / فرمل مرة)</string>
     <string name="settings_title">الإعدادات</string>
     <string name="settings_section_warnings">التحذيرات</string>
@@ -71,14 +68,9 @@
     <string name="settings_loud_desc">بصوت المنبّه من سبيكر الموبايل، بدل صوت الميديا / صوت العربية.</string>
     <string name="settings_click_new">تكّة لما مطبّ جديد يتسجّل</string>
     <string name="settings_test_beep">جرّب الصفّارة</string>
-    <string name="settings_test_voice">جرّب صوت الحفرة</string>
-    <string name="settings_section_potholes">الحفر</string>
-    <string name="settings_potholes_hint">كل حفرة بتتسجّل وتتعدّ. قبل الحفرة: نغمتين واطيين. الحفر العنيفة بدالهم بتتحذّر بصوت يقول هي في أنهي جنب، زي \"حفرة على اليمين. خليك شمال.\" (شمال جوّه حارتك).</string>
-    <string name="settings_potholes_voice">تحذير قبل الحفر (بصوت للعنيفة)</string>
-    <string name="settings_harsh">عنيفة = هزّة %1$d م/ث² أو أكتر · %2$s</string>
-    <string name="settings_harsh_most">أغلب الحفر</string>
-    <string name="settings_harsh_feel">اللي بتحسّ بيها فعلًا</string>
-    <string name="settings_harsh_worst">الأسوأ بس</string>
+    <string name="settings_test_voice">جرّب الصوت</string>
+    <string name="settings_section_voice">الصوت</string>
+    <string name="settings_voice_hint">المطبّات القوية بيتحذّر منها بالصوت: \"مطب قوي قدام.\" وكمان تلاتة أو أكتر ورا بعض، مثلًا \"3 مطبات قدام.\" المطبّ الخفيف ليه صفّارة واحدة، والمتوسط اتنين.</string>
     <string name="settings_voice_language">لغة الصوت</string>
     <string name="settings_section_score">درجة السواقة</string>
     <string name="settings_speeding_above">احسب السرعة الزايدة فوق %1$d كم/س</string>
@@ -88,7 +80,7 @@
     <string name="settings_sens_high">عالية</string>
     <string name="settings_section_detection">الكشف</string>
     <string name="settings_detection_hint">القليلة بتتجاهل الطرق الوعرة؛ العالية بتلقط المطبّات الصغيرة كمان. جرّب بعدّاد الهزّات في تبويب السواقة.</string>
-    <string name="settings_max_bump">الهزّات فوق %1$d كم/س مش مطبّات (والحفر لسه بتتحسب)</string>
+    <string name="settings_max_bump">الهزّات فوق %1$d كم/س بتتسجّل بس لو واضح إنها مطبّ</string>
     <string name="settings_section_auto">التشغيل التلقائي</string>
     <string name="settings_auto_on">شغّال: بيبدأ مع %1$s</string>
     <string name="settings_auto_off">مقفول</string>
@@ -107,7 +99,7 @@
     <string name="settings_place_pocket">الجيب</string>
     <string name="settings_section_road_testing">اختبار الطريق</string>
     <string name="settings_label_mode_title">وضع التصنيف</string>
-    <string name="settings_label_mode_desc">لراكب بيساعد في اختبار التطبيق: وقت التسجيل، تبويب السواقة بيعرض أزرار كبيرة لتعليم كل مطبّ وحفرة (شمال / يمين) وجزء وعر وإنت معدّي عليه. بيتحفظ مع تسجيل الحسّاسات لضبط الكشف.</string>
+    <string name="settings_label_mode_desc">لراكب بيساعد في اختبار التطبيق: وقت التسجيل، تبويب السواقة بيعرض أزرار كبيرة لتعليم كل مطبّ وجزء وعر وإنت معدّي عليه. بيتحفظ مع تسجيل الحسّاسات لضبط الكشف.</string>
     <string name="settings_phone_where">الموبايل فين؟</string>
     <string name="settings_phone_hint">الموبايل في الحامل بيحسّ بالطريق غير اللي في حامل الأكواب أو الجيب. بيتحفظ مع التسجيلات.</string>
     <string name="settings_section_debug">تسجيل التصحيح</string>
@@ -130,7 +122,7 @@
     <string name="settings_section_help">مساعدة</string>
     <string name="settings_traces_none">مفيش تسجيلات لسه. هتظهر هنا بعد السواقة الجاية.</string>
     <string name="settings_traces_info">%1$d تسجيل، %2$s ميجا.</string>
-    <string name="settings_toast_no_tts">مفيش صوت نطق جاهز على الموبايل ده: الحفر هتستخدم صوت النغمتين</string>
+    <string name="settings_toast_no_tts">مفيش صوت نطق جاهز على الموبايل ده: المطبّات القوية هيبقى ليها نغمة بدل الصوت</string>
     <string name="settings_toast_saving">بنحفظ…</string>
     <string name="settings_toast_saved_all">اتحفظت المطبّات والأحداث والرحلات في Downloads/BumpBeeper</string>
     <string name="settings_toast_saving_failed">الحفظ فشل</string>
@@ -140,10 +132,10 @@
     <string name="settings_delete_traces_title">تمسح كل تسجيلات التصحيح؟</string>
     <string name="settings_delete_traces_msg">النسخ المصدَّرة في التنزيلات بتفضل. خريطة المطبّات ما بتتأثرش.</string>
     <string name="settings_clear_title">تمسح كل حاجة؟</string>
-    <string name="settings_clear_msg">هيمسح كل مطبّ وحفرة اتسجّلوا، وسجل الأحداث وكل الرحلات والدرجات. مش هينفع تتراجع. نصيحة: شارك… ← ملف المطبّات الأول عشان تحتفظ بنسخة.</string>
+    <string name="settings_clear_msg">هيمسح كل مطبّ اتسجّل، وسجل الأحداث وكل الرحلات والدرجات. مش هينفع تتراجع. نصيحة: شارك… ← ملف المطبّات الأول عشان تحتفظ بنسخة.</string>
     <string name="settings_map_cleared">الخريطة اتمسحت</string>
     <string name="settings_toast_cleared">اتمسح</string>
-    <string name="settings_help">• حطّ الموبايل في حامل. الموبايل السايب بيدّي قراءات مشوّشة.\n• اضغط ابدأ قبل ما تسوق (أو ظبّط التشغيل التلقائي). بيفضل شغّال والشاشة مقفولة.\n• أول مرة تعدّي على مطبّ: تكّة خفيفة وهو بيتسجّل. بعد كده: صفّارتين عاليين قبل ما توصله (3 فوق 50 كم/س). الحفر: نغمتين واطيين؛ العنيفة: صوت بيقول هي في أنهي جنب. لسه مش متأكد هو إيه: صفّارة واحدة. كذا واحد ورا بعض: الصوت بيقول مثلًا \"3 مطبات قدام\".\n• المطبّ أو الحفرة بيتحدّدوا من طريقة حركة العربية؛ كل مرور بيخلّيه أأكد. صحّح أي مكان من تبويب الخريطة.\n• المكان اللي بتعدّي عليه 3 مرات أو أكتر وما بتحسّش بيه تقريبًا بيتكتم لوحده. \"اكتم آخر تحذير\" بيسكّت الإنذار الكاذب.\n• درجة سواقتك (تبويب الرحلات) بتبص على السرعة الزايدة، والفرملة العنيفة، واللفّ، والتمايل، والمطبّات اللي اتعدّت بسرعة، واستخدام الموبايل.\n• كل حاجة بتفضل على موبايلك. شارك اللي تختاره بس.</string>
+    <string name="settings_help">• حطّ الموبايل في حامل. الموبايل السايب بيدّي قراءات مشوّشة.\n• اضغط ابدأ قبل ما تسوق (أو ظبّط التشغيل التلقائي). بيفضل شغّال والشاشة مقفولة.\n• أول مرة تعدّي على مطبّ: تكّة خفيفة وهو بيتسجّل. بعد كده، قبل ما توصله: صفّارة واحدة للمطبّ الخفيف، اتنين للمتوسط، وللقوي الصوت بيقول \"مطب قوي قدام\". لسه مش متأكد: صفّارة واحدة خفيفة. كذا واحد ورا بعض: الصوت بيقول مثلًا \"3 مطبات قدام\".\n• قوة المطبّ بتتحدّد من قد إيه بيهزّ العربية؛ كل مرور بيخلّيه أأكد. صحّح أي مكان من تبويب الخريطة.\n• المكان اللي بتعدّي عليه 3 مرات أو أكتر وما بتحسّش بيه تقريبًا بيتكتم لوحده. \"اكتم آخر تحذير\" بيسكّت الإنذار الكاذب.\n• درجة سواقتك (تبويب الرحلات) بتبص على السرعة الزايدة، والفرملة العنيفة، واللفّ، والتمايل، والمطبّات اللي اتعدّت بسرعة، واستخدام الموبايل.\n• كل حاجة بتفضل على موبايلك. شارك اللي تختاره بس.</string>
     <string name="tab_drive">سواقة</string>
     <string name="tab_map">الخريطة</string>
     <string name="tab_trips">الرحلات</string>
@@ -170,22 +162,20 @@
     <string name="main_no_file_picker">مفيش أداة اختيار ملفات</string>
     <string name="map_title">خريطتك</string>
     <string name="map_tile_bumps">المطبّات</string>
-    <string name="map_tile_potholes">الحفر</string>
-    <string name="map_tile_harsh">العنيفة</string>
+    <string name="map_tile_old">أماكن قديمة</string>
+    <string name="map_tile_harsh">القوية</string>
     <string name="map_tile_muted">المكتومة</string>
     <string name="map_chip_all">الكل</string>
     <string name="map_chip_bumps">مطبّات</string>
-    <string name="map_chip_potholes">حفر</string>
-    <string name="map_chip_harsh">عنيفة</string>
+    <string name="map_chip_old">قديمة</string>
+    <string name="map_chip_harsh">قوية</string>
     <string name="map_zoom_out">"−  بعّد"</string>
     <string name="map_zoom_in">"+  قرّب"</string>
     <string name="map_me">"◎  أنا"</string>
-    <string name="map_legend">● برتقالي مطبّ · ● أحمر حفرة · ● رمادي لسه مش متأكد · ○ فاضي مكتوم. العلامة بتوضّح الاتجاه اللي بيحذّر منه. اسحب عشان تحرّك؛ اضغط على نقطة عشان الخيارات. مفيش شوارع لأن التطبيق شغّال أوفلاين: استخدم افتح في Google Maps.</string>
+    <string name="map_legend">● برتقالي مطبّ · ● أحمر مطبّ قوي · ● رمادي لسه مش متأكد (والأماكن القديمة لحد ما تتحسّ تاني) · ○ فاضي مكتوم. العلامة بتوضّح الاتجاه اللي بيحذّر منه. اسحب عشان تحرّك؛ اضغط على نقطة عشان الخيارات. مفيش شوارع لأن التطبيق شغّال أوفلاين: استخدم افتح في Google Maps.</string>
     <string name="map_section_share">المشاركة والاستيراد</string>
     <string name="map_share_hint">عشان تدّي مطبّاتك لحد: شارك… ← ملف المطبّات، وابعته (واتساب، إيميل، Drive…). هو بيضغط على الملف ويختار Bump Beeper، أو يستخدم استيراد ملف. أماكنه بتفضل زي ما هي؛ وأماكنك بتتضاف.\nملف الخريطة (KML) بيتفتح في Google Earth وممكن يتستورد في Google My Maps.</string>
     <string name="map_section_nearest">الأقرب الأول</string>
-    <string name="map_describe_harsh_pothole">حفرة عنيفة</string>
-    <string name="map_describe_pothole">حفرة</string>
     <string name="map_nothing_yet">لسه مفيش حاجة. المطبّات بتتسجّل أول مرة تعدّي عليها.</string>
     <string name="map_nothing_filter">مفيش حاجة في الفلتر ده.</string>
     <string name="map_dist_km">%1$s كم</string>
@@ -207,9 +197,6 @@
     <string name="map_action_unmute">ألغِ الكتم</string>
     <string name="map_action_mute">اكتم (ما تحذّرنيش هنا)</string>
     <string name="map_action_is_bump">ده مطبّ</string>
-    <string name="map_action_is_pothole">دي حفرة</string>
-    <string name="map_action_pothole_left">الحفرة على الشمال</string>
-    <string name="map_action_pothole_right">الحفرة على اليمين</string>
     <string name="common_close">إغلاق</string>
     <string name="map_maps_label">Bump Beeper #%1$d (%2$s)</string>
     <string name="map_no_maps_app">مفيش تطبيق خرائط</string>
@@ -224,7 +211,7 @@
     <string name="trips_tile_time">وقت السواقة</string>
     <string name="trips_tile_trips">الرحلات</string>
     <string name="trips_tile_bumps">المطبّات اللي اتلقت</string>
-    <string name="trips_tile_potholes">الحفر اللي اتلقت</string>
+    <string name="trips_tile_strong">مطبّات قوية</string>
     <string name="trips_tile_warnings">التحذيرات اللي اتدّت</string>
     <string name="trips_section_trips">الرحلات</string>
     <string name="trips_share_csv">شارك الرحلات (CSV)</string>
@@ -250,7 +237,7 @@
     <string name="trips_fact_swerves">تمايل</string>
     <string name="trips_fact_bumps_fast">مطبّات اتعدّت بسرعة</string>
     <string name="trips_fact_phone">موبايل اتمسك أثناء السواقة</string>
-    <string name="trips_fact_totals">مطبّات · حفر · تحذيرات</string>
+    <string name="trips_fact_totals">مطبّات · قوية · تحذيرات</string>
     <string name="trips_section_happened">اللي حصل</string>
     <string name="trips_event_speed">" (%1$d كم/س)"</string>
     <string name="trips_section_tips">نصايح</string>
@@ -290,7 +277,7 @@
     <string name="share_trip_speeding">السرعة الزايدة: %1$s%% من الوقت</string>
     <string name="share_trip_harsh">فرملة عنيفة %1$d · تسارع %2$d · لفّ %3$d · تمايل %4$d</string>
     <string name="share_trip_bumps_fast">مطبّات اتعدّت بسرعة %1$d · موبايل اتمسك %2$d</string>
-    <string name="share_trip_totals">مطبّات %1$d · حفر %2$d · تحذيرات %3$d</string>
+    <string name="share_trip_totals">مطبّات %1$d · قوية %2$d · تحذيرات %3$d</string>
     <string name="share_trip_chooser">شارك الرحلة</string>
     <string name="share_via">شارك عن طريق</string>
     <string name="share_file_failed">ما قدرناش نعمل الملف</string>
@@ -306,14 +293,14 @@
     <!-- Shared map (online bump map): first-run question, Settings card, Drive line -->
     <string name="sync_ask_kicker">الخريطة المتشاركة</string>
     <string name="sync_ask_title">تحذيرات من سوّاقين تانيين</string>
-    <string name="sync_ask_intro">اتنبّه للمطبّات والحفر اللي سوّاقين تانيين لقوها، حتى في طرق لسه ما مشيتش فيها.</string>
-    <string name="sync_ask_point_route">بيتشارك بس أماكن المطبّات والحفر، عمره ما بيتشارك طريقك.</string>
+    <string name="sync_ask_intro">اتنبّه للمطبّات اللي سوّاقين تانيين لقوها، حتى في طرق لسه ما مشيتش فيها.</string>
+    <string name="sync_ask_point_route">بيتشارك بس أماكن المطبّات، عمره ما بيتشارك طريقك.</string>
     <string name="sync_ask_point_ends">مفيش مطبّ قريب من مكان بداية أو نهاية رحلاتك بيتشارك.</string>
     <string name="sync_ask_point_identity">من غير اسم ولا إيميل ولا رقم تليفون.</string>
     <string name="sync_ask_footer">تقدر تغيّر ده في أي وقت من الإعدادات ← الخريطة المتشاركة.</string>
     <string name="sync_ask_point_area">عشان ننزّل الأماكن اللي جنبك، التطبيق بيبعت منطقة تقريبية (حوالي ١ كم)، عمره ما بيبعت مكانك بالظبط.</string>
     <string name="sync_ask_what_sent">إيه اللي بيتبعت بالظبط؟</string>
-    <string name="sync_ask_details">في الاختيارين: رقم تعريف مجهول للتليفون (نسخة التطبيق والأندرويد) ومنطقة تقريبية (حوالي ١ كم) عشان ننزّل الأماكن اللي جنبك.\n«شارك واستقبل» كمان بيبعت المطبّات والحفر اللي بتلاقيها (المكان والوقت والاتجاه والسرعة وقد إيه قوية)، ولو التطبيق وقع، تقرير العطل (نسخة التطبيق وموديل التليفون وتفاصيل الغلطة، من غير مكان).</string>
+    <string name="sync_ask_details">في الاختيارين: رقم تعريف مجهول للتليفون (نسخة التطبيق والأندرويد) ومنطقة تقريبية (حوالي ١ كم) عشان ننزّل الأماكن اللي جنبك.\n«شارك واستقبل» كمان بيبعت المطبّات اللي بتلاقيها (المكان والوقت والاتجاه والسرعة وقد إيه قوية)، ولو التطبيق وقع، تقرير العطل (نسخة التطبيق وموديل التليفون وتفاصيل الغلطة، من غير مكان).</string>
     <string name="sync_error_other">معرفناش نعمل مزامنة. اختار اختيارك اللي فوق تاني عشان نحاول.</string>
     <string name="sync_choice_share">شارك واستقبل</string>
     <string name="sync_choice_receive">استقبل بس</string>
@@ -353,10 +340,10 @@
     </plurals>
     <string name="drive_sync_on">الخريطة المتشاركة: شغّالة</string>
     <string name="settings_section_shared_map">الخريطة المتشاركة</string>
-    <string name="settings_shared_map_hint">تحذيرات عن مطبّات وحفر لقاها سوّاقين تانيين. بيتشارك الأماكن بس، عمره ما بيتشارك طريقك.</string>
+    <string name="settings_shared_map_hint">تحذيرات عن مطبّات لقاها سوّاقين تانيين. بيتشارك الأماكن بس، عمره ما بيتشارك طريقك.</string>
     <string name="settings_sync_delete">امسح بياناتي المتشاركة</string>
     <string name="settings_sync_delete_title">تمسح بياناتك المتشاركة؟</string>
-    <string name="settings_sync_delete_msg">هيمسح سجل التليفون ده على السيرفر، ومعاه المطبّات والحفر اللي بعتها، وربطه بالأماكن، وتقارير الأعطال. الأماكن اللي اتضمّت للخريطة المتشاركة هتفضل، من غير أي حاجة تربطها بالتليفون ده. وكمان هيمسح التحذيرات اللي اتنزّلت ويقفل الخريطة المتشاركة وحدود السرعة الحقيقية و«ساعد في تحسين الكشف» ويمسح عيّناته، ويقفل تسجيلات البحث: الملفات اللي اترفعت بتتمسح خلال أسبوع. خريطة مطبّاتك ورحلاتك هيفضلوا زي ما همّ.</string>
+    <string name="settings_sync_delete_msg">هيمسح سجل التليفون ده على السيرفر، ومعاه المطبّات اللي بعتها، وربطه بالأماكن، وتقارير الأعطال. الأماكن اللي اتضمّت للخريطة المتشاركة هتفضل، من غير أي حاجة تربطها بالتليفون ده. وكمان هيمسح التحذيرات اللي اتنزّلت ويقفل الخريطة المتشاركة وحدود السرعة الحقيقية و«ساعد في تحسين الكشف» ويمسح عيّناته، ويقفل تسجيلات البحث: الملفات اللي اترفعت بتتمسح خلال أسبوع. خريطة مطبّاتك ورحلاتك هيفضلوا زي ما همّ.</string>
     <string name="settings_sync_deleted">اتمسحت</string>
     <string name="settings_sync_deleted_local">اتمسحت من التليفون. معرفناش نوصل للسيرفر: دوس مسح تاني لما تكون أونلاين عشان نكمّل.</string>
     <!-- Road speed limits (TomTom): Settings and Trips -->
