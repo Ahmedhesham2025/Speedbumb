@@ -3,9 +3,10 @@ package app.bumpbeeper
 /** Every number of [AxleSignature]. Units: milliseconds, m/s², rad, Hz, km/h; fractions where it says so. */
 class AxleConfig {
     /**
-     * The rear impulse is looked for from this fraction below wheelbase / speed to this fraction above wheelbase /
-     * the lowest plausible speed: GPS speed lags about [gpsLagMs] (≈ 1 s on drive01), so while braking the car is
-     * already slower than GPS says, by the deceleration GPS shows × the lag.
+     * The rear impulse is looked for this fraction either side of wheelbase / GPS speed. GPS speed lags about
+     * [gpsLagMs] (≈ 1 s on drive01), so while braking the car is already slower than GPS says, by the deceleration
+     * GPS shows × the lag: "no axle" needs quiet out to wheelbase / that lowest plausible speed + this fraction, but a
+     * pair is never looked for there (two unrelated knocks would pass for one).
      */
     var dtTolerance = 0.35
     var gpsLagMs = 1000.0
@@ -126,7 +127,7 @@ class AxleResult(
     val score: Double,
     /** Measured front → rear gap of the pair, ms; NaN unless [verdict] is BOTH (only a pair can teach a wheelbase). */
     val dtMs: Double,
-    /** Wheelbase / GPS speed, ms (the slowest plausible speed may make it longer). */
+    /** Wheelbase / GPS speed, ms: the rear is looked for within ± [AxleConfig.dtTolerance] of it. */
     val expectedDtMs: Double,
     val frontPeak: Double,
     /** NaN unless [verdict] is BOTH. */
