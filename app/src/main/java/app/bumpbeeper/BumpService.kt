@@ -248,6 +248,7 @@ class BumpService : Service(), SensorEventListener, LocationListener, EngineList
     private var training: TrainingSink? = null          // only used on the engine thread; null = not helping improve detection
     private var live: LiveSpeedLimit? = null            // only used on the engine thread: live road speed limit (opt-in)
     private var warner = SpeedWarner()                  // only used on the engine thread
+    private var phoneFeed: PhoneFeed? = null            // only used on the engine thread: screen, unlock, calls… for the phone state
     @Volatile private var lastHazardWarnMs = -1L        // elapsedRealtime of the last bump / pothole warning
     /** Research recording (opt-in): all sensors into local files, on threads of its own; started and stopped with the trip. */
     @Volatile private var research: ResearchRecorder? = null
@@ -635,6 +636,8 @@ class BumpService : Service(), SensorEventListener, LocationListener, EngineList
                 logStore.logEvent(BumpEvent(System.currentTimeMillis(), tripId, type, -1, lat, lon, kmh, Double.NaN, value, Double.NaN, Double.NaN, note))
                 LiveState.lastDriveEvent = DriveText.event(type, note)
             }
+            // Screen, unlock, proximity, light, calls, charging: is the phone in someone's hand? (phone use, E3)
+            phoneFeed = PhoneFeed(this, h, eng.phone.signals).also { it.start() }
             publish(eng, force = true)
         }
 
@@ -692,6 +695,8 @@ class BumpService : Service(), SensorEventListener, LocationListener, EngineList
         val database = db
         h?.removeCallbacks(parkedCheck)
         h?.post {
+            phoneFeed?.stop()
+            phoneFeed = null
             autoStop = null
             accelAvg = null
             gyroAvg = null
@@ -955,6 +960,7 @@ class BumpService : Service(), SensorEventListener, LocationListener, EngineList
     override fun onJoltRejected(peak: Double, reason: String) {
         val why = when (reason) {
             "phone_moving" -> "phone was being moved"
+            "handled" -> "phone was in someone's hand"
             "no_gps" -> "no GPS fix yet"
             "weak_gps" -> "GPS too inaccurate"
             "too_slow" -> "car (almost) stopped"
