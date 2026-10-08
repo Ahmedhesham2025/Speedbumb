@@ -37,8 +37,9 @@ class DrivingConfig {
     var phoneUseS = 1.5
     var phoneUseGapS = 30.0
     /**
-     * No braking, speeding up, cornering or swerving is judged while the phone is handled, nor [handledMarginS] after;
-     * a push waiting for the GPS is dropped if a handling began less than [handledAfterS] after it.
+     * No braking, speeding up, cornering or swerving is judged from the sensors while the phone is handled, nor
+     * [handledMarginS] after; a push waiting for the GPS is dropped if a handling began less than [handledAfterS] after
+     * it. Braking and speeding up are then judged from the GPS speed alone (it is the car's, whatever the phone does).
      */
     var handledMarginS = 2.0
     var handledAfterS = 1.0
@@ -189,7 +190,8 @@ class DrivingStats {
  *
  * Cornering and swerving only count when the GPS heading agrees ([DrivingConfig.lateralTolFrac]), braking and speeding
  * up when the GPS speed agrees ([DrivingConfig.longTolFrac]). While the phone is handled ([BumpEngine.phone]) and for
- * [DrivingConfig.handledMarginS] after, nothing is judged: the readings are the hand's, not the car's.
+ * [DrivingConfig.handledMarginS] after, nothing is judged from the sensors (the readings are the hand's, not the car's);
+ * braking and speeding up then come from the GPS speed alone.
  *
  * Feed it from the engine thread, right after the engine got the same sample.
  */
@@ -332,12 +334,14 @@ class DrivingMonitor(
         // Until the sensor-based check has been running for 2 s, judge braking / speeding up from GPS
         // (a bit less exact, so a higher bar). The forward axis is often learned *during* a hard brake;
         // without this hand-over, that brake would be missed by both checks.
+        // The same GPS judgement while the phone is handled: the hand moves the sensors, not the GPS speed.
         val handled = handledNear(f.timeMs)
+        var aGps = Double.NaN
+        var sensorReady = false
         if (f.accuracyM <= 30 && !prev.speedMps.isNaN()) {
-            val a = (speedMps - prev.speedMps) / dt
-            gpsLong.addLast(Pair(f.timeMs, a))
-            val sensorReady = fwdSinceMs >= 0 && f.timeMs - lastFwdMs <= 1000 && lastFwdMs - fwdSinceMs >= 2000
-            if (!sensorReady && !handled) checkLongitudinal(f.timeMs, if (a > 0) a - 0.5 else a + 0.5, sustainMs = 0, fromGps = true)
+            aGps = (speedMps - prev.speedMps) / dt
+            gpsLong.addLast(Pair(f.timeMs, aGps))
+            sensorReady = fwdSinceMs >= 0 && f.timeMs - lastFwdMs <= 1000 && lastFwdMs - fwdSinceMs >= 2000
         }
         while (gpsLong.isNotEmpty() && gpsLong.first().first < f.timeMs - 10_000) gpsLong.removeFirst()
         // Sideways force from the GPS heading, to confirm (or not) what the gyroscope felt.
@@ -351,6 +355,9 @@ class DrivingMonitor(
         }
         while (gpsLateral.isNotEmpty() && gpsLateral.first().first < f.timeMs - 10_000) gpsLateral.removeFirst()
         resolvePending(f.timeMs)
+        if (!aGps.isNaN() && (!sensorReady || handled)) {
+            checkLongitudinal(f.timeMs, if (aGps > 0) aGps - 0.5 else aGps + 0.5, sustainMs = 0, fromGps = true)
+        }
 
         // Without a gyroscope, turning rate comes from the GPS heading.
         if (!gyroSeen && !f.bearingDeg.isNaN() && speedMps >= 4.0) {
@@ -474,7 +481,10 @@ class DrivingMonitor(
         pendingLong?.let { p ->
             val ok = longAgrees(p, nowMs) ?: return@let
             pendingLong = null
-            if (handledAround(p.tMs, p.tMs)) return@let
+            if (handledAround(p.tMs, p.tMs)) {
+                coolLongUntil = p.tMs   // the hand's push: the GPS speed alone judges this stop (onFix)
+                return@let
+            }
             when {
                 ok -> countLong(p.lat)
                 p.lat < 0 -> stats.brakesIgnored++

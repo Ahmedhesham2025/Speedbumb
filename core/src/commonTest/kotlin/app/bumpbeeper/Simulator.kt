@@ -62,8 +62,9 @@ class DriveSpec(
     val cruiseKmh: Double = 50.0,
     /** Phone has a gyroscope. */
     val gyro: Boolean = true,
-    /** Emergency stops: the driver brakes at 6.5 m/s² (≈ 0.66 g) for 1.5 s, then speeds up again normally. */
+    /** Emergency stops: the driver brakes at [hardBrakeMs2] (6.5 m/s² ≈ 0.66 g) for 1.5 s, then speeds up again normally. */
     val hardBrakesAt: List<Double> = emptyList(),
+    val hardBrakeMs2: Double = 6.5,
     /** Swerves: a sudden turn left, then right (0.7 s each), like dodging something. */
     val swervesAt: List<Double> = emptyList(),
     /** Sharp turns: the car turns left at 0.45 rad/s for 2 s (≈ 52°, ≈ 6 m/s² at 50 km/h), and back right 6 s later. */
@@ -84,7 +85,7 @@ class DriveSpec(
     val brakeSpikesAt: List<Double> = emptyList(),
     /** The driver stops there (a red light) and waits: (position, seconds). */
     val stopsAt: List<Pair<Double, Double>> = emptyList(),
-    /** The phone tips by that many degrees in 0.3 s (slips in its holder) and stays there: (position, degrees). */
+    /** The phone tips by that many degrees in 0.3 s (slips in its holder, tips over) and stays there: (position, degrees). */
     val slipsAt: List<Pair<Double, Double>> = emptyList(),
     /** The phone twists 40° about the vertical and straight back, 0.6 s each way: the gyroscope turns both ways. */
     val wigglesAt: List<Double> = emptyList(),
@@ -315,7 +316,7 @@ class Simulator(seed: Long) {
             for ((i, sl) in slips.withIndex()) if (s < sl.first && s + v * dt >= sl.first) slipStart[i] = t
             for (sw in wiggles) if (s < sw && s + v * dt >= sw) wiggleStart = t
             val vNew = when {
-                t < forceBrakeUntil -> max(0.5, v - 6.5 * dt)
+                t < forceBrakeUntil -> max(0.5, v - spec.hardBrakeMs2 * dt)
                 target > v -> min(target, v + maxAccel * dt)
                 else -> max(target, v - maxDecel * dt)
             }

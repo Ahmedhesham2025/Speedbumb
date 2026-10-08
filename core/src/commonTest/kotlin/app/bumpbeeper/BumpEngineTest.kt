@@ -37,6 +37,7 @@ class BumpEngineTest {
     @Test fun stoppedIsNoPhoneUse() = Scenarios.stoppedIsNoPhoneUse()
     @Test fun holdLengthInEveryPlacement() = Scenarios.holdLengthInEveryPlacement()
     @Test fun noLockScreenUnlockNeedsMotion() = Scenarios.noLockScreenUnlockNeedsMotion()
+    @Test fun tipOverIsNoPhoneUse() = Scenarios.tipOverIsNoPhoneUse()
     @Test fun repeatedHandlingIsPhoneUse() = Scenarios.repeatedHandlingIsPhoneUse()
     @Test fun fastBumpVersusRoadJoint() = Scenarios.fastBumpVersusRoadJoint()
 }
