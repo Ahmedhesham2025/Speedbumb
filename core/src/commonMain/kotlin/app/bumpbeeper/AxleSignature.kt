@@ -12,17 +12,22 @@ import kotlin.math.sqrt
  * The vertical acceleration is band-passed ([AxleConfig.bandLowHz]..[AxleConfig.bandHighHz]) and turned into a short
  * RMS envelope (window in time, so 50, 100 and 200 Hz give the same). Its humps are impulses; humps without a real dip
  * between them are one impulse (the lobes and ringing of one hit: repeated impulses are grouped). The front impulse
- * holds the trigger; the rear is looked for Δt ± 35 % after it, or the trigger was the rear and the front is
- * looked for before it. A pair scores by how balanced, how far above the road's noise, how separated (the envelope
- * dips between), how close to Δt and how alone it is (trains of impulses, rumble strips, score 0), and the pitch
- * order where the gyroscope shows it. Braking in the seconds before is reported too, for the caller to weigh.
+ * holds the trigger; the rear is looked for from Δt − 35 % to Δt at the slowest plausible speed + 35 % after it
+ * ([lowSpeedMps]: GPS lags while braking), or the trigger was the rear and the front is looked for before it. A pair
+ * scores by how balanced, how far above the road's noise, how separated (the envelope dips between), how close to Δt
+ * and how alone it is (trains of impulses, rumble strips, score 0), and the pitch order where the gyroscope shows it.
+ * Braking in the seconds before is reported too, for the caller to weigh.
  *
- * "No axle" ([AxleVerdict.ONE]) is only said when the rear would clearly have shown and nothing did; whenever the data
- * can't show it (Δt beyond the data at very slow crossings, noise, ringing, other impulses) the answer is UNKNOWN.
+ * "No axle" ([AxleVerdict.ONE]) is only said when the rear would clearly have shown and nothing did, at a known steady
+ * speed of at least 20 km/h by GPS and Δt of at least 250 ms; whenever the data can't show it (braking or no GPS,
+ * slow crossings, Δt beyond the data, noise, ringing, other impulses) the answer is UNKNOWN.
  * A phone near the front axle (dash mount) barely feels the rear wheels, so ONE means little there.
  */
 object AxleSignature {
-    /** How long to wait after a trigger so a rear impulse can show: Δt + margin, within the configured bounds. */
+    /**
+     * How long to wait after a trigger so a rear impulse can show: Δt + margin, within the configured bounds. Pass the
+     * slowest plausible speed ([lowSpeedMps]), not the raw GPS speed.
+     */
     fun decideWindowMs(speedMps: Double, wheelbaseM: Double, cfg: AxleConfig = AxleConfig()): Long {
         val ms = wheelbaseM / speedMps * 1000.0 + cfg.decideMarginMs
         if (!(speedMps > 0.0) || ms.isNaN()) return cfg.decideMinMs
@@ -30,9 +35,30 @@ object AxleSignature {
     }
 
     /**
+     * The slowest the car can really have been at [triggerMs], m/s: GPS speed lags about [AxleConfig.gpsLagMs], so
+     * while slowing down it reads high by the deceleration its fixes show (from the fastest one in the last
+     * [AxleConfig.brakeWindowMs]) × the lag; a later fix that is slower still counts too. Never below
+     * [AxleConfig.minSpeedKmh].
+     */
+    fun lowSpeedMps(fixes: List<Fix>, triggerMs: Long, speedMps: Double, cfg: AxleConfig = AxleConfig()): Double {
+        var low = speedMps
+        var top: Fix? = null
+        for (f in fixes) {
+            if (f.speedMps.isNaN()) continue
+            if (f.timeMs > triggerMs) low = min(low, f.speedMps)
+            else if (f.timeMs >= triggerMs - cfg.brakeWindowMs && (top == null || f.speedMps > top.speedMps)) top = f
+        }
+        if (top != null && top.speedMps > speedMps && top.timeMs < triggerMs) {
+            val decel = (top.speedMps - speedMps) / ((triggerMs - top.timeMs) / 1000.0)
+            low = min(low, speedMps - decel * cfg.gpsLagMs / 1000.0)
+        }
+        return max(low, cfg.minSpeedKmh / 3.6)
+    }
+
+    /**
      * Judge the jolt that triggered at [triggerMs]. [t] (ms, rising) and [vertical] (m/s², gravity removed) hold the
      * signal up to the decision; [pitchRate] (rad/s, nose up, [VehicleFrame.pitchRate], NaN where unknown) is optional.
-     * [speedMps] is the speed at the jolt, [fixes] the recent GPS fixes (for braking).
+     * [speedMps] is the GPS speed at the jolt, [fixes] the recent GPS fixes (braking, [lowSpeedMps]).
      */
     fun analyze(
         t: LongArray, vertical: DoubleArray, pitchRate: DoubleArray?, triggerMs: Long, speedMps: Double,
@@ -46,17 +72,19 @@ object AxleSignature {
         if (!(speedMps * 3.6 >= cfg.minSpeedKmh)) return unknown("slow")
         val exp = wheelbaseM / speedMps * 1000.0
         if (!(exp >= cfg.minDtMs)) return unknown("fast", exp)
+        // Δt at the slowest plausible speed: the far end of the rear window.
+        val slow = wheelbaseM / lowSpeedMps(fixes, triggerMs, speedMps, cfg) * 1000.0
         val n = min(t.size, vertical.size)
         val rate = Biquad.rateHz(t.copyOf(n))
         if (n < 10 || rate < cfg.minRateHz) return unknown("no_data", exp)
         val ts = DoubleArray(n) { t[it].toDouble() }
         val x = Biquad.bandPass(vertical.copyOf(n), cfg.bandLowHz, cfg.bandHighHz, rate)
-        val w = (cfg.envFraction * exp).coerceIn(cfg.envMinMs, cfg.envMaxMs)
+        val w = (cfg.envFraction * slow).coerceIn(cfg.envMinMs, cfg.envMaxMs)
         val e = envelope(ts, x, w)
         val tol = cfg.dtTolerance
         val trig = triggerMs.toDouble()
-        val spanFrom = max(ts[0] + cfg.warmupMs, trig - (1 + tol) * exp - cfg.spanMarginMs)
-        val spanTo = trig + (1 + tol) * exp + cfg.spanMarginMs
+        val spanFrom = max(ts[0] + cfg.warmupMs, trig - (1 + tol) * slow - cfg.spanMarginMs)
+        val spanTo = trig + (1 + tol) * slow + cfg.spanMarginMs
         var i0 = 0
         while (i0 < n && ts[i0] < spanFrom) i0++
         var i1 = i0 - 1
@@ -67,12 +95,12 @@ object AxleSignature {
         val g0 = hs.firstOrNull { it.start <= trig && trig <= it.end }
             ?: hs.firstOrNull { it.start > trig && it.start <= trig + cfg.frontSearchMs }
             ?: return unknown("no_front", exp)
-        // The road's own shaking: the median envelope before the jolt (at least 0.3 s of it), else over the span.
+        // The road's own shaking: the median envelope before the jolt (if enough of it), else over the span.
         val cut = min(g0.start, trig) - w
         val pre = (i0..i1).filter { ts[it] < cut }
-        val noise = median(if (pre.size >= 0.3 * rate) pre.map { e[it] } else (i0..i1).map { e[it] })
+        val noise = median(if (pre.size >= cfg.noiseHistoryS * rate) pre.map { e[it] } else (i0..i1).map { e[it] })
         for (h in hs) h.peak = maxAbs(ts, x, i0, n - 1, h.start, h.end)
-        val rawPeak = maxAbs(ts, vertical, i0, i1, trig - 20.0, trig + 300.0)
+        val rawPeak = maxAbs(ts, vertical, i0, i1, trig - cfg.rawPeakBeforeMs, trig + cfg.rawPeakAfterMs)
         if (rawPeak > 0.0 && g0.peak < cfg.minBandShare * rawPeak) return unknown("above_band", exp)
 
         var best = -1.0
@@ -86,8 +114,8 @@ object AxleSignature {
             if (m === g0) continue
             val d = m.t - g0.t
             val rearFirst = when {
-                d >= (1 - tol) * exp && d <= (1 + tol) * exp -> false
-                -d >= (1 - tol) * exp && -d <= (1 + tol) * exp -> true
+                d >= (1 - tol) * exp && d <= (1 + tol) * slow -> false
+                -d >= (1 - tol) * exp && -d <= (1 + tol) * slow -> true
                 else -> continue
             }
             val f = if (rearFirst) m else g0
@@ -101,8 +129,15 @@ object AxleSignature {
                 if (!rearFirst) tooStrong = true
                 continue
             }
-            val dev = abs((r.t - f.t) / exp - 1.0) / tol
-            var s = balance * snr * rise * (1.0 - 0.5 * dev * dev) * uniqueness(f, r, hs, exp, cfg) * quiet(ts, e, f, r, cfg)
+            // How far outside the plausible Δt (GPS speed .. slowest speed), in tolerances.
+            val gap = r.t - f.t
+            val dev = when {
+                gap < exp -> (exp - gap) / (tol * exp)
+                gap > slow -> (gap - slow) / (tol * slow)
+                else -> 0.0
+            }
+            var s = balance * snr * rise * (1.0 - cfg.edgePenalty * dev * dev) * uniqueness(f, r, hs, exp, cfg) *
+                quiet(ts, e, f, r, cfg)
             val pitch = if (pitchRate != null && pitchRate.size >= n) pitchOrder(ts, pitchRate, f.t, r.t, cfg) else 0
             if (pitch < 0) s *= cfg.pitchWrongFactor
             if (s > best) {
@@ -110,27 +145,35 @@ object AxleSignature {
             }
         }
         val score = max(best, 0.0)
-        fun result(v: AxleVerdict, reason: String): AxleResult {
-            val f = bestF
-            val r = bestR
-            return if (f == null || r == null) {
-                AxleResult(v, score, Double.NaN, exp, g0.peak, Double.NaN, false, 0, brake, braked, reason)
-            } else {
-                AxleResult(v, score, r.t - f.t, exp, f.peak, r.peak, bestRearFirst, bestPitch, brake, braked, reason)
-            }
+        // Only a pair reports Δt and a rear peak: nothing else may teach a wheelbase.
+        val bf = bestF
+        val br = bestR
+        if (best >= cfg.bothMinScore && bf != null && br != null) {
+            return AxleResult(
+                AxleVerdict.BOTH, score, br.t - bf.t, exp, bf.peak, br.peak, bestRearFirst, bestPitch, brake, braked,
+                "pair",
+            )
         }
-        if (best >= cfg.bothMinScore) return result(AxleVerdict.BOTH, "pair")
+        fun result(v: AxleVerdict, reason: String) =
+            AxleResult(v, score, Double.NaN, exp, g0.peak, Double.NaN, false, 0, brake, braked, reason)
         // From here on it is not a clean pair; "no axle" needs the rear to have been plainly missing.
         if (tooStrong) return result(AxleVerdict.UNKNOWN, "second_stronger")
         if (evidence > cfg.oneMaxEvidence) return result(AxleVerdict.UNKNOWN, "unclear")
-        val fwdOk = g0.t + (1 + tol) * exp + w / 2 <= ts[n - 1]
-        val backOk = g0.t - (1 + tol) * exp - w / 2 >= spanFrom
+        val fwdOk = g0.t + (1 + tol) * slow + w / 2 <= ts[n - 1]
+        val backOk = g0.t - (1 + tol) * slow - w / 2 >= spanFrom
         if (!fwdOk || !backOk) return result(AxleVerdict.UNKNOWN, "window")
+        // The speed must be known and steady, and fast enough that GPS lag matters little, else the rear may be
+        // anywhere; and the gap long enough for one hit's own ringing to die down in it.
+        if (braked != false) return result(AxleVerdict.UNKNOWN, "braking")
+        if (speedMps * 3.6 < cfg.oneMinKmh) return result(AxleVerdict.UNKNOWN, "slow_for_one")
+        if (exp < cfg.oneMinDtMs) return result(AxleVerdict.UNKNOWN, "short_dt")
         if (g0.a * cfg.visibleRatio < cfg.visibleSnr * noise) return result(AxleVerdict.UNKNOWN, "noisy")
-        if (lowest(ts, e, g0.t, g0.t + (1 - tol) * exp) > cfg.decayFraction * g0.a) return result(AxleVerdict.UNKNOWN, "ringing")
+        if (lowest(ts, e, g0.t, g0.t + (1 - tol) * exp) > cfg.decayFraction * g0.a) {
+            return result(AxleVerdict.UNKNOWN, "ringing")
+        }
         if (hs.any { it !== g0 && it.a >= cfg.loneFraction * g0.a }) return result(AxleVerdict.UNKNOWN, "other_impulse")
-        val fwdLevel = level(ts, e, g0.t + (1 - tol) * exp, g0.t + (1 + tol) * exp)
-        val backLevel = level(ts, e, g0.t - (1 + tol) * exp, g0.t - (1 - tol) * exp)
+        val fwdLevel = level(ts, e, g0.t + (1 - tol) * exp, g0.t + (1 + tol) * slow)
+        val backLevel = level(ts, e, g0.t - (1 + tol) * slow, g0.t - (1 - tol) * exp)
         if (max(fwdLevel, backLevel) > cfg.quietFraction * g0.a) return result(AxleVerdict.UNKNOWN, "busy")
         return result(AxleVerdict.ONE, "single")
     }
@@ -206,7 +249,7 @@ object AxleSignature {
         return stack
     }
 
-    /** 1 alone; halved per other strong impulse not a wheelbase from another; 0 for a train. */
+    /** 1 alone; × [AxleConfig.unexplainedFactor] per other strong impulse not a wheelbase from another; 0: a train. */
     private fun uniqueness(f: Hump, r: Hump, hs: List<Hump>, exp: Double, cfg: AxleConfig): Double {
         val weak = min(f.a, r.a)
         val meas = r.t - f.t
@@ -217,7 +260,8 @@ object AxleSignature {
         if (isTrain(f, exp, cfg) || isTrain(r, exp, cfg) || other.any { isTrain(it, exp, cfg) }) return 0.0
         var u = 1.0
         for (m in other) {
-            if (strong.none { it !== m && abs(abs(it.t - m.t) - meas) <= cfg.explainTolerance * meas }) u *= 0.5
+            val explained = strong.any { it !== m && abs(abs(it.t - m.t) - meas) <= cfg.explainTolerance * meas }
+            if (!explained) u *= cfg.unexplainedFactor
         }
         return u
     }
@@ -238,7 +282,7 @@ object AxleSignature {
     private fun quiet(ts: DoubleArray, e: DoubleArray, f: Hump, r: Hump, cfg: AxleConfig): Double {
         val gap = r.t - f.t
         if (gap < cfg.quietMinMs) return 1.0
-        val mid = level(ts, e, f.t + 0.25 * gap, r.t - 0.25 * gap)
+        val mid = level(ts, e, f.t + cfg.quietTrim * gap, r.t - cfg.quietTrim * gap)
         return if (mid.isNaN()) 1.0 else ramp(mid / min(f.a, r.a), cfg.quietBad, cfg.quietGood)
     }
 
@@ -247,11 +291,11 @@ object AxleSignature {
      * integrated over ± a window, less its average before), -1 the other way round, 0 when unknown or not car-sized.
      */
     private fun pitchOrder(ts: DoubleArray, p: DoubleArray, tF: Double, tR: Double, cfg: AxleConfig): Int {
-        val wp = (0.4 * (tR - tF)).coerceIn(60.0, 200.0)
+        val wp = (cfg.pitchWindowFraction * (tR - tF)).coerceIn(cfg.pitchWindowMinMs, cfg.pitchWindowMaxMs)
         var sum = 0.0
         var k = 0
         for (i in ts.indices) {
-            if (ts[i] >= tF - wp - 300.0 && ts[i] < tF - wp && !p[i].isNaN()) { sum += p[i]; k++ }
+            if (ts[i] >= tF - wp - cfg.pitchBaselineMs && ts[i] < tF - wp && !p[i].isNaN()) { sum += p[i]; k++ }
         }
         if (k < 3) return 0
         val base = sum / k

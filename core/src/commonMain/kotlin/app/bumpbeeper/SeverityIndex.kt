@@ -11,7 +11,7 @@ class SeverityConfig {
     var bandLowHz = 0.5
     /** At 50 Hz this is 0.4 × the rate; [Biquad] never lets it reach Nyquist on slower phones. */
     var bandHighHz = 20.0
-    /** The dose is summed over this long, starting [preMs] before the trigger (both axles fit from about 10 km/h)... */
+    /** The dose is summed over this long from [preMs] before the trigger (a 2.6 m car's both axles from about 12 km/h)... */
     var windowMs = 1000L
     var preMs = 200L
     /** ...after this much signal to settle the 0.5 Hz high-pass. Shorter history is used as it is. */

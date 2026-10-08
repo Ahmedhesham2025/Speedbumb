@@ -27,13 +27,54 @@ class AxleSignatureTest {
     }
 
     @Test fun oneKnockIsNoAxle() {
-        // Like handling the phone: one sharp impulse on a quiet road, nothing a wheelbase later.
-        for (rate in listOf(50.0, 100.0)) for (kmh in listOf(15.0, 30.0, 50.0)) for (seed in 1L..2L) {
+        // Like handling the phone: one sharp impulse on a quiet road at a steady 20–30 km/h, nothing a wheelbase later.
+        for (rate in listOf(50.0, 100.0)) for (kmh in listOf(20.0, 25.0, 30.0)) for (seed in 1L..2L) {
             val road = Road(seed).apply { hit(T0, 6.0, 0.06) }
-            val r = judge(road, kmh, rate)
+            val r = judge(road, kmh, rate, fixes = steady(kmh))
             val what = "$rate Hz, $kmh km/h, seed $seed: ${describe(r)}"
             assertEquals(AxleVerdict.ONE, r.verdict, what)
             assertTrue(r.score <= 0.3, what)
+            assertTrue(r.dtMs.isNaN() && r.rearPeak.isNaN(), what)   // nothing to learn a wheelbase from
+        }
+    }
+
+    @Test fun oneKnockIsUnknownWhenTheGapIsShortOrTheSpeedUnsure() {
+        for (rate in listOf(50.0, 100.0)) for (seed in 1L..2L) {
+            val road = Road(seed).apply { hit(T0, 6.0, 0.06) }
+            // From 40 km/h the expected gap is under 250 ms: one hit's own ringing could hide the rear.
+            for (kmh in listOf(40.0, 50.0, 60.0)) {
+                val r = judge(road, kmh, rate, fixes = steady(kmh))
+                assertEquals(AxleVerdict.UNKNOWN, r.verdict, "$rate Hz, $kmh km/h, seed $seed: ${describe(r)}")
+            }
+            // At 25 km/h but braking, or without GPS fixes to tell: the speed is unsure.
+            val braking = judge(road, 25.0, rate, fixes = slowingDown(25.0, 6.0))
+            assertEquals(AxleVerdict.UNKNOWN, braking.verdict, describe(braking))
+            assertEquals(AxleVerdict.UNKNOWN, judge(road, 25.0, rate).verdict)
+        }
+    }
+
+    @Test fun crawlingOverAfterBrakingIsNeverNoAxle() {
+        // GPS lags about 1 s: braking at 5–11 km/h per second, it reads that much above the true 6–10 km/h. The rear
+        // window and the decision wait come from the slowest plausible speed, so the pair is found when it fits.
+        for (rate in listOf(50.0, 100.0)) for (wb in listOf(2.4, 2.6, 3.0)) for (kmh in listOf(6.0, 8.0, 10.0)) {
+            for (high in listOf(5.0, 8.0, 11.0)) {
+                val r = judge(pair(kmh, wb, 1), kmh + high, rate, fixes = slowingDown(kmh + high, high))
+                val trueDt = wb / (kmh / 3.6) * 1000
+                val what = "$rate Hz, $wb m, $kmh km/h, GPS +$high: ${describe(r)}"
+                assertNotEquals(AxleVerdict.ONE, r.verdict, what)
+                if (trueDt <= AxleSignature.decideWindowMs(kmh / 3.6, 2.6) - 200) {
+                    assertEquals(AxleVerdict.BOTH, r.verdict, what)
+                    assertTrue(abs(r.dtMs / trueDt - 1) <= 0.10, what)
+                }
+            }
+        }
+    }
+
+    @Test fun usualCrossingSpeedsAreNeverNoAxle() {
+        val speeds = listOf(5.0, 7.0, 9.0, 11.0, 13.0, 15.0)
+        for (rate in listOf(50.0, 100.0)) for (wb in listOf(2.4, 2.6, 3.0)) for (kmh in speeds) {
+            val r = judge(pair(kmh, wb, 2), kmh, rate, fixes = steady(kmh))
+            assertNotEquals(AxleVerdict.ONE, r.verdict, "$rate Hz, $wb m, $kmh km/h: ${describe(r)}")
         }
     }
 
@@ -83,7 +124,7 @@ class AxleSignatureTest {
             val what = "$kmh km/h, $wb m: ${describe(a)} | ${describe(b)}"
             assertEquals(a.verdict, b.verdict, what)
             assertTrue(abs(a.score - b.score) <= 0.1, what)
-            assertTrue(abs(a.dtMs / b.dtMs - 1) <= 0.05, what)
+            if (a.verdict == AxleVerdict.BOTH) assertTrue(abs(a.dtMs / b.dtMs - 1) <= 0.05, what)
         }
     }
 
@@ -106,19 +147,26 @@ class AxleSignatureTest {
 
     @Test fun brakingBeforeTheJolt() {
         val road = pair(18.0, 2.6, 1)
-        // Slowing from 30 to 20 km/h by GPS (the jolt triggers just after 3 s); 18 km/h at the jolt.
-        val fixes = listOf(30.0, 27.0, 23.0, 20.0).mapIndexed { i, kmh -> Fix(600 + i * 800L, 0.5, 0.5, kmh / 3.6, 90.0, 5.0) }
+        // Slowing from 30 to 20 km/h by GPS in the 2.4 s before the jolt; 18 km/h at the jolt.
+        val fixes = listOf(-2400L to 30.0, -1600L to 27.0, -800L to 23.0, 0L to 20.0)
         val r = judge(road, 18.0, 50.0, fixes = fixes)
         assertEquals(12.0, r.brakeDropKmh, 1e-9)
         assertEquals(true, r.braked)
-        val steady = judge(road, 18.0, 50.0, fixes = fixes.map { Fix(it.timeMs, 0.5, 0.5, 18.0 / 3.6, 90.0, 5.0) })
-        assertEquals(false, steady.braked)
+        assertEquals(false, judge(road, 18.0, 50.0, fixes = steady(18.0)).braked)
         val none = judge(road, 18.0, 50.0)
         assertTrue(none.brakeDropKmh.isNaN())
         assertNull(none.braked)
     }
 
     @Test fun decideWindow() {
+        // GPS 13 km/h after slowing 5 km/h per second: the car may already be at 8 km/h (Δt 1170 ms).
+        fun fix(ms: Long, kmh: Double) = Fix(ms, 0.5, 0.5, kmh / 3.6, 90.0, 5.0)
+        val slowing = listOf(fix(7000, 28.0), fix(8000, 23.0), fix(9000, 18.0), fix(10_000, 13.0))
+        val low = AxleSignature.lowSpeedMps(slowing, 10_000L, 13 / 3.6)
+        assertEquals(8.0, low * 3.6, 1e-9)
+        assertEquals(1570.0, AxleSignature.decideWindowMs(low, 2.6).toDouble(), 1.0)
+        assertEquals(13.0, AxleSignature.lowSpeedMps(slowing.map { fix(it.timeMs, 13.0) }, 10_000L, 13 / 3.6) * 3.6, 1e-9)
+        assertEquals(3.0, AxleSignature.lowSpeedMps(emptyList(), 0L, 0.1) * 3.6, 1e-9)   // never below minSpeedKmh
         assertEquals(1200L, AxleSignature.decideWindowMs(30 / 3.6, 2.6))     // Δt 312 ms
         assertEquals(1336L, AxleSignature.decideWindowMs(10 / 3.6, 2.6))     // Δt 936 ms + 400
         assertEquals(1600L, AxleSignature.decideWindowMs(5 / 3.6, 2.6))      // capped
@@ -140,17 +188,29 @@ class AxleSignatureTest {
         assertTrue(r.score.isNaN() || r.score <= 0.3, "$what: ${describe(r)}")
     }
 
-    /** Sample [road] like the engine would see it at [rateHz] and judge the jolt at [T0], cut at the decision. */
+    /**
+     * Sample [road] like the engine would see it at [rateHz] and judge the jolt at [T0] at a GPS speed of [kmh], cut at
+     * the decision (the wait from the slowest plausible speed, as the engine will). [fixes]: (ms from the trigger, km/h).
+     */
     private fun judge(
-        road: Road, kmh: Double, rateHz: Double, postMs: Long? = null, gyro: Boolean = true, fixes: List<Fix> = emptyList(),
+        road: Road, kmh: Double, rateHz: Double, postMs: Long? = null, gyro: Boolean = true,
+        fixes: List<Pair<Long, Double>> = emptyList(),
     ): AxleResult {
         val v = kmh / 3.6
-        val post = postMs ?: AxleSignature.decideWindowMs(v, 2.6)
-        val s = road.sample(rateHz, T0 - 2.5, T0 + post / 1000.0 + 0.05)
+        val s = road.sample(rateHz, T0 - 3.0, T0 + 1.65)
         val trigger = s.t[s.t.indices.first { s.t[it] >= (T0 - 0.1) * 1000 && abs(s.v[it]) >= 3.0 }]
+        val gps = fixes.map { (dt, k) -> Fix(trigger + dt, 0.5, 0.5, k / 3.6, 90.0, 5.0) }
+        val post = postMs ?: AxleSignature.decideWindowMs(AxleSignature.lowSpeedMps(gps, trigger, v), 2.6)
         val n = s.t.indices.last { s.t[it] <= trigger + post } + 1
-        return AxleSignature.analyze(s.t.copyOf(n), s.v.copyOf(n), if (gyro) s.p.copyOf(n) else null, trigger, v, 2.6, fixes)
+        return AxleSignature.analyze(s.t.copyOf(n), s.v.copyOf(n), if (gyro) s.p.copyOf(n) else null, trigger, v, 2.6, gps)
     }
+
+    /** GPS fixes at a steady [kmh] over the 3 s before the jolt. */
+    private fun steady(kmh: Double) = listOf(-3000L to kmh, -2000L to kmh, -1000L to kmh, 0L to kmh)
+
+    /** GPS fixes slowing down [perS] km/h per second to [kmh] at the jolt. */
+    private fun slowingDown(kmh: Double, perS: Double) =
+        listOf(-3000L to kmh + 3 * perS, -2000L to kmh + 2 * perS, -1000L to kmh + perS, 0L to kmh)
 
     private fun describe(r: AxleResult) =
         "${r.verdict} score=${formatFixed(r.score, 2)} dt=${formatFixed(r.dtMs, 0)}/${formatFixed(r.expectedDtMs, 0)} " +

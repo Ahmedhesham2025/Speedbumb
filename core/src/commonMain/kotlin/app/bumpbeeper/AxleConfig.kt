@@ -2,8 +2,13 @@ package app.bumpbeeper
 
 /** Every number of [AxleSignature]. Units: milliseconds, m/s², rad, Hz, km/h; fractions where it says so. */
 class AxleConfig {
-    /** The rear impulse is looked for this fraction either side of wheelbase / speed. */
+    /**
+     * The rear impulse is looked for from this fraction below wheelbase / speed to this fraction above wheelbase /
+     * the lowest plausible speed: GPS speed lags about [gpsLagMs] (≈ 1 s on drive01), so while braking the car is
+     * already slower than GPS says, by the deceleration GPS shows × the lag.
+     */
     var dtTolerance = 0.35
+    var gpsLagMs = 1000.0
     /** Impulses are judged in this band: no body bounce or pocket sway, nothing near Nyquist at 50 Hz. */
     var bandLowHz = 2.0
     var bandHighHz = 15.0
@@ -18,6 +23,11 @@ class AxleConfig {
     /** The filters settle this long before anything is judged; the span judged reaches this far past the windows. */
     var warmupMs = 500.0
     var spanMarginMs = 400.0
+    /** The road's noise is the median envelope before the jolt when at least this much of it is there, s. */
+    var noiseHistoryS = 0.3
+    /** The jolt's raw peak (for [minBandShare]) is taken from this long before the trigger to this long after it. */
+    var rawPeakBeforeMs = 20.0
+    var rawPeakAfterMs = 300.0
     /** The front impulse is the one the trigger falls in, or one starting at most this long after it. */
     var frontSearchMs = 150.0
     /** Two envelope humps are two impulses only when it dips below 1 / this of the smaller one between them... */
@@ -37,22 +47,39 @@ class AxleConfig {
     var snrHigh = 5.0
     /** ...how far the envelope dips between them... */
     var riseGood = 2.5
-    /** ...and, for pairs at least [quietMinMs] apart, its median between them ÷ the weaker ([quietBad] → none). */
+    /** ...how close to the expected Δt: 1 − [edgePenalty] × (distance ÷ tolerance)², [edgePenalty] off at the edge... */
+    var edgePenalty = 0.5
+    /**
+     * ...and, for pairs at least [quietMinMs] apart, its median between them (leaving out [quietTrim] of the gap at
+     * each end) ÷ the weaker: full credit up to [quietGood], none from [quietBad].
+     */
     var quietMinMs = 250.0
+    var quietTrim = 0.25
     var quietGood = 0.65
     var quietBad = 0.85
     /**
-     * Other impulses at least this × the weaker of a pair halve its score unless a wheelbase from another one
-     * (± [explainTolerance] of Δt: a wide hump crossed by both axles); with more than [maxImpulses] around, or one
-     * whose strong tops spread over [trainFraction] of Δt, it is a train (rumble strip, rough road): score 0.
+     * Other impulses at least this × the weaker of a pair cost it [unexplainedFactor] each, unless a wheelbase from
+     * another one (± [explainTolerance] of Δt: a wide hump crossed by both axles); with more than [maxImpulses]
+     * around, or one whose strong tops spread over [trainFraction] of Δt, it is a train (rumble strip, rough road):
+     * score 0.
      */
     var otherFraction = 0.6
     var explainTolerance = 0.15
+    var unexplainedFactor = 0.5
     var maxImpulses = 4
     var trainFraction = 0.75
     /** A jolt with less than this share of its raw peak in the band (a buzz or click above it) can't be judged. */
     var minBandShare = 0.35
-    /** Pitch: a car turns a few mrad over a bump; more is the phone turning (a pocket). Inverted order halves the score. */
+    /**
+     * Pitch: how far the car turned around each impulse (± [pitchWindowFraction] of the gap, within
+     * [pitchWindowMinMs]..[pitchWindowMaxMs]), over its average in the [pitchBaselineMs] before. A car turns a few mrad
+     * over a bump ([pitchMinRad]..[pitchMaxRad]); more is the phone turning (a pocket). Inverted order costs
+     * [pitchWrongFactor].
+     */
+    var pitchWindowFraction = 0.4
+    var pitchWindowMinMs = 60.0
+    var pitchWindowMaxMs = 200.0
+    var pitchBaselineMs = 300.0
     var pitchMinRad = 0.004
     var pitchMaxRad = 0.05
     var pitchWrongFactor = 0.5
@@ -62,8 +89,9 @@ class AxleConfig {
      * [AxleVerdict.ONE] only when nothing at either window reaches this much evidence (balance × snr × dip), and the
      * front stood out of the noise (a rear [visibleRatio] of it would, by [visibleSnr]), died down below
      * [decayFraction] of its peak before the rear window, the windows stayed below [quietFraction] of it, and nothing
-     * else in the whole span reached [loneFraction] of it (the rear may be there at another spacing: GPS speed lags
-     * in hard braking).
+     * else in the whole span reached [loneFraction] of it (the rear may be there at another spacing). Never while
+     * braking or with no GPS to tell ([brakeMinDropKmh]): the speed is then too uncertain; never below [oneMinKmh] by
+     * GPS (where its lag matters most) or for an expected Δt under [oneMinDtMs] (a hit's own ringing fills the gap).
      */
     var oneMaxEvidence = 0.3
     var visibleRatio = 0.5
@@ -71,10 +99,12 @@ class AxleConfig {
     var decayFraction = 0.5
     var quietFraction = 0.25
     var loneFraction = 0.35
+    var oneMinKmh = 20.0
+    var oneMinDtMs = 250.0
     /** Braking: the most speed lost in the [brakeWindowMs] before the jolt, from GPS; [brakeMinDropKmh] = braked. */
     var brakeWindowMs = 3000L
     var brakeMinDropKmh = 4.0
-    /** [AxleSignature.decideWindowMs] = Δt + [decideMarginMs], within [decideMinMs]..[decideMaxMs]. */
+    /** [AxleSignature.decideWindowMs] = Δt at the slowest plausible speed + [decideMarginMs], [decideMinMs]..[decideMaxMs]. */
     var decideMinMs = 1200L
     var decideMarginMs = 400L
     var decideMaxMs = 1600L
@@ -94,11 +124,12 @@ class AxleResult(
     val verdict: AxleVerdict,
     /** 0..1, how clearly two axle impulses showed; NaN when the analysis could not run ([reason]). */
     val score: Double,
-    /** Measured front → rear gap of the best pair, ms; NaN without one. */
+    /** Measured front → rear gap of the pair, ms; NaN unless [verdict] is BOTH (only a pair can teach a wheelbase). */
     val dtMs: Double,
-    /** Wheelbase / speed, ms. */
+    /** Wheelbase / GPS speed, ms (the slowest plausible speed may make it longer). */
     val expectedDtMs: Double,
     val frontPeak: Double,
+    /** NaN unless [verdict] is BOTH. */
     val rearPeak: Double,
     /** The trigger was the rear axle (the front one, weaker, came before it). */
     val rearFirst: Boolean,
@@ -108,6 +139,9 @@ class AxleResult(
     val brakeDropKmh: Double,
     /** [brakeDropKmh] ≥ [AxleConfig.brakeMinDropKmh]; null when unknown. */
     val braked: Boolean?,
-    /** pair | single | slow | fast | no_data | no_front | above_band | second_stronger | unclear | window | noisy | ringing | other_impulse | busy */
+    /**
+     * pair | single | slow | fast | no_data | no_front | above_band | second_stronger | unclear | window | braking |
+     * slow_for_one | short_dt | noisy | ringing | other_impulse | busy
+     */
     val reason: String,
 )
