@@ -29,14 +29,17 @@ class RealDriveTest {
             val want = if (exp.exists()) Properties().apply { exp.reader(Charsets.UTF_8).use { load(it) } } else null
             // The phone placement to replay with: `placement=` in the expected file, else unknown (as before).
             val placement = want?.getProperty("placement")?.trim()?.ifEmpty { null } ?: "unknown"
-            val run = replayRuns(listOf(f.name to lines), placement).single()
+            // An anonymized research trip (rr2, one file per trip) or a CSV trace.
+            val rr2 = Rr2.isResearch(f)
+            val samples = if (rr2) Rr2.read(listOf(f)).samples else TraceReader.read(lines.asSequence())
+            val run = replaySamples(listOf(Recording(f.name, samples, placement))).single()
             val summary = DriveSummary.of(run.result, placement)
             if (run.labels.isNotEmpty()) {
                 println(Metrics.compute(listOf(run)).toMarkdown(f.name))
                 println(LabelConfusion.of(listOf(run)).toMarkdown(f.name))
             }
             println(summary.toMarkdown(f.name))
-            val raw = RealDriveChecks.anonymizationProblems(lines)
+            val raw = if (rr2) Rr2Anonymizer.problems(lines) else RealDriveChecks.anonymizationProblems(lines)
             assertTrue("${f.name} still looks raw:\n" + raw.joinToString("\n"), raw.isEmpty())
             if (want != null) {
                 val bad = RealDriveChecks.outOfRange(want, summary)

@@ -10,16 +10,22 @@ private const val USAGE = """Usage:
       replay labelled recordings (the runs of one route, oldest first) on one shared map, print the accuracy table;
       research recordings (rr2, rr_<id>_<start>_<segment>.csv.gz) are read too, the segments of a trip as one run;
       --placement mounted|cupholder|pocket|unknown (default) for every run, or "recording": each file's own setting
-  anonymize --in raw.csv[.gz] --out anon.csv[.gz]      fake origin + clock at zero, before anything enters testdata/"""
+  anonymize --in raw.csv[.gz] --out anon.csv[.gz]      fake origin + clock at zero, before anything enters testdata/
+      a research trip: --in rr_…_000.csv.gz [--in rr_…_001.csv.gz …]: also trimmed like the upload, ids and chips dropped"""
 
 fun main(args: Array<String>) {
     val opts = HashMap<String, String>()
     val traces = ArrayList<File>()
+    val inputs = ArrayList<File>()
     var i = 1
     while (i < args.size) {
         if (args[i].startsWith("--") && i + 1 < args.size) {
             val key = args[i].removePrefix("--")
-            if (key == "trace") traces.add(File(args[i + 1])) else opts[key] = args[i + 1]
+            when (key) {
+                "trace" -> traces.add(File(args[i + 1]))
+                "in" -> inputs.add(File(args[i + 1]))
+                else -> opts[key] = args[i + 1]
+            }
             i += 2
         } else usage()
     }
@@ -37,7 +43,8 @@ fun main(args: Array<String>) {
         }
         "anonymize" -> {
             val out = File(opts["out"] ?: usage())
-            val lines = Anonymizer.anonymize(readLines(File(opts["in"] ?: usage())))
+            if (inputs.isEmpty()) usage()
+            val lines = if (Rr2.isResearch(inputs[0])) Rr2Anonymizer.anonymize(inputs) else Anonymizer.anonymize(readLines(inputs[0]))
             val stream = out.outputStream().let { if (out.name.endsWith(".gz")) GZIPOutputStream(it) else it }
             stream.bufferedWriter(Charsets.UTF_8).use { w -> lines.forEach { w.write(it); w.write("\n") } }
             println("Wrote ${lines.size} lines to ${out.path}")
