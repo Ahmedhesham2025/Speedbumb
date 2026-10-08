@@ -54,18 +54,26 @@ class AxleSignatureTest {
     }
 
     @Test fun crawlingOverAfterBrakingIsNeverNoAxle() {
-        // GPS lags about 1 s: braking at 5–11 km/h per second, it reads that much above the true 6–10 km/h. The rear
-        // window and the decision wait come from the slowest plausible speed, so the pair is found when it fits.
+        // GPS lags about 1 s: braking at 5–11 km/h per second, it reads that much above the true 6–10 km/h, so the
+        // rear comes after the window searched at the GPS speed. Never "no axle"; UNKNOWN (or a pair) is fine.
         for (rate in listOf(50.0, 100.0)) for (wb in listOf(2.4, 2.6, 3.0)) for (kmh in listOf(6.0, 8.0, 10.0)) {
             for (high in listOf(5.0, 8.0, 11.0)) {
                 val r = judge(pair(kmh, wb, 1), kmh + high, rate, fixes = slowingDown(kmh + high, high))
-                val trueDt = wb / (kmh / 3.6) * 1000
-                val what = "$rate Hz, $wb m, $kmh km/h, GPS +$high: ${describe(r)}"
-                assertNotEquals(AxleVerdict.ONE, r.verdict, what)
-                if (trueDt <= AxleSignature.decideWindowMs(kmh / 3.6, 2.6) - 200) {
-                    assertEquals(AxleVerdict.BOTH, r.verdict, what)
-                    assertTrue(abs(r.dtMs / trueDt - 1) <= 0.10, what)
-                }
+                assertNotEquals(AxleVerdict.ONE, r.verdict, "$rate Hz, $wb m, $kmh km/h, GPS +$high: ${describe(r)}")
+            }
+        }
+    }
+
+    @Test fun twoKnocksWhileBrakingAreNoPair() {
+        // Handling the phone while braking: two knocks 1.0–1.4 s apart at 15 km/h by GPS (Δt 624 ms). The slowest
+        // plausible speed (4–10 km/h) would fit them; the pair is still only looked for at the GPS speed.
+        for (rate in listOf(50.0, 100.0)) for (seed in 1L..3L) for (perS in listOf(5.0, 8.0, 11.0)) {
+            for (gapS in listOf(1.0, 1.2, 1.4)) {
+                val road = Road(seed).apply { hit(T0, 6.0, 0.06); hit(T0 + gapS, 4.5, 0.06) }
+                val r = judge(road, 15.0, rate, fixes = slowingDown(15.0, perS))
+                val what = "$rate Hz, seed $seed, braking $perS km/h per s, $gapS s apart"
+                assertNoPair(r, what)
+                assertNotEquals(AxleVerdict.ONE, r.verdict, "$what: ${describe(r)}")
             }
         }
     }
@@ -79,9 +87,9 @@ class AxleSignatureTest {
     }
 
     @Test fun rumbleStripIsNoPair() {
-        // Ten narrow bars, 0.5–1.6 m apart, under both axles.
+        // Ten narrow bars, 0.5–1.6 m apart, under both axles; at a steady speed or braking.
         for (rate in listOf(50.0, 100.0)) for (kmh in listOf(20.0, 40.0)) for (gap in listOf(0.5, 0.8, 1.2, 1.6)) {
-            for (wb in listOf(2.4, 3.0)) {
+            for (wb in listOf(2.4, 3.0)) for (perS in listOf(0.0, 5.0, 8.0, 11.0)) {
                 val v = kmh / 3.6
                 val road = Road(7)
                 for (k in 0 until 10) {
@@ -89,17 +97,21 @@ class AxleSignatureTest {
                     road.hit(T0 + k * gap / v, 4.5, w)
                     road.hit(T0 + (k * gap + wb) / v, 3.6, w)
                 }
-                assertNoPair(judge(road, kmh, rate), "$rate Hz, $kmh km/h, bars $gap m, $wb m")
+                val fixes = if (perS == 0.0) emptyList() else slowingDown(kmh, perS)
+                assertNoPair(judge(road, kmh, rate, fixes = fixes), "$rate Hz, $kmh km/h, bars $gap m, $wb m, braking $perS")
             }
         }
     }
 
     @Test fun wrongSpacingIsNoPair() {
-        // Two impulses, but 0.45, 1.6 or 2.2 × the wheelbase apart.
-        for (rate in listOf(50.0, 100.0)) for (kmh in listOf(15.0, 30.0)) for (f in listOf(0.45, 1.6, 2.2)) {
-            val v = kmh / 3.6
-            val road = Road(5).apply { hit(T0, 5.0, width(v)); hit(T0 + f * 2.6 / v, 4.0, width(v)) }
-            assertNoPair(judge(road, kmh, rate, postMs = 1600), "$rate Hz, $kmh km/h, × $f")
+        // Two impulses, but 0.45, 1.6, 2.2 or 3.0 × the wheelbase apart; at a steady speed or braking.
+        for (rate in listOf(50.0, 100.0)) for (kmh in listOf(15.0, 30.0)) for (f in listOf(0.45, 1.6, 2.2, 3.0)) {
+            for (perS in listOf(0.0, 5.0, 8.0, 11.0)) {
+                val v = kmh / 3.6
+                val road = Road(5).apply { hit(T0, 5.0, width(v)); hit(T0 + f * 2.6 / v, 4.0, width(v)) }
+                val fixes = if (perS == 0.0) emptyList() else slowingDown(kmh, perS)
+                assertNoPair(judge(road, kmh, rate, postMs = 1600, fixes = fixes), "$rate Hz, $kmh km/h, × $f, braking $perS")
+            }
         }
     }
 

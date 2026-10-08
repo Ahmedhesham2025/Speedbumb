@@ -12,15 +12,17 @@ import kotlin.math.sqrt
  * The vertical acceleration is band-passed ([AxleConfig.bandLowHz]..[AxleConfig.bandHighHz]) and turned into a short
  * RMS envelope (window in time, so 50, 100 and 200 Hz give the same). Its humps are impulses; humps without a real dip
  * between them are one impulse (the lobes and ringing of one hit: repeated impulses are grouped). The front impulse
- * holds the trigger; the rear is looked for from Δt − 35 % to Δt at the slowest plausible speed + 35 % after it
- * ([lowSpeedMps]: GPS lags while braking), or the trigger was the rear and the front is looked for before it. A pair
- * scores by how balanced, how far above the road's noise, how separated (the envelope dips between), how close to Δt
- * and how alone it is (trains of impulses, rumble strips, score 0), and the pitch order where the gyroscope shows it.
- * Braking in the seconds before is reported too, for the caller to weigh.
+ * holds the trigger; the rear is looked for Δt ± 35 % after it (Δt from the GPS speed), or the trigger was the rear
+ * and the front is looked for before it. A pair scores by how balanced, how far above the road's noise, how separated
+ * (the envelope dips between), how close to Δt and how alone it is (trains of impulses, rumble strips, score 0), and
+ * the pitch order where the gyroscope shows it. Braking in the seconds before is reported too, for the caller to weigh.
+ * A crawl after braking, whose rear comes later than that window because GPS speed lags, is not searched for (a wider
+ * window lets two unrelated knocks pass as a pair): it is UNKNOWN.
  *
  * "No axle" ([AxleVerdict.ONE]) is only said when the rear would clearly have shown and nothing did, at a known steady
- * speed of at least 20 km/h by GPS and Δt of at least 250 ms; whenever the data can't show it (braking or no GPS,
- * slow crossings, Δt beyond the data, noise, ringing, other impulses) the answer is UNKNOWN.
+ * speed of at least 20 km/h by GPS and Δt of at least 250 ms, with the data, the quiet and the lone front checked out to
+ * Δt at the slowest plausible speed ([lowSpeedMps]); whenever the data can't show it (braking or no GPS, slow
+ * crossings, Δt beyond the data, noise, ringing, other impulses) the answer is UNKNOWN.
  * A phone near the front axle (dash mount) barely feels the rear wheels, so ONE means little there.
  */
 object AxleSignature {
@@ -72,19 +74,19 @@ object AxleSignature {
         if (!(speedMps * 3.6 >= cfg.minSpeedKmh)) return unknown("slow")
         val exp = wheelbaseM / speedMps * 1000.0
         if (!(exp >= cfg.minDtMs)) return unknown("fast", exp)
-        // Δt at the slowest plausible speed: the far end of the rear window.
+        // Δt at the slowest plausible speed: how far "no axle" must see nothing (never where a pair is looked for).
         val slow = wheelbaseM / lowSpeedMps(fixes, triggerMs, speedMps, cfg) * 1000.0
         val n = min(t.size, vertical.size)
         val rate = Biquad.rateHz(t.copyOf(n))
         if (n < 10 || rate < cfg.minRateHz) return unknown("no_data", exp)
         val ts = DoubleArray(n) { t[it].toDouble() }
         val x = Biquad.bandPass(vertical.copyOf(n), cfg.bandLowHz, cfg.bandHighHz, rate)
-        val w = (cfg.envFraction * slow).coerceIn(cfg.envMinMs, cfg.envMaxMs)
+        val w = (cfg.envFraction * exp).coerceIn(cfg.envMinMs, cfg.envMaxMs)
         val e = envelope(ts, x, w)
         val tol = cfg.dtTolerance
         val trig = triggerMs.toDouble()
-        val spanFrom = max(ts[0] + cfg.warmupMs, trig - (1 + tol) * slow - cfg.spanMarginMs)
-        val spanTo = trig + (1 + tol) * slow + cfg.spanMarginMs
+        val spanFrom = max(ts[0] + cfg.warmupMs, trig - (1 + tol) * exp - cfg.spanMarginMs)
+        val spanTo = trig + (1 + tol) * exp + cfg.spanMarginMs
         var i0 = 0
         while (i0 < n && ts[i0] < spanFrom) i0++
         var i1 = i0 - 1
@@ -114,8 +116,8 @@ object AxleSignature {
             if (m === g0) continue
             val d = m.t - g0.t
             val rearFirst = when {
-                d >= (1 - tol) * exp && d <= (1 + tol) * slow -> false
-                -d >= (1 - tol) * exp && -d <= (1 + tol) * slow -> true
+                d >= (1 - tol) * exp && d <= (1 + tol) * exp -> false
+                -d >= (1 - tol) * exp && -d <= (1 + tol) * exp -> true
                 else -> continue
             }
             val f = if (rearFirst) m else g0
@@ -129,13 +131,7 @@ object AxleSignature {
                 if (!rearFirst) tooStrong = true
                 continue
             }
-            // How far outside the plausible Δt (GPS speed .. slowest speed), in tolerances.
-            val gap = r.t - f.t
-            val dev = when {
-                gap < exp -> (exp - gap) / (tol * exp)
-                gap > slow -> (gap - slow) / (tol * slow)
-                else -> 0.0
-            }
+            val dev = abs((r.t - f.t) / exp - 1.0) / tol   // how far from Δt, in tolerances
             var s = balance * snr * rise * (1.0 - cfg.edgePenalty * dev * dev) * uniqueness(f, r, hs, exp, cfg) *
                 quiet(ts, e, f, r, cfg)
             val pitch = if (pitchRate != null && pitchRate.size >= n) pitchOrder(ts, pitchRate, f.t, r.t, cfg) else 0
@@ -156,7 +152,7 @@ object AxleSignature {
         }
         fun result(v: AxleVerdict, reason: String) =
             AxleResult(v, score, Double.NaN, exp, g0.peak, Double.NaN, false, bestPitch, brake, braked, reason)
-        // From here on it is not a clean pair; "no axle" needs the rear to have been plainly missing.
+        // From here on it is not a clean pair; "no axle" needs the rear to have been plainly missing, out to [slow].
         if (tooStrong) return result(AxleVerdict.UNKNOWN, "second_stronger")
         if (evidence > cfg.oneMaxEvidence) return result(AxleVerdict.UNKNOWN, "unclear")
         val fwdOk = g0.t + (1 + tol) * slow + w / 2 <= ts[n - 1]
