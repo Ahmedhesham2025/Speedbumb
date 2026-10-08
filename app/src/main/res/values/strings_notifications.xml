@@ -8,6 +8,9 @@
     <string name="notif_detection_paused">Driving detection paused. Tap to resume.</string>
     <string name="notif_channel_watch">Ready to detect driving</string>
     <string name="notif_channel_watch_desc">Android needs this while Bump Beeper waits for you to drive. You can hide it here.</string>
+    <string name="notif_channel_updates">Updates</string>
+    <string name="notif_channel_updates_desc">A new version of Bump Beeper is available</string>
+    <string name="update_notif_text">Bump Beeper %1$s is available — tap to download</string>
     <string name="notif_watch_text">Ready to detect driving</string>
     <string name="notif_recording">Recording</string>
     <string name="notif_starting">Starting…</string>

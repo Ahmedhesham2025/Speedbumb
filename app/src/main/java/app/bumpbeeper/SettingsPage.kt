@@ -269,6 +269,9 @@ class SettingsPage(private val a: MainActivity) : Page {
             Ui.divider(a),
             Ui.button(a, a.getString(R.string.settings_diagnostics)) { openDiagnostics() },
             hint(a.getString(R.string.settings_diagnostics_hint)),
+            Ui.divider(a),
+            Ui.toggle(a, a.getString(R.string.settings_beta_updates), a.getString(R.string.settings_beta_updates_hint),
+                Prefs.betaUpdates(a)) { Prefs.setBetaUpdates(a, it) },
         )
 
         traceInfo = hint("")
