@@ -56,6 +56,7 @@ class BumpDb(ctx: Context) : SQLiteOpenHelper(ctx, "bumps.db", null, 8), BumpSto
         addSpeedLimitColumns(db)
         TrainingStore.createTables(db)
         addSeverityColumns(db)
+        SyncStore.addSpotColumns(db)
     }
 
     /**
@@ -109,6 +110,7 @@ class BumpDb(ctx: Context) : SQLiteOpenHelper(ctx, "bumps.db", null, 8), BumpSto
         if (oldVersion < 7) TrainingStore.createTables(db)
         if (oldVersion < 8) {
             addSeverityColumns(db)
+            SyncStore.addSpotColumns(db)   // what spots_near_v2 adds; spots cached before stay as they came
             // What v7 kept in the old columns (E1's interim encoding): the index was the average jolt, and an old
             // pothole spot is one whose kind votes said pothole (E1 wrote 1.0 / 1 for it; older versions a score past
             // the 0.25 margin). The band is worked out again from the index at the next hit.

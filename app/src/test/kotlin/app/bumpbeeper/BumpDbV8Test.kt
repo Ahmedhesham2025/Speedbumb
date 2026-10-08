@@ -1,6 +1,8 @@
 package app.bumpbeeper
 
 import android.content.Context
+import app.bumpbeeper.sync.SpotRow
+import app.bumpbeeper.sync.SyncStore
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -13,7 +15,10 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
 import org.robolectric.annotation.Config
 
-/** Database version 8: severity, axle hits and the old-pothole flag get columns; v7's interim encoding is moved over. */
+/**
+ * Database version 8: severity, axle hits and the old-pothole flag get columns (v7's interim encoding is moved over),
+ * and the shared-map cache gets what spots_near_v2 adds.
+ */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34])
 class BumpDbV8Test {
@@ -60,9 +65,39 @@ class BumpDbV8Test {
                     "kind_score, kind_votes, side_score, side_votes, peak_avg, user_muted) " +
                     "VALUES (30.0${i + 1}, 31.2, 90.0, 2, 3, 1, 2, 1000, 2000, $row)"
             )
+            // The shared-map cache as v5..v7 had it, holding an old pothole spot from spots_near.
+            writableDatabase.execSQL("DROP TABLE remote_spots")
+            writableDatabase.execSQL(
+                """CREATE TABLE remote_spots(
+                    id INTEGER PRIMARY KEY, lat REAL NOT NULL, lon REAL NOT NULL, heading REAL NOT NULL,
+                    kind TEXT, side TEXT, severity REAL NOT NULL DEFAULT 0, n_devices INTEGER NOT NULL DEFAULT 0,
+                    fetched_at INTEGER NOT NULL)"""
+            )
+            writableDatabase.execSQL(
+                "INSERT INTO remote_spots(id, lat, lon, heading, kind, side, severity, n_devices, fetched_at) " +
+                    "VALUES (7, 30.05, 31.2, 180.0, 'pothole', 'left', 6.5, 3, 1000)"
+            )
             writableDatabase.version = 7
             close()
         }
+    }
+
+    @Test fun upgradeFromV7KeepsTheSpotCacheAndStoresWhatV2Adds() {
+        v7()
+        val store = SyncStore(db())
+        val old = store.remoteSpotsInBox(30.05, 31.2, 100.0).single()
+        assertTrue("a cached old pothole stays one", old.legacy)
+        assertEquals(listOf(null, null, null), listOf(old.band, old.confidence, old.nHits))
+        assertEquals(6.5, old.severity!!, 1e-9)
+        store.replaceRemoteSpots(30.05, 31.2, 1000.0, listOf(
+            SpotRow(7, 30.05, 31.2, 180.0, "pothole", null, 6.5, 3, "strong", "soft", 5),
+            SpotRow(8, 30.051, 31.2, 0.0, "bump", null, 4.2, 1, "moderate", "full", 2),
+        ), 2000)
+        val v2 = store.remoteSpotsInBox(30.05, 31.2, 1000.0).sortedBy { it.id }
+        assertEquals(listOf("strong", "moderate"), v2.map { it.band })
+        assertEquals(listOf("soft", "full"), v2.map { it.confidence })
+        assertEquals(listOf(5, 2), v2.map { it.nHits })
+        assertEquals(listOf(true, false), v2.map { it.legacy })
     }
 
     @Test fun upgradeFromV7MovesSeverityAndTheOldPotholeFlag() {

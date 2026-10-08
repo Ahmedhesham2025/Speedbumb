@@ -111,11 +111,19 @@ object ApiErrors {
     }
 }
 
-/** A confirmed spot as `spots_near` returns it. Nullable columns stay null. */
+/**
+ * A confirmed spot as `spots_near` returns it. Nullable columns stay null. [kind] `"pothole"` marks an old (legacy)
+ * pothole spot. [band] ("mild" / "moderate" / "strong"), [confidence] ("soft" / "full") and [nHits] (hits in total,
+ * one phone twice counts) come from `spots_near_v2` only: null from `spots_near`.
+ */
 class SpotRow(
     val id: Long, val lat: Double, val lon: Double, val heading: Double?, val kind: String?, val side: String?,
     val severity: Double?, val nDevices: Int,
-)
+    val band: String? = null, val confidence: String? = null, val nHits: Int? = null,
+) {
+    /** An old pothole spot: the engine keeps it a soft "maybe" until it is felt again. */
+    val legacy: Boolean get() = kind == "pothole"
+}
 
 /**
  * The upload format of `submit_observations` (see supabase/migrations/20261005000001_core.sql).
