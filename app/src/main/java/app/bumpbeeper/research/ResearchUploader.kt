@@ -257,7 +257,8 @@ object ResearchUploader {
 
     private fun isMetered(ctx: Context): Boolean = ctx.getSystemService(ConnectivityManager::class.java)?.isActiveNetworkMetered ?: true
 
-    private fun publish(ctx: Context) {
+    /** Loads [status] from the queue (any thread but main: file I/O); also for the Diagnostics screen. */
+    fun publish(ctx: Context) {
         try {
             val (n, b) = ResearchQueue.waiting(ctx)
             status = ResearchQueue.read(ctx) { Status(n, b, it.lastUpload, it.pausedUntil, it.pausedWhy, it.ids()) }
