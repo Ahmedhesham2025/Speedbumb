@@ -14,7 +14,8 @@ import kotlin.math.max
  *
  * A drive with a `<name>.expected.properties` next to it is a regression guard: each count given there must stay
  * within ±25 % (at least ±3), the distance within ±10 %, and none may drop to 0 where more is expected. Empty values
- * are printed but not checked.
+ * are printed but not checked. `placement=` there (mounted, cupholder, pocket) sets the phone placement the drive is
+ * replayed with; without it, unknown. Labelled drives also print their labels against the engine's decisions.
  */
 class RealDriveTest {
     private val dir = File(System.getProperty("testdata.dir") ?: "../../testdata", "real")
@@ -24,15 +25,20 @@ class RealDriveTest {
         assertTrue("no recordings in ${dir.path}", drives.isNotEmpty())
         for (f in drives) {
             val lines = readLines(f)
-            val run = replayRuns(listOf(f.name to lines)).single()
-            val summary = DriveSummary.of(run.result)
-            if (run.labels.isNotEmpty()) println(Metrics.compute(listOf(run)).toMarkdown(f.name))
+            val exp = RealDriveChecks.expectedFile(f)
+            val want = if (exp.exists()) Properties().apply { exp.reader(Charsets.UTF_8).use { load(it) } } else null
+            // The phone placement to replay with: `placement=` in the expected file, else unknown (as before).
+            val placement = want?.getProperty("placement")?.trim()?.ifEmpty { null } ?: "unknown"
+            val run = replayRuns(listOf(f.name to lines), placement).single()
+            val summary = DriveSummary.of(run.result, placement)
+            if (run.labels.isNotEmpty()) {
+                println(Metrics.compute(listOf(run)).toMarkdown(f.name))
+                println(LabelConfusion.of(listOf(run)).toMarkdown(f.name))
+            }
             println(summary.toMarkdown(f.name))
             val raw = RealDriveChecks.anonymizationProblems(lines)
             assertTrue("${f.name} still looks raw:\n" + raw.joinToString("\n"), raw.isEmpty())
-            val exp = RealDriveChecks.expectedFile(f)
-            if (exp.exists()) {
-                val want = Properties().apply { exp.reader(Charsets.UTF_8).use { load(it) } }
+            if (want != null) {
                 val bad = RealDriveChecks.outOfRange(want, summary)
                 assertTrue("${f.name} moved outside its expected range:\n" + bad.joinToString("\n"), bad.isEmpty())
             }
