@@ -40,6 +40,8 @@ internal class PhoneFeed(private val ctx: Context, private val handler: Handler,
     private val am = ctx.getSystemService(Context.AUDIO_SERVICE) as AudioManager
     private val km = ctx.getSystemService(Context.KEYGUARD_SERVICE) as KeyguardManager
     private var receiving = false
+    /** The lock screen was seen up on this trip (a swipe lock is not "secure" but is a lock screen). */
+    private var sawLocked = false
 
     private val screen = object : BroadcastReceiver() {
         override fun onReceive(c: Context, i: Intent) {
@@ -103,7 +105,11 @@ internal class PhoneFeed(private val ctx: Context, private val handler: Handler,
 
     private fun pollNow() {
         try {
-            signals.keyguardLocked = km.isKeyguardLocked
+            val locked = km.isKeyguardLocked
+            signals.keyguardLocked = locked
+            sawLocked = sawLocked || locked
+            // No lock screen: every screen-on also sends USER_PRESENT, so the detector asks for motion too.
+            signals.keyguardPresent = km.isDeviceSecure || sawLocked
             val mode = am.mode
             val inCall = mode == AudioManager.MODE_IN_CALL || mode == AudioManager.MODE_IN_COMMUNICATION
             signals.handheldCall = inCall && !handsFree()
