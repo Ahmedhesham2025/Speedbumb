@@ -21,7 +21,7 @@ import kotlin.math.roundToInt
  * plus the shared-map sync tables (outbox, remote_spots, sync_state), see [SyncStore], and the training outbox
  * ("Help improve detection"), see [TrainingStore].
  */
-class BumpDb(ctx: Context) : SQLiteOpenHelper(ctx, "bumps.db", null, 7), BumpStore {
+class BumpDb(ctx: Context) : SQLiteOpenHelper(ctx, "bumps.db", null, 8), BumpStore {
 
     init {
         setWriteAheadLoggingEnabled(true)
@@ -55,6 +55,19 @@ class BumpDb(ctx: Context) : SQLiteOpenHelper(ctx, "bumps.db", null, 7), BumpSto
         SyncStore.createTables(db)
         addSpeedLimitColumns(db)
         TrainingStore.createTables(db)
+        addSeverityColumns(db)
+    }
+
+    /**
+     * Version 8: a bump's severity ([Bump.sevIndex], [Bump.lastBand], the memory of its hysteresis), axle hits and the
+     * old-pothole flag ([Bump.legacy]) get columns of their own. The old kind / side columns stay (older backups, CSV).
+     */
+    private fun addSeverityColumns(db: SQLiteDatabase) {
+        val have = db.rawQuery("PRAGMA table_info(bumps)", null).use { c -> buildSet { while (c.moveToNext()) add(c.getString(1)) } }
+        for (c in listOf(
+            "sev_index REAL NOT NULL DEFAULT 0", "axle_hits INTEGER NOT NULL DEFAULT 0",
+            "legacy INTEGER NOT NULL DEFAULT 0", "last_band TEXT",
+        )) if (c.substringBefore(' ') !in have) db.execSQL("ALTER TABLE bumps ADD COLUMN $c")   // never twice
     }
 
     /** Version 6: speeding against road limits ([DrivingStats.withSpeedLimits]); -1 = not looked up. */
@@ -94,6 +107,16 @@ class BumpDb(ctx: Context) : SQLiteOpenHelper(ctx, "bumps.db", null, 7), BumpSto
         if (oldVersion < 6) addSpeedLimitColumns(db)
         // Version 7: training outbox ("Help improve detection"). New table only.
         if (oldVersion < 7) TrainingStore.createTables(db)
+        if (oldVersion < 8) {
+            addSeverityColumns(db)
+            // What v7 kept in the old columns (E1's interim encoding): the index was the average jolt, and an old
+            // pothole spot is one whose kind votes said pothole (E1 wrote 1.0 / 1 for it; older versions a score past
+            // the 0.25 margin). The band is worked out again from the index at the next hit.
+            db.execSQL(
+                "UPDATE bumps SET sev_index = peak_avg, " +
+                    "legacy = CASE WHEN kind_votes > 0 AND kind_score >= $OLD_POTHOLE_MARGIN THEN 1 ELSE 0 END"
+            )
+        }
     }
 
     // ---------------- BumpStore (used by the engine) ----------------
@@ -102,23 +125,24 @@ class BumpDb(ctx: Context) : SQLiteOpenHelper(ctx, "bumps.db", null, 7), BumpSto
         val out = ArrayList<Bump>()
         readableDatabase.rawQuery(
             "SELECT id, lat, lon, heading, hits, passes, misses, n_pos, first_seen, last_seen, user_muted, " +
-                "kind_score, kind_votes, side_score, side_votes, peak_avg FROM bumps", null
+                "peak_avg, sev_index, axle_hits, legacy, last_band FROM bumps", null
         ).use { c ->
             while (c.moveToNext()) {
                 out.add(
                     Bump(
                         c.getLong(0), c.getDouble(1), c.getDouble(2), c.getDouble(3),
                         c.getInt(4), c.getInt(5), c.getInt(6), c.getInt(7), c.getLong(8), c.getLong(9),
-                        c.getInt(10) != 0, peakAvg = c.getDouble(15),
-                        // Until DB v8 has its own columns: the index is the average jolt (the same average for now),
-                        // and an old pothole spot is one whose old kind votes said pothole.
-                        sevIndex = c.getDouble(15), legacy = isOldPothole(c.getDouble(11), c.getInt(12)),
+                        c.getInt(10) != 0, peakAvg = c.getDouble(11), sevIndex = c.getDouble(12),
+                        axleHits = c.getInt(13), legacy = c.getInt(14) != 0, lastBand = band(c.getString(15)),
                     )
                 )
             }
         }
         return out
     }
+
+    /** A stored band label ([Severity.label]); null for none or one this version doesn't know. */
+    private fun band(label: String?): Severity? = Severity.values().firstOrNull { it.label == label }
 
     override fun insertBump(b: Bump): Long = writableDatabase.insert("bumps", null, values(b))
 
@@ -135,13 +159,15 @@ class BumpDb(ctx: Context) : SQLiteOpenHelper(ctx, "bumps.db", null, 7), BumpSto
         put("hits", b.hits); put("passes", b.passes); put("misses", b.misses)
         put("n_pos", b.nPos); put("first_seen", b.firstSeen); put("last_seen", b.lastSeen)
         put("user_muted", if (b.userMuted) 1 else 0)
-        // Until DB v8: the old kind columns keep the "old pothole spot" flag, cleared once it is felt again.
-        put("kind_score", if (b.legacy) 1.0 else 0.0); put("kind_votes", if (b.legacy) 1 else 0)
         put("peak_avg", b.peakAvg)
+        put("sev_index", b.sevIndex); put("axle_hits", b.axleHits); put("legacy", if (b.legacy) 1 else 0)
+        if (b.lastBand == null) putNull("last_band") else put("last_band", b.lastBand!!.label)
+        // The old kind columns keep carrying the "old pothole spot" flag the way v7 wrote it, so the two never disagree.
+        put("kind_score", if (b.legacy) 1.0 else 0.0); put("kind_votes", if (b.legacy) 1 else 0)
     }
 
     /** A spot from before v2 whose kind votes said pothole ([Bump.legacy]): the old kind margin was 0.25. */
-    private fun isOldPothole(kindScore: Double, kindVotes: Int) = kindVotes > 0 && kindScore >= 0.25
+    private fun isOldPothole(kindScore: Double, kindVotes: Int) = kindVotes > 0 && kindScore >= OLD_POTHOLE_MARGIN
 
     override fun logEvent(e: BumpEvent) {
         val v = ContentValues().apply {
@@ -344,7 +370,8 @@ class BumpDb(ctx: Context) : SQLiteOpenHelper(ctx, "bumps.db", null, 7), BumpSto
 
     fun bumpsCsv(cfg: EngineConfig = EngineConfig()): String {
         val sb = StringBuilder(
-            "id,lat,lon,heading,hits,passes,misses,hit_rate,muted,first_seen,last_seen,kind,kind_score,kind_votes,user_muted,harsh,side,side_score,side_votes,peak_avg_ms2\n"
+            "id,lat,lon,heading,hits,passes,misses,hit_rate,muted,first_seen,last_seen,kind,kind_score,kind_votes,user_muted,harsh,side,side_score,side_votes,peak_avg_ms2," +
+                "sev_index,axle_hits,legacy,last_band\n"
         )
         for (b in loadBumps()) {
             sb.append(b.id).append(',')
@@ -356,7 +383,10 @@ class BumpDb(ctx: Context) : SQLiteOpenHelper(ctx, "bumps.db", null, 7), BumpSto
                 // Same columns as before, so older versions still import it: kind_score / kind_votes carry the
                 // "old pothole spot" flag, harsh = strong; there is no side any more.
                 .append("bump,").append(if (b.legacy) "1.00,1," else "0.00,0,").append(if (b.userMuted) 1 else 0).append(',')
-                .append(if (b.severity(cfg) == Severity.STRONG) 1 else 0).append(",unknown,0.00,0,").append(num(b.peakAvg, 2)).append('\n')
+                .append(if (b.severity(cfg) == Severity.STRONG) 1 else 0).append(",unknown,0.00,0,").append(num(b.peakAvg, 2)).append(',')
+                // v8's own columns, at the end so older versions skip them.
+                .append(num(b.sevIndex, 2)).append(',').append(b.axleHits).append(',').append(if (b.legacy) 1 else 0).append(',')
+                .append(b.lastBand?.label ?: "").append('\n')
         }
         return sb.toString()
     }
@@ -376,6 +406,7 @@ class BumpDb(ctx: Context) : SQLiteOpenHelper(ctx, "bumps.db", null, 7), BumpSto
         val iHits = idx("hits"); val iPasses = idx("passes"); val iMisses = idx("misses")
         val iScore = idx("kind_score"); val iVotes = idx("kind_votes"); val iUserMuted = idx("user_muted")
         val iPeak = idx("peak_avg_ms2")
+        val iSev = idx("sev_index"); val iAxle = idx("axle_hits"); val iLegacy = idx("legacy"); val iBand = idx("last_band")
 
         val known = loadBumps().toMutableList()
         var added = 0; var dup = 0; var bad = 0
@@ -397,10 +428,13 @@ class BumpDb(ctx: Context) : SQLiteOpenHelper(ctx, "bumps.db", null, 7), BumpSto
                 val passes = (n(iPasses) ?: hits).coerceAtLeast(hits)
                 val misses = (n(iMisses) ?: (passes - hits)).coerceIn(0, passes)
                 val peak = (d(iPeak) ?: 0.0).coerceIn(0.0, 50.0)
+                // A v8 file carries severity and the old-pothole flag itself; an older one has them in peak / kind.
                 val b = Bump(
                     0, lat, lon, hd, hits, passes, misses, hits, now, now,
-                    userMuted = (n(iUserMuted) ?: 0) != 0, peakAvg = peak, sevIndex = peak,
-                    legacy = isOldPothole(d(iScore) ?: 0.0, n(iVotes) ?: 0),
+                    userMuted = (n(iUserMuted) ?: 0) != 0, peakAvg = peak, sevIndex = (d(iSev) ?: peak).coerceIn(0.0, 100.0),
+                    axleHits = (n(iAxle) ?: 0).coerceIn(0, hits),
+                    legacy = n(iLegacy)?.let { it != 0 } ?: isOldPothole(d(iScore) ?: 0.0, n(iVotes) ?: 0),
+                    lastBand = band(if (iBand in f.indices) f[iBand].trim() else null),
                 )
                 b.id = db.insert("bumps", null, values(b))
                 known.add(b)
@@ -439,4 +473,9 @@ class BumpDb(ctx: Context) : SQLiteOpenHelper(ctx, "bumps.db", null, 7), BumpSto
     // Always US format: an Arabic-locale phone would otherwise write Arabic digits into the CSV.
     private fun num(x: Double, digits: Int) = String.format(Locale.US, "%.${digits}f", x)
     private fun time(ms: Long) = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).format(Date(ms))
+
+    private companion object {
+        /** Before v2 a spot was a pothole once its kind score passed this margin. */
+        const val OLD_POTHOLE_MARGIN = 0.25
+    }
 }
