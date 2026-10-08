@@ -33,6 +33,8 @@ class Rr2Trip(
     val complete: Boolean,
     /** A segment was cut off mid-write (the app was killed); it was read up to its last flush. */
     val truncated: Boolean,
+    /** Segment numbers missing between 0 and the last one given (the upload skips segments wholly in the privacy zone). */
+    val missingSegments: List<Int> = emptyList(),
 ) {
     /** The user's placement setting while recording: mounted, cupholder, pocket or unknown. */
     val placement: String get() = meta["placement"] ?: "unknown"
@@ -42,36 +44,61 @@ object Rr2 {
     /** Codes of the phone's own state, for E3's PhoneSignals. */
     val PHONE_CODES = setOf("scr", "unl", "aud", "px", "lx")
 
-    /** A research recording (any format version): its first line is `# format=…`. CSV traces start otherwise. */
+    /** The engine's default sensor period (Prefs.sensorPeriodUs): 50 Hz asked, ≤ 100 Hz while research records. */
+    const val DEFAULT_SENSOR_PERIOD_US = 20_000
+
+    /**
+     * A research recording (any format version): a `# format=…` line among the comment lines it starts with. Readers
+     * map the header by key (the contract), so not only the first line counts. CSV traces have no `format` key.
+     */
     fun isResearch(f: File): Boolean {
         val raw = f.inputStream().buffered()
         raw.mark(2)
         val gzip = raw.read() == 0x1f && raw.read() == 0x8b
         raw.reset()
         val text = if (gzip) GZIPInputStream(raw) else raw
-        return text.bufferedReader(Charsets.UTF_8).use { it.readLine()?.startsWith("# format=") == true }
+        return text.bufferedReader(Charsets.UTF_8).use { r ->
+            r.lineSequence().takeWhile { it.startsWith("#") }.any { it.removePrefix("#").trim().substringBefore('=') == "format" }
+        }
     }
 
-    fun read(files: List<File>): Rr2Trip = readStreams(files.map { it.inputStream() })
+    fun read(files: List<File>, sensorPeriodUs: Int = DEFAULT_SENSOR_PERIOD_US): Rr2Trip =
+        readStreams(files.map { it.inputStream() }, sensorPeriodUs)
 
-    /** The segments of one trip, in any order. Refuses other format versions and segments of different trips. */
-    fun readStreams(segments: List<InputStream>): Rr2Trip {
+    /**
+     * The segments of one trip, in any order, fed as the engine got them with [sensorPeriodUs] set
+     * ([RateAverager.forPeriod]). Refuses other format versions, segments of different trips and a segment given twice.
+     */
+    fun readStreams(segments: List<InputStream>, sensorPeriodUs: Int = DEFAULT_SENSOR_PERIOD_US): Rr2Trip {
         val parts = segments.map { ResearchReader.read(it) }
         for (p in parts) require(p.meta["format"] == ResearchFormat.VERSION) { "not an rr2 recording: format=${p.meta["format"]}" }
         val trips = parts.map { listOf(it.meta[ResearchFormat.RESEARCH_ID], it.meta[ResearchFormat.START_UTC_MS]) }.distinct()
         require(trips.size == 1) { "segments of ${trips.size} different trips" }
-        val ordered = parts.sortedBy { it.meta[ResearchFormat.SEGMENT]?.toIntOrNull() ?: 0 }
-        return convert(ordered)
+        val missing = missingSegments(parts.map { segmentOf(it) })
+        return convert(parts.sortedBy { segmentOf(it) }, sensorPeriodUs, missing)
     }
 
-    private fun convert(parts: List<ResearchFile>): Rr2Trip {
+    fun segmentOf(p: ResearchFile): Int = p.meta[ResearchFormat.SEGMENT]?.toIntOrNull() ?: 0
+
+    /** The numbers missing from 0 to the highest of [numbers]; a number given twice is refused. */
+    fun missingSegments(numbers: List<Int>): List<Int> {
+        val twice = numbers.groupingBy { it }.eachCount().filterValues { it > 1 }.keys
+        require(twice.isEmpty()) { "segment ${twice.sorted().joinToString()} given twice" }
+        return (0..(numbers.maxOrNull() ?: 0)).filter { it !in numbers }
+    }
+
+    private fun convert(parts: List<ResearchFile>, sensorPeriodUs: Int, missing: List<Int>): Rr2Trip {
+        // Milliseconds as the phone's: the absolute monotonic time (start_elapsed_ns + t) rounded down, from the start's.
+        val startNs = parts.first().meta[ResearchFormat.START_ELAPSED_NS]?.toLongOrNull()
+        fun ms(t: Long): Long = if (startNs == null) Math.floorDiv(t, ResearchFormat.T_PER_MS)
+            else Math.floorDiv(startNs + t * ResearchFormat.NS_PER_T, NS_PER_MS) - Math.floorDiv(startNs, NS_PER_MS)
         // Lines come in delivery order (GPS carries its own older time, batched sensors come late): sort each code by time.
         val byCode = parts.flatMap { it.records }.groupBy { it.code }.mapValues { (_, v) -> v.sortedBy { it.tDms } }
         fun of(code: String) = byCode[code].orEmpty()
         val out = ArrayList<TraceSample>()
-        val gyro = averaged(of("g"))
+        val gyro = averaged(of("g"), sensorPeriodUs, ::ms)
         var gi = -1
-        for (a in averaged(of("a"))) {
+        for (a in averaged(of("a"), sensorPeriodUs, ::ms)) {
             // The engine keeps the latest gyroscope value; the CSV traces carry it on every accelerometer row the same way.
             while (gi + 1 < gyro.size && gyro[gi + 1][0] <= a[0]) gi++
             val g = if (gi >= 0) gyro[gi] else NO_GYRO
@@ -92,13 +119,13 @@ object Rr2 {
         val gravity = of("gr").map { doubleArrayOf(ms(it.tDms).toDouble(), it.value(0), it.value(1), it.value(2)) }
         return Rr2Trip(
             parts.first().meta, out.sortedBy { it.tMs }, phone, gravity, parts.size,
-            parts.last().meta.containsKey(ResearchFormat.END_LINES), parts.any { it.truncated },
+            parts.last().meta.containsKey(ResearchFormat.END_LINES), parts.any { it.truncated }, missing,
         )
     }
 
-    /** One 3-axis stream through the app's [RateAverager]: (time ms, x, y, z) per finished bin. */
-    private fun averaged(lines: List<ResearchRecord>): List<DoubleArray> {
-        val avg = RateAverager()
+    /** One 3-axis stream through the app's [RateAverager] for [periodUs]: (time ms, x, y, z) per bin, or per sample. */
+    private fun averaged(lines: List<ResearchRecord>, periodUs: Int, ms: (Long) -> Long): List<DoubleArray> {
+        val avg = RateAverager.forPeriod(periodUs)
         val out = ArrayList<DoubleArray>()
         for (r in lines) {
             val x = r.value(0)
@@ -106,13 +133,13 @@ object Rr2 {
             val z = r.value(2)
             if (x.isNaN() || y.isNaN() || z.isNaN()) continue
             val t = ms(r.tDms)
-            if (avg.add(t, x, y, z)) out.add(doubleArrayOf(t.toDouble(), avg.x, avg.y, avg.z))
+            if (avg == null) out.add(doubleArrayOf(t.toDouble(), x, y, z))
+            else if (avg.add(t, x, y, z)) out.add(doubleArrayOf(t.toDouble(), avg.x, avg.y, avg.z))
         }
         return out
     }
 
-    /** Whole milliseconds since the trip start, rounded down like the app's sensor times. */
-    private fun ms(tDms: Long): Long = Math.floorDiv(tDms, ResearchFormat.T_PER_MS)
+    private const val NS_PER_MS = 1_000_000L
 
     private val NO_GYRO = doubleArrayOf(0.0, Double.NaN, Double.NaN, Double.NaN)
 }

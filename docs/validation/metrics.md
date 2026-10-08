@@ -4,7 +4,12 @@ How labelled recordings are scored. `tools/replay` computes all of this (`Metric
 definition, and the code must match it. Targets are the P1 exit criteria from `ROADMAP.md`.
 
 ## Inputs
-- **Runs**: one or more recordings of the same route (`replay --trace run1.csv --trace run2.csv …`, oldest first).
+- **Runs**: one or more recordings of the same route (`replay --trace run1.csv --trace run2.csv …`, oldest first):
+  CSV traces, or research recordings (rr2), whose segments of one trip are one run, fed to the engine at the rate the
+  phone fed it while research recorded: the app's `RateAverager` for `--sensor-period-us` (the engine's sensor period,
+  default 20000), on the phone's millisecond clock (`start_elapsed_ns` + the line's time). A segment given twice is
+  refused; a missing one is reported. `--placement` sets the phone placement they are replayed with (mounted,
+  cupholder, pocket, unknown; `recording` = each file's own setting); without it, unknown. Anything else fails.
   They are replayed one after another on **one shared map** that starts empty: a fresh engine per recording (one
   trip each, as on the phone), the same store for all. With a single recording the map is empty until the engine
   finds something, so beeps, and the two metrics built on them and on repeat passes, only mean something over
@@ -14,8 +19,10 @@ definition, and the code must match it. Targets are the P1 exit criteria from `R
   interpolated between the two GPS fixes around it, or, after the last fix, moved on from that fix along its bearing
   at its speed (for at most 2 s); before the first fix it takes the first fix. Its **speed** is the speed of the GPS
   fix nearest in time (unknown if no fix within 3 s).
-  - Hazard labels: `bump`, `pothole_l`, `pothole_r`. `rough` (a rough stretch, not one spot) is not a hazard: it is
-    never counted as missed, but a detection on it is not counted as false either.
+  - Hazard labels: `bump`, with or without its band (`bump_mild`, `bump_moderate`, `bump_strong`); older recordings'
+    `pothole_l` / `pothole_r` read as `bump` (every jolt is a bump since v2). `rough` (a rough stretch, not one spot)
+    and `nothing` (a jolt that was no bump) are not hazards: never counted as missed, and a detection on `rough` is not
+    counted as false either.
 - **Detections**: the engine's `new_bump` and `hit` events from the replay.
   `hit_repeat` (a second jolt on the same pass, e.g. the rear axle) is not a detection. A detection's time is
   when the engine logged it (≈ 1.2 s after the jolt); its place is the engine's position of the jolt.
@@ -41,11 +48,24 @@ The detection's jolt time is its logged time minus the engine's decision delay (
 | **Recall ≥ 25 km/h** | matched hazard labels ÷ hazard labels whose speed was ≥ 25 km/h | ≥ 0.95 |
 | **Recall overall** | matched hazard labels ÷ all hazard labels | ≥ 0.85 |
 | **False warnings / 100 km** | beeps with no label (any kind, any pass, any run) within **30 m** of the warned spot, per 100 km driven (all runs). The warned spot is the beep's distance ahead of the car along its heading; if the beep has no heading or distance, the car's own position. | ≤ 1 |
-| **Bump vs pothole** | over matched hazard labels: the spot's kind after that hit (from the event note: `new_bump` first word, `hit` `now=`) equals the label (`bump` → bump, `pothole_l/_r` → pothole). `unsure` counts as wrong. | ≥ 85 % |
-| **Pothole side** | over matched `pothole_l`/`pothole_r` labels: the hit's `side=left/right` equals the label. No side (no gyroscope, no clear roll) counts as wrong. | ≥ 80 % |
 | **Spot learned within 2 passes** | hazard labels of all runs, in replay order, are grouped into spots (within 15 m of the spot's first label); each label is one pass, so pass 1 and 2 are normally runs 1 and 2. Over spots labelled at least twice: the share where pass 1 or pass 2 has a matched detection. | tracked, no target yet |
 
-A ratio with nothing to count (e.g. no potholes labelled) is reported as `null` / `–`, never as 0 or 1.
+A ratio with nothing to count (e.g. no hazards labelled) is reported as `null` / `–`, never as 0 or 1. The old
+"Bump vs pothole" and "Pothole side" rows are gone since v2 (no potholes, no sides).
+
+## Labels against decisions
+For labelled drives, a table pairs each label (undo applied) with the closest **judged jolt** within **±3 s**, one to
+one, closest in time first. A judged jolt is any `new_bump` (learned), `hit`, `hit_repeat` (same pass) or `rejected`
+event (with its reason, e.g. `rejected phone_moving`); its time is the event's logged time minus
+`EngineConfig.decideAfterMs` (1.2 s), the moment the jolt triggered. Rows are label kinds plus "(no label)" for jolts
+nobody labelled; columns are the decisions plus "(no jolt)" for labels with no jolt near them. A `nothing` label on a
+learned jolt is a false bump; a `bump` with "(no jolt)", a miss.
+
+## Drive summary (every drive, labelled or not)
+Counts of what the engine did (learned, warnings, hits, misses, rejections by reason, harsh events, phone use), plus:
+- **Severity**: spots felt (learned + hits) by band after the hit (mild / moderate / strong, from the event note
+  `sev=`), and by confidence (soft / full, `conf=`).
+- **Placement**: the placement the drive was replayed with.
 
 Other P1 criteria (harsh-brake F1 ≥ 0.85, driving score ± 7, battery ≤ 4–6 %/h) are measured separately; they are
 not computed by the replay tool yet.
@@ -53,6 +73,7 @@ not computed by the replay tool yet.
 ## Output
 - `metrics.json`: every ratio above (over all runs) plus the raw counts (`labels`, `matched_labels`, `detections`, …);
   with several runs also `runs`, with labels, detections, beeps and false warnings per run.
-- A markdown table on stdout with pass/**FAIL** per target, for pasting into PRs, plus a per-run table for several runs.
+- A markdown table on stdout with pass/**FAIL** per target, for pasting into PRs, plus a per-run table for several runs,
+  the drive summary of each run, and, with labels, the labels-against-decisions table.
 
 A "pass" on false warnings from a single recording does not count toward P1: replay all runs of a route together.
