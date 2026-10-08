@@ -42,6 +42,12 @@ class EngineConfig {
     var decideAfterMs = 1200L
     /** Ignore further jolts for this long (rear axle, suspension rebound). */
     var refractoryMs = 2500L
+    /**
+     * ...unless the jolt was rejected as the phone's: then only while the phone is untrusted, if its handling began no
+     * later than this after the jolt (a jostle's own jolt comes slightly first). A jolt well before the handling (a
+     * real bump that shook the phone) keeps its refractory time.
+     */
+    var phoneJoltLeadMs = 250L
 
     /** A hit this close to a known bump (same direction) is that bump. */
     var matchRadiusM = 20.0
@@ -220,12 +226,14 @@ class BumpEngine(
     private var fastZ = 0.0
     private var accelReady = false
     private var lastAccelMs = 0L
-    /** Last time the phone was being moved (picked up, adjusted). */
-    var lastUnstableMs = Long.MIN_VALUE / 4
-        private set
     private var joltStartMs = -1L
     private var joltPeak = 0.0
     private var refractoryUntilMs = Long.MIN_VALUE / 4
+    /**
+     * The last jolt was the phone's ([handledReason]) and its handling had begun by then ([EngineConfig.phoneJoltLeadMs]):
+     * it holds the next one off only while the phone is untrusted.
+     */
+    private var phoneJolt = false
     /** Strongest vertical jolt since the last GPS fix (to report how close a "miss" came). */
     private var maxVertSinceFix = 0.0
 
@@ -374,10 +382,9 @@ class BumpEngine(
         if (bufCount < BUF) bufCount++
         ring?.let { addToRing(it, tMs, v) }
 
-        // Is the phone being moved (picked up, dropped, adjusted)? The same angle as the phone detector's fast turn.
+        // Is the phone turning (picked up, dropped, adjusted)? Whether it is handled is [phone]'s call; the angle is its fast turn.
         val cosTilt = ((slowX * fastX + slowY * fastY + slowZ * fastZ) / (g * f)).coerceIn(-1.0, 1.0)
         if (radToDeg(acos(cosTilt)) > phone.cfg.turnDeg) {
-            lastUnstableMs = tMs
             // It may sit differently when it is put back: learn gravity and "forward" again.
             gravX = slowX; gravY = slowY; gravZ = slowZ
             gravSettledS = 0.0
@@ -392,10 +399,12 @@ class BumpEngine(
                 joltStartMs = -1
                 decide(start, joltPeak)
             }
-        } else if (abs(v) >= cfg.joltThreshold && tMs >= refractoryUntilMs) {
+        } else if (abs(v) >= cfg.joltThreshold && (tMs >= refractoryUntilMs || (phoneJolt && !phone.untrusted(tMs, tMs)))) {
+            // A rejected jostle has no rear axle to wait for: a bump right after it (braking before it) still counts.
             joltStartMs = tMs
             joltPeak = abs(v)
             refractoryUntilMs = tMs + cfg.refractoryMs
+            phoneJolt = false
         }
     }
 
@@ -403,7 +412,11 @@ class BumpEngine(
     private fun decide(tMs: Long, peak: Double) {
         // The decision comes 1.2 s after the jolt, so a newer fix may already be in. Use the one closest in time.
         val fix = fixes.minByOrNull { abs(it.timeMs - tMs) }
-        if (lastUnstableMs >= tMs - 1500) { reject(tMs, peak, "phone_moving", fix); return }
+        handledReason(tMs)?.let {
+            phoneJolt = phone.episodeStartMs <= tMs + cfg.phoneJoltLeadMs
+            reject(tMs, peak, it, fix)
+            return
+        }
         if (fix == null || abs(tMs - fix.timeMs) > cfg.maxFixAgeMs) { reject(tMs, peak, "no_gps", fix); return }
         if (fix.accuracyM > cfg.maxAccuracyM) { reject(tMs, peak, "weak_gps", fix); return }
         val speedKmh = fix.speedMps * 3.6
@@ -425,6 +438,17 @@ class BumpEngine(
         val slowdownKmh = max(0.0, (maxRecent - fix.speedMps) * 3.6)
 
         registerHit(tMs, pos[0], pos[1], speedKmh, peak, slowdownKmh, shape)
+    }
+
+    /**
+     * Why a jolt at [tMs] is the phone's and not the road's, or null: its readings were not trusted from the jolt until
+     * now ([PhoneStateDetector.untrusted]: handled, or within 2 s after a handling; a jostle ends 0.5 s after its motion,
+     * with no margin). The decision waits [EngineConfig.decideAfterMs], so a pick-up that starts with the jolt is seen.
+     * A jostle in pocket mode is "phone_moving", anything else "handled". No new spot, no hit, in someone's hand.
+     */
+    private fun handledReason(tMs: Long): String? {
+        if (!phone.untrusted(tMs, lastAccelMs)) return null
+        return if (phone.pocketMode && phone.onlyJostles(tMs, lastAccelMs)) "phone_moving" else "handled"
     }
 
     /**
@@ -964,6 +988,13 @@ class BumpEngine(
     private fun finishPass(b: Bump, a: Approach, f: Fix) {
         if (ring != null && !a.hit) nearMs[b.id] = Near(a.minDistMs, passKmh(a, f), a.maxJoltNear)
         val nearNote = "strongest jolt nearby ${formatFixed(a.maxJoltNear, 1)} m/s²"
+        val near = phone.cfg.marginMs
+        if (!a.counted && !a.hit && phone.untrusted(a.minDistMs - near, a.minDistMs + near)) {
+            // The phone was in someone's hand over the spot: its jolts weren't trusted, so the pass says nothing.
+            log("pass_handled", b.id, f.lat, f.lon, passKmh(a, f), a.maxJoltNear, Double.NaN, a.minDist, "not counted, phone handled")
+            listener.onPassed(b, false)
+            return
+        }
         if (!a.counted && !a.hit && a.minSpeedNearMps * 3.6 < cfg.minInformativeKmh) {
             // Crawled over it without feeling anything: can't tell, so it counts neither way.
             log("pass_slow", b.id, f.lat, f.lon, a.minSpeedNearMps * 3.6, a.maxJoltNear, Double.NaN, a.minDist, "not counted, $nearNote")
