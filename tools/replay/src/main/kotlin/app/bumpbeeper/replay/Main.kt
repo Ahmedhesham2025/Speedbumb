@@ -7,7 +7,8 @@ import kotlin.system.exitProcess
 
 private const val USAGE = """Usage:
   replay --trace run1.csv[.gz] [--trace run2.csv …] [--out metrics.json]
-      replay labelled recordings (the runs of one route, oldest first) on one shared map, print the accuracy table
+      replay labelled recordings (the runs of one route, oldest first) on one shared map, print the accuracy table;
+      research recordings (rr2, rr_<id>_<start>_<segment>.csv.gz) are read too, the segments of a trip as one run
   anonymize --in raw.csv[.gz] --out anon.csv[.gz]      fake origin + clock at zero, before anything enters testdata/"""
 
 fun main(args: Array<String>) {
@@ -24,7 +25,7 @@ fun main(args: Array<String>) {
     when (args.firstOrNull()) {
         "replay" -> {
             if (traces.isEmpty()) usage()
-            val runs = replayRuns(traces.map { Pair(it.name, readLines(it)) })
+            val runs = replaySamples(loadRecordings(traces))
             val report = Metrics.compute(runs)
             opts["out"]?.let { File(it).writeText(report.toJson()) }
             val title = if (traces.size == 1) traces[0].name else "${traces.size} runs (${traces.first().name} … ${traces.last().name})"
@@ -54,13 +55,43 @@ fun readLines(f: File): List<String> {
 }
 
 /**
- * Replays recordings (name, CSV lines) one after another on ONE map, like the same phone driving the route again:
+ * Recordings in the order given, as (name, samples): a CSV trace is one run; research (rr2) files of one trip
+ * (same `rr_<id>_<start>` name) are joined into one run, named after the trip.
+ */
+fun loadRecordings(files: List<File>): List<Pair<String, List<TraceSample>>> {
+    val out = ArrayList<Pair<String, List<TraceSample>>>()
+    val trips = LinkedHashMap<String, MutableList<File>>()
+    for (f in files) {
+        if (Rr2.isResearch(f)) {
+            val key = f.name.removeSuffix(".gz").removeSuffix(".csv").substringBeforeLast('_')
+            if (key !in trips) out.add(Pair(key, emptyList()))   // keeps its place among the runs
+            trips.getOrPut(key) { ArrayList() }.add(f)
+        } else {
+            out.add(Pair(f.name, TraceReader.read(readLines(f).asSequence())))
+        }
+    }
+    return out.map { (name, samples) ->
+        val segments = trips[name] ?: return@map Pair(name, samples)
+        val trip = Rr2.read(segments)
+        if (!trip.complete || trip.truncated) System.err.println("$name: cut short (no footer or a truncated segment)")
+        Pair(name, trip.samples)
+    }
+}
+
+/** [replaySamples] for CSV traces given as lines. */
+fun replayRuns(recordings: List<Pair<String, List<String>>>): List<Run> =
+    replaySamples(recordings.map { (name, lines) -> Pair(name, TraceReader.read(lines.asSequence())) })
+
+/**
+ * Replays recordings (name, samples) one after another on ONE map, like the same phone driving the route again:
  * a fresh engine per recording (one trip each), sharing a store that starts empty, like a fresh install.
  */
-fun replayRuns(recordings: List<Pair<String, List<String>>>): List<Run> {
+fun replaySamples(recordings: List<Pair<String, List<TraceSample>>>): List<Run> {
     val store = MemStore()
-    return recordings.mapIndexed { k, (name, lines) ->
-        val samples = TraceReader.read(lines.asSequence())
+    return recordings.mapIndexed { k, (name, samples) ->
+        // TODO(E3 #123/#125): replay research trips' phone signals (Rr2Trip.phone) into engine.phone.signals once E3 has
+        //  merged: scr → screenOn, unl → unlockedAtMs, px → proximityNear (< min(sensor max, 5 cm)), lx → lux,
+        //  aud → handheldCall (mode 2 or 3 with call_device 1, the earpiece). Needs a per-sample hook in Replayer.
         val result = Replayer.replay(samples, store, tripId = k + 1L)
         Run(name, Metrics.labels(samples), result, samples)
     }
