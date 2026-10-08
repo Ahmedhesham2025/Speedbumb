@@ -21,11 +21,11 @@ class NoPotholeWordingTest {
     @Test fun noStringsFileMentionsPotholes() {
         val files = res().listFiles { f -> f.isDirectory && f.name.startsWith("values") }.orEmpty()
             .flatMap { d -> d.listFiles { f -> f.name.startsWith("strings") && f.name.endsWith(".xml") }.orEmpty().toList() }
-        assertTrue("English and Arabic at least", files.map { it.parentFile.name }.toSet().containsAll(listOf("values", "values-ar")))
+        assertTrue("English and Arabic at least", files.map { it.parentFile?.name }.toSet().containsAll(listOf("values", "values-ar")))
         val hits = files.flatMap { f ->
             f.readLines(Charsets.UTF_8).withIndex()
                 .filter { (_, line) -> banned.any { it.containsMatchIn(line) } }
-                .map { (i, line) -> "${f.parentFile.name}/${f.name}:${i + 1}: ${line.trim().take(120)}" }
+                .map { (i, line) -> "${f.parentFile?.name}/${f.name}:${i + 1}: ${line.trim().take(120)}" }
         }
         if (hits.isNotEmpty()) fail("Pothole wording is back in the UI strings:\n" + hits.joinToString("\n"))
     }
