@@ -112,6 +112,8 @@ class ResearchRecorder private constructor(private val ctx: Context, private val
     private val km = ctx.getSystemService(Context.KEYGUARD_SERVICE) as KeyguardManager
     private val t0Ns = SystemClock.elapsedRealtimeNanos()
     private val startUtcMs = System.currentTimeMillis()
+    /** The trip part of this recording's file names ([ResearchFiles.stamp]): its key in the [ResearchQueue]. */
+    val stamp: String = ResearchFiles.stamp(startUtcMs)
     private val thread = HandlerThread("research").apply { start() }
     private val h = Handler(thread.looper)
     /** Header lines that are the same in every file of this trip (set in [start], read on the writer thread). */
@@ -121,7 +123,7 @@ class ResearchRecorder private constructor(private val ctx: Context, private val
     private val writer = ResearchWriter(
         file = { seg -> File(ResearchFiles.dir(ctx), ResearchFiles.name(id, startUtcMs, seg)) },
         header = { seg -> ResearchFormat.header(meta + listOf("${ResearchFormat.RESEARCH_ID}=$id", "${ResearchFormat.SEGMENT}=$seg")) },
-        beforeSegment = { ResearchFiles.tidy(ResearchFiles.dir(ctx), System.currentTimeMillis()) },
+        beforeSegment = { ResearchQueue.tidy(ctx, System.currentTimeMillis()) },   // never prunes files waiting for upload
         minFreeBytes = MIN_FREE_BYTES,
     )
     @Volatile private var stopped = false
