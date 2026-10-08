@@ -177,8 +177,8 @@ useful phone sensor during your trips so the detection can be improved offline.
   deletes their recordings. About 27–32 MB per hour of driving, in files of about 5 MB.
 - **Where and who:** to a private store on our server (Supabase, Frankfurt), in a folder named after your anonymous
   account ID, shown in Settings as your **Research ID**. Phones can only add files there, never read them. The app's
-  owner downloads the files for research (at least weekly), which deletes them from the server, and uses them only to
-  improve detection: never sold, never used for ads.
+  owner downloads the files for research (at least weekly), which deletes them from the server, keeps the downloaded
+  copies **up to 12 months**, and uses them only to improve detection: never sold, never used for ads.
 - **Turning it off** stops recording and uploading at once (the server is told when the phone is next online). Files
   already uploaded **stay until deleted on request**. The private way is **Delete my shared data** (Settings → Shared
   map): it has them erased, together with any downloaded copies, at the owner's next run (at least weekly). You can also
@@ -210,7 +210,7 @@ Supabase sees the internet address a request comes from; its own sign-in records
 | Daily upload counters for training samples (counts per device, no content) | 2 days |
 | Research recordings (on the phone, whole GPS route included) | 14 days, or 7 days after their upload; a zip you shared stays in Downloads until you delete it |
 | Research recordings (our server) | Until the owner downloads them (at least weekly); with *Delete my shared data*, erased at the owner's next run |
-| Research recordings downloaded by the app's owner | **TODO-OWNER: The owner keeps downloaded copies for up to 12 months** (to be confirmed by the owner), or until you ask for deletion with your Research ID or use *Delete my shared data* |
+| Research recordings downloaded by the app's owner | **Up to 12 months**, or until you ask for deletion with your Research ID or use *Delete my shared data* |
 | Research upload records (anonymous ID, file name with the trip's start time, size, upload time) | Kept after the owner clears the file, until you use *Delete my shared data* or ask for deletion |
 
 ## Your choices
@@ -408,7 +408,7 @@ TomTom: <https://www.tomtom.com/privacy/>. سيرفرنا مش بيحتفظ بح
 - **فين ومين:** مخزن خاص على سيرفرنا (Supabase، فرانكفورت)، في فولدر باسم المُعرّف المجهول بتاعك، اللي بيظهر في
   الإعدادات باسم **رقم البحث**. الموبايل يقدر يضيف ملفات بس، عمره ما يقراها. صاحب التطبيق بينزّل الملفات للبحث (مرة في
   الأسبوع على الأقل) وده بيمسحها من السيرفر، وبيستخدمها بس لتحسين الكشف، وعمرها ما بتتباع ولا بتُستخدم للإعلانات.
-  **TODO-OWNER: صاحب التطبيق بيحتفظ بالنسخ اللي نزّلها لحد 12 شهر** (صاحب التطبيق لسه هيأكّد المدة).
+  صاحب التطبيق بيحتفظ بالنسخ اللي نزّلها **لحد 12 شهر**، أو لحد ما تطلب مسحها أو تستخدم «امسح بياناتي المتشاركة».
 - **لو قفلته** التسجيل والرفع بيقفوا على طول. الملفات اللي اترفعت **بتفضل لحد ما تطلب مسحها**. الطريقة الخاصة هي
   «امسح بياناتي المتشاركة» (الإعدادات ← الخريطة المتشاركة): بيمسحها هي والنسخ اللي اتنزّلت أول مرة صاحب التطبيق يشغّل
   أداة البحث (مرة في الأسبوع على الأقل). وتقدر كمان تطلب من صاحب التطبيق برقم البحث بتاعك (الإعدادات ← تسجيلات البحث ←
