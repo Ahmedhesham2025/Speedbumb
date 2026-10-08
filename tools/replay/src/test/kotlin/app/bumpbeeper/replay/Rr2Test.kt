@@ -107,8 +107,8 @@ class Rr2Test {
             assertTrue(Rr2.isResearch(File(dir, "${name}_001.csv.gz")))
             assertFalse(Rr2.isResearch(csv))
             val runs = loadRecordings(listOf(File(dir, "${name}_000.csv.gz"), csv, File(dir, "${name}_001.csv.gz")))
-            assertEquals(listOf(name, "trace.csv"), runs.map { it.first })
-            assertEquals(listOf(0L, 60_000L), runs[0].second.map { it.tMs })
+            assertEquals(listOf(name, "trace.csv"), runs.map { it.name })
+            assertEquals(listOf(0L, 60_000L), runs[0].samples.map { it.tMs })
         } finally {
             dir.deleteRecursively()
         }

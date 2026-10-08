@@ -64,7 +64,6 @@ class SelfTest {
         assertEquals(1.0, r.precision, 1e-9)
         assertEquals(1.0, r.recall, 1e-9)
         assertEquals(1.0, r.recallFast, 1e-9)
-        assertEquals(1.0, r.kindAccuracy, 1e-9)
         assertEquals(0, r.falseWarnings)
         assertEquals(1.2, r.distanceKm, 0.1)
     }
@@ -75,7 +74,6 @@ class SelfTest {
         val r = metricsOf(anon.joinToString("\n"))
         assertEquals(1.0, r.precision, 1e-9)
         assertEquals(1.0, r.recall, 1e-9)
-        assertEquals(1.0, r.kindAccuracy, 1e-9)
     }
 
     // ---------- core's simulator: gyroscope, phone tilted in a holder, GPS 0.8 s late with ±3 m noise ----------
@@ -110,16 +108,13 @@ class SelfTest {
         val r = Metrics.compute(runs)
         println(r.toMarkdown("simulated, gyroscope, potholes at 40 km/h"))
         val dets = Metrics.detections(runs[0].result.events)
-        for (l in runs[0].labels) for (d in dets) println(String.format(java.util.Locale.US, "  label %s t=%d  det %s t=%d  %.1f m", l.kind, l.tMs, d.kind, d.tMs, Geo.distance(l.lat, l.lon, d.lat, d.lon)))
+        for (l in runs[0].labels) for (d in dets) println(String.format(java.util.Locale.US, "  label %s t=%d  det %s t=%d  %.1f m", l.kind, l.tMs, d.band, d.tMs, Geo.distance(l.lat, l.lon, d.lat, d.lon)))
         assertEquals(3, r.labels)
         assertEquals(3, r.detections)
         assertEquals(1.0, r.precision, 1e-9)
         assertEquals(1.0, r.recall, 1e-9)
         assertEquals(2, r.labelsFast)                  // both potholes, hit at 40 km/h
         assertEquals(1.0, r.recallFast, 1e-9)
-        assertEquals(1.0, r.kindAccuracy, 1e-9)
-        assertEquals(0, r.sideChecked)                 // pothole labels read as bumps since E1: no side to check
-        assertTrue(r.sideAccuracy.isNaN())
     }
 
     @Test fun twoRunsOnOneMap() {
