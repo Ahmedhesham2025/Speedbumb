@@ -1,5 +1,6 @@
 package app.bumpbeeper.research
 
+import app.bumpbeeper.Geo
 import app.bumpbeeper.research.ResearchTrim.Plan
 import app.bumpbeeper.research.ResearchTrim.Stats
 import app.bumpbeeper.research.ResearchTrim.Window
@@ -15,6 +16,7 @@ import java.io.File
 import java.io.FileOutputStream
 import java.util.zip.GZIPInputStream
 import java.util.zip.GZIPOutputStream
+import kotlin.random.Random
 
 /** The privacy trim: every kind of line goes from the first and last 300 m driven, measured by speed × time. */
 class ResearchTrimTest {
@@ -113,6 +115,81 @@ class ResearchTrimTest {
         val w = ResearchTrim.window(ResearchTrim.scan(listOf(file("rr_0a1b2c3d_20261007T120000_000.csv.gz", lines))))!!
         assertEquals(310_000L, w.fromT)
         assertEquals(890_000L, w.toT)
+    }
+
+    /**
+     * Parked [parkedMin] minutes at each end (a fix every 5 s, wandering ±[wanderM] m, [speed] reported) around a 1,200 m
+     * drive north; an accelerometer line every 0.5 s. With [gapAtStart], no fix for the first minute, then a stale one
+     * (15 m/s) and another minute of nothing. Returns the lines and when the drive starts and ends (ms).
+     */
+    private fun parkedTrip(parkedMin: Int, wanderM: Double, speed: (Random) -> String, gapAtStart: Boolean = false): Triple<List<String>, Long, Long> {
+        val rnd = Random(7)
+        val start = parkedMin * 60_000L
+        val end = start + 120_000
+        fun wander() = ((rnd.nextDouble() * 2 - 1) * wanderM * 90).toLong()   // about 90 units of 1e-7 degree per metre
+        val out = ArrayList<String>()
+        for (ms in 0L..end + start step 500) {
+            out.add("${ms * 10},a,10,20,9810")
+            val moving = ms in start..end
+            if (gapAtStart && ms < 120_000) {
+                if (ms == 60_000L) out.add("600000,G,${300_000_000 + wander()},312000000,,1500,0,400,,,,5")
+                continue
+            }
+            if (ms % (if (moving) 1000 else 5000) != 0L) continue
+            val lat = if (moving) 300_000_000 + (ms - start) / 1000 * 898 else (if (ms < start) 300_000_000 else 300_107_760) + wander()
+            val lon = 312_000_000 + if (moving) 0L else wander()
+            out.add("${ms * 10},G,$lat,$lon,,${if (moving && speed(rnd).isNotEmpty()) "1000" else speed(rnd)},0,400,,,,5")
+        }
+        return Triple(out, start, end)
+    }
+
+    /** Nothing of the parked time leaves, and no kept fix is within 300 m of where the trip started or ended. */
+    private fun assertParkedTimeCut(name: String, trip: Triple<List<String>, Long, Long>) {
+        val (lines, start, end) = trip
+        val src = file(name, lines)
+        val w = ResearchTrim.window(ResearchTrim.scan(listOf(src)))!!
+        assertTrue("nothing before the drive", w.fromT >= start * 10)
+        assertTrue("nothing after it", w.toT <= end * 10)
+        val out = File(tmp.root, "upload/$name")
+        ResearchTrim.copy(src, out, w)
+        fun pos(line: String) = line.split(',').let { it[2].toDouble() / 1e7 to it[3].toDouble() / 1e7 }
+        val all = lines.filter { it.contains(",G,") }.map(::pos)
+        val kept = data(out).filter { it.contains(",G,") }.map(::pos)
+        assertTrue(kept.isNotEmpty())
+        for ((lat, lon) in kept) for (spot in listOf(all.first(), all.last())) {
+            assertTrue("a kept fix within 300 m of an end", Geo.distance(lat, lon, spot.first, spot.second) > 300.0)
+        }
+    }
+
+    @Test fun parkedWithSpeedJitterAtBothEndsUploadsNoneOfIt() {
+        // 20 minutes at 0.3–1 m/s of jitter come to about 800 m "driven" at each end.
+        assertParkedTimeCut("rr_0a1b2c3d_20261007T160000_000.csv.gz", parkedTrip(20, 10.0, { r -> (30 + r.nextInt(71)).toString() }))
+    }
+
+    @Test fun parkedWithoutSpeedValuesUploadsNoneOfIt() {
+        // No speed at all: ±15 m of wander every 5 s is measured as straight lines.
+        assertParkedTimeCut("rr_0a1b2c3d_20261007T170000_000.csv.gz", parkedTrip(20, 15.0, { "" }))
+    }
+
+    @Test fun aGpsGapAtTheStartUploadsNothingBeforeTheCarLeaves() {
+        // No fix for a minute while the sensors run, then a stale fix at 15 m/s: 450 m "driven" without moving.
+        assertParkedTimeCut("rr_0a1b2c3d_20261007T180000_000.csv.gz", parkedTrip(5, 5.0, { "0" }, gapAtStart = true))
+    }
+
+    @Test fun aTripInFourSegmentsGoesNothingTrimmedAsItIsTrimmed() {
+        val (lines, start, _) = parkedTrip(10, 10.0, { r -> (30 + r.nextInt(71)).toString() })
+        val cuts = listOf(start * 10, (start + 40_000) * 10, (start + 80_000) * 10, Long.MAX_VALUE)   // t of each segment's end
+        val segs = cuts.indices.map { i ->
+            val from = if (i == 0) Long.MIN_VALUE else cuts[i - 1]
+            file("rr_0a1b2c3d_20261007T190000_00$i.csv.gz", lines.filter { t(it) >= from && t(it) < cuts[i] })
+        }
+        val scan = ResearchTrim.scan(segs)
+        val w = ResearchTrim.window(scan)!!
+        assertEquals(listOf(Plan.NOTHING, Plan.TRIM, Plan.AS_IS, Plan.TRIM), scan.stats.map { ResearchTrim.plan(it, w) })
+        val cache = File(tmp.root, "upload")
+        assertNull("parked: nothing", ResearchTrim.prepare(segs[0], w, scan.stats[0], cache))
+        assertSame("all inside: sent as it is", segs[2], ResearchTrim.prepare(segs[2], w, scan.stats[2], cache))
+        for (i in listOf(1, 3)) assertTrue(data(ResearchTrim.prepare(segs[i], w, scan.stats[i], cache)!!).all { t(it) in w.fromT..w.toT })
     }
 
     @Test fun withoutSpeedItMeasuresStraightLines() {

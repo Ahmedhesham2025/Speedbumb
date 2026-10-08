@@ -34,7 +34,7 @@ class ResearchUploaderTest {
     private val day = 24 * 3600_000L
 
     /** Answers like Supabase. [reserve] / [upload]: answers in turn (then "ok" / 200). Uppercase id: the name must not be. */
-    private class Server(vararg reserve: String, val upload: ArrayDeque<Int> = ArrayDeque()) : Transport, FileTransport {
+    private class Server(vararg reserve: String, val upload: ArrayDeque<Int> = ArrayDeque(), val onUpload: () -> Unit = {}) : Transport, FileTransport {
         val reserve = ArrayDeque(reserve.toList())
         val calls = ArrayList<String>()
         val reserved = ArrayList<JSONObject>()
@@ -61,6 +61,7 @@ class ResearchUploaderTest {
             val body = file.readBytes()
             assertEquals("Content-Length is the file's exact size", body.size.toLong(), length)
             sent.add(Triple(url, headers, body))
+            onUpload()
             val code = upload.removeFirstOrNull() ?: 200
             return if (code == 200) HttpResult(200, """{"Key":"x"}""")
             else HttpResult(if (code == 413) 400 else code, """{"statusCode":"$code","error":"e","message":"m"}""")   // 413 inside a 400
@@ -77,6 +78,8 @@ class ResearchUploaderTest {
         TripHold.reset()
         TripHold.installResearch()
         Prefs.setResearchState(ctx, true, 1, offPending = false, onPending = false, serverOn = true, note = "")
+        // Signed in, as the consent call left it: the uploader itself never signs in as a new device.
+        SupabaseAuth(ctx, BuildConfig.SUPABASE_URL, BuildConfig.SUPABASE_KEY, Server()).accessToken()
     }
 
     @After fun tearDown() {
@@ -87,7 +90,9 @@ class ResearchUploaderTest {
     }
 
     /** A 1,200 m trip at 10 m/s in two segments (fixes every second, accelerometer lines between), ended 10 minutes ago. */
-    private fun trip(s: String = stamp, id: Long = 1, guessed: Boolean = false, toMs: Long = 120_001, part: Boolean = false) {
+    private fun trip(
+        s: String = stamp, id: Long = 1, guessed: Boolean = false, toMs: Long = 120_001, part: Boolean = false, rid: String = ResearchFiles.researchId(ctx),
+    ) {
         ResearchQueue.tripStarted(ctx, s, id, guessed)
         ResearchQueue.tripEnded(ctx, s)
         for (seg in 0..1) {
@@ -97,7 +102,7 @@ class ResearchUploaderTest {
                 lines.add("${ms * 10},a,10,20,9810")   // rr2: t in 0.1 ms
                 if (ms % 1000 == 0L) lines.add("${ms * 10},G,${300_000_000 + ms / 1000 * 898},312000000,,1000,0,400,,,,5")
             }
-            val name = "rr_0a1b2c3d_${s}_00$seg.csv.gz" + if (part && seg == 1) ResearchWriter.PART else ""
+            val name = "rr_${rid}_${s}_00$seg.csv.gz" + if (part && seg == 1) ResearchWriter.PART else ""
             val f = File(ResearchFiles.dir(ctx).apply { mkdirs() }, name)
             GZIPOutputStream(FileOutputStream(f)).use { it.write((listOf("# format=rr2") + lines).joinToString("\n", postfix = "\n").toByteArray()) }
             f.setLastModified(now - if (part && seg == 1) 1_000 else 10 * 60_000)   // an open file is flushed every 2 s
@@ -107,7 +112,8 @@ class ResearchUploaderTest {
     private fun run(s: Server, at: Long = now, metered: Boolean = false, maxBytes: Long = ResearchUploader.MAX_FILE_BYTES) =
         ResearchUploader.run(ctx, s, s, at, { metered }, maxBytes)
 
-    private fun name(seg: Int, s: String = stamp) = "rr_0a1b2c3d_${s}_00$seg.csv.gz"
+    private fun quiet(at: Long = now) = Server().also { run(it, at) }.calls.isEmpty()   // a run that makes no call at all
+    private fun name(seg: Int, s: String = stamp) = "rr_${ResearchFiles.researchId(ctx)}_${s}_00$seg.csv.gz"
     private fun uploaded(seg: Int) = ResearchQueue.read(ctx) { it.uploadedAt(name(seg)) > 0 }
     private fun dropped(seg: Int) = ResearchQueue.read(ctx) { it.dropped(name(seg)) }
 
@@ -143,9 +149,7 @@ class ResearchUploaderTest {
         assertEquals(now, ResearchUploader.status.lastUpload)
         assertEquals(listOf(uid), ResearchUploader.status.ids)
         assertTrue("trimmed copies go after the upload", ResearchQueue.cacheDir(ctx).list().isNullOrEmpty())
-        val again = Server()
-        assertFalse(run(again))
-        assertTrue("done: nothing sent twice", again.calls.isEmpty())
+        assertTrue("done: nothing sent twice", quiet())
     }
 
     @Test fun everyUploadAnswer() {
@@ -154,7 +158,7 @@ class ResearchUploaderTest {
         val cases = listOf(
             Case(listOf(409), false, true, false, 2),          // stored by an earlier try: done
             Case(listOf(403, 200), false, true, false, 3),     // reserved once more, then stored
-            Case(listOf(403, 403), false, false, true, 3),     // twice refused: dropped, the next file goes on
+            Case(listOf(403, 403), false, false, false, 2),    // twice refused: the queue pauses, nothing dropped
             Case(listOf(413), false, false, true, 2),          // too large: dropped
             Case(listOf(401, 200), false, true, false, 2),     // session refreshed once
             Case(listOf(503), true, false, false, 1),          // server busy: back off, nothing lost
@@ -167,19 +171,74 @@ class ResearchUploaderTest {
             assertEquals(c.toString(), c.up, uploaded(0))
             assertEquals(c.toString(), c.drop, dropped(0) != null)
             assertEquals(c.toString(), c.reserves, s.reserved.size)
-            if (c.answers.first() == 401) assertEquals(c.toString(), 2, s.calls.count { it == "token" || it == "signup" })
+            assertEquals("a refresh, never a new sign-up", if (c.answers.first() == 401) listOf("token") else emptyList(),
+                s.calls.filter { it == "token" || it == "signup" })
         }
     }
 
-    @Test fun anInvalidFileIsDroppedAndNeverRetried() {
+    @Test fun aServerThatKeepsRefusingPausesTheQueueAndOnlyThenGivesAFileUp() {
         trip()
-        val s = Server("22023")
-        assertFalse(run(s))
-        assertEquals("invalid", dropped(0))
+        val s = Server(upload = ArrayDeque(List(10) { 403 }))
+        for (d in 0..3) {
+            run(s, at = now + d * (day + 1))
+            assertEquals("refused", ResearchUploader.status.pausedWhy)
+            assertEquals("kept for another day", null, dropped(0))
+        }
+        run(s, at = now + 4 * (day + 1))
+        assertEquals("refused on 5 days: given up", "http 403", dropped(0))
+        assertTrue("then the next file goes on", uploaded(1))
+    }
+
+    @Test fun filesOfAnEarlierOptInNeverUploadAndAreDeleted() {
+        trip(rid = "0a1b2c3d")   // recorded before an "off" whose withdrawal never reached the queue
+        assertTrue(quiet())
+        assertTrue("deleted", ResearchFiles.list(ctx).isEmpty())
+    }
+
+    @Test fun aTripTheAppDiedInGoesAfter12hUnlessItStartedByItself() {
+        fun died(guessed: Boolean, hoursAgo: Long = 13) {
+            setUp(); trip(guessed = guessed)
+            ResearchQueue.edit(ctx) { it.trip(stamp)!!.put("ended", false) }
+            ResearchFiles.dir(ctx).listFiles()!!.forEach { it.setLastModified(now - hoursAgo * 3600_000L) }
+        }
+        died(guessed = false, hoursAgo = 1)   // or still recording
+        assertTrue("not before 12 h", quiet())
+        died(guessed = false)
+        run(Server())
+        assertTrue("started by the user: uploads", uploaded(0) && uploaded(1))
+        died(guessed = true)
+        assertTrue(quiet())
+        assertEquals("unended", ResearchQueue.read(ctx) { it.trip(stamp)!!.getString("skip") })
+        TripHold.confirm(ctx, 1)
+        assertTrue("never, not even after a Yes", quiet())
+    }
+
+    @Test fun itStopsBeforeTheNextFileWhenWiFiGoesTheJobStopsOrResearchIsOff() {
+        var wifi = true
+        val stops = listOf<() -> Unit>({ wifi = false }, { ResearchUploader.stopRequested = true },
+            { Prefs.setResearchState(ctx, false, 1, offPending = true, onPending = false, serverOn = true, note = "") })
+        for (stop in stops) {
+            setUp(); trip(); wifi = true
+            val s = Server(onUpload = stop)
+            ResearchUploader.run(ctx, s, s, now, { !wifi })
+            assertEquals("one file, then it stopped", 1, s.sent.size)
+        }
+    }
+
+    @Test fun everyOtherReserveAnswer() {
+        trip()
+        assertFalse(run(Server("22023")))
+        assertEquals("invalid: dropped", "invalid", dropped(0))
         assertTrue("the next file goes on", uploaded(1))
-        val again = Server()
-        run(again)
-        assertTrue(again.reserved.isEmpty())
+        assertTrue("and it is never tried again", quiet())
+        setUp(); trip()
+        run(Server("device_daily"))
+        assertEquals("the daily device limit pauses", "device_daily", ResearchUploader.status.pausedWhy)
+        setUp(); trip()
+        assertFalse(run(Server("no_consent")))
+        assertFalse("no consent on the server: off here too", Prefs.researchRecording(ctx))
+        assertEquals(ResearchConsent.SESSION_RESET, Prefs.researchNote(ctx))
+        assertEquals(0, ResearchUploader.status.files)
     }
 
     @Test fun fullPausesTheQueueForADay() {
@@ -188,63 +247,31 @@ class ResearchUploaderTest {
         assertFalse(uploaded(0))
         assertEquals(now + ResearchUploader.PAUSE_MS, ResearchUploader.status.pausedUntil)
         assertEquals("full", ResearchUploader.status.pausedWhy)
-        val early = Server()
-        run(early, at = now + day - 60_000)
-        assertTrue("still paused", early.calls.isEmpty())
+        assertTrue("still paused", quiet(now + day - 60_000))
         run(Server(), at = now + day + 1)
         assertTrue(uploaded(0) && uploaded(1))
-        // The daily device limit pauses the same way.
-        setUp(); trip()
-        run(Server("device_daily"))
-        assertEquals("device_daily", ResearchUploader.status.pausedWhy)
     }
 
-    @Test fun noConsentOnTheServerStopsAndSwitchesOffHere() {
-        trip()
-        assertFalse(run(Server("no_consent")))
-        assertFalse(Prefs.researchRecording(ctx))
-        assertEquals(ResearchConsent.SESSION_RESET, Prefs.researchNote(ctx))
-        assertFalse(uploaded(0))
-        assertEquals(0, ResearchUploader.status.files)
-    }
-
-    @Test fun aFileBeingWrittenOrATripNotOverIsNeverUploaded() {
+    @Test fun aFileBeingWrittenOrATripJustEndedIsNeverUploaded() {
         trip(part = true)   // segment 1 is still open
-        val s = Server()
-        run(s)
-        assertTrue(s.calls.isEmpty())
-        // Not ended yet (recording, or the app died less than 12 h ago).
-        setUp()
-        ResearchQueue.tripStarted(ctx, "20261002T080000", 2, guessed = false)
-        trip(s = "20261003T080000", id = 3)
-        ResearchQueue.edit(ctx) { it.trip("20261003T080000")!!.put("ended", false) }
-        val s2 = Server()
-        run(s2)
-        assertTrue(s2.calls.isEmpty())
-        // Ended a moment ago: its last file may still be closing.
+        assertTrue(quiet())
         setUp(); trip()
-        ResearchFiles.dir(ctx).listFiles()!!.forEach { it.setLastModified(now - 1_000) }
-        val s3 = Server()
-        run(s3)
-        assertTrue(s3.calls.isEmpty())
+        ResearchFiles.dir(ctx).listFiles()!!.forEach { it.setLastModified(now - 1_000) }   // its last file may still be closing
+        assertTrue(quiet())
     }
 
     @Test fun aHeldTripWaitsForYes() {
         trip(id = 7, guessed = true)
         TripHold.hold(ctx, 7)
-        val s = Server()
-        run(s)
-        assertTrue(s.calls.isEmpty())
+        assertTrue(quiet())
         TripHold.confirm(ctx, 7)
-        run(s)
+        run(Server())
         assertTrue(uploaded(0) && uploaded(1))
     }
 
     @Test fun aShortTripOrAnOversizedFileUploadsNothing() {
         trip(toMs = 59_001)   // 590 m
-        val s = Server()
-        run(s)
-        assertTrue(s.reserved.isEmpty())
+        assertTrue(quiet())
         assertEquals("short", ResearchQueue.read(ctx) { it.trip(stamp)!!.getString("skip") })
         setUp(); trip()
         val big = Server()
