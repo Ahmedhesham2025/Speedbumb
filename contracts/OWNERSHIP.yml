@@ -28,6 +28,7 @@ android-platform:
   - app/src/main/java/app/bumpbeeper/crash/**
   - app/src/main/AndroidManifest.xml   # owner sees every change
   - app/src/main/java/app/bumpbeeper/auto/**
+  - app/src/main/java/app/bumpbeeper/research/**   # research recordings; format: contracts/research-rr2.md
   - app/src/foss/**
   - app/src/play/**
   - docs/battery.md
@@ -44,6 +45,7 @@ android-ui:
   - app/src/main/res/**
 backend:
   - supabase/**
+  - supabase/tools/**    # owner tools (research download/clear); covered by the line above, listed so it is explicit
 dashboard:
   - dashboard/**
 devops:

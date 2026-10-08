@@ -103,12 +103,14 @@ class TrainingSink(
     fun flush(ctx: Context, tripId: Long, endWallMs: Long, trip: TripStats?, drive: DrivingStats?, batteryEnd: Int) {
         val items = build(Prefs.trainingActive(ctx), endWallMs, trip, drive, batteryEnd)
         if (items.isEmpty()) return
-        // Set now, on this thread, so the trip-end sync (scheduled right after this) can never upload this trip.
-        TrainingConsent.uploadLater(ctx, endWallMs)
+        val rightAway = TrainingConsent.uploadsRightAway(ctx)
+        // Consent 1: set now, on this thread, so the trip-end sync (scheduled right after this) can't upload this trip.
+        if (!rightAway) TrainingConsent.uploadLater(ctx, endWallMs)
         val app = ctx.applicationContext ?: ctx
         Thread({
             try {
-                queue(app, items, tripId, endWallMs)
+                // Consent 2: right away, once queued (the trip-end sync may already have run).
+                if (queue(app, items, tripId, endWallMs) > 0 && rightAway) TrainingConsent.uploadNow(app)
             } catch (e: Exception) {
                 Log.w("BumpBeeper", "training samples not queued: ${e.javaClass.simpleName}")
             }
@@ -140,7 +142,11 @@ class TrainingSink(
             synchronized(Sync.lock) {
                 Sync.withDb(ctx) {
                     if (!Prefs.trainingActive(ctx)) TrainingStore(it).discard(tripKey)
-                    else { TrainingStore(it).release(tripKey); TrainingConsent.uploadLater(ctx, System.currentTimeMillis()) }
+                    else {
+                        TrainingStore(it).release(tripKey)
+                        if (TrainingConsent.uploadsRightAway(ctx)) TrainingConsent.uploadNow(ctx)
+                        else TrainingConsent.uploadLater(ctx, System.currentTimeMillis())
+                    }
                 }
             }
         }
@@ -158,7 +164,8 @@ class TrainingSink(
 /** The payload of `submit_training_samples` (supabase/README.md, *Training samples*). Out-of-range values are clamped. */
 object TrainingJson {
     private val REASON = Regex("^[a-z_]{1,24}$")
-    private val CLASSES = setOf("bump", "pothole", "unsure")
+    /** The jolt's severity band since E1 (issue #114); the server takes these since B1. Anything else uploads as null. */
+    private val CLASSES = setOf("mild", "moderate", "strong")
 
     /** Local drive date, no time of day. */
     fun day(wallMs: Long): String = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date(wallMs))

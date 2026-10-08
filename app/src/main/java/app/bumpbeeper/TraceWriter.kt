@@ -11,6 +11,7 @@ import java.io.OutputStream
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import java.util.zip.Deflater
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 
@@ -23,8 +24,8 @@ import java.util.zip.ZipOutputStream
  *
  * Columns: t_s (seconds since start), type (accel | gps | event), the sensor values for that type,
  * and for events: event, bump_id, peak, note. gx/gy/gz stay empty until the first gyroscope reading. Load it in pandas and filter on `type`.
- * Extra event rows: `event=label` (note = what the driver tapped: bump, pothole_l, pothole_r, rough, undo)
- * and `event=battery` (peak = battery percent, every 5 minutes).
+ * Extra event rows: `event=label` (note = what the driver tapped: bump, pothole_l, pothole_r, rough, undo),
+ * `event=battery` (peak = battery percent, every 5 minutes) and `event=mark` (Diagnostics' Mark button, label mode only).
  */
 class TraceWriter(dir: File, meta: List<String> = emptyList()) {
     val file: File
@@ -72,6 +73,12 @@ class TraceWriter(dir: File, meta: List<String> = emptyList()) {
         out.flush()   // a label is rare and precious: don't lose it if the app dies
     }
 
+    /** Diagnostics' "Mark" (a test-drive passenger picked up the phone): its own event, never a label. */
+    @Synchronized fun mark(lat: Double, lon: Double, speedKmh: Double) {
+        eventRow("mark", lat, lon, speedKmh, Double.NaN, "", Double.NaN, "")
+        out.flush()
+    }
+
     /** Battery level in percent, so we can see what recording costs. */
     @Synchronized fun battery(percent: Int) {
         eventRow("battery", Double.NaN, Double.NaN, Double.NaN, Double.NaN, "", percent.toDouble(), "")
@@ -115,10 +122,12 @@ class TraceWriter(dir: File, meta: List<String> = emptyList()) {
 
         /**
          * Packs [files] into one zip written to [out] (flat, one entry per file), so many recordings go to
-         * Google Drive / WhatsApp as a single attachment. CSV text shrinks to about a fifth.
+         * Google Drive / WhatsApp as a single attachment. CSV text shrinks to about a fifth. Files that are gzip
+         * already (research recordings) pass [level] = NO_COMPRESSION: squeezing them again only costs time.
          */
-        fun zipTo(files: List<File>, out: OutputStream) {
+        fun zipTo(files: List<File>, out: OutputStream, level: Int = Deflater.DEFAULT_COMPRESSION) {
             val zip = ZipOutputStream(out)
+            zip.setLevel(level)
             for (f in files) {
                 zip.putNextEntry(ZipEntry(f.name).apply { time = f.lastModified() })
                 f.inputStream().use { it.copyTo(zip, 64 * 1024) }

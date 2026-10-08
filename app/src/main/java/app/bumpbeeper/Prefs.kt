@@ -2,6 +2,7 @@ package app.bumpbeeper
 
 import android.content.Context
 import android.content.SharedPreferences
+import app.bumpbeeper.research.ResearchFiles
 
 /** User settings, stored on the phone. */
 object Prefs {
@@ -163,6 +164,45 @@ object Prefs {
         sp(ctx).edit().putBoolean(TRAINING_CONSENT, on).putInt(TRAINING_CONSENT_VERSION, version)
             .putBoolean(TRAINING_WIPE_PENDING, wipe).putBoolean(TRAINING_ON_PENDING, sendOn).putString(TRAINING_NOTE, note).commit()
 
+    /**
+     * Research recording (Sprint 1): every useful phone sensor at full rate during trips, into local files
+     * ([app.bumpbeeper.research.ResearchRecorder]), uploaded on Wi-Fi. Off by default; screens switch it with
+     * [app.bumpbeeper.research.ResearchConsent.setEnabled] after its consent screen. Read at each trip start; switching
+     * it off stops a running one at once. Switching it on gets a new random research id, so files of different opt-ins
+     * can't be linked.
+     */
+    const val RESEARCH_RECORDING = "research_recording"
+    fun researchRecording(ctx: Context): Boolean = sp(ctx).getBoolean(RESEARCH_RECORDING, false)
+    fun setResearchRecording(ctx: Context, on: Boolean) {
+        if (on && !researchRecording(ctx)) ResearchFiles.renewId(ctx)
+        sp(ctx).edit().putBoolean(RESEARCH_RECORDING, on).apply()
+    }
+    /** The research consent text version agreed to (0 = never). */
+    const val RESEARCH_CONSENT_VERSION = "research_consent_version"
+    /** The server must still hear "off" (sent before any "on") / "on"; it has "on" (so an off must be sent). */
+    const val RESEARCH_OFF_PENDING = "research_off_pending"
+    const val RESEARCH_ON_PENDING = "research_on_pending"
+    const val RESEARCH_SERVER_ON = "research_server_on"
+    /** Why the app switched research off by itself ("" = it didn't), see ResearchConsent.SESSION_RESET. */
+    const val RESEARCH_NOTE = "research_note"
+    /** The research consent version the first-start question was answered for (0 = not asked yet). */
+    const val RESEARCH_ASKED = "research_asked"
+    fun researchConsentVersion(ctx: Context): Int = sp(ctx).getInt(RESEARCH_CONSENT_VERSION, 0)
+    fun researchOffPending(ctx: Context): Boolean = sp(ctx).getBoolean(RESEARCH_OFF_PENDING, false)
+    fun researchOnPending(ctx: Context): Boolean = sp(ctx).getBoolean(RESEARCH_ON_PENDING, false)
+    fun researchServerOn(ctx: Context): Boolean = sp(ctx).getBoolean(RESEARCH_SERVER_ON, false)
+    fun researchNote(ctx: Context): String = sp(ctx).getString(RESEARCH_NOTE, "") ?: ""
+    fun researchAsked(ctx: Context): Int = sp(ctx).getInt(RESEARCH_ASKED, 0)
+    fun setResearchAsked(ctx: Context, version: Int) = sp(ctx).edit().putInt(RESEARCH_ASKED, version).commit()
+    fun setResearchFlag(ctx: Context, key: String, v: Boolean) = sp(ctx).edit().putBoolean(key, v).commit()
+    /** All research choice fields in one write; switching on gets a new research id, as [setResearchRecording]. */
+    fun setResearchState(ctx: Context, on: Boolean, version: Int, offPending: Boolean, onPending: Boolean, serverOn: Boolean, note: String): Boolean {
+        if (on && !researchRecording(ctx)) ResearchFiles.renewId(ctx)
+        return sp(ctx).edit().putBoolean(RESEARCH_RECORDING, on).putInt(RESEARCH_CONSENT_VERSION, version)
+            .putBoolean(RESEARCH_OFF_PENDING, offPending).putBoolean(RESEARCH_ON_PENDING, onPending)
+            .putBoolean(RESEARCH_SERVER_ON, serverOn).putString(RESEARCH_NOTE, note).commit()
+    }
+
     fun autoStart(ctx: Context): Boolean = sp(ctx).getBoolean(AUTO_START, false)
     fun carAddress(ctx: Context): String? = sp(ctx).getString(CAR_ADDRESS, null)
     fun carName(ctx: Context): String? = sp(ctx).getString(CAR_NAME, null)
@@ -177,4 +217,13 @@ object Prefs {
         cfg.quietBelowKmh = quietBelowKmh(ctx).toDouble()
         cfg.maxSpeedKmh = maxBumpKmh(ctx).toDouble()
     }
+
+    /**
+     * The period (µs) BumpService asks for the engine's accelerometer and gyroscope: 20 000 = 50 Hz, as always. Not on
+     * any screen; there for a faster stream later (E2). Kept within 5 000..100 000 µs (200..10 Hz).
+     */
+    const val SENSOR_PERIOD_US = "sensor_period_us"
+    const val DEFAULT_SENSOR_PERIOD_US = 20_000
+    fun sensorPeriodUs(ctx: Context): Int =
+        sp(ctx).getInt(SENSOR_PERIOD_US, DEFAULT_SENSOR_PERIOD_US).coerceIn(5_000, 100_000)
 }

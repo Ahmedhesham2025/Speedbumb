@@ -53,11 +53,12 @@ class SyncApiTest {
     @Test fun observationJsonHasServerFormat() {
         val j = ObservationJson.toJson(obs())
         assertEquals(
-            setOf("client_obs_id", "kind", "lat", "lon", "heading", "speed_kmh", "peak", "kind_score", "side_score", "observed_at"),
+            setOf("schema", "client_obs_id", "kind", "lat", "lon", "heading", "speed_kmh", "peak", "kind_score", "side_score", "observed_at"),
             j.keySet(),
         )
         assertEquals("6f1c2a3e-1111-4222-8333-944455556666", j.getString("client_obs_id"))
         assertEquals("jolt", j.getString("kind"))
+        assertEquals("schema 2, an int", 2, j.get("schema"))
         assertEquals(30.0444123, j.getDouble("lat"), 0.0)   // positions are not rounded on the phone
         assertEquals(31.2357456, j.getDouble("lon"), 0.0)
         assertEquals(0, j.get("heading"))                    // 359.6 rounds to 360 → 0, an int

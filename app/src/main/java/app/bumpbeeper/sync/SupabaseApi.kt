@@ -1,8 +1,12 @@
 package app.bumpbeeper.sync
 
+import android.net.Network
+import app.bumpbeeper.Confidence
 import app.bumpbeeper.Observation
+import app.bumpbeeper.Severity
 import org.json.JSONArray
 import org.json.JSONObject
+import java.io.File
 import java.io.IOException
 import java.net.HttpURLConnection
 import java.net.URL
@@ -23,10 +27,56 @@ fun interface Transport {
 /** The real transport: HttpURLConnection, 10 s timeouts. Never call it on the main thread. */
 object UrlTransport : Transport by HttpTransport(10_000)
 
-/** HttpURLConnection with [timeoutMs] to connect and to read. Never call it on the main thread. */
-class HttpTransport(private val timeoutMs: Int) : Transport {
+/** Sends a file as the raw body of one POST, exactly [length] bytes (Storage uploads). Swapped for a fake in tests. */
+fun interface FileTransport {
+    fun postFile(url: String, headers: Map<String, String>, file: File, length: Long): HttpResult
+}
+
+/** The real file transport. Never call it on the main thread. */
+object StorageTransport : FileTransport by HttpFileTransport()
+
+/**
+ * HttpURLConnection with a fixed-length body ([HttpURLConnection.setFixedLengthStreamingMode]): the Content-Length is
+ * exactly [length], never chunked, and a file of another size fails before anything is stored. 15 s to connect,
+ * [readMs] for the answer. With a [network] (a job's), only over that network: never another one it falls back to.
+ */
+class HttpFileTransport(private val readMs: Int = 120_000, private val network: Network? = null) : FileTransport {
+    override fun postFile(url: String, headers: Map<String, String>, file: File, length: Long): HttpResult {
+        if (file.length() != length) throw IOException("file size changed")
+        val conn = (network?.openConnection(URL(url)) ?: URL(url).openConnection()) as HttpURLConnection
+        try {
+            conn.requestMethod = "POST"
+            conn.connectTimeout = 15_000
+            conn.readTimeout = readMs
+            conn.doOutput = true
+            conn.setFixedLengthStreamingMode(length)
+            for ((k, v) in headers) conn.setRequestProperty(k, v)
+            file.inputStream().use { input ->
+                conn.outputStream.use { out ->
+                    val buf = ByteArray(64 * 1024)
+                    var left = length
+                    while (left > 0) {
+                        val n = input.read(buf, 0, minOf(buf.size.toLong(), left).toInt())
+                        if (n < 0) throw IOException("file shorter than its Content-Length")
+                        out.write(buf, 0, n)
+                        left -= n
+                    }
+                }
+            }
+            val code = conn.responseCode
+            val stream = if (code in 200..299) conn.inputStream else conn.errorStream
+            val text = stream?.bufferedReader(Charsets.UTF_8)?.use { it.readText() } ?: ""
+            return HttpResult(code, text, conn.date)
+        } finally {
+            conn.disconnect()
+        }
+    }
+}
+
+/** HttpURLConnection with [timeoutMs] to connect and to read, over [network] if given. Never on the main thread. */
+class HttpTransport(private val timeoutMs: Int, private val network: Network? = null) : Transport {
     override fun post(url: String, headers: Map<String, String>, body: String): HttpResult {
-        val conn = URL(url).openConnection() as HttpURLConnection
+        val conn = (network?.openConnection(URL(url)) ?: URL(url).openConnection()) as HttpURLConnection
         try {
             conn.requestMethod = "POST"
             conn.connectTimeout = timeoutMs
@@ -84,12 +134,19 @@ enum class Outcome {
     RETRY,
 }
 
-class ApiException(val outcome: Outcome, message: String) : Exception(message)
+/** [httpCode] and [pgCode] (PostgREST's `code`) of a server answer; 0 and "" when there was none (offline, sign-in). */
+class ApiException(val outcome: Outcome, message: String, val httpCode: Int = 0, val pgCode: String = "") : Exception(message) {
+    /** This server has no such RPC (HTTP 404 / PGRST202): its migration isn't applied yet, or was rolled back. */
+    val missingRpc: Boolean get() = httpCode == 404 || pgCode == "PGRST202"
+}
 
 object ApiErrors {
+    /** PostgREST's error `code` in an answer body; "" when there is none. */
+    fun code(body: String): String = try { JSONObject(body).optString("code", "") } catch (_: Exception) { "" }
+
     /** Maps a non-2xx PostgREST answer (`{"code": "22023", "message": …}`) to what to do. */
     fun classify(httpCode: Int, body: String): Outcome {
-        val code = try { JSONObject(body).optString("code", "") } catch (_: Exception) { "" }
+        val code = code(body)
         return when {
             code == "22023" -> Outcome.DROP
             code == "42501" -> Outcome.NOT_ALLOWED
@@ -111,21 +168,36 @@ object ApiErrors {
     }
 }
 
-/** A confirmed spot as `spots_near` returns it. Nullable columns stay null. */
+/**
+ * A confirmed spot as `spots_near` returns it. Nullable columns stay null. [kind] `"pothole"` marks an old (legacy)
+ * pothole spot. [band] ("mild" / "moderate" / "strong"), [confidence] ("soft" / "full") and [nHits] (hits in total,
+ * one phone twice counts) come from `spots_near_v2` only: null from `spots_near`.
+ */
 class SpotRow(
     val id: Long, val lat: Double, val lon: Double, val heading: Double?, val kind: String?, val side: String?,
     val severity: Double?, val nDevices: Int,
-)
+    val band: String? = null, val confidence: String? = null, val nHits: Int? = null,
+) {
+    /** An old pothole spot: the engine keeps it a soft "maybe" until it is felt again. */
+    val legacy: Boolean get() = kind == "pothole"
+}
 
 /**
  * The upload format of `submit_observations` (see supabase/migrations/20261005000001_core.sql).
  *
  * `kind_score`: the engine's [Observation.kindScore] runs -1 (speed bump) .. +1 (pothole), but the server column
  * is `check (between 0 and 1)` and its aggregation calls `>= 0.5` a pothole, so the phone sends `(kindScore + 1) / 2`.
+ * Every element says `"schema": 2` ([SCHEMA], supabase/README.md): this build's spots are bumps with a severity, so
+ * its hit on an old pothole spot makes it an ordinary bump on the server too. `sev_index` (0..100) and `axle` (0..1)
+ * go along when the hit has them ([Observation.sevIndex], [Observation.axle]), else they are left out.
  */
 object ObservationJson {
+    /** The upload format version: 2 = bumps with a severity (missing = 1, a 1.7.x phone). */
+    const val SCHEMA = 2
+
     /** Fields the server rejects a whole batch for (22023) are made to fit here instead. */
     fun toJson(o: Observation): JSONObject = JSONObject().apply {
+        put("schema", SCHEMA)
         put("client_obs_id", o.clientId)
         put("kind", o.kind)
         put("lat", o.lat)
@@ -137,6 +209,9 @@ object ObservationJson {
         put("kind_score", fit((o.kindScore + 1) / 2, 0.0, 1.0))
         put("side_score", fit(o.sideScore, -1.0, 1.0))
         put("observed_at", isoUtc(o.wallTimeMs))
+        // Optional (v2): left out when the engine had none, so the server averages peak instead / counts no axle hit.
+        o.sevIndex?.takeIf { !it.isNaN() }?.let { put("sev_index", it.coerceIn(0.0, 100.0)) }
+        o.axle?.takeIf { !it.isNaN() }?.let { put("axle", it.coerceIn(0.0, 1.0)) }
     }
 
     private fun fit(x: Double, lo: Double, hi: Double) = if (x.isNaN()) 0.0 else x.coerceIn(lo, hi)
@@ -184,7 +259,7 @@ class SupabaseApi(
             val outcome = ApiErrors.classify(r.code, r.body)
             // An expired or revoked session: refresh (or sign in again) once, then give up for now.
             if (outcome == Outcome.AUTH && attempt == 0) { token = auth.accessToken(forceRefresh = true); continue }
-            throw ApiException(if (outcome == Outcome.AUTH) Outcome.RETRY else outcome, "$name: HTTP ${r.code}")
+            throw ApiException(if (outcome == Outcome.AUTH) Outcome.RETRY else outcome, "$name: HTTP ${r.code}", r.code, ApiErrors.code(r.body))
         }
         throw ApiException(Outcome.RETRY, name)
     }
@@ -201,9 +276,23 @@ class SupabaseApi(
         return (0 until arr.length()).mapNotNullTo(HashSet()) { arr.optString(it, "").takeIf { s -> s.isNotEmpty() } }
     }
 
+    /** `spots_near`, the 1.7.x answer: no band, confidence or total hits. Use [spotsNearV2] first. */
     fun spotsNear(lat: Double, lon: Double, radiusM: Int): List<SpotRow> {
         val body = rpc("spots_near", JSONObject().put("lat", lat).put("lon", lon).put("radius_m", radiusM))
         return parseSpots(body)
+    }
+
+    /**
+     * `spots_near_v2`: the same spots with their band, confidence, hits in total and legacy flag. Null when this server
+     * has no v2 ([ApiException.missingRpc]); the caller then falls back to [spotsNear].
+     */
+    fun spotsNearV2(lat: Double, lon: Double, radiusM: Int): List<SpotRow>? {
+        val body = try {
+            rpc("spots_near_v2", JSONObject().put("lat", lat).put("lon", lon).put("radius_m", radiusM))
+        } catch (e: ApiException) {
+            if (e.missingRpc) return null else throw e
+        }
+        return parseSpotsV2(body)
     }
 
     fun submitCrashReport(appVersion: String, model: String, stack: String) {
@@ -215,7 +304,39 @@ class SupabaseApi(
         rpc("forget_me", JSONObject())
     }
 
+    /**
+     * Uploads [file] (exactly [length] bytes: the size reserved) to Storage as `<bucket>/<path>`: one plain POST with
+     * this user's JWT, no upsert. Returns the status ([storageStatus]); an expired session is refreshed once.
+     * Throws [ApiException] (RETRY) when offline.
+     */
+    fun upload(bucket: String, path: String, file: File, length: Long, contentType: String, files: FileTransport): Int {
+        var token = auth.accessToken()
+        for (attempt in 0..1) {
+            val r = try {
+                files.postFile("$baseUrl/storage/v1/object/$bucket/$path",
+                    mapOf("apikey" to key, "Authorization" to "Bearer $token", "Content-Type" to contentType), file, length)
+            } catch (e: IOException) {
+                throw ApiException(Outcome.RETRY, "upload: ${e.javaClass.simpleName}")
+            }
+            val code = storageStatus(r)
+            if (code == 401 && attempt == 0) { token = auth.accessToken(forceRefresh = true); continue }
+            return code
+        }
+        return 401
+    }
+
     companion object {
+        /**
+         * Storage's answer as one status: its JSON `statusCode` when an error carries one (some versions answer 400 with
+         * the real status inside), and 401 for a bad or expired JWT.
+         */
+        fun storageStatus(r: HttpResult): Int {
+            if (r.code in 200..299) return r.code
+            val j = try { JSONObject(r.body) } catch (_: Exception) { null } ?: return r.code
+            if ((j.optString("error", "") + " " + j.optString("message", "")).contains("jwt", ignoreCase = true)) return 401
+            return j.optString("statusCode", "").toIntOrNull() ?: r.code
+        }
+
         private fun parseArray(body: String): JSONArray? = try { JSONArray(body) } catch (_: Exception) { null }
 
         private fun JSONObject.numOrNull(k: String): Double? = if (isNull(k) || !has(k)) null else optDouble(k).takeIf { !it.isNaN() }
@@ -230,6 +351,30 @@ class SupabaseApi(
                 val lon = o.numOrNull("longitude") ?: continue
                 out.add(SpotRow(o.optLong("id", -1), lat, lon, o.numOrNull("heading"), o.strOrNull("kind"),
                     o.strOrNull("side"), o.numOrNull("severity"), o.optInt("n_devices", 0)))
+            }
+            return out.filter { it.id >= 0 }
+        }
+
+        /**
+         * A `spots_near_v2` answer. A legacy spot is cached as kind "pothole" (how `spots_near` reports it, and what the
+         * engine keeps soft until felt) and always "soft"; any other spot is a "bump". Bands and confidences this
+         * version doesn't know are left null.
+         */
+        fun parseSpotsV2(body: String): List<SpotRow> {
+            val arr = parseArray(body) ?: return emptyList()
+            val out = ArrayList<SpotRow>(arr.length())
+            for (i in 0 until arr.length()) {
+                val o = arr.optJSONObject(i) ?: continue
+                val lat = o.numOrNull("lat") ?: continue
+                val lon = o.numOrNull("lon") ?: continue
+                val legacy = o.optBoolean("legacy", false)
+                val devices = o.optInt("n_devices", 0)
+                out.add(SpotRow(o.optLong("id", -1), lat, lon, o.numOrNull("heading"), if (legacy) "pothole" else "bump", null,
+                    o.numOrNull("severity"), devices,
+                    band = o.strOrNull("severity_band")?.takeIf { b -> Severity.values().any { it.label == b } },
+                    confidence = if (legacy) Confidence.SOFT.label
+                        else o.strOrNull("confidence")?.takeIf { c -> Confidence.values().any { it.label == c } },
+                    nHits = o.optInt("n_hits", devices).coerceAtLeast(devices)))
             }
             return out.filter { it.id >= 0 }
         }

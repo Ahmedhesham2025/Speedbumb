@@ -16,6 +16,7 @@ import app.bumpbeeper.Prefs
 import app.bumpbeeper.auto.TripHold
 import app.bumpbeeper.TraceWriter
 import app.bumpbeeper.crash.CrashLog
+import app.bumpbeeper.research.ResearchConsent
 import org.json.JSONArray
 import org.json.JSONObject
 import java.util.Calendar
@@ -52,6 +53,14 @@ object Sync {
     private const val UPLOAD_PAUSED_UNTIL = "upload_paused_until"
     private const val POS_LAT = "pos_lat"
     private const val POS_LON = "pos_lon"
+    /** Until then the server is taken to have no `spots_near_v2` ([spotsNear]). */
+    internal const val SPOTS_V1_UNTIL = "spots_v1_until"
+    internal const val SPOTS_V1_MS = 6 * 60 * 60 * 1000L
+    /** The last successful shared-spot download (wall ms), and "the last try failed" (kept until one succeeds). */
+    private const val SPOTS_OK_AT = "spots_ok_at"
+    private const val SPOTS_FAILED = "spots_failed"
+    /** Shared spots downloaded longer ago than this are out of date ([OfflineBanner]): the daily sync's period. */
+    const val SPOTS_STALE_MS = 24 * 60 * 60 * 1000L
 
     /** Runs never overlap (two parallel first runs would sign in as two devices); [SpeedLimitSync] takes it too. */
     internal val lock = Any()
@@ -64,6 +73,7 @@ object Sync {
             ensureDaily(ctx)
             schedule(ctx, JOB_NOW, false, Double.NaN, Double.NaN)
         }
+        ResearchConsent.onAppStart(ctx)   // its own opt-in: needs no shared-map answer
         val app = ctx.applicationContext ?: ctx
         Thread({
             try {
@@ -177,6 +187,8 @@ object Sync {
         // Live limits too: off, and the disclosure has to be accepted again.
         Prefs.sp(app).edit().putBoolean(Prefs.LIVE_LIMITS, false).putInt(Prefs.LIVE_LIMITS_CONSENT_VERSION, 0).commit()
         TrainingConsent.forgetLocal(app)
+        // Research recording stops at once; forget_me has the server erase its uploaded files.
+        ResearchConsent.forgetLocal(app)
     }
 
     fun forgetMe(ctx: Context, callback: (Boolean) -> Unit) {
@@ -260,6 +272,7 @@ object Sync {
             } catch (e: ApiException) {
                 Log.w(TAG, "sync: ${e.message}")
                 error = ApiErrors.describe(e.outcome)
+                store.put(SPOTS_FAILED, 1)   // the download is last: it failed, or never came
                 retry = e.outcome == Outcome.RETRY
             }
             // "Help improve detection" (own opt-in): its errors never stop the shared map.
@@ -353,8 +366,23 @@ object Sync {
         val lat = store.getDouble(POS_LAT)
         val lon = store.getDouble(POS_LON)
         if (lat.isNaN() || lon.isNaN()) return   // no trip yet: nothing to download around
-        val rows = api.spotsNear(lat, lon, PULL_RADIUS_M)
+        val rows = spotsNear(api, store, lat, lon, now)
         store.replaceRemoteSpots(lat, lon, PULL_RADIUS_M.toDouble(), rows, now)
+        store.put(SPOTS_OK_AT, now)
+        store.put(SPOTS_FAILED, null)
+    }
+
+    /**
+     * `spots_near_v2`, or `spots_near` from a server without it (not migrated yet, or rolled back). That is remembered
+     * for [SPOTS_V1_MS], so the runs in between don't ask v2 first each time; a phone clock moved back doesn't stretch it.
+     */
+    internal fun spotsNear(api: SupabaseApi, store: SyncStore, lat: Double, lon: Double, now: Long): List<SpotRow> {
+        val v1Until = store.getLong(SPOTS_V1_UNTIL)
+        if (now >= v1Until || v1Until - now > SPOTS_V1_MS) {
+            api.spotsNearV2(lat, lon, PULL_RADIUS_M)?.let { return it }
+            store.put(SPOTS_V1_UNTIL, now + SPOTS_V1_MS)
+        }
+        return api.spotsNear(lat, lon, PULL_RADIUS_M)
     }
 
     private fun publishStatus(store: SyncStore) {
@@ -362,6 +390,8 @@ object Sync {
         LiveState.syncLastError = store.get(LAST_ERROR) ?: ""
         LiveState.syncPending = store.outboxCount()
         LiveState.syncRemoteSpots = store.remoteSpotCount()
+        LiveState.spotsOkAt = store.getLong(SPOTS_OK_AT)
+        LiveState.spotsFailed = store.get(SPOTS_FAILED) != null
         LiveState.trainingQueued = try { TrainingStore(store.helper).count() } catch (_: Exception) { 0 }
     }
 

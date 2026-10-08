@@ -1,6 +1,10 @@
 package app.bumpbeeper
 
 import android.app.AlertDialog
+import android.app.Dialog
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
 import android.content.res.ColorStateList
 import android.os.Handler
 import android.os.Looper
@@ -14,11 +18,15 @@ import android.widget.RadioGroup
 import android.widget.ScrollView
 import android.widget.TextView
 import app.bumpbeeper.auto.AutoDetect
+import app.bumpbeeper.research.ResearchConsent
+import app.bumpbeeper.research.ResearchFiles
+import app.bumpbeeper.research.ResearchUploader
 import app.bumpbeeper.sync.SpeedLimitSync
 import app.bumpbeeper.sync.Sync
 import app.bumpbeeper.sync.TrainingConsent
 import app.bumpbeeper.ui.AutoDetectText
 import app.bumpbeeper.ui.LiveLimitText
+import app.bumpbeeper.ui.ResearchChoice
 import app.bumpbeeper.ui.SpeedLimitText
 import app.bumpbeeper.ui.SyncChoice
 import java.text.SimpleDateFormat
@@ -48,6 +56,12 @@ class SettingsPage(private val a: MainActivity) : Page {
     private lateinit var trainProblem: TextView
     /** True while the screen itself moves the training switch. */
     private var settingTrain = false
+    private var researchBox: CheckBox? = null
+    private lateinit var researchInfo: TextView
+    private lateinit var researchProblem: TextView
+    private lateinit var researchId: TextView
+    /** True while the screen itself moves the research switch. */
+    private var settingResearch = false
     private var debugBox: CheckBox? = null
     private var limitsBox: CheckBox? = null
     private lateinit var limitsStatus: TextView
@@ -72,6 +86,7 @@ class SettingsPage(private val a: MainActivity) : Page {
     private var limitsDialog: AlertDialog? = null
     private var liveDialog: AlertDialog? = null
     private var trainDialog: AlertDialog? = null
+    private var diagDialog: Dialog? = null
 
     fun release() {
         trainDialog?.dismiss()
@@ -83,6 +98,8 @@ class SettingsPage(private val a: MainActivity) : Page {
         limitsDialog = null
         liveDialog?.dismiss()
         liveDialog = null
+        diagDialog?.dismiss()
+        diagDialog = null
     }
 
     private fun build(): View {
@@ -124,12 +141,10 @@ class SettingsPage(private val a: MainActivity) : Page {
             if (code == Prefs.voiceLang(a)) rb.isChecked = true
         }
         lang.setOnCheckedChangeListener { g, id -> sp.edit().putString(Prefs.VOICE_LANG, g.findViewById<RadioButton>(id)?.tag as? String ?: "en").apply() }
-        card(a.getString(R.string.settings_section_potholes),
-            hint(a.getString(R.string.settings_potholes_hint)),
-            Ui.toggle(a, a.getString(R.string.settings_potholes_voice), null, Prefs.warnPotholes(a)) { sp.edit().putBoolean(Prefs.WARN_POTHOLES, it).apply() },
-            Ui.slider(a, 4, 10, 1, Prefs.harshMs2(a), {
-                a.getString(R.string.settings_harsh, it, a.getString(when { it <= 5 -> R.string.settings_harsh_most; it <= 7 -> R.string.settings_harsh_feel; else -> R.string.settings_harsh_worst }))
-            }) { sp.edit().putInt(Prefs.HARSH_MS2, it).apply() },
+        // The old pothole voice switch and "harsh" slider are gone: since v2 every spot is a bump, and the voice is
+        // for strong ones (Prefs.WARN_POTHOLES / HARSH_MS2 are no longer read).
+        card(a.getString(R.string.settings_section_voice),
+            hint(a.getString(R.string.settings_voice_hint)),
             Ui.text(a, 15f, Ui.TEXT, value = a.getString(R.string.settings_voice_language)),
             lang,
         )
@@ -210,6 +225,23 @@ class SettingsPage(private val a: MainActivity) : Page {
         trainProblem = Ui.text(a, 13f, Ui.ORANGE).apply { setPadding(dp(32), 0, 0, dp(4)) }
         card(a.getString(R.string.settings_section_training), trainNeedMap, trainChoose, trainToggle, trainInfo, trainProblem)
 
+        researchInfo = Ui.text(a, 13f, Ui.DIM).apply { setPadding(dp(32), 0, 0, dp(4)) }
+        researchProblem = Ui.text(a, 13f, Ui.ORANGE).apply { setPadding(dp(32), 0, 0, dp(4)) }
+        researchId = Ui.text(a, 14f, Ui.TEXT).apply { setTextIsSelectable(true); setPadding(0, dp(10), 0, dp(4)) }
+        card(a.getString(R.string.settings_section_research),
+            Ui.toggle(a, a.getString(R.string.research_switch), a.getString(R.string.research_hint), Prefs.researchRecording(a)) { on ->
+                if (settingResearch) return@toggle
+                if (on) { showResearch(false); a.showResearchChoice { showResearch() } }   // only the consent screen's Yes turns it on
+                else { ResearchConsent.setEnabled(a, false); a.toast(a.getString(R.string.research_off_toast)); showResearch() }
+            }.also { researchBox = ((it as? ViewGroup)?.getChildAt(0) ?: it) as? CheckBox },
+            researchInfo, researchProblem,
+            Ui.button(a, a.getString(R.string.settings_share_recordings)) { ResearchFiles.share(a) },
+            hint(a.getString(R.string.research_share_hint, ResearchFiles.SHARE_COPY_FOLDER)),
+            researchId,
+            Ui.button(a, a.getString(R.string.research_id_copy)) { copyResearchId() },
+            hint(a.getString(R.string.research_id_hint)),
+        )
+
         card(a.getString(R.string.settings_section_data),
             Ui.row(a, Ui.button(a, a.getString(R.string.settings_share), Ui.Style.PRIMARY) { Sharing.chooseAndShare(a) }, Ui.button(a, a.getString(R.string.settings_import)) { a.pickImportFile() }),
             hint(a.getString(R.string.settings_data_hint)),
@@ -234,6 +266,9 @@ class SettingsPage(private val a: MainActivity) : Page {
             Ui.text(a, 15f, Ui.TEXT, value = a.getString(R.string.settings_phone_where)),
             place,
             hint(a.getString(R.string.settings_phone_hint)),
+            Ui.divider(a),
+            Ui.button(a, a.getString(R.string.settings_diagnostics)) { openDiagnostics() },
+            hint(a.getString(R.string.settings_diagnostics_hint)),
         )
 
         traceInfo = hint("")
@@ -419,6 +454,30 @@ class SettingsPage(private val a: MainActivity) : Page {
             .show()
     }
 
+    /** The research switch, what the uploader is doing, and the Research ID. Cheap; runs with every tick. */
+    private fun showResearch(on: Boolean = Prefs.researchRecording(a)) {
+        researchBox?.let { if (it.isChecked != on) { settingResearch = true; it.isChecked = on; settingResearch = false } }
+        val st = ResearchUploader.status
+        val (info, problem) = ResearchChoice.status(a, st)
+        val id = ResearchChoice.idText(a, ResearchChoice.researchId(a), st.ids)
+        for ((v, s) in listOf(researchInfo to info, researchProblem to problem, researchId to id)) {
+            if (v.text.toString() != s) v.text = s
+            v.visibility = if (s.isEmpty()) View.GONE else View.VISIBLE
+        }
+    }
+
+    /** Settings → Diagnostics, full screen (DiagnosticsPage). */
+    private fun openDiagnostics() {
+        diagDialog?.dismiss()
+        diagDialog = DiagnosticsPage.open(a).also { d -> d.setOnCancelListener { diagDialog = null } }
+    }
+
+    private fun copyResearchId() {
+        val id = ResearchChoice.researchId(a) ?: return a.toast(a.getString(R.string.research_id_none))
+        (a.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager).setPrimaryClip(ClipData.newPlainText("Research ID", id))
+        a.toast(a.getString(R.string.research_id_copied))
+    }
+
     private fun showSyncChoice() {
         val choice = Prefs.syncChoice(a)
         for (i in 0 until syncGroup.childCount) {
@@ -445,6 +504,7 @@ class SettingsPage(private val a: MainActivity) : Page {
         set(syncError, SyncChoice.error(a, LiveState.syncLastError), on && LiveState.syncLastError.isNotEmpty())
         showDetect()
         showTraining()
+        showResearch()
     }
 
     private fun confirmForget() {
@@ -468,6 +528,7 @@ class SettingsPage(private val a: MainActivity) : Page {
         showSyncChoice()
         showLimitsSwitch()
         showLive()
+        ResearchUploader.refresh(a)   // recounts the waiting files in the background; tick() shows them
         tick()
         val on = a.autoStartOn()
         autoText.text = if (on) a.getString(R.string.settings_auto_on, Prefs.carName(a)) else a.getString(R.string.settings_auto_off)
