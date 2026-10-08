@@ -47,6 +47,9 @@ object LiveState {
     @Volatile var syncRemoteSpots = 0
     @Volatile var syncPending = 0
     @Volatile var syncLastError = ""
+    /** Shared spots: the last successful download (wall ms, 0 = never), and whether the last try failed. By Sync. */
+    @Volatile var spotsOkAt = 0L
+    @Volatile var spotsFailed = false
 
     /**
      * Live road speed limit (opt-in, [app.bumpbeeper.sync.LiveSpeedLimit]): km/h, null = unknown. In memory only,

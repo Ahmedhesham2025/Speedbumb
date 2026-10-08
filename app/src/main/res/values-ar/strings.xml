@@ -352,6 +352,7 @@
         <item quantity="other">الخريطة المتشاركة: %1$s مكان</item>
     </plurals>
     <string name="drive_sync_on">الخريطة المتشاركة: شغّالة</string>
+    <string name="drive_offline_banner">مفيش إنترنت — المطبات المتشاركة مش متحدّثة</string>
     <string name="settings_section_shared_map">الخريطة المتشاركة</string>
     <string name="settings_shared_map_hint">تحذيرات عن مطبّات وحفر لقاها سوّاقين تانيين. بيتشارك الأماكن بس، عمره ما بيتشارك طريقك.</string>
     <string name="settings_sync_delete">امسح بياناتي المتشاركة</string>

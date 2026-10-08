@@ -56,6 +56,11 @@ object Sync {
     /** Until then the server is taken to have no `spots_near_v2` ([spotsNear]). */
     internal const val SPOTS_V1_UNTIL = "spots_v1_until"
     internal const val SPOTS_V1_MS = 6 * 60 * 60 * 1000L
+    /** The last successful shared-spot download (wall ms), and "the last try failed" (kept until one succeeds). */
+    private const val SPOTS_OK_AT = "spots_ok_at"
+    private const val SPOTS_FAILED = "spots_failed"
+    /** Shared spots downloaded longer ago than this are out of date ([OfflineBanner]): the daily sync's period. */
+    const val SPOTS_STALE_MS = 24 * 60 * 60 * 1000L
 
     /** Runs never overlap (two parallel first runs would sign in as two devices); [SpeedLimitSync] takes it too. */
     internal val lock = Any()
@@ -267,6 +272,7 @@ object Sync {
             } catch (e: ApiException) {
                 Log.w(TAG, "sync: ${e.message}")
                 error = ApiErrors.describe(e.outcome)
+                store.put(SPOTS_FAILED, 1)   // the download is last: it failed, or never came
                 retry = e.outcome == Outcome.RETRY
             }
             // "Help improve detection" (own opt-in): its errors never stop the shared map.
@@ -362,6 +368,8 @@ object Sync {
         if (lat.isNaN() || lon.isNaN()) return   // no trip yet: nothing to download around
         val rows = spotsNear(api, store, lat, lon, now)
         store.replaceRemoteSpots(lat, lon, PULL_RADIUS_M.toDouble(), rows, now)
+        store.put(SPOTS_OK_AT, now)
+        store.put(SPOTS_FAILED, null)
     }
 
     /**
@@ -382,6 +390,8 @@ object Sync {
         LiveState.syncLastError = store.get(LAST_ERROR) ?: ""
         LiveState.syncPending = store.outboxCount()
         LiveState.syncRemoteSpots = store.remoteSpotCount()
+        LiveState.spotsOkAt = store.getLong(SPOTS_OK_AT)
+        LiveState.spotsFailed = store.get(SPOTS_FAILED) != null
         LiveState.trainingQueued = try { TrainingStore(store.helper).count() } catch (_: Exception) { 0 }
     }
 

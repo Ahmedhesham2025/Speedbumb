@@ -16,6 +16,7 @@ import android.widget.TextView
 import android.widget.Toast
 import app.bumpbeeper.ui.LiveLimitText
 import app.bumpbeeper.ui.SpeedSignView
+import app.bumpbeeper.sync.OfflineBanner
 import app.bumpbeeper.ui.SyncChoice
 import java.util.Locale
 
@@ -25,6 +26,8 @@ class DrivePage(private val a: MainActivity) : Page {
 
     private lateinit var status: TextView
     private lateinit var syncLine: TextView
+    private lateinit var offline: TextView
+    private var ticks = 0
     private lateinit var setupCard: LinearLayout
     private lateinit var startBtn: TextView
     private lateinit var speed: TextView
@@ -83,6 +86,14 @@ class DrivePage(private val a: MainActivity) : Page {
             setOnClickListener { if (!LiveState.recording) a.select(MainActivity.TAB_SETTINGS) }
         }
         add(syncLine)
+        // Offline and the shared spots are out of date (OfflineBanner): one line, never a popup while driving.
+        offline = Ui.text(a, 14f, Ui.ORANGE, bold = true, value = a.getString(R.string.drive_offline_banner)).apply {
+            gravity = Gravity.CENTER
+            setPadding(dp(12), dp(8), dp(12), dp(8))
+            background = Ui.rounded(a, Ui.SURFACE, 14, Ui.ORANGE)
+            visibility = View.GONE
+        }
+        add(offline, 4)
 
         // "New version available" banner; filled in by tick() once MainActivity's update check answers.
         updateCard = Ui.card(a).apply {
@@ -318,6 +329,8 @@ class DrivePage(private val a: MainActivity) : Page {
         val line = SyncChoice.driveLine(a)
         if (syncLine.text.toString() != line) syncLine.text = line
         syncLine.visibility = if (line.isEmpty()) View.GONE else View.VISIBLE
+        // Once a second is enough for the network check; off at once when recording stops.
+        if (!rec || ticks++ % 4 == 0) offline.visibility = if (rec && OfflineBanner.show(a)) View.VISIBLE else View.GONE
 
         speed.text = if (gpsOk) a.getString(R.string.drive_speed_kmh, String.format(Locale.US, "%.0f", LiveState.speedKmh))
             else if (rec) a.getString(R.string.drive_speed_unknown) else ""

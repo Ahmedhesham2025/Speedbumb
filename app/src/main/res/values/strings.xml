@@ -339,6 +339,7 @@
         <item quantity="other">Shared map: %1$s spots</item>
     </plurals>
     <string name="drive_sync_on">Shared map: on</string>
+    <string name="drive_offline_banner">Offline — shared bumps not updated</string>
     <string name="settings_section_shared_map">Shared map</string>
     <string name="settings_shared_map_hint">Warnings about bumps and potholes found by other drivers. Only spots are shared, never your route.</string>
     <string name="settings_sync_delete">Delete my shared data</string>
