@@ -86,8 +86,12 @@ class PhoneStateConfig {
     var brightLux = 30.0
     var pocketExitMs = 2000L
     var pocketExitHoldMs = 1000L
-    /** HANDLED ends after this long with no sign of handling... */
+    /** HANDLED ends after this long with no sign of handling; a [PhoneStateDetector.jostle] [jostleCalmMs] after its motion stopped... */
     var calmMs = 2000L
+    var jostleCalmMs = 500L
+    /** ...and the phone's readings stay untrusted for [marginMs] after it ([jostleMarginMs] after a jostle): [PhoneStateDetector.untrusted]. */
+    var marginMs = 2000L
+    var jostleMarginMs = 0L
     /**
      * ...or once the phone has rested within [resettleDeg] for this long, whatever the screen says (put down or slipped
      * somewhere new; not during a call). A phone not handled that rests this long somewhere new rests there now.
@@ -119,7 +123,12 @@ class PhoneStateConfig {
     var mountedTiltDeg = 1.5
     var mountedTiltDegCharging = 3.0
     var mountedTiltDegPlaced = 4.0
-    /** A jostle: handled for less than this, never tilted for [sustainedTiltMs] in a row, and nothing but motion. */
+    /**
+     * A jostle: handled for less than this, never tilted for [sustainedTiltMs] in a row, nothing but motion, and no sign
+     * of coming out of a pocket (the proximity sensor clears, or the light rises from at most [darkLux] to at least
+     * [brightLux]; the screen, an unlock and a call are signs of their own). In pocket mode a jostle is not phone use:
+     * motion alone in a pocket may last up to 2 s, but a real pick-up counts at [DrivingConfig.phoneUseS] like anywhere.
+     */
     var jostleMaxMs = 2000L
     var sustainedTiltMs = 2000L
     /** Pocket mode turns on by itself, for the rest of the trip, after this many jostles while driving within [autoPocketWindowMs]. */
@@ -182,7 +191,8 @@ class PhoneStateDetector(val cfg: PhoneStateConfig = PhoneStateConfig(), val sig
         private set
     /**
      * Time, while driving, the phone was tilted past [PhoneStateConfig.tiltDeg] or held by a sign other than its motion
-     * (the screen only while the phone moves).
+     * (the screen only while the phone moves). Tilted but lying still counts only once the phone moves again (put back,
+     * picked up): a phone that tipped over and stays there until it is re-learned was never in a hand.
      */
     var movingMs = 0L
         private set
@@ -195,9 +205,9 @@ class PhoneStateDetector(val cfg: PhoneStateConfig = PhoneStateConfig(), val sig
 
     /** Pocket mode: placement "pocket", or a phone that kept jostling while driving on this trip. */
     val pocketMode: Boolean get() = placement == "pocket" || autoPocket
-    /** The episode is (so far) only a jostle: short, no sustained tilt, nothing but motion. */
+    /** The episode is (so far) only a jostle ([PhoneStateConfig.jostleMaxMs]): short, no sustained tilt, nothing but motion. */
     val jostle: Boolean
-        get() = handledMs < cfg.jostleMaxMs && tiltHeldMs < cfg.sustainedTiltMs && (causes and NOT_MOTION) == 0
+        get() = handledMs < cfg.jostleMaxMs && tiltHeldMs < cfg.sustainedTiltMs && (causes and NOT_MOTION) == 0 && !outOfPocket
 
     /** For tests and tuning: the tilt from the baseline, degrees. */
     var tiltDeg = 0.0
@@ -222,8 +232,13 @@ class PhoneStateDetector(val cfg: PhoneStateConfig = PhoneStateConfig(), val sig
     private var tiltSince = NEVER; private var gyroSince = NEVER; private var screenSince = NEVER   // over the threshold since
     private var tiltRunMs = 0L
     private var lastSignMs = NEVER
+    /** The phone last turned or tilted past a threshold (the fast-turn rule lags behind the motion, so it doesn't count). */
+    private var lastMotionMs = NEVER
     private var lastMoveMs = NEVER   // the phone last rotated fast or was turned from where it rested
     private var movedDriving = false
+    private var outOfPocket = false   // the proximity sensor cleared or the light rose from dark during this episode
+    private var pendingTiltMs = 0L     // tilted, lying still, while driving: counted if the phone moves again
+    private var restedTilted = false   // it has rested (restMs) at the tilted angle in this episode
     private var tiltMs2 = 0.0   // mean square tilt over the mounted window
     private var stableSinceMs = NEVER
     private var speedKmh = 0.0
@@ -241,12 +256,33 @@ class PhoneStateDetector(val cfg: PhoneStateConfig = PhoneStateConfig(), val sig
     private var autoPocket = false
     // Recent episodes (start, end; end = Long.MAX_VALUE while going on), for [handledDuring].
     private val starts = LongArray(HISTORY); private val ends = LongArray(HISTORY); private var count = 0
+    private val wasJostle = BooleanArray(HISTORY)
 
     /** True if the phone was HANDLED at any time from [fromMs] to [toMs]. */
     fun handledDuring(fromMs: Long, toMs: Long): Boolean {
         for (i in 0 until min(count, HISTORY)) if (starts[i] <= toMs && ends[i] >= fromMs) return true
         return false
     }
+
+    /**
+     * True if the phone's readings from [fromMs] to [toMs] are not to be trusted: it was HANDLED then, or stopped being
+     * handled less than [PhoneStateConfig.marginMs] before ([PhoneStateConfig.jostleMarginMs] after a jostle).
+     */
+    fun untrusted(fromMs: Long, toMs: Long): Boolean {
+        for (i in 0 until min(count, HISTORY)) if (starts[i] <= toMs && ends[i] >= fromMs - margin(i)) return true
+        return false
+    }
+
+    /** Whatever makes [untrusted] true is a jostle (the episode going on: judged so far). */
+    fun onlyJostles(fromMs: Long, toMs: Long): Boolean {
+        for (i in 0 until min(count, HISTORY)) {
+            if (starts[i] > toMs || ends[i] < fromMs - margin(i)) continue
+            if (!(if (ends[i] == Long.MAX_VALUE) jostle else wasJostle[i])) return false
+        }
+        return true
+    }
+
+    private fun margin(i: Int) = if (ends[i] != Long.MAX_VALUE && wasJostle[i]) cfg.jostleMarginMs else cfg.marginMs
 
     fun onFix(f: Fix) {
         speedKmh = (if (f.speedMps.isNaN()) 0.0 else f.speedMps) * 3.6
@@ -402,20 +438,30 @@ class PhoneStateDetector(val cfg: PhoneStateConfig = PhoneStateConfig(), val sig
         if (handled) {
             // The screen keeps the phone handled, but is handling time only while the phone moves (a slipped phone rests).
             val notMotion = (signs and (if (still) NOT_MOTION and SCREEN.inv() else NOT_MOTION)) != 0
+            if (tiltOver || gyroOver || (signs and TURN.inv()) != 0) lastMotionMs = t
             if (moving && (tiltOver || rawOver)) movedDriving = true
+            if (max(farAtMs, brightAtMs) >= episodeStartMs - cfg.pocketExitMs) outOfPocket = true
             if (!began) {
                 if (tiltOver || rawOver || notMotion) handledMs += dtMs
-                if (moving && (tiltOver || notMotion)) movingMs += dtMs
+                if (moving && (notMotion || (tiltOver && (rawOver || !still)))) movingMs += dtMs
+                else if (moving && tiltOver) pendingTiltMs += dtMs
                 if (tiltOver) {
                     tiltRunMs += dtMs
                     tiltHeldMs = max(tiltHeldMs, tiltRunMs)
                 } else tiltRunMs = 0L
             }
+            // Tilted and lying still: that time counts once the phone moves again (fast, back from the tilt, or away from
+            // where it rested). If it rests there until it is re-learned (a tip-over), it never counts.
+            if (tiltOver && t - stillSinceMs >= cfg.restMs) restedTilted = true
+            if (pendingTiltMs > 0 && (rawOver || !tiltOver || (restedTilted && moved > cfg.screenTiltDeg))) {
+                movingMs += pendingTiltMs
+                pendingTiltMs = 0L
+            }
             // Rested in one place for a while (put down, slipped in its holder): that is where it is now. Not while the
             // screen is on and the phone is turned past tiltDeg: a hand held still looks the same, and the hand wins.
             val rested = t - anchorMs >= cfg.resettleMs && !(signals.screenOn && tiltOver)
             if (signs != 0 && (signs and (GYRO or TURN or CALL)) == 0 && rested) end(t)
-            else if (t - lastSignMs >= cfg.calmMs) end(t)
+            else if (if (jostle) t - lastMotionMs >= cfg.jostleCalmMs else t - lastSignMs >= cfg.calmMs) end(t)
         } else {
             val dt = dtMs / 1000.0
             val settling = !warm || t - lastHandledEndMs < cfg.settleMs
@@ -447,14 +493,21 @@ class PhoneStateDetector(val cfg: PhoneStateConfig = PhoneStateConfig(), val sig
         ax = cx; ay = cy; az = cz
         anchorMs = t
         movedDriving = false
+        pendingTiltMs = 0L
+        restedTilted = false
+        lastMotionMs = t
+        outOfPocket = false
         val i = count % HISTORY
         starts[i] = start
         ends[i] = Long.MAX_VALUE
+        wasJostle[i] = false
         count++
     }
 
     private fun end(t: Long) {
+        pendingTiltMs = 0L
         ends[(count - 1) % HISTORY] = t
+        wasJostle[(count - 1) % HISTORY] = jostle
         lastHandledEndMs = t
         handledSinceMs = NEVER
         // Put back where it rested before (the holder): it keeps its standing. Anywhere else: learned from scratch.

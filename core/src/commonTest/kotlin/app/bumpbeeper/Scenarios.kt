@@ -86,7 +86,7 @@ object Scenarios {
         check(east.size == 3 && east.all { it.passes == 2 }, "eastbound bumps should still have 2 passes each: ${east.map { it.passes }}")
     }
 
-    /** A passenger grabbing the phone must not create a bump. */
+    /** A passenger grabbing the phone must not create a bump: its jolts are rejected as "handled". */
     fun handlingIgnored() {
         log("handlingIgnored")
         val sim = Simulator(3)
@@ -94,7 +94,66 @@ object Scenarios {
         val r = sim.drive(store, DriveSpec(slowZonesAt = listOf(600.0), handlingAt = 600.0))
         describe("drive", r)
         check(r.newBumps == 0, "handling the phone created ${r.newBumps} bump(s)")
-        check("phone_moving" in r.rejected, "expected a phone_moving rejection, got ${r.rejected}")
+        check("handled" in r.rejected, "expected a handled rejection, got ${r.rejected}")
+    }
+
+    /**
+     * Owner: "When I hold the phone, it counted as a bump." A real bump crossed while the phone is held still in a hand
+     * (8 s, no shaking at that moment) is not learned either: the hand's reading is not the road's. Before E3 only the
+     * pick-up and the put-down were rejected, and this jolt became a spot.
+     */
+    fun bumpWhileHoldingIsNotLearned() {
+        log("bumpWhileHoldingIsNotLearned")
+        val store = MemoryStore()
+        val r = Simulator(91).drive(store, DriveSpec(holdsAt = listOf(560.0 to 8.0), bumpsAt = listOf(600.0), cruiseKmh = 30.0))
+        describe("bump while holding", r)
+        check(r.newBumps == 0 && store.saved.isEmpty(), "nothing is learned while the phone is held, got ${r.newBumps}")
+        check(r.rejected.size == 3 && r.rejected.all { it == "handled" }, "pick-up, bump and put-down rejected as handled: ${r.rejected}")
+        check(r.driving.phoneUse == 1, "and it is phone use, got ${r.driving.phoneUse}")
+    }
+
+    /**
+     * A jostle is not handling: a jolt 1.2 s after a 0.8 s jostle in the pocket (the phone shifting while braking for a
+     * bump) is learned. After real handling the 2 s calm and 2 s margin stay: a jolt 1.2 s after a 5 s hold, or during
+     * it, is rejected.
+     */
+    fun joltsAroundHandling() {
+        log("joltsAroundHandling")
+        val pocket = DrivingConfig().apply { placement = "pocket" }
+        val v = 40 / 3.6
+        fun drive(spec: DriveSpec) = Simulator(101).drive(MemoryStore(), spec, drivingCfg = pocket)
+        val jostle = drive(DriveSpec(cruiseKmh = 40.0, jostlesAt = listOf(700.0), jostleHeldS = 0.3, oneOffJoltsAt = listOf(700.0 + 2.0 * v)))
+        describe("jolt 1.2 s after a 0.8 s jostle", jostle)
+        check(jostle.newBumps == 1, "the jolt after the jostle is learned: ${jostle.rejected}")
+        check(jostle.rejected == listOf("phone_moving"), "only the jostle's own jolt is rejected: ${jostle.rejected}")
+        val after = drive(DriveSpec(cruiseKmh = 40.0, holdsAt = listOf(700.0 to 5.0), oneOffJoltsAt = listOf(700.0 + 6.8 * v)))
+        describe("jolt 1.2 s after a 5 s hold", after)
+        check(after.newBumps == 0 && after.rejected.last() == "handled", "rejected as handled: ${after.rejected}")
+        val during = drive(DriveSpec(cruiseKmh = 40.0, holdsAt = listOf(700.0 to 5.0), oneOffJoltsAt = listOf(700.0 + 3.0 * v)))
+        describe("jolt during a 5 s hold", during)
+        check(during.newBumps == 0 && during.rejected.last() == "handled", "rejected as handled: ${during.rejected}")
+    }
+
+    /**
+     * A known bump passed while the phone is held is neither a hit nor a miss: the pass is not counted ("pass_handled").
+     * The next pass, phone at rest, counts again.
+     */
+    fun passWhileHandledNotCounted() {
+        log("passWhileHandledNotCounted")
+        val store = MemoryStore()
+        val t1 = Simulator(91).drive(store, DriveSpec(bumpsAt = listOf(600.0), cruiseKmh = 30.0), tripId = 1)
+        describe("learn", t1)
+        check(t1.newBumps == 1 && store.saved.size == 1, "trip 1 learns the bump: ${t1.newBumps}")
+        val before = store.saved[0].copy()
+        val t2 = Simulator(92).drive(store, DriveSpec(holdsAt = listOf(560.0 to 8.0), bumpsAt = listOf(600.0), cruiseKmh = 30.0), tripId = 2)
+        describe("passed while held", t2)
+        val b = store.saved[0]
+        check(t2.knownHits == 0 && t2.stats.misses == 0, "no hit and no miss while held: ${t2.knownHits} hits, ${t2.stats.misses} misses")
+        check(b.hits == before.hits && b.passes == before.passes && b.misses == before.misses, "the pass is not counted: ${b.hits}/${b.passes}/${b.misses}")
+        check(store.events.any { it.type == "pass_handled" && it.tripId == 2L }, "the pass is logged as pass_handled")
+        val t3 = Simulator(93).drive(store, DriveSpec(bumpsAt = listOf(600.0), cruiseKmh = 30.0), tripId = 3)
+        describe("passed at rest", t3)
+        check(t3.knownHits == 1 && store.saved[0].passes == before.passes + 1, "the next pass counts: ${t3.knownHits} hits, ${store.saved[0].passes} passes")
     }
 
     /** Door slam while parked, and a jolt with no GPS yet: both ignored. */
@@ -358,7 +417,8 @@ object Scenarios {
     private fun describeDriving(name: String, d: DrivingStats) {
         log(
             "  $name: score=${d.score()} km=${formatFixed(d.distanceM / 1000, 1)} speeding=${formatFixed(d.speedingShare * 100, 0)}% " +
-                "brakes=${d.harshBrakes} accels=${d.harshAccels} corners=${d.harshCorners} swerves=${d.swerves} bumpsFast=${d.bumpsFast} phone=${d.phoneUse}",
+                "brakes=${d.harshBrakes} accels=${d.harshAccels} corners=${d.harshCorners} swerves=${d.swerves} bumpsFast=${d.bumpsFast} phone=${d.phoneUse} " +
+                "ignored brakes=${d.brakesIgnored} accels=${d.accelsIgnored}",
         )
     }
 
@@ -428,13 +488,16 @@ object Scenarios {
         check(t2.driving.bumpsFast == 2, "both bumps at 40 km/h should count, got ${t2.driving.bumpsFast}")
     }
 
-    /** A passenger (or driver) picking up the phone while moving counts as phone use. */
+    /** Picking up the phone and holding it 5 s while driving is phone use: no bump is learned from it, no harsh event counted. */
     fun phoneHandledWhileDriving() {
         log("phoneHandledWhileDriving")
         val sim = Simulator(3)
         val r = sim.drive(MemoryStore(), DriveSpec(slowZonesAt = listOf(600.0), handlingAt = 600.0))
         describeDriving("phone", r.driving)
-        check(r.driving.phoneUse == 1, "expected 1 phone use, got ${r.driving.phoneUse}")
+        val d = r.driving
+        check(d.phoneUse == 1, "expected 1 phone use, got ${d.phoneUse}")
+        check(r.newBumps == 0, "the handling must not be learned as a bump, got ${r.newBumps}")
+        check(d.harshBrakes + d.harshAccels + d.harshCorners + d.swerves == 0, "no harsh events while handled")
     }
 
     /**
@@ -449,6 +512,10 @@ object Scenarios {
             r.forwardTrace.lastOrNull()?.let { log("    $it") }
             check(r.driving.harshCorners == 0, "$place: a phone twisting in a pocket is not harsh cornering, got ${r.driving.harshCorners}")
             check(r.driving.swerves == 0, "$place: a phone twisting in a pocket is not a swerve, got ${r.driving.swerves}")
+            // Twisting both ways (40° and straight back) looks like a left-right push: still not the car.
+            val w = Simulator(61).drive(MemoryStore(), DriveSpec(wigglesAt = listOf(700.0, 1400.0)), drivingCfg = DrivingConfig().apply { placement = place })
+            describeDriving("wiggles, $place", w.driving)
+            check(w.driving.harshCorners == 0 && w.driving.swerves == 0, "$place: wiggles: corners ${w.driving.harshCorners}, swerves ${w.driving.swerves}")
         }
     }
 
@@ -463,23 +530,245 @@ object Scenarios {
     }
 
     /**
-     * Pocket mode: picking the phone out of a pocket is not counted as phone use. A phone that keeps jostling turns
-     * pocket mode on by itself: only the first jostle counts (the others fall in its 30 s pause), but holding the phone
-     * later still counts: pocket mode only excuses jostles.
+     * Pocket mode only excuses jostles: holding the phone counts in any placement, a pocket too. Taken out and held 5 s is
+     * phone use, picked up and put straight back (held 1 s) is not. Four jostles while driving turn pocket mode on by
+     * themselves; they are not phone use, the hold later is.
      */
-    fun pocketModeNoPhoneUse() {
-        log("pocketModeNoPhoneUse")
+    fun pocketModeExcusesOnlyJostles() {
+        log("pocketModeExcusesOnlyJostles")
         val pocket = DrivingConfig().apply { placement = "pocket" }
         val r1 = Simulator(3).drive(MemoryStore(), DriveSpec(slowZonesAt = listOf(600.0), handlingAt = 600.0), drivingCfg = pocket)
-        describeDriving("pocket, handled", r1.driving)
-        check(r1.driving.phoneUse == 0, "in pocket mode handling is not phone use, got ${r1.driving.phoneUse}")
-        check("phone_moving" in r1.rejected && r1.newBumps == 0, "the handling jolts are still rejected: ${r1.rejected}")
+        describeDriving("pocket, held 5 s", r1.driving)
+        check(r1.driving.phoneUse == 1, "held 5 s: phone use even in a pocket, got ${r1.driving.phoneUse}")
+        check(r1.newBumps == 0, "the handling jolts are rejected: ${r1.rejected}")
 
-        val r2 = Simulator(63).drive(MemoryStore(), DriveSpec(jostlesAt = listOf(300.0, 420.0, 540.0, 660.0), handlingAt = 1300.0))
-        describeDriving("loose phone", r2.driving)
-        r2.forwardTrace.lastOrNull()?.let { log("    $it") }
-        check(r2.pocketMode, "four jostles in half a minute should turn pocket mode on")
-        check(r2.driving.phoneUse == 2, "the first jostle and the later hold should count as phone use, got ${r2.driving.phoneUse}")
+        val r2 = Simulator(63).drive(MemoryStore(), DriveSpec(holdsAt = listOf(700.0 to 1.0)), drivingCfg = pocket)
+        describeDriving("pocket, held 1 s", r2.driving)
+        check(r2.driving.phoneUse == 0, "held 1 s in pocket mode is a jostle, got ${r2.driving.phoneUse}")
+        check("phone_moving" in r2.rejected && "handled" !in r2.rejected, "a pocket jostle's jolt is phone_moving: ${r2.rejected}")
+
+        val r3 = Simulator(63).drive(MemoryStore(), DriveSpec(jostlesAt = listOf(300.0, 420.0, 540.0, 660.0), handlingAt = 1300.0))
+        describeDriving("loose phone", r3.driving)
+        r3.forwardTrace.lastOrNull()?.let { log("    $it") }
+        check(r3.pocketMode, "four jostles in half a minute should turn pocket mode on")
+        check(r3.driving.phoneUse == 1, "the jostles are not phone use, the later hold is: got ${r3.driving.phoneUse}")
+    }
+
+    /** Unlocking the phone while driving is phone use when it isn't in a holder (here a pocket), even without a pick-up. */
+    fun unlockInPocketIsPhoneUse() {
+        log("unlockInPocketIsPhoneUse")
+        var unlocked = false
+        val spec = DriveSpec(slowZonesAt = listOf(300.0), phoneSignals = { _, s, _, sig, tMs ->
+            if (!unlocked && s >= 900.0) {
+                sig.unlockedAtMs = tMs
+                sig.screenOn = true
+                unlocked = true
+            }
+        })
+        val r = Simulator(71).drive(MemoryStore(), spec, drivingCfg = DrivingConfig().apply { placement = "pocket" })
+        describeDriving("unlocked in a pocket", r.driving)
+        check(r.driving.phoneUse == 1, "an unlock while driving is phone use, got ${r.driving.phoneUse}")
+    }
+
+    /**
+     * Navigation: a phone in a holder with its screen on for 10 minutes, unlocked at the start, just after a bump, just
+     * after a slow zone and once more, is never phone use: placement "mounted", or "unknown" (10 drives), where it must
+     * be judged mounted for at least 95 % of the time after the first minute.
+     */
+    fun mountedScreenOnIsNoPhoneUse() {
+        log("mountedScreenOnIsNoPhoneUse")
+        for ((place, seeds) in listOf("mounted" to listOf(72L), "unknown" to (72L..81L).toList())) for (seed in seeds) {
+            val unlocks = ArrayDeque(listOf(600.0, 1010.0, 2070.0, 2500.0))
+            val spec = DriveSpec(
+                roadM = 8000.0, bumpsAt = listOf(1000.0, 3000.0, 5500.0), slowZonesAt = listOf(2000.0, 4500.0, 7000.0),
+                phoneSignals = { _, s, _, sig, tMs ->
+                    sig.screenOn = true
+                    if (unlocks.isNotEmpty() && s >= unlocks.first()) {
+                        sig.unlockedAtMs = tMs
+                        unlocks.removeFirst()
+                    }
+                },
+            )
+            val r = Simulator(seed).drive(MemoryStore(), spec, drivingCfg = DrivingConfig().apply { placement = place })
+            describeDriving("$place #$seed, screen on, mounted ${formatFixed(r.mountedShare * 100, 1)} %", r.driving)
+            check(r.driving.movingS >= 600.0, "10 minutes of driving, got ${r.driving.movingS} s")
+            check(r.driving.phoneUse == 0, "$place #$seed: navigation in a holder is not phone use, got ${r.driving.phoneUse}")
+            check(r.phone?.state == PhoneState.STABLE_MOUNTED, "$place #$seed: the phone stays in its holder: ${r.phone?.state}")
+            check(r.mountedShare >= 0.95, "$place #$seed: mounted only ${r.mountedShare}")
+        }
+    }
+
+    /** A holder that slips 20° with the screen on: handled ~10 s at most, never phone use, mounted again (cup holder: loose). */
+    fun slipWithTheScreenOnIsNoPhoneUse() {
+        log("slipWithTheScreenOnIsNoPhoneUse")
+        for (place in listOf("mounted", "unknown", "cupholder")) {
+            val spec = DriveSpec(
+                roadM = 3000.0, slipsAt = listOf(600.0 to 20.0), bumpsAt = listOf(1000.0, 2200.0),
+                phoneSignals = { _, _, _, sig, _ -> sig.screenOn = true },
+            )
+            val r = Simulator(241).drive(MemoryStore(), spec, drivingCfg = DrivingConfig().apply { placement = place })
+            describeDriving("$place, slipped, handled ${formatFixed(r.handledS, 1)} s", r.driving)
+            check(r.driving.phoneUse == 0, "$place: a slipped holder is not phone use, got ${r.driving.phoneUse}")
+            check(r.handledS <= 12.0 && r.phone?.state != PhoneState.HANDLED, "$place: handled ${r.handledS} s, ${r.phone?.state}")
+            val want = if (place == "cupholder") PhoneState.STABLE_LOOSE else PhoneState.STABLE_MOUNTED
+            check(r.phone?.state == want, "$place: expected $want after the slip, got ${r.phone?.state}")
+            check(r.newBumps == 2, "$place: both bumps after the slip are learned: ${r.newBumps}, rejected ${r.rejected}")
+        }
+    }
+
+    /** Unlocks and calls count by the speed at that moment: an unlock at a red light, or a call made while stopped, is not phone use. */
+    fun stoppedIsNoPhoneUse() {
+        log("stoppedIsNoPhoneUse")
+        for (call in listOf(false, true)) {
+            var stoppedAt = -1.0
+            var unlocked = false
+            val spec = DriveSpec(stopsAt = listOf(800.0 to 20.0), phoneSignals = { t, s, v, sig, tMs ->
+                if (stoppedAt < 0 && s >= 790.0 && v <= 0.0) stoppedAt = t
+                if (!call && stoppedAt >= 0 && !unlocked && t >= stoppedAt + 4.0) {
+                    sig.unlockedAtMs = tMs
+                    sig.screenOn = true
+                    unlocked = true
+                }
+                if (call) {
+                    val on = stoppedAt >= 0 && t >= stoppedAt + 2.0 && t < stoppedAt + 12.0   // a 10 s call, ended before driving on
+                    sig.handheldCall = on
+                    sig.screenOn = on
+                }
+            })
+            val place = if (call) "unknown" else "pocket"
+            val r = Simulator(231).drive(MemoryStore(), spec, drivingCfg = DrivingConfig().apply { placement = place })
+            describeDriving(if (call) "call while stopped" else "unlock while stopped", r.driving)
+            check(stoppedAt > 0, "the car should stop")
+            check(r.driving.phoneUse == 0, "${if (call) "a call" else "an unlock"} while stopped is not phone use, got ${r.driving.phoneUse}")
+        }
+    }
+
+    /**
+     * One bar in every placement: a 1 s hold is not phone use, a 2 s hold is. In a pocket, motion with no other sign may
+     * last up to 2 s (a jostle); a pick-up with a sign of coming out (proximity clears, or light comes up) counts at 1.5 s.
+     */
+    fun holdLengthInEveryPlacement() {
+        log("holdLengthInEveryPlacement")
+        for ((secs, want) in listOf(1.0 to 0, 2.0 to 1)) for (place in listOf("pocket", "cupholder", "unknown", "mounted")) {
+            val r = Simulator(201).drive(MemoryStore(), DriveSpec(holdsAt = listOf(700.0 to secs), cruiseKmh = 30.0), drivingCfg = DrivingConfig().apply { placement = place })
+            describeDriving("held $secs s, $place", r.driving)
+            check(r.driving.phoneUse == want, "held $secs s, $place: expected $want phone use, got ${r.driving.phoneUse}")
+        }
+        val pocket = DrivingConfig().apply { placement = "pocket" }
+        // The measured handling and tilt, s, are pinned with each case.
+        fun pocketCase(what: String, spec: DriveSpec, use: Int, handled: ClosedFloatingPointRange<Double>, tilt: ClosedFloatingPointRange<Double>) {
+            val r = Simulator(63).drive(MemoryStore(), spec, drivingCfg = pocket)
+            val p = r.phone!!
+            val h = p.handledMs / 1000.0
+            val t = p.tiltHeldMs / 1000.0
+            describeDriving("pocket, $what: handled ${formatFixed(h, 2)} s, tilted ${formatFixed(t, 2)} s", r.driving)
+            check(r.driving.phoneUse == use, "$what: expected phone use $use, got ${r.driving.phoneUse}")
+            check(h in handled && t in tilt, "$what: handled $h s, tilted $t s")
+        }
+        pocketCase("motion only, 1.8 s", DriveSpec(jostlesAt = listOf(700.0), jostleHeldS = 1.4), 0, 1.6..1.95, 1.5..1.95)
+        pocketCase("motion only, 2.2 s", DriveSpec(jostlesAt = listOf(700.0), jostleHeldS = 1.8), 1, 2.05..2.4, 1.8..2.2)
+        pocketCase("held 1.6 s, the proximity sensor clears", DriveSpec(holdsAt = listOf(700.0 to 1.6),
+            phoneSignals = { _, s, _, sig, _ -> sig.proximityNear = s < 700.0 }), 1, 2.0..2.4, 1.7..2.1)
+        pocketCase("held 1.35 s, the light rises", DriveSpec(holdsAt = listOf(700.0 to 1.35),
+            phoneSignals = { _, s, _, sig, _ -> sig.lux = if (s < 700.0) 0.0 else 250.0 }), 1, 1.7..1.98, 1.5..1.9)
+    }
+
+    /**
+     * A phone that tips over and lies there is not phone use: in a cup holder during a 5 m/s² stop (the stop still counts,
+     * from the GPS speed), and on a seat at a steady speed. It is re-learned where it lies. A real 2 s pick-up still counts.
+     */
+    fun tipOverIsNoPhoneUse() {
+        log("tipOverIsNoPhoneUse")
+        val cup = DrivingConfig().apply { placement = "cupholder" }
+        val stop = DriveSpec(hardBrakesAt = listOf(700.0), hardBrakeMs2 = 5.0, slipsAt = listOf(704.0 to 70.0))
+        val r1 = Simulator(301).drive(MemoryStore(), stop, drivingCfg = cup)
+        describeDriving("cup holder, tipped over in a 5 m/s² stop, handled ${formatFixed(r1.handledS, 1)} s", r1.driving)
+        check(r1.driving.phoneUse == 0, "a tip-over is not phone use, got ${r1.driving.phoneUse}")
+        check(r1.driving.harshBrakes == 1, "the stop shows in the GPS speed and counts, got ${r1.driving.harshBrakes}")
+        check(r1.handledS <= 12.0 && r1.phone?.state == PhoneState.STABLE_LOOSE, "re-learned where it lies: ${r1.handledS} s, ${r1.phone?.state}")
+        val r2 = Simulator(301).drive(MemoryStore(), DriveSpec(slipsAt = listOf(700.0 to 80.0)))
+        describeDriving("seat, tipped over at 50 km/h, handled ${formatFixed(r2.handledS, 1)} s", r2.driving)
+        check(r2.driving.phoneUse == 0, "a tip-over on the seat is not phone use, got ${r2.driving.phoneUse}")
+        check(r2.handledS <= 12.0 && r2.phone?.state != PhoneState.HANDLED, "re-learned where it lies: ${r2.handledS} s, ${r2.phone?.state}")
+        val r3 = Simulator(301).drive(MemoryStore(), DriveSpec(holdsAt = listOf(700.0 to 2.0)), drivingCfg = cup)
+        describeDriving("cup holder, picked up 2 s", r3.driving)
+        check(r3.driving.phoneUse == 1, "a real 2 s pick-up is phone use, got ${r3.driving.phoneUse}")
+    }
+
+    /**
+     * The hand wins: lifted slowly (45° in 2 s) and read still for 20 s with the screen on is one handling and phone use,
+     * and the jolts felt during it are not trusted. With navigation on (the screen on all trip), a phone that tips 70° out
+     * of its holder or in the cup holder is no phone use; it stays handled until the screen goes off.
+     */
+    fun stillReadIsPhoneUse() {
+        log("stillReadIsPhoneUse")
+        fun read(jolts: List<Double>) = Simulator(63).drive(MemoryStore(), DriveSpec(holdsAt = listOf(700.0 to 20.0), holdDeg = 45.0,
+            holdLiftS = 2.0, oneOffJoltsAt = jolts, phoneSignals = { _, s, _, sig, _ -> sig.screenOn = s >= 700.0 }),
+            drivingCfg = DrivingConfig().apply { placement = "cupholder" })
+        val r = read(listOf(800.0, 900.0))
+        val r0 = read(emptyList())
+        describeDriving("cup holder, lifted 45° in 2 s, read 20 s, handled ${formatFixed(r.handledS, 1)} s", r.driving)
+        check(r.driving.phoneUse == 1 && r.phone?.episode == 1, "one handling, phone use: ${r.driving.phoneUse}, ${r.phone?.episode} handlings")
+        check(r.newBumps == r0.newBumps && r.rejected.count { it == "handled" } == r0.rejected.count { it == "handled" } + 2,
+            "the jolts at 800 and 900 m are rejected: ${r.rejected}")
+        for (where in listOf("mounted", "cupholder")) {
+            val nav = Simulator(63).drive(MemoryStore(), DriveSpec(slipsAt = listOf(700.0 to 70.0), phoneSignals = { _, _, _, sig, _ ->
+                sig.screenOn = true
+            }), drivingCfg = DrivingConfig().apply { placement = where })
+            describeDriving("navigation on, $where, tipped 70°, handled ${formatFixed(nav.handledS, 1)} s", nav.driving)
+            check(nav.driving.phoneUse == 0, "$where: a tip-over with navigation on is not phone use, got ${nav.driving.phoneUse}")
+            check(nav.phone?.state == PhoneState.HANDLED, "$where: handled until the screen goes off, ${nav.phone?.state}")
+        }
+    }
+
+    /** Without a lock screen every screen-on reads as an unlock: alone (a notification) it is nothing, with a pick-up it is phone use. */
+    fun noLockScreenUnlockNeedsMotion() {
+        log("noLockScreenUnlockNeedsMotion")
+        for (picked in listOf(false, true)) {
+            var on = false
+            val spec = DriveSpec(holdsAt = if (picked) listOf(800.0 to 0.5) else emptyList(), phoneSignals = { _, s, _, sig, tMs ->
+                sig.keyguardPresent = false
+                if (!on && s >= 800.0) {
+                    sig.unlockedAtMs = tMs
+                    sig.screenOn = true
+                    on = true
+                }
+            })
+            val r = Simulator(251).drive(MemoryStore(), spec, drivingCfg = DrivingConfig().apply { placement = "cupholder" })
+            describeDriving(if (picked) "no lock screen, picked up" else "no lock screen, notification", r.driving)
+            check(r.driving.phoneUse == (if (picked) 1 else 0), "picked up: $picked, phone use ${r.driving.phoneUse}")
+        }
+    }
+
+    /** A hand-held call while driving is phone use, once per call; the same call through the car's Bluetooth is not. */
+    fun handHeldCallIsPhoneUse() {
+        log("handHeldCallIsPhoneUse")
+        fun call(handHeld: Boolean) = DriveSpec(phoneSignals = { _, s, _, sig, _ ->
+            val on = s >= 600.0 && s < 1000.0   // about 30 s at 50 km/h
+            sig.handheldCall = on && handHeld
+            sig.screenOn = on
+        })
+        val held = Simulator(73).drive(MemoryStore(), call(true))
+        describeDriving("hand-held call", held.driving)
+        check(held.driving.phoneUse == 1, "a 30 s hand-held call while driving is phone use once, got ${held.driving.phoneUse}")
+        val bt = Simulator(73).drive(MemoryStore(), call(false), drivingCfg = DrivingConfig().apply { placement = "mounted" })
+        describeDriving("Bluetooth call", bt.driving)
+        check(bt.driving.phoneUse == 0, "a Bluetooth call is not phone use, got ${bt.driving.phoneUse}")
+    }
+
+    /**
+     * Braking must show in the GPS speed: the emergency stops of [speedingAndHardBraking] do and count, but the phone
+     * feeling 5 m/s² of braking for 1.2 s while the car keeps its speed (sliding, or tipping in a pocket) doesn't.
+     */
+    fun brakingNeedsTheGpsSpeed() {
+        log("brakingNeedsTheGpsSpeed")
+        val real = Simulator(52).drive(MemoryStore(), DriveSpec(cruiseKmh = 100.0, hardBrakesAt = listOf(900.0, 1600.0)))
+        describeDriving("emergency stops", real.driving)
+        check(real.driving.harshBrakes == 2 && real.driving.brakesIgnored == 0, "both real stops count: ${real.driving.harshBrakes}")
+        val spikes = Simulator(74).drive(MemoryStore(), DriveSpec(slowZonesAt = listOf(300.0), brakeSpikesAt = listOf(1000.0, 1500.0)))
+        describeDriving("brake spikes, steady GPS", spikes.driving)
+        check(spikes.driving.harshBrakes == 0, "the GPS speed didn't drop: no harsh brake, got ${spikes.driving.harshBrakes}")
+        check(spikes.driving.brakesIgnored == 2, "both spikes were felt, then ignored: ${spikes.driving.brakesIgnored}")
     }
 
     /** Picking the phone up 4 times in 5 minutes is phone use 4 times, and must not turn pocket mode on. */
@@ -848,7 +1137,18 @@ object Scenarios {
         "phoneHandledWhileDriving" to ::phoneHandledWhileDriving,
         "pocketShiftNotACorner" to ::pocketShiftNotACorner,
         "sharpTurnCounted" to ::sharpTurnCounted,
-        "pocketModeNoPhoneUse" to ::pocketModeNoPhoneUse,
+        "pocketModeExcusesOnlyJostles" to ::pocketModeExcusesOnlyJostles,
+        "unlockInPocketIsPhoneUse" to ::unlockInPocketIsPhoneUse,
+        "mountedScreenOnIsNoPhoneUse" to ::mountedScreenOnIsNoPhoneUse,
+        "handHeldCallIsPhoneUse" to ::handHeldCallIsPhoneUse,
+        "brakingNeedsTheGpsSpeed" to ::brakingNeedsTheGpsSpeed,
+        "slipWithTheScreenOnIsNoPhoneUse" to ::slipWithTheScreenOnIsNoPhoneUse,
+        "passWhileHandledNotCounted" to ::passWhileHandledNotCounted,
+        "stoppedIsNoPhoneUse" to ::stoppedIsNoPhoneUse,
+        "holdLengthInEveryPlacement" to ::holdLengthInEveryPlacement,
+        "noLockScreenUnlockNeedsMotion" to ::noLockScreenUnlockNeedsMotion,
+        "tipOverIsNoPhoneUse" to ::tipOverIsNoPhoneUse,
+        "stillReadIsPhoneUse" to ::stillReadIsPhoneUse,
         "repeatedHandlingIsPhoneUse" to ::repeatedHandlingIsPhoneUse,
         "fastBumpVersusRoadJoint" to ::fastBumpVersusRoadJoint,
         "dipIsABump" to ::dipIsABump,
@@ -860,6 +1160,8 @@ object Scenarios {
         "learnThenBeep" to ::learnThenBeep,
         "otherDirection" to ::otherDirection,
         "handlingIgnored" to ::handlingIgnored,
+        "bumpWhileHoldingIsNotLearned" to ::bumpWhileHoldingIsNotLearned,
+        "joltsAroundHandling" to ::joltsAroundHandling,
         "parkedAndNoGps" to ::parkedAndNoGps,
         "crawlVersusRemoved" to ::crawlVersusRemoved,
         "userMute" to ::userMute,

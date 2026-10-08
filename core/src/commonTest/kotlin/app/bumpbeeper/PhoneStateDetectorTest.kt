@@ -257,6 +257,17 @@ class PhoneStateDetectorTest {
         }
     }
 
+    @Test fun tipOverIsNoPhoneUseTime() {
+        for (gyro in listOf(true, false)) {
+            val r = Rig("cupholder", gyro = gyro).apply { kmh = 30.0 }.run(40.0).fresh()
+            r.run(0.3, rateDegS = 70 / 0.3).run(15.0)   // tips 70° and lies there
+            assertTrue(r.everHandled, "gyroscope $gyro: handled while it tips")
+            assertTrue(r.d.movingMs < 1500, "gyroscope $gyro: lying still is not phone-use time, ${r.d.movingMs} ms")
+            assertEquals(PhoneState.STABLE_LOOSE, r.d.state, "gyroscope $gyro: re-learned where it lies")
+            assertTrue(r.d.tiltDeg < 2.0, "gyroscope $gyro: tilt ${r.d.tiltDeg}")
+        }
+    }
+
     @Test fun holdIsSeenWithoutAGyroscope() {
         val r = Rig(gyro = false).run(5.0)
         r.run(0.5, rateDegS = 120.0).run(3.0)
