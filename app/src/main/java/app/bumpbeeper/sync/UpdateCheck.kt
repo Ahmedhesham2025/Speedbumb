@@ -115,7 +115,7 @@ object UpdateCheck {
         val version = json.optString("tag_name", "").removePrefix("v").removePrefix("V")
         // A pre-release from releases/latest (shouldn't happen) is not offered: keep what was saved before.
         if (version.isEmpty() || (!betas && isPreRelease(version))) return cached(ctx, current, betas)
-        val html = json.optString("html_url", "https://github.com/Ahmedhesham2025/Speedbumb/releases")
+        val html = json.optString("html_url", "https://github.com/Ahmedhesham2025/Speedbumb/releases/latest")
         // Each release carries one APK per edition; offer the one matching this install (else the release page).
         val download = pickApk(json.optJSONArray("assets"), BuildConfig.FLAVOR)
         sp.edit().putString(Prefs.UPDATE_VERSION, version).putString(Prefs.UPDATE_URL, download ?: "")
@@ -179,12 +179,18 @@ object UpdateCheck {
         return true
     }
 
-    /** Only GitHub's own https pages and downloads are opened. */
+    private const val RELEASES_PATH = "/ahmedhesham2025/speedbumb/releases/"
+
+    /**
+     * The only links the banner and the notification open: https, host exactly github.com, no port, no user info, and
+     * a path in this repository's releases (`html_url` and `browser_download_url` both are; GitHub's redirect to its
+     * download server happens in the browser).
+     */
     fun trusted(s: String): Boolean {
-        val uri = try { URI(s) } catch (_: Exception) { return false }
-        if (!"https".equals(uri.scheme, ignoreCase = true) || uri.userInfo != null) return false
-        val host = uri.host?.lowercase(Locale.US) ?: return false
-        return host == "github.com" || host.endsWith(".github.com") || host == "objects.githubusercontent.com"
+        val uri = try { URI(s).normalize() } catch (_: Exception) { return false }
+        if (!"https".equals(uri.scheme, ignoreCase = true) || uri.rawUserInfo != null || uri.port != -1) return false
+        if (uri.host?.lowercase(Locale.US) != "github.com") return false
+        return (uri.path ?: "").lowercase(Locale.US).startsWith(RELEASES_PATH)
     }
 
     /** The daily background check (SyncJob): any network, battery not low; it shares the once-a-day limit. */

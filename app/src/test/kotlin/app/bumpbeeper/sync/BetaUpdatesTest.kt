@@ -29,8 +29,8 @@ class BetaUpdatesTest {
 
     private fun release(tag: String, pre: Boolean = false, draft: Boolean = false) =
         """{"tag_name":"v$tag","prerelease":$pre,"draft":$draft,"html_url":"https://github.com/Ahmedhesham2025/Speedbumb/releases/tag/v$tag",
-           "assets":[{"name":"BumpBeeper-$tag.apk","browser_download_url":"https://github.com/x/BumpBeeper-$tag.apk"},
-                     {"name":"BumpBeeper-$tag-google.apk","browser_download_url":"https://github.com/x/BumpBeeper-$tag-google.apk"}]}"""
+           "assets":[{"name":"BumpBeeper-$tag.apk","browser_download_url":"https://github.com/Ahmedhesham2025/Speedbumb/releases/download/v$tag/BumpBeeper-$tag.apk"},
+                     {"name":"BumpBeeper-$tag-google.apk","browser_download_url":"https://github.com/Ahmedhesham2025/Speedbumb/releases/download/v$tag/BumpBeeper-$tag-google.apk"}]}"""
 
     private val list = "[" + listOf(release("1.9.0", draft = true), release("1.8.0-beta2", pre = true),
         release("1.8.0-beta3", pre = true), release("1.7.1")).joinToString(",") + "]"
@@ -71,7 +71,7 @@ class BetaUpdatesTest {
         val u = UpdateCheck.check(app, false, current = "1.8.0-beta2", fetch = gh, now = now)!!
         assertEquals("1.8.0-beta3", u.version)
         val google = BuildConfig.FLAVOR == "play"
-        assertEquals("https://github.com/x/BumpBeeper-1.8.0-beta3${if (google) "-google" else ""}.apk", u.downloadUrl)
+        assertEquals("https://github.com/Ahmedhesham2025/Speedbumb/releases/download/v1.8.0-beta3/BumpBeeper-1.8.0-beta3${if (google) "-google" else ""}.apk", u.downloadUrl)
         assertEquals(listOf(UpdateCheck.LIST_URL), gh.asked)
         // Once a day: the next start uses the saved answer.
         assertEquals("1.8.0-beta3", UpdateCheck.check(app, false, current = "1.8.0-beta2", fetch = gh, now = now + day / 2)!!.version)
@@ -105,7 +105,8 @@ class BetaUpdatesTest {
 
     @Test fun oneNotificationPerVersionAlsoAfterARestart() {
         val nm = app.getSystemService(NotificationManager::class.java)
-        val u = UpdateCheck.Update("1.8.0-beta3", "https://github.com/x/BumpBeeper-1.8.0-beta3.apk", "https://github.com/r")
+        val u = UpdateCheck.Update("1.8.0-beta3", "https://github.com/Ahmedhesham2025/Speedbumb/releases/download/v1.8.0-beta3/BumpBeeper-1.8.0-beta3.apk",
+            "https://github.com/Ahmedhesham2025/Speedbumb/releases/tag/v1.8.0-beta3")
         shadowOf(app).denyPermissions(Manifest.permission.POST_NOTIFICATIONS)
         assertFalse("no permission: the in-app banner only", UpdateCheck.notifyOnce(app, u))
         assertNull(Prefs.sp(app).getString(Prefs.UPDATE_NOTIFIED, null))
@@ -120,5 +121,25 @@ class BetaUpdatesTest {
         assertTrue(UpdateCheck.notifyOnce(app, u.copy(version = "1.8.0")))
         assertFalse("a link off GitHub is never opened", UpdateCheck.notifyOnce(app, u.copy(version = "9.0.0",
             downloadUrl = "http://evil.example/x.apk", htmlUrl = "https://evil.example")))
+    }
+
+    @Test fun onlyThisRepositorysReleasesAreOpened() {
+        for (ok in listOf(
+            "https://github.com/Ahmedhesham2025/Speedbumb/releases/tag/v1.8.0-beta3",
+            "https://github.com/Ahmedhesham2025/Speedbumb/releases/download/v1.8.0/BumpBeeper-1.8.0-google.apk",
+            "https://GitHub.com/ahmedhesham2025/speedbumb/releases/latest",
+        )) assertTrue(ok, UpdateCheck.trusted(ok))
+        for (bad in listOf(
+            "https://github.com/someone-else/x/releases/download/v1/evil.apk",        // a foreign repository
+            "https://github.com/Ahmedhesham2025/Speedbumb/releases/../../x/evil.apk",  // climbs out of the releases
+            "https://github.com/Ahmedhesham2025/Speedbumb/issues/1",
+            "https://evil.github.com/Ahmedhesham2025/Speedbumb/releases/tag/v1",       // a github.com subdomain
+            "https://objects.githubusercontent.com/Ahmedhesham2025/Speedbumb/releases/x.apk",
+            "http://github.com/Ahmedhesham2025/Speedbumb/releases/tag/v1",             // not https
+            "https://github.com:8443/Ahmedhesham2025/Speedbumb/releases/tag/v1",        // a port
+            "https://user@github.com/Ahmedhesham2025/Speedbumb/releases/tag/v1",       // user info
+            "https://github.com.evil.example/Ahmedhesham2025/Speedbumb/releases/x",
+            "not a url",
+        )) assertFalse(bad, UpdateCheck.trusted(bad))
     }
 }
