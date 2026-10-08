@@ -111,8 +111,11 @@ object ResearchChoice {
         }
         val problem = when {
             !on && Prefs.researchNote(ctx) == ResearchConsent.SESSION_RESET -> ctx.getString(R.string.research_session_reset)
-            on && st.pausedUntil > now -> ctx.getString(
-                if (st.pausedWhy == "device_daily") R.string.research_status_paused_daily else R.string.research_status_paused_full, ago(st.pausedUntil))
+            on && st.pausedUntil > now -> ctx.getString(when (st.pausedWhy) {
+                "device_daily" -> R.string.research_status_paused_daily
+                "refused" -> R.string.research_status_paused_refused
+                else -> R.string.research_status_paused_full
+            }, ago(st.pausedUntil))
             else -> ""
         }
         return info.joinToString("\n") to problem

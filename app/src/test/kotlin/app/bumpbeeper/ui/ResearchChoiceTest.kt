@@ -46,13 +46,14 @@ class ResearchChoiceTest {
             status(files = 3, bytes = 12_500_000, last = now - 2 * hour).first)
         assertEquals("Paused (server storage full). Next try: In 5 hours", status(until = now + 5 * hour, why = "full").second)
         assertEquals("Paused (daily upload limit). Next try: In 5 hours", status(until = now + 5 * hour, why = "device_daily").second)
+        assertEquals("Paused (the server refused the upload). Next try: In 5 hours", status(until = now + 5 * hour, why = "refused").second)
         assertEquals("a pause that is over says nothing", "", status(until = now - 1, why = "full").second)
         ResearchConsent.sessionReset(ctx)
         assertTrue(status().second.startsWith("Your anonymous ID was reset"))
     }
 
     @Test fun theResearchIdAndEarlierOnes() {
-        assertEquals("Research ID: none yet (made with the first upload)", ResearchChoice.idText(ctx, null, emptyList()))
+        assertEquals("Research ID: none yet (made when the app first signs in to our server)", ResearchChoice.idText(ctx, null, emptyList()))
         assertEquals("Research ID: abc", ResearchChoice.idText(ctx, "abc", listOf("abc")))
         assertEquals("Research ID: abc\nEarlier IDs: old1, old2", ResearchChoice.idText(ctx, "abc", listOf("old1", "abc", "old2")))
     }

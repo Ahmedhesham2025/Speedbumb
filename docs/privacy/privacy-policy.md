@@ -24,8 +24,9 @@ tells you; you can turn it on again. Your shared-map and speed-limit choices sta
 **Research recordings** (off unless you said yes, see section 5) hold the full recording of each trip, **including the
 whole GPS route**, in app storage that is never backed up or moved to a new phone. They are kept up to **14 days**
 (7 days after their upload). *Share recordings* also saves a zip of them in **Downloads/BumpBeeper/research**, where
-other apps (a file manager, a PC) can read it and the 14 days don't apply. After a backup restore research recording
-is off (the new anonymous device never agreed to it) and the first-start question comes again.
+other apps (a file manager, a PC) can read it and the 14 days don't apply. Recordings from before you last turned it
+off are never uploaded and are deleted when you turn it on again. After a backup restore research recording is off
+(the new anonymous device never agreed to it) and the first-start question comes again.
 
 ## Start recording when I drive (off by default; Settings → Auto start)
 If you turn this on, the app notices that you are driving and starts recording without Bluetooth, **even when the app
@@ -157,23 +158,31 @@ useful phone sensor during your trips so the detection can be improved offline.
 - **Recorded during trips:** all motion sensors at up to 200 times a second (accelerometer, gyroscope and their raw
   versions, gravity, rotation, compass), pressure, light and proximity; every GPS fix (position, speed, heading,
   accuracy) and satellite counts; **phone-use signals**: screen on/off, unlock, lock state, call state and where sound
-  goes (Bluetooth or wired, never what is said), car Bluetooth, charging and battery; labels you tap in label mode. Each
-  file names the phone's **manufacturer and model**, the Android and app versions, a random research file ID (new each
-  time you say yes) and the trip number on the phone. **No microphone, no camera**, no name, email or phone number.
+  goes (Bluetooth or wired, never what is said), car Bluetooth, charging and battery; **steps and walking/driving
+  detection** (Play Store version only, with the *Physical activity* permission: the phone's step detector and Google's
+  activity recognition); labels you tap in label mode. Each file also holds **the trip's date and time** (to the
+  second, also in its name), how the trip started (you, the car's Bluetooth or motion detection), where the phone sits,
+  the phone's **manufacturer and model** with its list of sensors, the Android and app versions, a random research file
+  ID (new each time you say yes) and the trip number on the phone. **No microphone, no camera**, no name, email or
+  phone number.
 - **On the phone:** see *What is kept on your phone* (the full recording, whole GPS route included; 14 days).
-- **What leaves the phone:** only on **Wi-Fi** (an unmetered network), and only the part of each trip **after its first
-  300 m and before its last 300 m** driven: every line recorded in those stretches is removed first, and nothing of a
-  trip shorter than 600 m is sent. Trips that started by themselves are held until you answer "Was this a drive?"; *No*
-  deletes their recordings. About 25–30 MB per hour of driving, in files of about 5 MB.
+- **What leaves the phone:** only on **Wi-Fi** (an unmetered network), and **never the start or end of a trip**: every
+  line, of every kind, recorded before the car has both driven 300 m and got 300 m (in a straight line) from where the
+  trip started is removed, and so is everything after the last point that is both more than 300 m driven before the
+  end and more than 300 m from where the trip ended. So a phone parked at home sends nothing of that time, even if its
+  GPS wanders. Nothing of a trip shorter than 600 m is sent. (A route that passes near the start or end again in the
+  middle of the trip is kept.) Trips that started by themselves are held until you answer "Was this a drive?"; *No*
+  deletes their recordings. About 27–32 MB per hour of driving, in files of about 5 MB.
 - **Where and who:** to a private store on our server (Supabase, Frankfurt), in a folder named after your anonymous
   account ID, shown in Settings as your **Research ID**. Phones can only add files there, never read them. The app's
   owner downloads the files for research (at least weekly), which deletes them from the server, and uses them only to
   improve detection: never sold, never used for ads.
 - **Turning it off** stops recording and uploading at once (the server is told when the phone is next online). Files
-  already uploaded **stay until deleted on request**: send your Research ID (Settings → Research recordings → *Copy
-  Research ID*) through the contact below, or use **Delete my shared data**, which has them erased, together with any
-  downloaded copies, at the owner's next run (at least weekly). If the anonymous sign-in is reset, the app switches
-  research off and tells you.
+  already uploaded **stay until deleted on request**. The private way is **Delete my shared data** (Settings → Shared
+  map): it has them erased, together with any downloaded copies, at the owner's next run (at least weekly). You can also
+  ask the owner with your Research ID (Settings → Research recordings → *Copy Research ID*) through the private contact
+  below. **GitHub issues are public: never post your Research ID there.** If the anonymous sign-in is reset, the app
+  switches research off and tells you.
 
 ## Where the data is processed
 Our server is [Supabase](https://supabase.com) in Frankfurt, Germany (EU). The speed-limit lookup asks Supabase to run
@@ -200,7 +209,7 @@ Supabase sees the internet address a request comes from; its own sign-in records
 | Research recordings (on the phone, whole GPS route included) | 14 days, or 7 days after their upload; a zip you shared stays in Downloads until you delete it |
 | Research recordings (our server) | Until the owner downloads them (at least weekly); with *Delete my shared data*, erased at the owner's next run |
 | Research recordings downloaded by the app's owner | **TODO-OWNER: The owner keeps downloaded copies for up to 12 months** (to be confirmed by the owner), or until you ask for deletion with your Research ID or use *Delete my shared data* |
-| Research upload records (file name, size, time, device) | Until the owner clears the file, or erased with your files on request |
+| Research upload records (anonymous ID, file name with the trip's start time, size, upload time) | Kept after the owner clears the file, until you use *Delete my shared data* or ask for deletion |
 
 ## Your choices
 - **Change or withdraw consent** at any time: Settings → Shared map (*Receive only*, *Share and receive*, or *Off*), and
@@ -226,7 +235,9 @@ The app is meant for drivers and is not directed at children.
 
 ## Changes and contact
 Changes to this policy are made in the public repository, where you can see every version. Questions: open an issue
-at <https://github.com/Ahmedhesham2025/Speedbumb/issues>.
+at <https://github.com/Ahmedhesham2025/Speedbumb/issues>. **Issues are public**: never post your Research ID or anything
+personal there. Deletion requests and private questions: **TODO-OWNER: private contact (for example an email address)
+to be added by the owner**; until then, use *Delete my shared data* in the app.
 
 ## For store listings
 Notes for the Play Store *Data safety* form and the F-Droid listing (store-docs to finalise):
@@ -374,25 +385,35 @@ TomTom: <https://www.tomtom.com/privacy/>. سيرفرنا مش بيحتفظ بح
 وبيفضل مقفول إلا لو قلت **أيوه**.
 - **بيتسجّل وانت سايق:** كل حسّاسات الحركة لحد 200 مرة في الثانية، والضغط والإضاءة والقرب؛ كل قراءة GPS (المكان
   والسرعة والاتجاه والدقة) وعدد الأقمار؛ **إشارات استخدام الموبايل**: الشاشة شغّالة ولا لأ، فتح القفل، حالة القفل،
-  حالة المكالمة والصوت رايح فين (بلوتوث أو سلك، عمره ما بيسجّل الكلام)، بلوتوث العربية، الشحن والبطارية. كل ملف
-  مكتوب فيه **شركة الموبايل والموديل** ونسخة الأندرويد والتطبيق ورقم ملفات عشوائي (بيتغيّر كل مرة تقول أيوه) ورقم
-  الرحلة على الموبايل. **من غير مايك ولا كاميرا**، ومن غير اسم ولا إيميل ولا رقم تليفون.
+  حالة المكالمة والصوت رايح فين (بلوتوث أو سلك، عمره ما بيسجّل الكلام)، بلوتوث العربية، الشحن والبطارية؛ **الخطوات
+  وكشف المشي والسواقة** (نسخة جوجل بلاي بس، بإذن «النشاط البدني»: عدّاد الخطوات في الموبايل وكشف النشاط بتاع جوجل)؛
+  والعلامات اللي بتدوس عليها في وضع العلامات. كل ملف فيه كمان **تاريخ الرحلة ووقتها** (بالثانية، وفي اسمه كمان)، والرحلة
+  بدأت إزاي (إنت، بلوتوث العربية أو كشف الحركة)، والموبايل متحطّ فين، و**شركة الموبايل والموديل** ولستة الحسّاسات
+  بتاعته، ونسخة الأندرويد والتطبيق، ورقم ملفات عشوائي (بيتغيّر كل مرة تقول أيوه) ورقم الرحلة على الموبايل. **من غير مايك
+  ولا كاميرا**، ومن غير اسم ولا إيميل ولا رقم تليفون.
 - **على الموبايل:** التسجيل كامل، ومعاه طريق الـ GPS كله، بيتحفظ لحد **14 يوم** (7 أيام بعد ما يترفع) في مساحة
   التطبيق اللي عمرها ما بتدخل النسخة الاحتياطية ولا بتتنقل لموبايل جديد. «شارك التسجيلات» بيحفظ كمان ملف zip في
-  **Downloads/BumpBeeper/research**، وتطبيقات تانية تقدر تقراه ومش بيتمسح بعد 14 يوم. بعد استرجاع نسخة احتياطية،
-  تسجيل البحث بيتقفل والسؤال بيرجع تاني.
-- **اللي بيطلع من الموبايل:** على **الواي فاي** بس، ومن غير **أول وآخر 300 متر** من كل رحلة (كل السطور اللي اتسجّلت
-  فيهم بتتشال الأول)، ومفيش حاجة من رحلة أقصر من 600 متر. الرحلات اللي بدأت لوحدها بتستنى ردّك على «كنت إنت اللي
-  سايق؟»، و«لأ» بيمسح تسجيلاتها. حوالي 25–30 ميجا في كل ساعة سواقة.
+  **Downloads/BumpBeeper/research**، وتطبيقات تانية تقدر تقراه ومش بيتمسح بعد 14 يوم. التسجيلات اللي قبل آخر مرة قفلته
+  عمرها ما بتترفع، وبتتمسح لما تفتحه تاني. بعد استرجاع نسخة احتياطية، تسجيل البحث بيتقفل والسؤال بيرجع تاني.
+- **اللي بيطلع من الموبايل:** على **الواي فاي** بس، و**عمره ما بيطلع أول أو آخر الرحلة**: كل السطور، من كل نوع، اللي
+  اتسجّلت قبل ما العربية تكون مشيت 300 متر وبعدت 300 متر (خط مستقيم) عن مكان بداية الرحلة بتتشال، وكمان كل اللي بعد
+  آخر نقطة بعيدة أكتر من 300 متر سواقة عن الآخر وأكتر من 300 متر عن مكان نهاية الرحلة. يعني الموبايل وهو راكن في البيت
+  مش بيبعت أي حاجة من الوقت ده، حتى لو الـ GPS بيتهزّ. ومفيش حاجة من رحلة أقصر من 600 متر. (لو الطريق عدّى جنب
+  البداية أو النهاية تاني في نص الرحلة، الجزء ده بيفضل.) الرحلات اللي بدأت لوحدها بتستنى ردّك على «كنت إنت اللي
+  سايق؟»، و«لأ» بيمسح تسجيلاتها. حوالي 27–32 ميجا في كل ساعة سواقة.
 - **فين ومين:** مخزن خاص على سيرفرنا (Supabase، فرانكفورت)، في فولدر باسم المُعرّف المجهول بتاعك، اللي بيظهر في
   الإعدادات باسم **رقم البحث**. الموبايل يقدر يضيف ملفات بس، عمره ما يقراها. صاحب التطبيق بينزّل الملفات للبحث (مرة في
   الأسبوع على الأقل) وده بيمسحها من السيرفر، وبيستخدمها بس لتحسين الكشف، وعمرها ما بتتباع ولا بتُستخدم للإعلانات.
   **TODO-OWNER: صاحب التطبيق بيحتفظ بالنسخ اللي نزّلها لحد 12 شهر** (صاحب التطبيق لسه هيأكّد المدة).
-- **لو قفلته** التسجيل والرفع بيقفوا على طول. الملفات اللي اترفعت **بتفضل لحد ما تطلب مسحها**: ابعت رقم البحث بتاعك
-  (الإعدادات ← تسجيلات البحث ← «انسخ رقم البحث») على العنوان اللي تحت، أو استخدم «امسح بياناتي المتشاركة» اللي بيمسحها
-  هي والنسخ اللي اتنزّلت أول مرة صاحب التطبيق يشغّل أداة البحث (مرة في الأسبوع على الأقل).
+- **لو قفلته** التسجيل والرفع بيقفوا على طول. الملفات اللي اترفعت **بتفضل لحد ما تطلب مسحها**. الطريقة الخاصة هي
+  «امسح بياناتي المتشاركة» (الإعدادات ← الخريطة المتشاركة): بيمسحها هي والنسخ اللي اتنزّلت أول مرة صاحب التطبيق يشغّل
+  أداة البحث (مرة في الأسبوع على الأقل). وتقدر كمان تطلب من صاحب التطبيق برقم البحث بتاعك (الإعدادات ← تسجيلات البحث ←
+  «انسخ رقم البحث») على العنوان الخاص اللي تحت. **الـ issues على GitHub عامة: عمرك ما تكتب رقم البحث بتاعك هناك.**
 
-**السيرفر:** Supabase في فرانكفورت، ألمانيا، والبحث عن حدود السرعة بيشتغل في فرانكفورت كمان. التقارير بتتدمج في
+**السيرفر:** Supabase في فرانكفورت، ألمانيا، والبحث عن حدود السرعة بيشتغل في فرانكفورت كمان. تسجيلات البحث بتفضل في
+مخزن خاص لحد ما صاحب التطبيق ينزّلها (مرة في الأسبوع على الأقل)، ومع «امسح بياناتي المتشاركة» بتتمسح أول مرة يشغّل
+الأداة؛ سجل الرفع بتاعها (المُعرّف المجهول، اسم الملف بوقت بداية الرحلة، الحجم، ووقت الرفع) بيفضل بعد ما الملف يتمسح، لحد
+ما تمسح بياناتك المتشاركة أو تطلب المسح. التقارير بتتدمج في
 الخريطة وبتتمسح بعد حوالي يوم. سجل الموبايل، ومساهماته في الأماكن (عدد المرات، من غير أوقات)، وتقارير الأعطال بيفضلوا
 لحد ما تمسح بياناتك المتشاركة. عيّنات التدريب وملخّصات الرحلات: 12 شهر على السيرفر أو لحد ما تقفل «ساعد في تحسين
 الكشف» أو تمسح بياناتك المتشاركة؛ اللي لسه ما اتبعتش: 7 أيام على الموبايل. بيانات الرحلة المستنية «كنت إنت اللي
@@ -411,4 +432,6 @@ TomTom: <https://www.tomtom.com/privacy/>. سيرفرنا مش بيحتفظ بح
 - عشان تمسح كل حاجة على الموبايل: إعدادات أندرويد ← التطبيقات ← Bump Beeper ← التخزين ← مسح التخزين، أو امسح
   التطبيق.
 
-أسئلة: افتح issue على <https://github.com/Ahmedhesham2025/Speedbumb/issues>.
+أسئلة: افتح issue على <https://github.com/Ahmedhesham2025/Speedbumb/issues>. **الـ issues عامة**: عمرك ما تكتب رقم
+البحث بتاعك أو أي حاجة شخصية هناك. طلبات المسح والأسئلة الخاصة: **TODO-OWNER: عنوان تواصل خاص (زي إيميل) صاحب التطبيق
+هيضيفه**؛ لحد ما يتضاف، استخدم «امسح بياناتي المتشاركة» في التطبيق.
