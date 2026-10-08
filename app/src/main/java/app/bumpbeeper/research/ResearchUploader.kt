@@ -30,13 +30,13 @@ import java.util.concurrent.atomic.AtomicBoolean
  * needed) after each trip and about every 6 hours, as supabase/README.md "Research recordings" says: per file, oldest
  * trip first, `research_reserve(name, bytes)`, then one plain POST of exactly those bytes to Storage.
  *
- * A trip goes only if it was recorded with research on ([ResearchQueue]), has ended (its files untouched for
- * [SETTLE_MS]; a trip the app died in counts after [STALE_MS] unless it started by itself), isn't held for "Was this a
- * drive?", has no file still being written, and is long enough: its first and last 300 m are cut off first
- * ([ResearchTrim]). Reserve: "ok" uploads; "full" / "device_daily" pause the queue [PAUSE_MS]; "no_consent" stops
- * (switched off here); 22023 drops the file. Upload: 200 / 409 done; 403 reserves once more, then drops; 413 drops;
- * 401 refreshes the session once ([SupabaseApi.upload]); 5xx or offline backs off. A file over [MAX_FILE_BYTES]
- * (never seen: a 10-minute segment is ~5 MB) is skipped and logged.
+ * A trip goes only if recorded with research on ([ResearchQueue]) under the current opt-in (research id), ended (files
+ * quiet [SETTLE_MS]; one the app died in after [STALE_MS], unless it started by itself), not held for "Was this a
+ * drive?", with no file being written, and long enough: its ends are cut off first ([ResearchTrim]). Reserve: "ok"
+ * uploads; "full" / "device_daily" pause the queue [PAUSE_MS]; "no_consent" or a dead session (never a new device)
+ * switch research off here; 22023 drops the file. Upload: 200 / 409 done; 403 reserves once more, then pauses the queue
+ * (a file refused [MAX_FAILS] times is dropped); 413 drops; 401 refreshes once; 5xx or offline backs off. A file over
+ * [MAX_FILE_BYTES] (never seen: a 10-minute segment is ~5 MB) is skipped and logged.
  */
 object ResearchUploader {
     private const val TAG = "BumpBeeper"
@@ -120,19 +120,21 @@ object ResearchUploader {
             // A choice not told yet goes first: nothing uploads before the server has "on".
             if (ResearchConsent.pending(ctx) && ResearchConsent.run(ctx, transport)) return true
             if (!ResearchConsent.active(ctx)) return false
-            ResearchQueue.tidy(ctx, now)
-            recoverStale(ctx, now)
+            ResearchQueue.tidy(ctx, now)   // also finishes a `.part` a killed app left (untouched for a minute)
+            val id = ResearchFiles.researchId(ctx)
+            deleteWithdrawn(ctx, id)
             if (now < ResearchQueue.read(ctx) { it.pausedUntil } || metered()) return false
-            val auth = SupabaseAuth(ctx, BuildConfig.SUPABASE_URL, BuildConfig.SUPABASE_KEY, transport)
+            // Never a new device: a dead session takes this phone's consent with it ([failed]).
+            val auth = SupabaseAuth(ctx, BuildConfig.SUPABASE_URL, BuildConfig.SUPABASE_KEY, transport, mayCreate = false)
             val api = SupabaseApi(BuildConfig.SUPABASE_URL, BuildConfig.SUPABASE_KEY, auth, transport)
             for (stamp in trips(ctx)) {
-                for (item in items(ctx, stamp, now)) {
+                for (item in items(ctx, stamp, id, now)) {
                     if (stopRequested || metered() || !ResearchConsent.active(ctx)) return stopRequested
                     val uid = try {
                         auth.accessToken()
                         auth.userId?.lowercase(Locale.US)
                     } catch (e: ApiException) {
-                        return e.outcome == Outcome.RETRY
+                        return failed(ctx, e) == Next.RETRY
                     } ?: return true
                     when (send(ctx, api, files, uid, item, now, maxBytes)) {
                         Next.NEXT -> continue
@@ -156,9 +158,16 @@ object ResearchUploader {
     private fun trips(ctx: Context): List<String> =
         (ResearchFiles.dir(ctx).list() ?: emptyArray()).mapNotNull { ResearchFiles.stampOf(it) }.distinct().sorted()
 
+    private fun idOf(f: File) = ResearchFiles.parse(f.name.removeSuffix(ResearchWriter.PART))?.id
+
+    /** Another research id = recorded before an "off" (each "on" gets a new id): withdrawn, never uploaded, deleted. */
+    private fun deleteWithdrawn(ctx: Context, id: String) =
+        ResearchFiles.dir(ctx).listFiles { f -> idOf(f).let { it != null && it != id } }?.forEach { it.delete() }
+
     /** The files of trip [stamp] that may go now (see the class comment); finds and keeps its trim window once. */
-    private fun items(ctx: Context, stamp: String, now: Long): List<Item> {
+    private fun items(ctx: Context, stamp: String, id: String, now: Long): List<Item> {
         val files = ResearchFiles.dir(ctx).listFiles { f -> ResearchFiles.stampOf(f.name) == stamp } ?: return emptyList()
+        if (files.any { idOf(it) != id }) return emptyList()   // an earlier opt-in's file not deleted: still never
         val q = ResearchQueue.read(ctx) { ResearchQueue.State(JSONObject(it.json.toString())) }   // a snapshot
         val t = q.trip(stamp) ?: return emptyList()   // recorded without research consent: never
         if (t.has("skip") || files.isEmpty() || files.any { it.name.endsWith(ResearchWriter.PART) }) return emptyList()
@@ -195,24 +204,23 @@ object ResearchUploader {
         val name = "$uid/${item.name}"
         var again = false
         while (true) {
+            if (again && !ResearchConsent.active(ctx)) return Next.STOP   // switched off meanwhile: no second reservation
             val answer = try {
                 api.rpc("research_reserve", JSONObject().put("name", name).put("bytes", bytes)).trim().removeSurrounding("\"")
             } catch (e: ApiException) {
-                return if (e.outcome == Outcome.DROP) drop(ctx, item.name, "invalid") else Next.RETRY
+                return if (e.outcome == Outcome.DROP) drop(ctx, item.name, "invalid") else failed(ctx, e)
             }
             when (answer) {
                 "ok" -> {}
-                "full", "device_daily" -> {
-                    ResearchQueue.edit(ctx) { it.pausedUntil = now + PAUSE_MS; it.pausedWhy = answer }
-                    return Next.STOP
-                }
+                "full", "device_daily" -> return pause(ctx, now, answer)
                 "no_consent" -> { ResearchConsent.sessionReset(ctx); return Next.STOP }
                 else -> return Next.RETRY
             }
+            if (stopRequested) return Next.RETRY   // the job lost its network or the battery is low
             val code = try {
                 api.upload("research", name, body, bytes, "application/gzip", files)
             } catch (e: ApiException) {
-                return Next.RETRY
+                return failed(ctx, e)
             }
             when {
                 code in 200..299 || code == 409 -> {   // 409: stored by an earlier try
@@ -221,12 +229,22 @@ object ResearchUploader {
                     return Next.NEXT
                 }
                 code == 403 && !again -> again = true   // reserve once more, then try once more
-                code == 403 || code == 413 -> return drop(ctx, item.name, "http $code")
+                code == 413 -> return drop(ctx, item.name, "http 413")
                 code == 401 || code >= 500 -> return Next.RETRY
-                else -> return if (ResearchQueue.edit(ctx) { it.failed(item.name) } >= MAX_FAILS) drop(ctx, item.name, "http $code") else Next.RETRY
+                // Refused twice is a server rule, not this file: the queue pauses a day. Given up after MAX_FAILS.
+                ResearchQueue.edit(ctx) { it.failed(item.name) } >= MAX_FAILS -> return drop(ctx, item.name, "http $code")
+                else -> return if (code == 403) pause(ctx, now, "refused") else Next.RETRY
             }
         }
     }
+
+    /** The queue waits [PAUSE_MS] ([why] shows in Settings); nothing is deleted. */
+    private fun pause(ctx: Context, now: Long, why: String) =
+        Next.STOP.also { ResearchQueue.edit(ctx) { s -> s.pausedUntil = now + PAUSE_MS; s.pausedWhy = why } }
+
+    /** A call failed: a dead session (we never sign in anew) takes this phone's consent with it; else try later. */
+    private fun failed(ctx: Context, e: ApiException) =
+        if (e.outcome != Outcome.AUTH) Next.RETRY else Next.STOP.also { ResearchConsent.sessionReset(ctx) }
 
     /** Never to be uploaded: marked, its trimmed copy deleted, and logged. */
     private fun drop(ctx: Context, name: String, why: String): Next {
@@ -234,12 +252,6 @@ object ResearchUploader {
         File(ResearchQueue.cacheDir(ctx), name).delete()
         Log.w(TAG, "research: $name not uploaded: $why")
         return Next.NEXT
-    }
-
-    /** A `.part` untouched for [STALE_MS] is the last file of an app that died while writing it: it becomes finished. */
-    private fun recoverStale(ctx: Context, now: Long) {
-        ResearchFiles.dir(ctx).listFiles { f -> f.name.endsWith(ResearchWriter.PART) && now - f.lastModified() > STALE_MS }
-            ?.forEach { it.renameTo(File(it.path.removeSuffix(ResearchWriter.PART))) }
     }
 
     private fun isMetered(ctx: Context): Boolean = ctx.getSystemService(ConnectivityManager::class.java)?.isActiveNetworkMetered ?: true

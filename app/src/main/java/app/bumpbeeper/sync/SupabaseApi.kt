@@ -1,5 +1,6 @@
 package app.bumpbeeper.sync
 
+import android.net.Network
 import app.bumpbeeper.Observation
 import org.json.JSONArray
 import org.json.JSONObject
@@ -35,11 +36,12 @@ object StorageTransport : FileTransport by HttpFileTransport()
 /**
  * HttpURLConnection with a fixed-length body ([HttpURLConnection.setFixedLengthStreamingMode]): the Content-Length is
  * exactly [length], never chunked, and a file of another size fails before anything is stored. 15 s to connect,
- * [readMs] for the answer.
+ * [readMs] for the answer. With a [network] (a job's), only over that network: never another one it falls back to.
  */
-class HttpFileTransport(private val readMs: Int = 120_000) : FileTransport {
+class HttpFileTransport(private val readMs: Int = 120_000, private val network: Network? = null) : FileTransport {
     override fun postFile(url: String, headers: Map<String, String>, file: File, length: Long): HttpResult {
-        val conn = URL(url).openConnection() as HttpURLConnection
+        if (file.length() != length) throw IOException("file size changed")
+        val conn = (network?.openConnection(URL(url)) ?: URL(url).openConnection()) as HttpURLConnection
         try {
             conn.requestMethod = "POST"
             conn.connectTimeout = 15_000
@@ -69,10 +71,10 @@ class HttpFileTransport(private val readMs: Int = 120_000) : FileTransport {
     }
 }
 
-/** HttpURLConnection with [timeoutMs] to connect and to read. Never call it on the main thread. */
-class HttpTransport(private val timeoutMs: Int) : Transport {
+/** HttpURLConnection with [timeoutMs] to connect and to read, over [network] if given. Never on the main thread. */
+class HttpTransport(private val timeoutMs: Int, private val network: Network? = null) : Transport {
     override fun post(url: String, headers: Map<String, String>, body: String): HttpResult {
-        val conn = URL(url).openConnection() as HttpURLConnection
+        val conn = (network?.openConnection(URL(url)) ?: URL(url).openConnection()) as HttpURLConnection
         try {
             conn.requestMethod = "POST"
             conn.connectTimeout = timeoutMs

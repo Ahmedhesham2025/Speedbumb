@@ -19,7 +19,10 @@ class SyncJob : JobService() {
             val retry = try {
                 val research = extras.getInt(ResearchConsent.EXTRA_JOB, 0)
                 if (research == ResearchConsent.JOB_CONSENT) ResearchConsent.run(app)
-                else if (research == ResearchConsent.JOB_UPLOAD) ResearchUploader.run(app)
+                // Uploads go only over the job's (unmetered) network: if Wi-Fi drops, nothing falls back to mobile data.
+                else if (research == ResearchConsent.JOB_UPLOAD) params.network.let { net ->
+                    ResearchUploader.run(app, HttpTransport(10_000, net), HttpFileTransport(network = net))
+                }
                 else if (extras.getInt(SpeedLimitSync.EXTRA_JOB, 0) == 1) SpeedLimitSync.run(app)
                 else if (extras.getInt(TrainingConsent.EXTRA_JOB, 0) == 1) TrainingConsent.run(app)
                 else Sync.run(
