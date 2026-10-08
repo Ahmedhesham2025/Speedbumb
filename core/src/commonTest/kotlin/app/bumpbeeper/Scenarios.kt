@@ -492,6 +492,24 @@ object Scenarios {
         r3.forwardTrace.lastOrNull()?.let { log("    $it") }
         check(r3.pocketMode, "four jostles in half a minute should turn pocket mode on")
         check(r3.driving.phoneUse == 1, "the jostles are not phone use, the later hold is: got ${r3.driving.phoneUse}")
+
+        // One 1.5 s bar for a real pick-up (the proximity sensor clears, or the light rises); motion alone may last 2 s.
+        // The measured handling and tilt, s, are pinned with each case.
+        fun pocketCase(what: String, spec: DriveSpec, use: Int, handled: ClosedFloatingPointRange<Double>, tilt: ClosedFloatingPointRange<Double>) {
+            val r = Simulator(63).drive(MemoryStore(), spec, drivingCfg = pocket)
+            val p = r.phone!!
+            val h = p.handledMs / 1000.0
+            val t = p.tiltHeldMs / 1000.0
+            describeDriving("pocket, $what: handled ${formatFixed(h, 2)} s, tilted ${formatFixed(t, 2)} s", r.driving)
+            check(r.driving.phoneUse == use, "$what: expected phone use $use, got ${r.driving.phoneUse}")
+            check(h in handled && t in tilt, "$what: handled $h s, tilted $t s")
+        }
+        pocketCase("motion only, 1.8 s", DriveSpec(jostlesAt = listOf(700.0), jostleHeldS = 1.4), 0, 1.6..1.95, 1.5..1.95)
+        pocketCase("motion only, 2.2 s", DriveSpec(jostlesAt = listOf(700.0), jostleHeldS = 1.8), 1, 2.05..2.4, 1.8..2.2)
+        pocketCase("held 1.6 s, the proximity sensor clears", DriveSpec(holdsAt = listOf(700.0 to 1.6),
+            phoneSignals = { _, s, _, sig, _ -> sig.proximityNear = s < 700.0 }), 1, 2.0..2.4, 1.7..2.1)
+        pocketCase("held 1.35 s, the light rises", DriveSpec(holdsAt = listOf(700.0 to 1.35),
+            phoneSignals = { _, s, _, sig, _ -> sig.lux = if (s < 700.0) 0.0 else 250.0 }), 1, 1.7..1.98, 1.5..1.9)
     }
 
     /** Unlocking the phone while driving is phone use when it isn't in a holder (here a pocket), even without a pick-up. */
