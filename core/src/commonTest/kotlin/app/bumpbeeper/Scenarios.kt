@@ -112,6 +112,28 @@ object Scenarios {
         check(r.driving.phoneUse == 1, "and it is phone use, got ${r.driving.phoneUse}")
     }
 
+    /**
+     * A jostle is not handling: a jolt 1.2 s after a 0.8 s jostle in the pocket (the phone shifting while braking for a
+     * bump) is learned. After real handling the 2 s calm and 2 s margin stay: a jolt 1.2 s after a 5 s hold, or during
+     * it, is rejected.
+     */
+    fun joltsAroundHandling() {
+        log("joltsAroundHandling")
+        val pocket = DrivingConfig().apply { placement = "pocket" }
+        val v = 40 / 3.6
+        fun drive(spec: DriveSpec) = Simulator(101).drive(MemoryStore(), spec, drivingCfg = pocket)
+        val jostle = drive(DriveSpec(cruiseKmh = 40.0, jostlesAt = listOf(700.0), jostleHeldS = 0.3, oneOffJoltsAt = listOf(700.0 + 2.0 * v)))
+        describe("jolt 1.2 s after a 0.8 s jostle", jostle)
+        check(jostle.newBumps == 1, "the jolt after the jostle is learned: ${jostle.rejected}")
+        check(jostle.rejected == listOf("phone_moving"), "only the jostle's own jolt is rejected: ${jostle.rejected}")
+        val after = drive(DriveSpec(cruiseKmh = 40.0, holdsAt = listOf(700.0 to 5.0), oneOffJoltsAt = listOf(700.0 + 6.8 * v)))
+        describe("jolt 1.2 s after a 5 s hold", after)
+        check(after.newBumps == 0 && after.rejected.last() == "handled", "rejected as handled: ${after.rejected}")
+        val during = drive(DriveSpec(cruiseKmh = 40.0, holdsAt = listOf(700.0 to 5.0), oneOffJoltsAt = listOf(700.0 + 3.0 * v)))
+        describe("jolt during a 5 s hold", during)
+        check(during.newBumps == 0 && during.rejected.last() == "handled", "rejected as handled: ${during.rejected}")
+    }
+
     /** Door slam while parked, and a jolt with no GPS yet: both ignored. */
     fun parkedAndNoGps() {
         log("parkedAndNoGps")
@@ -957,6 +979,7 @@ object Scenarios {
         "otherDirection" to ::otherDirection,
         "handlingIgnored" to ::handlingIgnored,
         "bumpWhileHoldingIsNotLearned" to ::bumpWhileHoldingIsNotLearned,
+        "joltsAroundHandling" to ::joltsAroundHandling,
         "parkedAndNoGps" to ::parkedAndNoGps,
         "crawlVersusRemoved" to ::crawlVersusRemoved,
         "userMute" to ::userMute,

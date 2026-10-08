@@ -70,8 +70,10 @@ class DriveSpec(
     val sharpTurnsAt: List<Double> = emptyList(),
     /** The phone twists 50° about the vertical in 0.8 s (shifting in a pocket): the gyroscope turns, the car doesn't. */
     val pocketTwistsAt: List<Double> = emptyList(),
-    /** The phone is jostled (tipped 60° for half a second and shaken), like a loose phone in a pocket. */
+    /** The phone is jostled (tipped 60° for [jostleHeldS] and shaken), like a loose phone in a pocket. */
     val jostlesAt: List<Double> = emptyList(),
+    /** How long a jostle keeps the phone tipped, s (plus 0.25 s each way). */
+    val jostleHeldS: Double = 0.5,
     /** Road joints (expansion seams): a short sharp up-first jolt on both axles that barely rocks the car. */
     val seamsAt: List<Double> = emptyList(),
     /** Length of the road, m. */
@@ -366,8 +368,9 @@ class Simulator(seed: Long) {
             }
             if (jostleStart >= 0) {
                 val h = t - jostleStart
-                if (h < 1.0) extraTilt += degToRad(60.0) * when { h < 0.25 -> h / 0.25; h < 0.75 -> 1.0; else -> 1.0 - (h - 0.75) / 0.25 }
-                if (h < 0.6) shake = 4.0
+                val held = spec.jostleHeldS
+                if (h < held + 0.5) extraTilt += degToRad(60.0) * when { h < 0.25 -> h / 0.25; h < 0.25 + held -> 1.0; else -> 1.0 - (h - 0.25 - held) / 0.25 }
+                if (h < min(0.6, held + 0.5)) shake = 4.0
             }
             if (holdStart >= 0) {
                 val h = t - holdStart
