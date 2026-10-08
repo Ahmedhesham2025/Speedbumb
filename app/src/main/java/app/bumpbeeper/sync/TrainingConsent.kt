@@ -28,8 +28,11 @@ import kotlin.random.Random
  */
 object TrainingConsent {
     private const val TAG = "BumpBeeper"
-    /** Version of the consent text the user agreed to (sent with `set_training_consent`). */
-    const val TRAINING_CONSENT_VERSION = 1
+    /**
+     * Version of the consent text the user agreed to (sent with `set_training_consent`). 2: samples upload right after
+     * each trip; phones that agreed to 1 keep its random 1-6 h delay until they accept 2 ([needsUpdate]).
+     */
+    const val TRAINING_CONSENT_VERSION = 2
     const val EXTRA_JOB = "training_job"
     private const val JOB_CONSENT = 4106
     private const val JOB_UPLOAD = 4107
@@ -79,10 +82,20 @@ object TrainingConsent {
         clearAsync(ctx)
     }
 
+    /** Consent 2 or later: a trip's samples upload right after it ([uploadNow]); consent 1: [uploadLater]. */
+    fun uploadsRightAway(ctx: Context): Boolean = Prefs.trainingConsentVersion(ctx) >= 2
+
+    /** On, but agreed to an older text: the app asks once more ([TRAINING_CONSENT_VERSION]); until then nothing changes. */
+    fun needsUpdate(ctx: Context): Boolean =
+        Prefs.trainingConsent(ctx) && Prefs.trainingConsentVersion(ctx) in 1 until TRAINING_CONSENT_VERSION
+
+    /** Some trip's samples were queued (or released), consent 2: upload as soon as there is a network. */
+    fun uploadNow(ctx: Context) = schedule(ctx, JOB_UPLOAD, 0L)
+
     /**
-     * Some trip's samples were queued (or released): upload 1 to 6 hours from now, at a random time, so request logs
-     * can't tie the pseudonym to when a trip ended. A later trip pushes it later. Kept in Prefs (a synchronous write,
-     * no [Sync.lock]), so the engine thread sets it at trip end before the trip-end sync is scheduled.
+     * Consent 1 only: some trip's samples were queued (or released): upload 1 to 6 hours from now, at a random time, so
+     * request logs can't tie the pseudonym to when a trip ended. A later trip pushes it later. Kept in Prefs (a
+     * synchronous write, no [Sync.lock]), so the engine thread sets it at trip end before the trip-end sync is scheduled.
      */
     fun uploadLater(ctx: Context, now: Long, random: Random = Random.Default) {
         val at = maxOf(Prefs.trainingUploadAfter(ctx), now + HOUR_MS + random.nextLong(5 * HOUR_MS))
@@ -146,7 +159,7 @@ object TrainingConsent {
             store.prune(now)
             tellServer(ctx, api)
             if (active(ctx) && !Prefs.trainingWipePending(ctx) && !Prefs.trainingOnPending(ctx) &&
-                now >= Prefs.trainingUploadAfter(ctx)
+                (uploadsRightAway(ctx) || now >= Prefs.trainingUploadAfter(ctx))
             ) {
                 upload(ctx, api, store, state, now)
             }

@@ -102,7 +102,7 @@ class TrainingUploadTest {
         assertEquals(listOf("signup", "register_device", "set_training_consent", "submit_training_samples"), net.calls)
         val consent = JSONObject(net.bodies["set_training_consent"]!!)
         assertTrue(consent.getBoolean("enabled"))
-        assertEquals(1, consent.getInt("version"))
+        assertEquals(TrainingConsent.TRAINING_CONSENT_VERSION, consent.getInt("version"))
         val batch = JSONObject(net.bodies["submit_training_samples"]!!).getJSONObject("batch")
         assertEquals(2, batch.getJSONArray("samples").length())
         assertEquals(1, batch.getJSONArray("trips").length())
@@ -163,8 +163,33 @@ class TrainingUploadTest {
         assertEquals(listOf(false, true), later.consents)
     }
 
-    @Test fun queuedTripsUploadHoursLaterNotAtTripEnd() {
+    @Test fun consent2UploadsRightAfterTheTrip() {
         consented()
+        assertTrue(TrainingConsent.uploadsRightAway(ctx))
+        val now = System.currentTimeMillis()
+        TrainingSink.queue(ctx, listOf(TrainingStore.Item("s1", TrainingStore.SAMPLE, """{"client_sample_id":"s1"}""")), 3L, now)
+        val atTripEnd = FakeBackend()
+        Sync.run(ctx, false, 30.0, 31.0, atTripEnd)
+        assertTrue("the trip-end sync sends it", atTripEnd.calls.contains("submit_training_samples"))
+        assertTrue(queued().isEmpty())
+    }
+
+    @Test fun onlyAnOlderConsentIsAskedAgainAndAcceptingItUploadsRightAway() {
+        assertFalse("off: nothing to ask", TrainingConsent.needsUpdate(ctx))
+        Prefs.setTrainingState(ctx, true, 1, wipe = false, sendOn = false, note = "")
+        assertTrue(TrainingConsent.needsUpdate(ctx))
+        assertFalse("consent 1 keeps its delay", TrainingConsent.uploadsRightAway(ctx))
+        TrainingConsent.setEnabled(ctx, true)   // "Keep it on"
+        assertFalse(TrainingConsent.needsUpdate(ctx))
+        val net = FakeBackend()
+        TrainingConsent.run(ctx, net)
+        assertEquals("the same opt-in, the new text", listOf(true), net.consents)
+        assertEquals(TrainingConsent.TRAINING_CONSENT_VERSION, JSONObject(net.bodies["set_training_consent"]!!).getInt("version"))
+        assertTrue(TrainingConsent.uploadsRightAway(ctx))
+    }
+
+    @Test fun consent1TripsStillUploadHoursLaterNotAtTripEnd() {
+        Prefs.setTrainingState(ctx, true, 1, wipe = false, sendOn = false, note = "")
         val now = System.currentTimeMillis()
         TrainingConsent.uploadLater(ctx, now)   // what TrainingSink.flush does on the engine thread
         TrainingSink.queue(ctx, listOf(TrainingStore.Item("s1", TrainingStore.SAMPLE, """{"client_sample_id":"s1"}""")), 3L, now)
