@@ -119,7 +119,12 @@ class PhoneStateConfig {
     var mountedTiltDeg = 1.5
     var mountedTiltDegCharging = 3.0
     var mountedTiltDegPlaced = 4.0
-    /** A jostle: handled for less than this, never tilted for [sustainedTiltMs] in a row, and nothing but motion. */
+    /**
+     * A jostle: handled for less than this, never tilted for [sustainedTiltMs] in a row, nothing but motion, and no sign
+     * of coming out of a pocket (the proximity sensor clears, or the light rises from at most [darkLux] to at least
+     * [brightLux]; the screen, an unlock and a call are signs of their own). In pocket mode a jostle is not phone use:
+     * motion alone in a pocket may last up to 2 s, but a real pick-up counts at [DrivingConfig.phoneUseS] like anywhere.
+     */
     var jostleMaxMs = 2000L
     var sustainedTiltMs = 2000L
     /** Pocket mode turns on by itself, for the rest of the trip, after this many jostles while driving within [autoPocketWindowMs]. */
@@ -195,9 +200,9 @@ class PhoneStateDetector(val cfg: PhoneStateConfig = PhoneStateConfig(), val sig
 
     /** Pocket mode: placement "pocket", or a phone that kept jostling while driving on this trip. */
     val pocketMode: Boolean get() = placement == "pocket" || autoPocket
-    /** The episode is (so far) only a jostle: short, no sustained tilt, nothing but motion. */
+    /** The episode is (so far) only a jostle ([PhoneStateConfig.jostleMaxMs]): short, no sustained tilt, nothing but motion. */
     val jostle: Boolean
-        get() = handledMs < cfg.jostleMaxMs && tiltHeldMs < cfg.sustainedTiltMs && (causes and NOT_MOTION) == 0
+        get() = handledMs < cfg.jostleMaxMs && tiltHeldMs < cfg.sustainedTiltMs && (causes and NOT_MOTION) == 0 && !outOfPocket
 
     /** For tests and tuning: the tilt from the baseline, degrees. */
     var tiltDeg = 0.0
@@ -224,6 +229,7 @@ class PhoneStateDetector(val cfg: PhoneStateConfig = PhoneStateConfig(), val sig
     private var lastSignMs = NEVER
     private var lastMoveMs = NEVER   // the phone last rotated fast or was turned from where it rested
     private var movedDriving = false
+    private var outOfPocket = false   // the proximity sensor cleared or the light rose from dark during this episode
     private var tiltMs2 = 0.0   // mean square tilt over the mounted window
     private var stableSinceMs = NEVER
     private var speedKmh = 0.0
@@ -403,6 +409,7 @@ class PhoneStateDetector(val cfg: PhoneStateConfig = PhoneStateConfig(), val sig
             // The screen keeps the phone handled, but is handling time only while the phone moves (a slipped phone rests).
             val notMotion = (signs and (if (still) NOT_MOTION and SCREEN.inv() else NOT_MOTION)) != 0
             if (moving && (tiltOver || rawOver)) movedDriving = true
+            if (max(farAtMs, brightAtMs) >= episodeStartMs - cfg.pocketExitMs) outOfPocket = true
             if (!began) {
                 if (tiltOver || rawOver || notMotion) handledMs += dtMs
                 if (moving && (tiltOver || notMotion)) movingMs += dtMs
@@ -447,6 +454,7 @@ class PhoneStateDetector(val cfg: PhoneStateConfig = PhoneStateConfig(), val sig
         ax = cx; ay = cy; az = cz
         anchorMs = t
         movedDriving = false
+        outOfPocket = false
         val i = count % HISTORY
         starts[i] = start
         ends[i] = Long.MAX_VALUE
