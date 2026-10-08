@@ -27,7 +27,7 @@ class Rr2AnonymizerTest {
     @After fun cleanUp() { dir.deleteRecursively() }
 
     @Test fun keepsOnlyTheUploadWindow() {
-        val w = ResearchTrim.window(ResearchTrim.scan(segments))!!
+        val w = ResearchTrim.window(ResearchTrim.scan(ordered))!!   // scan reads segments in order
         val original = ordered.flatMap { ResearchReader.read(it).records }
         val inside = original.filter { it.tDms in w.fromT..w.toT }
         val data = out.filter { !it.startsWith("#") }
@@ -40,7 +40,7 @@ class Rr2AnonymizerTest {
     }
 
     @Test fun distancesAndHeadingsStay() {
-        val w = ResearchTrim.window(ResearchTrim.scan(segments))!!
+        val w = ResearchTrim.window(ResearchTrim.scan(ordered))!!   // scan reads segments in order
         val before = ordered.flatMap { ResearchReader.read(it).records }.filter { it.code == "G" && it.tDms in w.fromT..w.toT }
         val after = ResearchReader.read(ByteArrayInputStream(gzip(out))).records.filter { it.code == "G" }
         assertEquals(before.size, after.size)
