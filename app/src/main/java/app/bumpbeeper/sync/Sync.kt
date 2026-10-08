@@ -52,6 +52,9 @@ object Sync {
     private const val UPLOAD_PAUSED_UNTIL = "upload_paused_until"
     private const val POS_LAT = "pos_lat"
     private const val POS_LON = "pos_lon"
+    /** Until then the server is taken to have no `spots_near_v2` ([spotsNear]). */
+    internal const val SPOTS_V1_UNTIL = "spots_v1_until"
+    internal const val SPOTS_V1_MS = 6 * 60 * 60 * 1000L
 
     /** Runs never overlap (two parallel first runs would sign in as two devices); [SpeedLimitSync] takes it too. */
     internal val lock = Any()
@@ -353,8 +356,21 @@ object Sync {
         val lat = store.getDouble(POS_LAT)
         val lon = store.getDouble(POS_LON)
         if (lat.isNaN() || lon.isNaN()) return   // no trip yet: nothing to download around
-        val rows = api.spotsNear(lat, lon, PULL_RADIUS_M)
+        val rows = spotsNear(api, store, lat, lon, now)
         store.replaceRemoteSpots(lat, lon, PULL_RADIUS_M.toDouble(), rows, now)
+    }
+
+    /**
+     * `spots_near_v2`, or `spots_near` from a server without it (not migrated yet, or rolled back). That is remembered
+     * for [SPOTS_V1_MS], so the runs in between don't ask v2 first each time; a phone clock moved back doesn't stretch it.
+     */
+    internal fun spotsNear(api: SupabaseApi, store: SyncStore, lat: Double, lon: Double, now: Long): List<SpotRow> {
+        val v1Until = store.getLong(SPOTS_V1_UNTIL)
+        if (now >= v1Until || v1Until - now > SPOTS_V1_MS) {
+            api.spotsNearV2(lat, lon, PULL_RADIUS_M)?.let { return it }
+            store.put(SPOTS_V1_UNTIL, now + SPOTS_V1_MS)
+        }
+        return api.spotsNear(lat, lon, PULL_RADIUS_M)
     }
 
     private fun publishStatus(store: SyncStore) {

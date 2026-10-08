@@ -607,22 +607,24 @@ class BumpService : Service(), SensorEventListener, LocationListener, EngineList
             }
 
         val sm = getSystemService(Context.SENSOR_SERVICE) as SensorManager
+        val periodUs = Prefs.sensorPeriodUs(this)   // 20 000 µs → 50 Hz unless set otherwise
         val accel = sm.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
         if (accel == null) {
             LiveState.lastEvent = "This phone has no accelerometer"
         } else {
-            sm.registerListener(this, accel, 20_000 /* µs → 50 Hz */, h)
+            sm.registerListener(this, accel, periodUs, h)
         }
         // Optional: tells speed bumps (car pitches) from potholes (car rolls). Works without it, less surely.
         // Stays on for the whole trip: switched off, the engine would keep using its last (frozen) reading.
-        sm.getDefaultSensor(Sensor.TYPE_GYROSCOPE)?.let { sm.registerListener(this, it, 20_000, h) }
+        sm.getDefaultSensor(Sensor.TYPE_GYROSCOPE)?.let { sm.registerListener(this, it, periodUs, h) }
         LiveState.hasGyro = sm.getDefaultSensor(Sensor.TYPE_GYROSCOPE) != null
 
         requestGps(PowerPolicy.MOVING_GPS_MS, t.looper)
         // Research recording (opt-in): every sensor at up to 200 Hz into local files, on threads of its own. Android then
-        // hands that rate to the listeners above too, so while it runs the engine gets ≤ 100 Hz averages (onSensorChanged).
+        // hands that rate to the listeners above too, so while it runs the engine gets averages at its own rate, ≤ 100 Hz
+        // (onSensorChanged); none when it asked for 200 Hz itself.
         research = ResearchRecorder.startIfEnabled(this, source, tripId)
-        if (research != null) h.post { accelAvg = RateAverager(); gyroAvg = RateAverager() }
+        if (research != null) h.post { accelAvg = RateAverager.forPeriod(periodUs); gyroAvg = RateAverager.forPeriod(periodUs) }
 
         Prefs.sp(this).registerOnSharedPreferenceChangeListener(prefListener)
     }
