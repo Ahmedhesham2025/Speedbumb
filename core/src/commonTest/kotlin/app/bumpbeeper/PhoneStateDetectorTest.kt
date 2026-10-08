@@ -201,6 +201,20 @@ class PhoneStateDetectorTest {
         }
     }
 
+    @Test fun stillAtAnAngleWithTheScreenOnStaysHandled() {
+        // A hand held still at 70° and a holder that slipped 40° look the same: with the screen on, the hand wins.
+        for (deg in listOf(40.0, 70.0)) for (placement in listOf("unknown", "mounted", "cupholder", "pocket")) {
+            val r = Rig(placement).apply { kmh = 30.0 }.run(40.0)
+            r.signals.screenOn = true
+            r.run(0.3, rateDegS = deg / 0.3).fresh().run(60.0)   // turned in 0.3 s, then still for a minute
+            assertTrue(r.handledMsTotal >= 59_000, "$deg°, $placement: handled ${r.handledMsTotal} ms of 60 s")
+            assertEquals(PhoneState.HANDLED, r.d.state, "$deg°, $placement")
+            r.signals.screenOn = false
+            r.run(0.1)
+            assertTrue(r.d.state != PhoneState.HANDLED && r.d.tiltDeg < 2.0, "$deg°, $placement, screen off: ${r.d.state}")
+        }
+    }
+
     @Test fun takenOutOfAPocketIsHandled() {
         val r = Rig("pocket")
         r.signals.proximityNear = true

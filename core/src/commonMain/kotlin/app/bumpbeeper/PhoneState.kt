@@ -91,6 +91,9 @@ class PhoneStateConfig {
     /**
      * ...or once the phone has rested within [resettleDeg] for this long, whatever the screen says (put down or slipped
      * somewhere new; not during a call). A phone not handled that rests this long somewhere new rests there now.
+     * Not while the screen is on and the phone is turned past [tiltDeg]: a hand held still at an angle looks the same,
+     * and the hand wins. Such a phone stays HANDLED until the screen goes off or it moves (a holder that slips that far
+     * with the screen on pauses bump learning meanwhile).
      */
     var resettleMs = 10_000L
     var resettleDeg = 10.0
@@ -143,7 +146,8 @@ class PhoneStateConfig {
  *  - a hand-held call ([PhoneSignals.handheldCall]);
  *  - it comes out of a pocket (proximity clears and the light jumps from dark to bright).
  * It ends after [PhoneStateConfig.calmMs] without any of them, or once the phone has rested in one place for
- * [PhoneStateConfig.resettleMs]. Put back where it rested before, it keeps its mounted or loose standing; anywhere
+ * [PhoneStateConfig.resettleMs] (not while the screen is on and it is turned past [PhoneStateConfig.tiltDeg]: held
+ * still in a hand, it looks the same). Put back where it rested before, it keeps its mounted or loose standing; anywhere
  * else it is learned again from scratch.
  *
  * Feed it from one thread, like the engine. Times are the sensor clock, milliseconds.
@@ -407,8 +411,10 @@ class PhoneStateDetector(val cfg: PhoneStateConfig = PhoneStateConfig(), val sig
                     tiltHeldMs = max(tiltHeldMs, tiltRunMs)
                 } else tiltRunMs = 0L
             }
-            // Rested in one place for a while (put down, slipped in its holder): that is where it is now.
-            if (signs != 0 && (signs and (GYRO or TURN or CALL)) == 0 && t - anchorMs >= cfg.resettleMs) end(t)
+            // Rested in one place for a while (put down, slipped in its holder): that is where it is now. Not while the
+            // screen is on and the phone is turned past tiltDeg: a hand held still looks the same, and the hand wins.
+            val rested = t - anchorMs >= cfg.resettleMs && !(signals.screenOn && tiltOver)
+            if (signs != 0 && (signs and (GYRO or TURN or CALL)) == 0 && rested) end(t)
             else if (t - lastSignMs >= cfg.calmMs) end(t)
         } else {
             val dt = dtMs / 1000.0
