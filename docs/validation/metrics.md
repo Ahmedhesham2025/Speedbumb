@@ -23,6 +23,8 @@ definition, and the code must match it. Targets are the P1 exit criteria from `R
     `pothole_l` / `pothole_r` read as `bump` (every jolt is a bump since v2). `rough` (a rough stretch, not one spot)
     and `nothing` (a jolt that was no bump) are not hazards: never counted as missed, and a detection on `rough` is not
     counted as false either.
+  - **Marks** are not labels: a Diagnostics Mark (`event=mark` in the trace, `lbl` `mark` in research files) says the
+    phone was picked up. It never pairs with a detection, never takes one from a label, and no `undo` removes it.
 - **Detections**: the engine's `new_bump` and `hit` events from the replay.
   `hit_repeat` (a second jolt on the same pass, e.g. the rear axle) is not a detection. A detection's time is
   when the engine logged it (≈ 1.2 s after the jolt); its place is the engine's position of the jolt.
@@ -61,6 +63,19 @@ event (with its reason, e.g. `rejected phone_moving`); its time is the event's l
 nobody labelled; columns are the decisions plus "(no jolt)" for labels with no jolt near them. A `nothing` label on a
 learned jolt is a false bump; a `bump` with "(no jolt)", a miss.
 
+## Phone pick-ups (marks)
+On test drives a passenger presses Mark each time they pick the phone up. Around each mark (**±5 s**), two release gates:
+- **Harsh events near a mark**: `harsh_brake`, `harsh_accel`, `harsh_corner` and `swerve` events within 5 s of any
+  mark, each counted once. The hand moved the phone, not the car. **Gate: 0.**
+- **Phone use near a mark**: the share of marks with a `phone_use` event within 5 s. **Gate: ≥ 90 %** of the pick-ups
+  of **1.5 s or more** made while driving. Left out: marks with the car stopped (GPS speed < 10 km/h; no fix within
+  3 s counts as driving), and pick-ups shorter than 1.5 s. A pick-up's length is measured apart from the engine, from
+  the gyroscope: from the first rotation burst (the 200 ms average of |ω| above 0.6 rad/s, more than a car turns)
+  within 10 s before the mark to the last within 10 s after it, the mark included; none means the phone was tapped
+  where it sat (length 0). Without a gyroscope the length is unknown and the mark counts.
+The engine reports phone use at most once per 30 s, so marks closer together than that cannot all pass: space the
+pick-ups of a test drive at least 30 s apart.
+
 ## Drive summary (every drive, labelled or not)
 Counts of what the engine did (learned, warnings, hits, misses, rejections by reason, harsh events, phone use), plus:
 - **Severity**: spots felt (learned + hits) by band after the hit (mild / moderate / strong, from the event note
@@ -74,6 +89,7 @@ not computed by the replay tool yet.
 - `metrics.json`: every ratio above (over all runs) plus the raw counts (`labels`, `matched_labels`, `detections`, …);
   with several runs also `runs`, with labels, detections, beeps and false warnings per run.
 - A markdown table on stdout with pass/**FAIL** per target, for pasting into PRs, plus a per-run table for several runs,
-  the drive summary of each run, and, with labels, the labels-against-decisions table.
+  the drive summary of each run, with labels the labels-against-decisions table, and with marks the pick-ups table
+  (pass/**FAIL** per gate).
 
 A "pass" on false warnings from a single recording does not count toward P1: replay all runs of a route together.

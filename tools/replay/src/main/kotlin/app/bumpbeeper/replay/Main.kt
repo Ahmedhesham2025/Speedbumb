@@ -44,6 +44,7 @@ fun main(args: Array<String>) {
             // Unlabelled drives score nothing above; these counts still show what the engine did.
             for (r in runs) println(DriveSummary.of(r.result, r.placement).toMarkdown(r.name))
             if (runs.any { it.labels.isNotEmpty() }) println(LabelConfusion.of(runs).toMarkdown(title))
+            if (runs.any { MarkReport.marks(it.samples).isNotEmpty() }) println(MarkReport.of(runs).toMarkdown(title))
         }
         "anonymize" -> {
             val out = File(opts["out"] ?: usage())
