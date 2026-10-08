@@ -343,7 +343,7 @@
     <string name="settings_shared_map_hint">Warnings about bumps and potholes found by other drivers. Only spots are shared, never your route.</string>
     <string name="settings_sync_delete">Delete my shared data</string>
     <string name="settings_sync_delete_title">Delete your shared data?</string>
-    <string name="settings_sync_delete_msg">Deletes this phone\'s record on the server, with the bumps and potholes it sent, its links to spots and its crash reports. Spots already merged into the shared map stay, with nothing linking them to this phone. Also clears downloaded warnings and turns the shared map, real speed limits and “Help improve detection” off, deleting its samples. Your own bump map and trips stay.</string>
+    <string name="settings_sync_delete_msg">Deletes this phone\'s record on the server, with the bumps and potholes it sent, its links to spots and its crash reports. Spots already merged into the shared map stay, with nothing linking them to this phone. Also clears downloaded warnings and turns the shared map, real speed limits and “Help improve detection” off, deleting its samples, and research recordings off: files already uploaded are erased within a week. Your own bump map and trips stay.</string>
     <string name="settings_sync_deleted">Deleted</string>
     <string name="settings_sync_deleted_local">Deleted on this phone. Couldn\'t reach the server: tap Delete again when you\'re online to finish.</string>
     <!-- Road speed limits (TomTom): Settings and Trips -->
@@ -397,7 +397,7 @@
     <string name="train_hint">Off by default and separate from the shared map. Sends short motion-sensor samples, never your route.</string>
     <string name="train_need_map">Choose the shared map first: until you do, the app sends nothing to our server.</string>
     <string name="train_consent_title">Help improve detection?</string>
-    <string name="train_consent_msg">This is separate from the shared map, and off unless you turn it on.\n\nFor each possible bump the app judges: up to 4 seconds of motion-sensor readings (2 s before and after) (shake, plus rotation if the phone has a gyroscope), the app\'s decision and its reason, speed, heading change, GPS accuracy and where the phone sits. Only the date of the drive, no time of day. Also your Android version, app version and phone brand (not the model).\n\nFor each trip: date, duration, distance, counts, beeps, score figures and battery.\n\nNo route and no coordinates. The only place information is the number of a public, confirmed bump you passed, and never within 300 m of where a trip starts or ends. Over time these can hint at the areas you drive in.\n\nA random ID that changes each time you turn this on; on our server it is kept with this phone\'s anonymous record, so it can be deleted. Samples aren\'t linked to trips.\n\nUploads 1 to 6 hours after a drive, about 30 to 90 KB per drive. Kept 7 days on the phone if not sent, and 12 months on our server (Supabase, Frankfurt). Used only to improve detection, analysed offline by the app\'s owner, never sold.\n\nTurning this off, or “Delete my shared data”, deletes it on the server as soon as the phone is online, except the provider\'s backups and logs, which rotate.\n\nTrips that started by themselves are held until you confirm them.</string>
+    <string name="train_consent_msg">This is separate from the shared map, and off unless you turn it on.\n\nFor each possible bump the app judges: up to 4 seconds of motion-sensor readings (2 s before and after) (shake, plus rotation if the phone has a gyroscope), the app\'s decision and its reason, speed, heading change, GPS accuracy and where the phone sits. Only the date of the drive, no time of day. Also your Android version, app version and phone brand (not the model).\n\nFor each trip: date, duration, distance, counts, beeps, score figures and battery.\n\nNo route and no coordinates. The only place information is the number of a public, confirmed bump you passed, and never within 300 m of where a trip starts or ends. Over time these can hint at the areas you drive in.\n\nA random ID that changes each time you turn this on; on our server it is kept with this phone\'s anonymous record, so it can be deleted. Samples aren\'t linked to trips.\n\nUploads right after each drive when the phone is online, so our server can tell roughly when a drive ended; about 30 to 90 KB per drive. Kept 7 days on the phone if not sent, and 12 months on our server (Supabase, Frankfurt). Used only to improve detection, analysed offline by the app\'s owner, never sold.\n\nTurning this off, or “Delete my shared data”, deletes it on the server as soon as the phone is online, except the provider\'s backups and logs, which rotate.\n\nTrips that started by themselves are held until you confirm them.</string>
     <string name="train_consent_on">Turn on</string>
     <string name="train_status_queued">Waiting to upload: %1$d</string>
     <string name="train_status_pending_on">Telling the server you turned this on (when online)</string>
@@ -406,6 +406,10 @@
     <string name="train_error_other">Upload paused; it will try again later.</string>
     <string name="restore_training_off">Restored from a backup: ‘Help improve detection’ was switched off. Turn it on again if you like.</string>
     <string name="train_off_toast">Turned off: your samples will be deleted on the server</string>
+    <string name="train_update_title">“Help improve detection” has changed</string>
+    <string name="train_update_msg">Samples now upload right after each drive, not 1 to 6 hours later at a random time, so our server can tell roughly when a drive ended. Nothing else changes. Keep helping?</string>
+    <string name="train_update_keep">Keep it on</string>
+    <string name="train_update_off">Turn it off</string>
     <string name="auto_open_settings">Open settings</string>
     <string name="auto_fix_not_running">Everything is allowed, but Android isn\'t running the detection. Check Bump Beeper\'s battery setting (no restrictions), or restart the phone.</string>
     <!-- Live speed limit (v1.7) -->
@@ -419,4 +423,38 @@
     <string name="live_limit_sound">Tone and spoken limit</string>
     <string name="live_limit_sign_desc">Speed limit %1$s km/h</string>
     <string name="live_limit_sign_unknown">Speed limit unknown</string>
+    <!-- Research recordings (P0-4): first-start consent (version 1) and the Settings card -->
+    <string name="research_ask_kicker">Research recordings</string>
+    <string name="research_ask_title">Help improve detection with full sensor recordings</string>
+    <string name="research_ask_intro">During your trips the app can record all of the phone\'s sensors and send them to us over Wi-Fi, so we can make bump detection better. It stays off unless you say yes.</string>
+    <string name="research_ask_point_what">Recorded: all motion sensors (fast), your GPS route, and phone-use signals: screen on/off, unlock, lock state, call state, Bluetooth audio, charging and battery; steps and walking/driving detection (Play Store version). Each file also holds the trip\'s date and time and names your phone\'s maker and model.</string>
+    <string name="research_ask_point_upload">Uploaded only on Wi-Fi to our server (Supabase, Frankfurt), never the start or end of a trip (nothing until the car has driven 300 m and is 300 m away, nothing in its last 300 m or near where it ends): about 27–32 MB per hour of driving.</string>
+    <string name="research_ask_point_never">No microphone, no camera. No name, email or phone number.</string>
+    <string name="research_ask_point_use">Used only to improve detection. You can turn it off any time.</string>
+    <string name="research_ask_what">What exactly is recorded and kept?</string>
+    <string name="research_ask_details">Recorded during trips: all motion sensors up to 200 times a second (accelerometer, gyroscope, gravity, rotation, compass), pressure, light and proximity; every GPS fix with speed and accuracy, and satellite counts; screen on/off, unlock and lock state, call state and where sound goes (Bluetooth or wired; never what is said); car Bluetooth, charging and battery; steps and walking/driving detection (Play Store version, with the “Physical activity” permission); labels you tap in label mode. Each file also holds the trip\'s date and time (to the second), how it started (you, car Bluetooth or motion), where the phone sits, your phone\'s maker and model with its list of sensors, and the Android and app versions.\n\nOn your phone: the full recording, with the whole GPS route, is kept up to 14 days (7 days after its upload) in app storage that is never backed up. Recordings from before you last turned this off are never uploaded and are deleted when you turn it on again. “Share recordings” also saves a copy in %1$s, where other apps can read it.\n\nUploaded: only on Wi-Fi, and never the start or end of a trip: nothing until the car has driven 300 m and is 300 m (in a straight line) from where it started, nothing in its last 300 m or within 300 m of where it ended, and nothing of a trip shorter than 600 m. Trips that started by themselves wait until you confirm them. Files are stored under your anonymous Research ID (shown in Settings) and named with a separate random file ID that changes each time you turn this on.\n\nThe app\'s owner downloads them for research and may keep downloaded copies (the privacy policy says for how long). Never sold, never used for ads.\n\nTurning this off stops recording and uploading at once. Files already uploaded stay until deleted on request: use “Delete my shared data”, which erases them within a week, or ask the owner privately (see the privacy policy). Never post your Research ID in a public GitHub issue.</string>
+    <string name="research_ask_yes">Yes, record and upload</string>
+    <string name="research_ask_no">No thanks</string>
+    <string name="research_ask_footer">You can change this any time in Settings → Research recordings.</string>
+    <string name="settings_section_research">Research recordings</string>
+    <string name="research_switch">Help improve detection with full sensor recordings</string>
+    <string name="research_hint">Off by default. Records all sensors during trips and uploads them on Wi-Fi, without the first and last 300 m of each trip.</string>
+    <string name="research_on_toast">Thank you! Recordings will upload on Wi-Fi.</string>
+    <string name="research_off_toast">Turned off: recording and uploads stop. Files already uploaded stay until deleted on request.</string>
+    <string name="research_status_waiting">Waiting for Wi-Fi: %1$d files (%2$s MB)</string>
+    <string name="research_status_last">Last upload: %1$s</string>
+    <string name="research_status_last_never">Nothing uploaded yet</string>
+    <string name="research_status_paused_full">Paused (server storage full). Next try: %1$s</string>
+    <string name="research_status_paused_daily">Paused (daily upload limit). Next try: %1$s</string>
+    <string name="research_status_paused_refused">Paused (the server refused the upload). Next try: %1$s</string>
+    <string name="research_status_pending_on">Telling the server you turned this on (when online)</string>
+    <string name="research_status_pending_off">Telling the server you turned this off (when online)</string>
+    <string name="research_session_reset">Your anonymous ID was reset, so research recording was switched off; turn it on again if you like.</string>
+    <string name="research_share_hint">Packs the recordings on this phone (with their full GPS routes) into one zip, saves it in %1$s, then opens the share menu.</string>
+    <string name="research_id">Research ID: %1$s</string>
+    <string name="research_id_none">Research ID: none yet (made when the app first signs in to our server)</string>
+    <string name="research_id_earlier">Earlier IDs: %1$s</string>
+    <string name="research_id_copy">Copy Research ID</string>
+    <string name="research_id_copied">Research ID copied</string>
+    <string name="research_id_hint">Your files are stored under this ID. To have them deleted, use “Delete my shared data”, or ask privately (see the privacy policy). Never post this ID in a public GitHub issue.</string>
 </resources>

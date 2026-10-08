@@ -1,8 +1,10 @@
 package app.bumpbeeper.sync
 
+import android.net.Network
 import app.bumpbeeper.Observation
 import org.json.JSONArray
 import org.json.JSONObject
+import java.io.File
 import java.io.IOException
 import java.net.HttpURLConnection
 import java.net.URL
@@ -23,10 +25,56 @@ fun interface Transport {
 /** The real transport: HttpURLConnection, 10 s timeouts. Never call it on the main thread. */
 object UrlTransport : Transport by HttpTransport(10_000)
 
-/** HttpURLConnection with [timeoutMs] to connect and to read. Never call it on the main thread. */
-class HttpTransport(private val timeoutMs: Int) : Transport {
+/** Sends a file as the raw body of one POST, exactly [length] bytes (Storage uploads). Swapped for a fake in tests. */
+fun interface FileTransport {
+    fun postFile(url: String, headers: Map<String, String>, file: File, length: Long): HttpResult
+}
+
+/** The real file transport. Never call it on the main thread. */
+object StorageTransport : FileTransport by HttpFileTransport()
+
+/**
+ * HttpURLConnection with a fixed-length body ([HttpURLConnection.setFixedLengthStreamingMode]): the Content-Length is
+ * exactly [length], never chunked, and a file of another size fails before anything is stored. 15 s to connect,
+ * [readMs] for the answer. With a [network] (a job's), only over that network: never another one it falls back to.
+ */
+class HttpFileTransport(private val readMs: Int = 120_000, private val network: Network? = null) : FileTransport {
+    override fun postFile(url: String, headers: Map<String, String>, file: File, length: Long): HttpResult {
+        if (file.length() != length) throw IOException("file size changed")
+        val conn = (network?.openConnection(URL(url)) ?: URL(url).openConnection()) as HttpURLConnection
+        try {
+            conn.requestMethod = "POST"
+            conn.connectTimeout = 15_000
+            conn.readTimeout = readMs
+            conn.doOutput = true
+            conn.setFixedLengthStreamingMode(length)
+            for ((k, v) in headers) conn.setRequestProperty(k, v)
+            file.inputStream().use { input ->
+                conn.outputStream.use { out ->
+                    val buf = ByteArray(64 * 1024)
+                    var left = length
+                    while (left > 0) {
+                        val n = input.read(buf, 0, minOf(buf.size.toLong(), left).toInt())
+                        if (n < 0) throw IOException("file shorter than its Content-Length")
+                        out.write(buf, 0, n)
+                        left -= n
+                    }
+                }
+            }
+            val code = conn.responseCode
+            val stream = if (code in 200..299) conn.inputStream else conn.errorStream
+            val text = stream?.bufferedReader(Charsets.UTF_8)?.use { it.readText() } ?: ""
+            return HttpResult(code, text, conn.date)
+        } finally {
+            conn.disconnect()
+        }
+    }
+}
+
+/** HttpURLConnection with [timeoutMs] to connect and to read, over [network] if given. Never on the main thread. */
+class HttpTransport(private val timeoutMs: Int, private val network: Network? = null) : Transport {
     override fun post(url: String, headers: Map<String, String>, body: String): HttpResult {
-        val conn = URL(url).openConnection() as HttpURLConnection
+        val conn = (network?.openConnection(URL(url)) ?: URL(url).openConnection()) as HttpURLConnection
         try {
             conn.requestMethod = "POST"
             conn.connectTimeout = timeoutMs
@@ -215,7 +263,39 @@ class SupabaseApi(
         rpc("forget_me", JSONObject())
     }
 
+    /**
+     * Uploads [file] (exactly [length] bytes: the size reserved) to Storage as `<bucket>/<path>`: one plain POST with
+     * this user's JWT, no upsert. Returns the status ([storageStatus]); an expired session is refreshed once.
+     * Throws [ApiException] (RETRY) when offline.
+     */
+    fun upload(bucket: String, path: String, file: File, length: Long, contentType: String, files: FileTransport): Int {
+        var token = auth.accessToken()
+        for (attempt in 0..1) {
+            val r = try {
+                files.postFile("$baseUrl/storage/v1/object/$bucket/$path",
+                    mapOf("apikey" to key, "Authorization" to "Bearer $token", "Content-Type" to contentType), file, length)
+            } catch (e: IOException) {
+                throw ApiException(Outcome.RETRY, "upload: ${e.javaClass.simpleName}")
+            }
+            val code = storageStatus(r)
+            if (code == 401 && attempt == 0) { token = auth.accessToken(forceRefresh = true); continue }
+            return code
+        }
+        return 401
+    }
+
     companion object {
+        /**
+         * Storage's answer as one status: its JSON `statusCode` when an error carries one (some versions answer 400 with
+         * the real status inside), and 401 for a bad or expired JWT.
+         */
+        fun storageStatus(r: HttpResult): Int {
+            if (r.code in 200..299) return r.code
+            val j = try { JSONObject(r.body) } catch (_: Exception) { null } ?: return r.code
+            if ((j.optString("error", "") + " " + j.optString("message", "")).contains("jwt", ignoreCase = true)) return 401
+            return j.optString("statusCode", "").toIntOrNull() ?: r.code
+        }
+
         private fun parseArray(body: String): JSONArray? = try { JSONArray(body) } catch (_: Exception) { null }
 
         private fun JSONObject.numOrNull(k: String): Double? = if (isNull(k) || !has(k)) null else optDouble(k).takeIf { !it.isNaN() }

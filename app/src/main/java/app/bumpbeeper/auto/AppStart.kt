@@ -18,9 +18,11 @@ class AppStart : Application() {
         super.onCreate()
         // First start after a backup restore (#93): reset the training state before any sync can run.
         RestoreReset.check(this)
-        // Held data of trips that started by themselves (#49): shared-map points, the speed-limit route, training samples.
+        // Held data of trips that started by themselves (#49): shared-map points, the speed-limit route, training samples,
+        // research recordings.
         TripHold.installBuiltIns()
         TripHold.installTraining(this)
+        TripHold.installResearch()
         if (RestoreReset.noticePending(this)) registerActivityLifecycleCallbacks(RestoreNotice())
         // Research files: 14 days / 2 GB at most, also after research recording was switched off (background thread).
         ResearchFiles.tidyLater(this)
