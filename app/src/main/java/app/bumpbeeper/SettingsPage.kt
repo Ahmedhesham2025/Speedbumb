@@ -24,6 +24,7 @@ import app.bumpbeeper.research.ResearchUploader
 import app.bumpbeeper.sync.SpeedLimitSync
 import app.bumpbeeper.sync.Sync
 import app.bumpbeeper.sync.TrainingConsent
+import app.bumpbeeper.sync.UpdateCheck
 import app.bumpbeeper.ui.AutoDetectText
 import app.bumpbeeper.ui.LiveLimitText
 import app.bumpbeeper.ui.ResearchChoice
@@ -269,6 +270,12 @@ class SettingsPage(private val a: MainActivity) : Page {
             Ui.divider(a),
             Ui.button(a, a.getString(R.string.settings_diagnostics)) { openDiagnostics() },
             hint(a.getString(R.string.settings_diagnostics_hint)),
+            Ui.divider(a),
+            Ui.toggle(a, a.getString(R.string.settings_beta_updates), a.getString(R.string.settings_beta_updates_hint),
+                Prefs.betaUpdates(a)) { on ->
+                Prefs.setBetaUpdates(a, on)
+                if (on) UpdateCheck.latest(a, force = true) {}   // look now (it counts as the day's check), not in up to 24 h
+            },
         )
 
         traceInfo = hint("")

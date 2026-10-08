@@ -8,6 +8,9 @@
     <string name="notif_detection_paused">كشف السواقة واقف. دوس عشان يكمّل.</string>
     <string name="notif_channel_watch">مستعد يكشف السواقة</string>
     <string name="notif_channel_watch_desc">أندرويد محتاج ده وبامب بيبر مستنيك تسوق. تقدر تخفيه من هنا.</string>
+    <string name="notif_channel_updates">التحديثات</string>
+    <string name="notif_channel_updates_desc">فيه نسخة جديدة من بامب بيبر</string>
+    <string name="update_notif_text">بامب بيبر %1$s نزلت — دوس عشان تنزّلها</string>
     <string name="notif_watch_text">مستعد يكشف السواقة</string>
     <string name="notif_recording">بيسجّل</string>
     <string name="notif_starting">بيبدأ…</string>
