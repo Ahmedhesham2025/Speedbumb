@@ -186,8 +186,8 @@ The other codes are written as follows.
 - `bat`: when percent, plug, status or whole °C change.
 - `ac`: when a sensor's accuracy changes.
 - `lbl`: on each tap. `mark` comes from the Diagnostics Mark button, pressed each time the phone is picked up on a test
-  drive. It is a handling marker, not a hazard label: readers keep it out of label matching, and an `undo` never
-  removes a `mark`.
+  drive. It is a handling marker, not a hazard label: readers keep it out of label matching, and an `undo` skips
+  any `mark` and takes back the last label before it.
 
 **Every 2 s, written only when the value changed (so also once at the start)**
 - `lk`.
