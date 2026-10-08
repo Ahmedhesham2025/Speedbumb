@@ -10,6 +10,7 @@ import android.os.Looper
 import android.util.Log
 import android.widget.Toast
 import app.bumpbeeper.CsvExport
+import app.bumpbeeper.Prefs
 import app.bumpbeeper.R
 import app.bumpbeeper.TraceWriter
 import java.io.File
@@ -70,16 +71,33 @@ object ResearchFiles {
      * can't be linked to later ones.
      */
     @Synchronized
-    fun researchId(ctx: Context): String =
-        try { File(ctx.noBackupFilesDir, ID_FILE).readText().trim().takeIf { HEX8.matches(it) } } catch (_: Exception) { null } ?: renewId(ctx)
+    fun researchId(ctx: Context): String = (if (unsaved(ctx)) null else readId(ctx)) ?: renewId(ctx)
 
-    /** A new random [researchId]. */
+    /** A new random [researchId]. If it can't be saved, no file counts as current ([storedId]) until one is. */
     @Synchronized
     fun renewId(ctx: Context): String {
         val id = String.format(Locale.US, "%08x", SecureRandom().nextInt())
-        try { File(ctx.noBackupFilesDir, ID_FILE).writeText(id) } catch (e: Exception) { Log.w(TAG, "research id not saved: $e") }
+        val saved = try { File(ctx.noBackupFilesDir, ID_FILE).writeText(id); true } catch (e: Exception) { Log.w(TAG, "research id not saved: $e"); false }
+        unsavedNow = !saved
+        try { Prefs.sp(ctx).edit().putBoolean(ID_UNSAVED, !saved).commit() } catch (_: Exception) {}
         return id
     }
+
+    /**
+     * The saved research id, which tells current files from an earlier opt-in's: null when it can't be read, or the
+     * last opt-in couldn't save its new one (the next recording tries again). Never makes a new id, so one failed read
+     * can't turn the trip being recorded into "an earlier opt-in's".
+     */
+    @Synchronized
+    fun storedId(ctx: Context): String? = if (unsaved(ctx)) null else readId(ctx)
+
+    /** The last [renewId] couldn't save its id (kept in memory, and in settings if those can be written). */
+    @Volatile private var unsavedNow = false
+    private const val ID_UNSAVED = "research_id_unsaved"
+    private fun unsaved(ctx: Context) = unsavedNow || Prefs.sp(ctx).getBoolean(ID_UNSAVED, false)
+
+    private fun readId(ctx: Context): String? =
+        try { File(ctx.noBackupFilesDir, ID_FILE).readText().trim().takeIf { HEX8.matches(it) } } catch (_: Exception) { null }
 
     /** Finished files, oldest first (the one being written is left out). */
     fun list(ctx: Context): List<File> = finished(dir(ctx))
