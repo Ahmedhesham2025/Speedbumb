@@ -135,7 +135,7 @@ x to the right, y up the screen, z out of the screen.
 | `bat` | battery | percent, plugged, status, temperature | %, see below, see below, 0.1 °C | 1, 1, 1, 10 (from °C) |
 | `bt` | the car's Bluetooth | connected | 1 connected, 0 disconnected | 1 |
 | `act` | activity transition (play edition) | kind | 1 in vehicle, 2 on foot (walking or running) | 1 |
-| `lbl` | label tapped by the driver (label mode) | kind (text) | e.g. `bump`, `rough`, `undo` | text |
+| `lbl` | label tapped by the driver (label mode), or a Diagnostics Mark | kind (text) | e.g. `bump`, `rough`, `undo`; `mark` = phone handled (not a hazard) | text |
 | `drop` | lines dropped so far | total | count (running total for the trip) | 1 |
 
 `G` field details:
@@ -185,7 +185,9 @@ The other codes are written as follows.
 - `act`: on each in-vehicle or on-foot transition.
 - `bat`: when percent, plug, status or whole °C change.
 - `ac`: when a sensor's accuracy changes.
-- `lbl`: on each tap.
+- `lbl`: on each tap. `mark` comes from the Diagnostics Mark button, pressed each time the phone is picked up on a test
+  drive. It is a handling marker, not a hazard label: readers keep it out of label matching, and an `undo` never
+  removes a `mark`.
 
 **Every 2 s, written only when the value changed (so also once at the start)**
 - `lk`.
