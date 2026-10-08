@@ -118,7 +118,7 @@ class ResearchRecorder private constructor(private val ctx: Context, private val
     private val h = Handler(thread.looper)
     /** Header lines that are the same in every file of this trip (set in [start], read on the writer thread). */
     @Volatile private var meta: List<String> = emptyList()
-    /** Reads a file: first used on the writer thread, when the first file opens. */
+    /** Reads a file: first used on the writer thread, when the first file opens. Unreadable: this trip records nothing. */
     private val id by lazy { ResearchFiles.researchId(ctx) }
     private val writer = ResearchWriter(
         file = { seg -> File(ResearchFiles.dir(ctx), ResearchFiles.name(id, startUtcMs, seg)) },
