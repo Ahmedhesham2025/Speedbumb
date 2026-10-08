@@ -185,6 +185,17 @@ class BumpService : Service(), SensorEventListener, LocationListener, EngineList
             return instance?.postLabel(kind) ?: false
         }
 
+        /**
+         * Diagnostics' "Mark" (test drives: the passenger taps it on each pick-up of the phone). One `lbl` line
+         * [Labels.MARK] in the research file, and an `event=mark` row in the debug trace when label mode is on; any
+         * thread. False (nothing written) when neither is being recorded ([markable]).
+         */
+        @Suppress("UNUSED_PARAMETER")
+        fun mark(ctx: Context): Boolean = if (markable()) instance?.postMark() ?: false else false
+
+        /** A mark would be written: a recording with research recording or label mode running. */
+        fun markable(): Boolean = LiveState.recording && (LiveState.researchRunning || LiveState.labelMode)
+
         fun carDisconnected(ctx: Context) {
             try {
                 ctx.startService(Intent(ctx, BumpService::class.java).setAction(ACTION_CAR_GONE))
@@ -254,6 +265,9 @@ class BumpService : Service(), SensorEventListener, LocationListener, EngineList
     private var gz = 0.0
     /** No gyroscope reading yet this trip: the recording leaves gx/gy/gz empty instead of a fake 0. */
     private var gyroSeen = false
+    /** The engine's accelerometer rate, for Diagnostics: samples since [rateFromMs] (sensor time). Engine thread only. */
+    private var rateFromMs = -1L
+    private var rateCount = 0
     // Battery saving (#50) and auto-stop when parked: only used on the engine thread.
     private var power = PowerPolicy()
     private var autoStop: AutoStop? = null
@@ -297,6 +311,7 @@ class BumpService : Service(), SensorEventListener, LocationListener, EngineList
         if ((key == Prefs.RESEARCH_RECORDING || key == null) && !Prefs.researchRecording(this)) {
             research?.stop()
             research = null
+            LiveState.researchRunning = false
             handler?.post { accelAvg = null; gyroAvg = null }   // the engine gets every sample again
         }
         if (!engineKey && key != Prefs.LABEL_MODE) return@OnSharedPreferenceChangeListener
@@ -475,6 +490,28 @@ class BumpService : Service(), SensorEventListener, LocationListener, EngineList
         }
     }
 
+    /**
+     * Any thread; see [mark]. The research file gets it through the label path, stamped now (the recorder has its own
+     * thread). The trace gets its own `mark` event on the engine thread, not a `label`: replay scores labels and an
+     * undo takes back the last one, and a mark is neither.
+     */
+    private fun postMark(): Boolean {
+        val r = research
+        r?.label(Labels.MARK)
+        val h = handler
+        if (h == null || !LiveState.labelMode) return r != null
+        val posted = h.post {
+            val tw = trace ?: return@post
+            val f = engine?.lastFix
+            try {
+                tw.mark(f?.lat ?: Double.NaN, f?.lon ?: Double.NaN, (f?.speedMps ?: Double.NaN) * 3.6)
+            } catch (e: Exception) {
+                Log.w(TAG, "mark not written", e)
+            }
+        }
+        return posted || r != null
+    }
+
     /** Engine thread. Opens a recording file and starts copying engine events into it. */
     private fun openTrace(store: TracingStore) {
         try {
@@ -559,6 +596,7 @@ class BumpService : Service(), SensorEventListener, LocationListener, EngineList
         val record = Prefs.recordTrace(this)
         gx = 0.0; gy = 0.0; gz = 0.0
         gyroSeen = false
+        rateFromMs = -1L; rateCount = 0
         power = PowerPolicy()
         val stopAfterMs = Prefs.autoStopMinutes(this) * 60_000L
         // Started by a guess (motion / Google): give up if the car never really drives.
@@ -626,6 +664,7 @@ class BumpService : Service(), SensorEventListener, LocationListener, EngineList
         // hands that rate to the listeners above too, so while it runs the engine gets averages at its own rate, ≤ 100 Hz
         // (onSensorChanged); none when it asked for 200 Hz itself.
         research = ResearchRecorder.startIfEnabled(this, source, tripId)
+        LiveState.researchRunning = research != null
         if (research != null) h.post { accelAvg = RateAverager.forPeriod(periodUs); gyroAvg = RateAverager.forPeriod(periodUs) }
         // The upload queue learns the trip and whether it may be held ("Was this a drive?"). Engine thread: file I/O.
         research?.let { r -> val id = tripId; h.post { ResearchQueue.tripStarted(this, r.stamp, id, guessed) } }
@@ -646,6 +685,7 @@ class BumpService : Service(), SensorEventListener, LocationListener, EngineList
         val researchStamp = research?.stamp
         research?.stop()
         research = null
+        LiveState.researchRunning = false
 
         val h = handler
         val t = thread
@@ -760,6 +800,16 @@ class BumpService : Service(), SensorEventListener, LocationListener, EngineList
         }
 
         eng.onAccel(tMs, x, y, z)
+        if (rateFromMs < 0) {
+            rateFromMs = tMs
+        } else {
+            rateCount++
+            if (tMs - rateFromMs >= 2000) {   // what the engine gets, over 2 s
+                LiveState.sensorHz = rateCount * 1000.0 / (tMs - rateFromMs)
+                rateCount = 0
+                rateFromMs = tMs
+            }
+        }
         monitor?.onAccel(tMs, x, y, z)
         trace?.let { tw ->
             if (gyroSeen) tw.accel(tMs, x, y, z, gx, gy, gz, eng.lastVertical)
