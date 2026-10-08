@@ -12,6 +12,7 @@ import app.bumpbeeper.MainActivity
 import app.bumpbeeper.Prefs
 import app.bumpbeeper.R
 import app.bumpbeeper.auto.AutoDetect
+import app.bumpbeeper.sync.TrainingConsent
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -143,12 +144,12 @@ class AutoDetectFlowTest {
         assertFalse(box.isChecked)
     }
 
-    @Test fun turnOnStoresConsentVersion1() {
+    @Test fun turnOnStoresTheCurrentConsentVersion() {
         val box = trainingSwitch()
         box.performClick(); idle()
         click(latest(), DialogInterface.BUTTON_POSITIVE)
         assertTrue(Prefs.trainingConsent(app))
-        assertEquals(1, Prefs.trainingConsentVersion(app))
+        assertEquals(TrainingConsent.TRAINING_CONSENT_VERSION, Prefs.trainingConsentVersion(app))
         assertTrue(box.isChecked)
     }
 }

@@ -4,6 +4,7 @@ import android.content.Context
 import android.util.Log
 import app.bumpbeeper.BumpDb
 import app.bumpbeeper.research.ResearchQueue
+import app.bumpbeeper.research.ResearchUploader
 import app.bumpbeeper.sync.SpeedLimitSync
 import app.bumpbeeper.sync.Sync
 import app.bumpbeeper.sync.SyncStore
@@ -195,11 +196,12 @@ object TripHold {
     }
 
     /**
-     * Research recordings ([ResearchQueue]): a held trip's files wait (the uploader checks [mustHold]); "No" and no
-     * answer in time delete them ([ResearchQueue.discardTrip] throws if it couldn't). Once per process.
+     * Research recordings ([ResearchQueue]): a held trip's files wait (the uploader checks [mustHold]) and go after
+     * "Yes"; "No" and no answer in time delete them ([ResearchQueue.discardTrip] throws if it couldn't). Once per process.
      */
     fun installResearch() {
         if (!research.compareAndSet(false, true)) return
+        onConfirmed { c, _ -> ResearchUploader.scheduleNow(c) }
         onRejected { c, id -> ResearchQueue.discardTrip(c, id, "no") }
         onExpired { c, id -> ResearchQueue.discardTrip(c, id, "expired") }
     }

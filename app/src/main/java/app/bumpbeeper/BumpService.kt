@@ -38,6 +38,7 @@ import app.bumpbeeper.research.RateAverager
 import app.bumpbeeper.research.ResearchFiles
 import app.bumpbeeper.research.ResearchQueue
 import app.bumpbeeper.research.ResearchRecorder
+import app.bumpbeeper.research.ResearchUploader
 import app.bumpbeeper.sync.CachedSpotSource
 import app.bumpbeeper.sync.LiveSpeedLimit
 import app.bumpbeeper.sync.OutboxSink
@@ -661,7 +662,7 @@ class BumpService : Service(), SensorEventListener, LocationListener, EngineList
             val ask = unconfirmed && engine != null
             if (ask) TripHold.hold(this, tripId)
             // Only after the hold may the trip's research files be uploaded: the uploader then sees it held.
-            researchStamp?.let { ResearchQueue.tripEnded(this, it) }
+            researchStamp?.let { ResearchQueue.tripEnded(this, it); ResearchUploader.scheduleNow(this) }
             // Privacy zone filter, then into the outbox; the upload runs later in the background.
             try {
                 sink?.flush(Prefs.shareBumps(this), System.currentTimeMillis())
