@@ -1,7 +1,9 @@
 package app.bumpbeeper.sync
 
 import android.net.Network
+import app.bumpbeeper.Confidence
 import app.bumpbeeper.Observation
+import app.bumpbeeper.Severity
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
@@ -132,12 +134,19 @@ enum class Outcome {
     RETRY,
 }
 
-class ApiException(val outcome: Outcome, message: String) : Exception(message)
+/** [httpCode] and [pgCode] (PostgREST's `code`) of a server answer; 0 and "" when there was none (offline, sign-in). */
+class ApiException(val outcome: Outcome, message: String, val httpCode: Int = 0, val pgCode: String = "") : Exception(message) {
+    /** This server has no such RPC (HTTP 404 / PGRST202): its migration isn't applied yet, or was rolled back. */
+    val missingRpc: Boolean get() = httpCode == 404 || pgCode == "PGRST202"
+}
 
 object ApiErrors {
+    /** PostgREST's error `code` in an answer body; "" when there is none. */
+    fun code(body: String): String = try { JSONObject(body).optString("code", "") } catch (_: Exception) { "" }
+
     /** Maps a non-2xx PostgREST answer (`{"code": "22023", "message": …}`) to what to do. */
     fun classify(httpCode: Int, body: String): Outcome {
-        val code = try { JSONObject(body).optString("code", "") } catch (_: Exception) { "" }
+        val code = code(body)
         return when {
             code == "22023" -> Outcome.DROP
             code == "42501" -> Outcome.NOT_ALLOWED
@@ -178,10 +187,16 @@ class SpotRow(
  *
  * `kind_score`: the engine's [Observation.kindScore] runs -1 (speed bump) .. +1 (pothole), but the server column
  * is `check (between 0 and 1)` and its aggregation calls `>= 0.5` a pothole, so the phone sends `(kindScore + 1) / 2`.
+ * Every element says `"schema": 2` ([SCHEMA], supabase/README.md): this build's spots are bumps with a severity, so
+ * its hit on an old pothole spot makes it an ordinary bump on the server too.
  */
 object ObservationJson {
+    /** The upload format version: 2 = bumps with a severity (missing = 1, a 1.7.x phone). */
+    const val SCHEMA = 2
+
     /** Fields the server rejects a whole batch for (22023) are made to fit here instead. */
     fun toJson(o: Observation): JSONObject = JSONObject().apply {
+        put("schema", SCHEMA)
         put("client_obs_id", o.clientId)
         put("kind", o.kind)
         put("lat", o.lat)
@@ -240,7 +255,7 @@ class SupabaseApi(
             val outcome = ApiErrors.classify(r.code, r.body)
             // An expired or revoked session: refresh (or sign in again) once, then give up for now.
             if (outcome == Outcome.AUTH && attempt == 0) { token = auth.accessToken(forceRefresh = true); continue }
-            throw ApiException(if (outcome == Outcome.AUTH) Outcome.RETRY else outcome, "$name: HTTP ${r.code}")
+            throw ApiException(if (outcome == Outcome.AUTH) Outcome.RETRY else outcome, "$name: HTTP ${r.code}", r.code, ApiErrors.code(r.body))
         }
         throw ApiException(Outcome.RETRY, name)
     }
@@ -257,9 +272,23 @@ class SupabaseApi(
         return (0 until arr.length()).mapNotNullTo(HashSet()) { arr.optString(it, "").takeIf { s -> s.isNotEmpty() } }
     }
 
+    /** `spots_near`, the 1.7.x answer: no band, confidence or total hits. Use [spotsNearV2] first. */
     fun spotsNear(lat: Double, lon: Double, radiusM: Int): List<SpotRow> {
         val body = rpc("spots_near", JSONObject().put("lat", lat).put("lon", lon).put("radius_m", radiusM))
         return parseSpots(body)
+    }
+
+    /**
+     * `spots_near_v2`: the same spots with their band, confidence, hits in total and legacy flag. Null when this server
+     * has no v2 ([ApiException.missingRpc]); the caller then falls back to [spotsNear].
+     */
+    fun spotsNearV2(lat: Double, lon: Double, radiusM: Int): List<SpotRow>? {
+        val body = try {
+            rpc("spots_near_v2", JSONObject().put("lat", lat).put("lon", lon).put("radius_m", radiusM))
+        } catch (e: ApiException) {
+            if (e.missingRpc) return null else throw e
+        }
+        return parseSpotsV2(body)
     }
 
     fun submitCrashReport(appVersion: String, model: String, stack: String) {
@@ -318,6 +347,30 @@ class SupabaseApi(
                 val lon = o.numOrNull("longitude") ?: continue
                 out.add(SpotRow(o.optLong("id", -1), lat, lon, o.numOrNull("heading"), o.strOrNull("kind"),
                     o.strOrNull("side"), o.numOrNull("severity"), o.optInt("n_devices", 0)))
+            }
+            return out.filter { it.id >= 0 }
+        }
+
+        /**
+         * A `spots_near_v2` answer. A legacy spot is cached as kind "pothole" (how `spots_near` reports it, and what the
+         * engine keeps soft until felt) and always "soft"; any other spot is a "bump". Bands and confidences this
+         * version doesn't know are left null.
+         */
+        fun parseSpotsV2(body: String): List<SpotRow> {
+            val arr = parseArray(body) ?: return emptyList()
+            val out = ArrayList<SpotRow>(arr.length())
+            for (i in 0 until arr.length()) {
+                val o = arr.optJSONObject(i) ?: continue
+                val lat = o.numOrNull("lat") ?: continue
+                val lon = o.numOrNull("lon") ?: continue
+                val legacy = o.optBoolean("legacy", false)
+                val devices = o.optInt("n_devices", 0)
+                out.add(SpotRow(o.optLong("id", -1), lat, lon, o.numOrNull("heading"), if (legacy) "pothole" else "bump", null,
+                    o.numOrNull("severity"), devices,
+                    band = o.strOrNull("severity_band")?.takeIf { b -> Severity.values().any { it.label == b } },
+                    confidence = if (legacy) Confidence.SOFT.label
+                        else o.strOrNull("confidence")?.takeIf { c -> Confidence.values().any { it.label == c } },
+                    nHits = o.optInt("n_hits", devices).coerceAtLeast(devices)))
             }
             return out.filter { it.id >= 0 }
         }
