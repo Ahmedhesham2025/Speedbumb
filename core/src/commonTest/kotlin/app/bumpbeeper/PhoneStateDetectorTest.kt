@@ -1,6 +1,8 @@
 package app.bumpbeeper
 
+import kotlin.math.PI
 import kotlin.math.cos
+import kotlin.math.max
 import kotlin.math.roundToInt
 import kotlin.math.sin
 import kotlin.test.Test
@@ -21,28 +23,40 @@ class PhoneStateDetectorTest {
         var kmh = 0.0
         /** How fast the GPS heading turns, degrees per second. */
         var turnDegS = 0.0
+        /** The GPS speed follows [car] (a real stop or start rather than a push). */
+        var gpsFollowsCar = false
         private var bearing = 90.0
-        /** The phone was HANDLED at some sample since the last [fresh]. */
+        /** The phone was HANDLED at some sample since the last [fresh], for this long in all. */
         var everHandled = false
+        var handledMsTotal = 0L
 
         fun fresh(): Rig {
             everHandled = false
+            handledMsTotal = 0L
             return this
         }
 
-        /** [seconds] of samples while the phone turns at [rateDegS] about x and at [yawRads] about z. */
-        fun run(seconds: Double, rateDegS: Double = 0.0, yawRads: Double = 0.0): Rig {
+        /**
+         * [seconds] of samples while the phone turns at [rateDegS] about x and at [yawRads] about z, and wobbles
+         * ±[wobbleDeg] about x once a second (a hand).
+         */
+        fun run(seconds: Double, rateDegS: Double = 0.0, yawRads: Double = 0.0, wobbleDeg: Double = 0.0): Rig {
             repeat((seconds * 50).roundToInt()) {
                 t += 20
-                deg += rateDegS * 0.02
+                val rate = rateDegS + wobbleDeg * 2 * PI * cos(2 * PI * t / 1000.0)
+                deg += rate * 0.02
+                if (gpsFollowsCar) kmh = max(0.0, kmh + car * 0.02 * 3.6)
                 val th = degToRad(deg)
-                if (gyro) d.onGyro(t, degToRad(rateDegS), 0.0, yawRads)
+                if (gyro) d.onGyro(t, degToRad(rate), 0.0, yawRads)
                 d.onAccel(t, 0.0, 9.81 * sin(th) + car, 9.81 * cos(th))
                 if (t % 1000 == 0L) {
                     bearing = (bearing + turnDegS) % 360.0
                     d.onFix(Fix(t, 30.0, 31.0, kmh / 3.6, bearing, 5.0))
                 }
-                if (d.state == PhoneState.HANDLED) everHandled = true
+                if (d.state == PhoneState.HANDLED) {
+                    everHandled = true
+                    handledMsTotal += 20
+                }
             }
             return this
         }
@@ -90,7 +104,27 @@ class PhoneStateDetectorTest {
             r.car = 0.0
             r.run(3.0)
             assertFalse(r.everHandled, "gyroscope: $gyro")
+            // A full emergency stop from 100 km/h, the GPS speed following it.
+            val stop = Rig(gyro = gyro).apply { kmh = 100.0; gpsFollowsCar = true }.run(10.0).fresh()
+            stop.car = -6.5
+            stop.run(4.3)
+            stop.car = 0.0
+            stop.run(5.0)
+            assertFalse(stop.everHandled, "full stop, gyroscope: $gyro")
         }
+    }
+
+    @Test fun tripStartingWhileSpeedingUpIsMountedWithin40s() {
+        val r = Rig().apply { gpsFollowsCar = true; car = 1.5 }.run(9.0)
+        r.car = 0.0
+        var mountedAt = -1L
+        repeat(60) {
+            r.run(1.0)
+            if (mountedAt < 0 && r.d.state == PhoneState.STABLE_MOUNTED) mountedAt = r.t
+        }
+        assertTrue(mountedAt in 0L..42_000L, "mounted at $mountedAt ms")
+        assertFalse(r.everHandled)
+        assertEquals(PhoneState.STABLE_MOUNTED, r.d.state)
     }
 
     @Test fun unlockIsHandledUnlessMounted() {
@@ -105,6 +139,31 @@ class PhoneStateDetectorTest {
         mounted.signals.unlockedAtMs = mounted.t
         mounted.run(5.5)
         assertFalse(mounted.everHandled, "unlocking a mounted phone (navigation)")
+    }
+
+    @Test fun withoutALockScreenAnUnlockNeedsMotion() {
+        val still = Rig("cupholder").run(5.0).fresh()
+        still.signals.keyguardPresent = false
+        still.signals.unlockedAtMs = still.t
+        still.run(5.5)
+        assertFalse(still.everHandled, "the screen came on for a notification")
+        val picked = Rig("cupholder").run(5.0).fresh()
+        picked.signals.keyguardPresent = false
+        picked.signals.unlockedAtMs = picked.t
+        picked.run(1.0).run(0.2, rateDegS = 100.0).run(0.5)
+        assertTrue(picked.everHandled && (picked.d.causes and PhoneStateDetector.UNLOCK) != 0, "causes ${picked.d.causes}")
+    }
+
+    @Test fun causesWhileDrivingAreKeptApart() {
+        val stopped = Rig("pocket").run(5.0)
+        stopped.signals.unlockedAtMs = stopped.t
+        stopped.run(2.0)
+        assertEquals(PhoneStateDetector.UNLOCK, stopped.d.causes)
+        assertEquals(0, stopped.d.movingCauses, "unlocked while stopped")
+        val driving = Rig().apply { kmh = 30.0 }.run(5.0)
+        driving.signals.handheldCall = true
+        driving.run(3.0)
+        assertTrue((driving.d.movingCauses and PhoneStateDetector.CALL) != 0)
     }
 
     @Test fun handHeldCallIsHandled() {
@@ -122,9 +181,23 @@ class PhoneStateDetectorTest {
         for ((placement, handled) in listOf("cupholder" to true, "mounted" to false)) {
             val r = Rig(placement).run(40.0).fresh()
             r.signals.screenOn = true
-            r.run(0.2, rateDegS = 100.0).run(1.0)   // tilted 20°: less than the 28° that is handling anyway
+            // Tilted 24° (less than the 28° that is handling anyway), in a hand that wobbles.
+            r.run(0.24, rateDegS = 100.0).run(2.0, wobbleDeg = 4.0)
             assertEquals(handled, r.everHandled, placement)
-            if (handled) assertEquals(PhoneStateDetector.SCREEN, r.d.causes)
+            if (handled) assertTrue((r.d.causes and PhoneStateDetector.SCREEN) != 0, "causes ${r.d.causes}")
+        }
+    }
+
+    @Test fun phoneThatSlipsWithTheScreenOnIsNotHandledForLong() {
+        for (placement in listOf("mounted", "unknown", "cupholder")) {
+            val r = Rig(placement).run(40.0).fresh()
+            r.signals.screenOn = true
+            r.kmh = 30.0
+            r.run(0.3, rateDegS = 20.0 / 0.3).run(60.0)   // slips 20° and stays there, a minute
+            assertTrue(r.handledMsTotal <= 3500, "$placement: handled ${r.handledMsTotal} ms")
+            assertTrue(r.d.state != PhoneState.HANDLED && r.d.tiltDeg < 2.0, "$placement: ${r.d.state}, tilt ${r.d.tiltDeg}")
+            assertTrue(r.d.movingMs < 1500, "$placement: no phone use, ${r.d.movingMs} ms")
+            if (placement != "cupholder") assertEquals(PhoneState.STABLE_MOUNTED, r.d.state, "$placement: still in its holder")
         }
     }
 
@@ -160,6 +233,21 @@ class PhoneStateDetectorTest {
         assertEquals(PhoneState.STABLE_LOOSE, r.d.state, "resting at 60° for 10 s: its new place")
         assertTrue(r.d.tiltDeg < 1.0, "measured from the new place: ${r.d.tiltDeg}")
         assertTrue(r.d.handledDuring(r.t - 9000, r.t - 9000) && !r.d.handledDuring(r.t - 100, r.t))
+    }
+
+    @Test fun holdLengthWhileDriving() {
+        for ((held, counts) in listOf(1.0 to false, 2.0 to true)) {
+            val r = Rig().apply { kmh = 30.0 }.run(5.0)
+            r.run(0.3, rateDegS = 70 / 0.3).run(held).run(0.3, rateDegS = -70 / 0.3).run(0.5)
+            assertEquals(counts, r.d.movingMs >= 1500, "held $held s: ${r.d.movingMs} ms")
+        }
+    }
+
+    @Test fun holdIsSeenWithoutAGyroscope() {
+        val r = Rig(gyro = false).run(5.0)
+        r.run(0.5, rateDegS = 120.0).run(3.0)
+        assertEquals(PhoneState.HANDLED, r.d.state)
+        assertTrue((r.d.causes and PhoneStateDetector.TILT) != 0, "causes ${r.d.causes}")
     }
 
     @Test fun jostlesWhileDrivingTurnPocketModeOn() {
