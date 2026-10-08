@@ -1,6 +1,7 @@
 package app.bumpbeeper
 
 import android.app.AlertDialog
+import android.app.Dialog
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
@@ -85,6 +86,7 @@ class SettingsPage(private val a: MainActivity) : Page {
     private var limitsDialog: AlertDialog? = null
     private var liveDialog: AlertDialog? = null
     private var trainDialog: AlertDialog? = null
+    private var diagDialog: Dialog? = null
 
     fun release() {
         trainDialog?.dismiss()
@@ -96,6 +98,8 @@ class SettingsPage(private val a: MainActivity) : Page {
         limitsDialog = null
         liveDialog?.dismiss()
         liveDialog = null
+        diagDialog?.dismiss()
+        diagDialog = null
     }
 
     private fun build(): View {
@@ -264,6 +268,9 @@ class SettingsPage(private val a: MainActivity) : Page {
             Ui.text(a, 15f, Ui.TEXT, value = a.getString(R.string.settings_phone_where)),
             place,
             hint(a.getString(R.string.settings_phone_hint)),
+            Ui.divider(a),
+            Ui.button(a, a.getString(R.string.settings_diagnostics)) { openDiagnostics() },
+            hint(a.getString(R.string.settings_diagnostics_hint)),
         )
 
         traceInfo = hint("")
@@ -459,6 +466,12 @@ class SettingsPage(private val a: MainActivity) : Page {
             if (v.text.toString() != s) v.text = s
             v.visibility = if (s.isEmpty()) View.GONE else View.VISIBLE
         }
+    }
+
+    /** Settings → Diagnostics, full screen (DiagnosticsPage). */
+    private fun openDiagnostics() {
+        diagDialog?.dismiss()
+        diagDialog = DiagnosticsPage.open(a).also { d -> d.setOnCancelListener { diagDialog = null } }
     }
 
     private fun copyResearchId() {
