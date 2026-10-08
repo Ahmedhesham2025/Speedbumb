@@ -142,8 +142,10 @@ to its notice. It sends compact learning samples so the detection of bumps and p
   anonymous device record (`devices.training_subject`, so it can be deleted when you turn this off), and that record is
   also linked to the phone's shared-map contributions. It is dropped, and a new one made, each time you turn this on
   again. Samples are not linked to trips, so they can't be put in order.
-- **When and how much:** uploaded 1 to 6 hours after a drive, at a random time; about 30 to 90 KB per drive. Trips that
-  started by themselves are held until you answer "Was this a drive?" (see above).
+- **When and how much:** uploaded **right after each drive** when the phone is online, so our server can tell roughly
+  when a drive ended; about 30 to 90 KB per drive (consent version 2). A phone that agreed to version 1 kept its upload
+  1 to 6 hours after a drive at a random time until it answers the update question, asked once when the app opens.
+  Trips that started by themselves are held until you answer "Was this a drive?" (see above).
 - **Why and who:** only to improve detection. The app's owner analyses the samples offline; they are never sold and
   never used for ads.
 - **Turning it off** or **Delete my shared data** deletes the samples and trip summaries on our server at once when
@@ -374,7 +376,9 @@ TomTom: <https://www.tomtom.com/privacy/>. سيرفرنا مش بيحتفظ بح
   300 متر من أول أو آخر الرحلة. مع الوقت ده ممكن يلمّح للمناطق اللي بتسوق فيها.
 - مُعرّف عشوائي بيتغيّر كل مرة تفتحه. على سيرفرنا بيتحفظ مع السجل المجهول بتاع الموبايل ده (عشان يتمسح لما
   تقفله)، والسجل ده مربوط كمان بمساهماته في الخريطة المتشاركة. العيّنات مش مربوطة بالرحلات.
-- بيترفع بعد المشوار بساعة لـ 6 ساعات، حوالي 30 لـ 90 كيلوبايت. بيتحفظ 7 أيام على الموبايل لو ما اتبعتش، و12 شهر
+- بيترفع **على طول بعد كل مشوار** لما يبقى فيه نت، فسيرفرنا يقدر يعرف تقريبًا المشوار خلص إمتى؛ حوالي 30 لـ 90
+  كيلوبايت (نسخة الموافقة 2). الموبايل اللي وافق على النسخة 1 بيفضل يرفع بعد المشوار بساعة لـ 6 ساعات في وقت عشوائي لحد
+  ما يرد على سؤال التحديث، اللي بيتسأل مرة لما التطبيق يتفتح. بيتحفظ 7 أيام على الموبايل لو ما اتبعتش، و12 شهر
   على السيرفر، بس لتحسين الكشف، وصاحب التطبيق بيحلّله أوفلاين، وعمره ما بيتباع.
 - لو قفلته أو مسحت بياناتك المتشاركة بيتمسح من السيرفر على طول لو فيه نت، وإلا أول ما يتوصّل (الإعدادات بتقولك إنه
   مستني)، ما عدا نسخ مزوّد الخدمة الاحتياطية والسجلات اللي بتتمسح مع الوقت. ولو تسجيل الدخول المجهول اتغيّر، التطبيق

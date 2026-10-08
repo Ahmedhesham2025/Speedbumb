@@ -29,6 +29,7 @@ import android.widget.Toast
 import app.bumpbeeper.auto.AutoDetect
 import app.bumpbeeper.crash.CrashLog
 import app.bumpbeeper.sync.Sync
+import app.bumpbeeper.sync.TrainingConsent
 import app.bumpbeeper.sync.UpdateCheck
 import app.bumpbeeper.ui.AutoSetup
 import app.bumpbeeper.ui.ResearchChoice
@@ -64,6 +65,7 @@ class MainActivity : Activity() {
     private var researchDialog: Dialog? = null
     /** The research question open is the first-start one (Settings' one stays open during a trip). */
     private var researchFirstStart = false
+    private var trainingDialog: Dialog? = null
 
     private val ticker = object : Runnable {
         override fun run() {
@@ -72,6 +74,7 @@ class MainActivity : Activity() {
             // dismiss(), not cancel(), so it doesn't count as "Decide later" and is asked again on a later resume.
             if (LiveState.recording) syncDialog?.let { it.dismiss(); syncDialog = null }
             if (LiveState.recording && researchFirstStart) researchDialog?.let { it.dismiss(); researchDialog = null }
+            if (LiveState.recording) trainingDialog?.dismiss()
             // Keep the screen on while recording with the Drive tab open (it's a dashboard).
             if (LiveState.recording && current == TAB_DRIVE) window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
             else window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
@@ -138,6 +141,7 @@ class MainActivity : Activity() {
         syncDialog = null
         researchDialog?.dismiss()   // not an answer: the first-start question comes again
         researchDialog = null
+        trainingDialog?.dismiss()
         closeAutoDialog()
         (pages[TAB_SETTINGS] as? SettingsPage)?.release()
         super.onDestroy()
@@ -212,9 +216,10 @@ class MainActivity : Activity() {
      * the research question ([askResearch]).
      */
     private fun askSyncChoice() {
-        if (syncDialog != null || researchDialog != null) return
+        if (syncDialog != null || researchDialog != null || trainingDialog != null) return
         SyncChoice.maybeAsk(this) { showSyncChoice() }
         askResearch()
+        askTrainingUpdate()
     }
 
     /** The shared-map question now (also from Settings, e.g. before turning on road speed limits). */
@@ -224,6 +229,7 @@ class MainActivity : Activity() {
             syncDialog = null
             pages.getOrNull(current)?.onShow()
             askResearch()   // first start: right after the shared-map question
+            askTrainingUpdate()
         }.also { it.show() }
     }
 
@@ -242,7 +248,28 @@ class MainActivity : Activity() {
             researchDialog = null
             pages.getOrNull(current)?.onShow()
             answered(yes)
+            askTrainingUpdate()
         }.also { it.show() }
+    }
+
+    /**
+     * "Help improve detection" agreed to an older text: its new version (uploads right after each drive) is asked once,
+     * after the questions above, never while recording. Either answer settles it; until then nothing changes.
+     */
+    private fun askTrainingUpdate() {
+        if (trainingDialog != null || syncDialog != null || researchDialog != null || isFinishing || LiveState.recording) return
+        if (!TrainingConsent.needsUpdate(this)) return
+        trainingDialog = AlertDialog.Builder(this)
+            .setTitle(R.string.train_update_title)
+            .setMessage(getString(R.string.train_update_msg) + "\n\n" + getString(R.string.train_consent_msg))
+            .setPositiveButton(R.string.train_update_keep) { _, _ -> TrainingConsent.setEnabled(this, true) }
+            .setNegativeButton(R.string.train_update_off) { _, _ ->
+                TrainingConsent.setEnabled(this, false)
+                toast(getString(R.string.train_off_toast))
+            }
+            .setCancelable(false)
+            .setOnDismissListener { trainingDialog = null; pages.getOrNull(current)?.onShow() }
+            .show()
     }
 
     // ---------------------------------------------------------------- update banner
