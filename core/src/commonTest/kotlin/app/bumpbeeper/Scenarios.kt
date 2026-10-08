@@ -673,6 +673,54 @@ object Scenarios {
             phoneSignals = { _, s, _, sig, _ -> sig.lux = if (s < 700.0) 0.0 else 250.0 }), 1, 1.7..1.98, 1.5..1.9)
     }
 
+    /**
+     * A phone that tips over and lies there is not phone use: in a cup holder during a 5 m/s² stop (the stop still counts,
+     * from the GPS speed), and on a seat at a steady speed. It is re-learned where it lies. A real 2 s pick-up still counts.
+     */
+    fun tipOverIsNoPhoneUse() {
+        log("tipOverIsNoPhoneUse")
+        val cup = DrivingConfig().apply { placement = "cupholder" }
+        val stop = DriveSpec(hardBrakesAt = listOf(700.0), hardBrakeMs2 = 5.0, slipsAt = listOf(704.0 to 70.0))
+        val r1 = Simulator(301).drive(MemoryStore(), stop, drivingCfg = cup)
+        describeDriving("cup holder, tipped over in a 5 m/s² stop, handled ${formatFixed(r1.handledS, 1)} s", r1.driving)
+        check(r1.driving.phoneUse == 0, "a tip-over is not phone use, got ${r1.driving.phoneUse}")
+        check(r1.driving.harshBrakes == 1, "the stop shows in the GPS speed and counts, got ${r1.driving.harshBrakes}")
+        check(r1.handledS <= 12.0 && r1.phone?.state == PhoneState.STABLE_LOOSE, "re-learned where it lies: ${r1.handledS} s, ${r1.phone?.state}")
+        val r2 = Simulator(301).drive(MemoryStore(), DriveSpec(slipsAt = listOf(700.0 to 80.0)))
+        describeDriving("seat, tipped over at 50 km/h, handled ${formatFixed(r2.handledS, 1)} s", r2.driving)
+        check(r2.driving.phoneUse == 0, "a tip-over on the seat is not phone use, got ${r2.driving.phoneUse}")
+        check(r2.handledS <= 12.0 && r2.phone?.state != PhoneState.HANDLED, "re-learned where it lies: ${r2.handledS} s, ${r2.phone?.state}")
+        val r3 = Simulator(301).drive(MemoryStore(), DriveSpec(holdsAt = listOf(700.0 to 2.0)), drivingCfg = cup)
+        describeDriving("cup holder, picked up 2 s", r3.driving)
+        check(r3.driving.phoneUse == 1, "a real 2 s pick-up is phone use, got ${r3.driving.phoneUse}")
+    }
+
+    /**
+     * The hand wins: lifted slowly (45° in 2 s) and read still for 20 s with the screen on is one handling and phone use,
+     * and the jolts felt during it are not trusted. With navigation on (the screen on all trip), a phone that tips 70° out
+     * of its holder or in the cup holder is no phone use; it stays handled until the screen goes off.
+     */
+    fun stillReadIsPhoneUse() {
+        log("stillReadIsPhoneUse")
+        fun read(jolts: List<Double>) = Simulator(63).drive(MemoryStore(), DriveSpec(holdsAt = listOf(700.0 to 20.0), holdDeg = 45.0,
+            holdLiftS = 2.0, oneOffJoltsAt = jolts, phoneSignals = { _, s, _, sig, _ -> sig.screenOn = s >= 700.0 }),
+            drivingCfg = DrivingConfig().apply { placement = "cupholder" })
+        val r = read(listOf(800.0, 900.0))
+        val r0 = read(emptyList())
+        describeDriving("cup holder, lifted 45° in 2 s, read 20 s, handled ${formatFixed(r.handledS, 1)} s", r.driving)
+        check(r.driving.phoneUse == 1 && r.phone?.episode == 1, "one handling, phone use: ${r.driving.phoneUse}, ${r.phone?.episode} handlings")
+        check(r.newBumps == r0.newBumps && r.rejected.count { it == "handled" } == r0.rejected.count { it == "handled" } + 2,
+            "the jolts at 800 and 900 m are rejected: ${r.rejected}")
+        for (where in listOf("mounted", "cupholder")) {
+            val nav = Simulator(63).drive(MemoryStore(), DriveSpec(slipsAt = listOf(700.0 to 70.0), phoneSignals = { _, _, _, sig, _ ->
+                sig.screenOn = true
+            }), drivingCfg = DrivingConfig().apply { placement = where })
+            describeDriving("navigation on, $where, tipped 70°, handled ${formatFixed(nav.handledS, 1)} s", nav.driving)
+            check(nav.driving.phoneUse == 0, "$where: a tip-over with navigation on is not phone use, got ${nav.driving.phoneUse}")
+            check(nav.phone?.state == PhoneState.HANDLED, "$where: handled until the screen goes off, ${nav.phone?.state}")
+        }
+    }
+
     /** Without a lock screen every screen-on reads as an unlock: alone (a notification) it is nothing, with a pick-up it is phone use. */
     fun noLockScreenUnlockNeedsMotion() {
         log("noLockScreenUnlockNeedsMotion")
@@ -1099,6 +1147,8 @@ object Scenarios {
         "stoppedIsNoPhoneUse" to ::stoppedIsNoPhoneUse,
         "holdLengthInEveryPlacement" to ::holdLengthInEveryPlacement,
         "noLockScreenUnlockNeedsMotion" to ::noLockScreenUnlockNeedsMotion,
+        "tipOverIsNoPhoneUse" to ::tipOverIsNoPhoneUse,
+        "stillReadIsPhoneUse" to ::stillReadIsPhoneUse,
         "repeatedHandlingIsPhoneUse" to ::repeatedHandlingIsPhoneUse,
         "fastBumpVersusRoadJoint" to ::fastBumpVersusRoadJoint,
         "dipIsABump" to ::dipIsABump,

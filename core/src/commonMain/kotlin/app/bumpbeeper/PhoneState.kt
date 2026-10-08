@@ -191,7 +191,8 @@ class PhoneStateDetector(val cfg: PhoneStateConfig = PhoneStateConfig(), val sig
         private set
     /**
      * Time, while driving, the phone was tilted past [PhoneStateConfig.tiltDeg] or held by a sign other than its motion
-     * (the screen only while the phone moves).
+     * (the screen only while the phone moves). Tilted but lying still counts only once the phone moves again (put back,
+     * picked up): a phone that tipped over and stays there until it is re-learned was never in a hand.
      */
     var movingMs = 0L
         private set
@@ -236,6 +237,8 @@ class PhoneStateDetector(val cfg: PhoneStateConfig = PhoneStateConfig(), val sig
     private var lastMoveMs = NEVER   // the phone last rotated fast or was turned from where it rested
     private var movedDriving = false
     private var outOfPocket = false   // the proximity sensor cleared or the light rose from dark during this episode
+    private var pendingTiltMs = 0L     // tilted, lying still, while driving: counted if the phone moves again
+    private var restedTilted = false   // it has rested (restMs) at the tilted angle in this episode
     private var tiltMs2 = 0.0   // mean square tilt over the mounted window
     private var stableSinceMs = NEVER
     private var speedKmh = 0.0
@@ -440,11 +443,19 @@ class PhoneStateDetector(val cfg: PhoneStateConfig = PhoneStateConfig(), val sig
             if (max(farAtMs, brightAtMs) >= episodeStartMs - cfg.pocketExitMs) outOfPocket = true
             if (!began) {
                 if (tiltOver || rawOver || notMotion) handledMs += dtMs
-                if (moving && (tiltOver || notMotion)) movingMs += dtMs
+                if (moving && (notMotion || (tiltOver && (rawOver || !still)))) movingMs += dtMs
+                else if (moving && tiltOver) pendingTiltMs += dtMs
                 if (tiltOver) {
                     tiltRunMs += dtMs
                     tiltHeldMs = max(tiltHeldMs, tiltRunMs)
                 } else tiltRunMs = 0L
+            }
+            // Tilted and lying still: that time counts once the phone moves again (fast, back from the tilt, or away from
+            // where it rested). If it rests there until it is re-learned (a tip-over), it never counts.
+            if (tiltOver && t - stillSinceMs >= cfg.restMs) restedTilted = true
+            if (pendingTiltMs > 0 && (rawOver || !tiltOver || (restedTilted && moved > cfg.screenTiltDeg))) {
+                movingMs += pendingTiltMs
+                pendingTiltMs = 0L
             }
             // Rested in one place for a while (put down, slipped in its holder): that is where it is now. Not while the
             // screen is on and the phone is turned past tiltDeg: a hand held still looks the same, and the hand wins.
@@ -482,6 +493,8 @@ class PhoneStateDetector(val cfg: PhoneStateConfig = PhoneStateConfig(), val sig
         ax = cx; ay = cy; az = cz
         anchorMs = t
         movedDriving = false
+        pendingTiltMs = 0L
+        restedTilted = false
         lastMotionMs = t
         outOfPocket = false
         val i = count % HISTORY
@@ -492,6 +505,7 @@ class PhoneStateDetector(val cfg: PhoneStateConfig = PhoneStateConfig(), val sig
     }
 
     private fun end(t: Long) {
+        pendingTiltMs = 0L
         ends[(count - 1) % HISTORY] = t
         wasJostle[(count - 1) % HISTORY] = jostle
         lastHandledEndMs = t
