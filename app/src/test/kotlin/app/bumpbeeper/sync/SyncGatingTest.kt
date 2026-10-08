@@ -39,6 +39,7 @@ class SyncGatingTest {
                     HttpResult(200, JSONArray().apply { for (i in 0 until batch.length()) put(batch.getJSONObject(i).getString("client_obs_id")) }.toString())
                 }
                 "spots_near" -> HttpResult(200, """[{"id":5,"latitude":30.05,"longitude":31.24,"heading":90,"kind":"bump","side":null,"severity":3.0,"n_devices":2}]""")
+                "spots_near_v2" -> HttpResult(200, """[{"id":5,"lat":30.05,"lon":31.24,"heading":90,"severity":3.0,"severity_band":"mild","confidence":"full","n_devices":2,"n_hits":3,"legacy":false}]""")
                 else -> HttpResult(204, "")
             }
         }
@@ -81,10 +82,10 @@ class SyncGatingTest {
         assertFalse(Prefs.shareBumps(ctx))
         val net = FakeBackend()
         assertFalse(Sync.run(ctx, false, 30.0444, 31.2357, net))
-        assertEquals(listOf("signup", "register_device", "spots_near"), net.calls)
+        assertEquals(listOf("signup", "register_device", "spots_near_v2"), net.calls)
         assertFalse(JSONObject(net.bodies["register_device"]!!).getBoolean("share_enabled"))
         // The download position is rounded to about 1 km.
-        assertEquals(30.04, JSONObject(net.bodies["spots_near"]!!).getDouble("lat"), 0.0)
+        assertEquals(30.04, JSONObject(net.bodies["spots_near_v2"]!!).getDouble("lat"), 0.0)
         assertEquals(0, pending())   // not sharing: queued points are dropped, never sent
         assertEquals(1, CrashLog.list(ctx).size)   // crash reports stay on the phone
     }
@@ -94,7 +95,7 @@ class SyncGatingTest {
         assertTrue(Prefs.shareBumps(ctx))
         val net = FakeBackend()
         assertFalse(Sync.run(ctx, false, 30.0444, 31.2357, net))
-        assertEquals(listOf("signup", "register_device", "submit_observations", "submit_crash_report", "spots_near"), net.calls)
+        assertEquals(listOf("signup", "register_device", "submit_observations", "submit_crash_report", "spots_near_v2"), net.calls)
         assertTrue(JSONObject(net.bodies["register_device"]!!).getBoolean("share_enabled"))
         assertEquals(0, pending())
         assertTrue(CrashLog.list(ctx).isEmpty())
