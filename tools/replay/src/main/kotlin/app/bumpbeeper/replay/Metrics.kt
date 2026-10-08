@@ -6,12 +6,11 @@ import kotlin.math.*
 
 /** Accuracy of one or more replayed drives. Definitions: docs/validation/metrics.md. Ratios are NaN when there is nothing to count. */
 class MetricsReport(
-    /** Hazard labels (bump, pothole_l, pothole_r; not rough), and those at ≥ 25 km/h; each with how many matched. */
+    /** Hazard labels (bump with or without its band; not rough or nothing), and those at ≥ 25 km/h; each with how many matched. */
     val labels: Int, val matchedLabels: Int, val labelsFast: Int, val matchedFast: Int,
     /** Engine detections (new_bump + hit) and how many matched any label. */
     val detections: Int, val matchedDetections: Int,
     val beeps: Int, val falseWarnings: Int, val distanceKm: Double,
-    val kindChecked: Int, val kindCorrect: Int, val sideChecked: Int, val sideCorrect: Int,
     /** Labelled spots driven over at least twice, and how many the engine found on pass 1 or 2. */
     val spots: Int, val spotsLearned: Int,
     /** Counts per run, in replay order (empty for a single recording). */
@@ -21,8 +20,6 @@ class MetricsReport(
     val recall get() = ratio(matchedLabels, labels)
     val recallFast get() = ratio(matchedFast, labelsFast)
     val falseWarningsPer100Km get() = if (distanceKm > 0) falseWarnings / distanceKm * 100.0 else Double.NaN
-    val kindAccuracy get() = ratio(kindCorrect, kindChecked)
-    val sideAccuracy get() = ratio(sideCorrect, sideChecked)
     val learnedRate get() = ratio(spotsLearned, spots)
 
     private class Row(val name: String, val value: Double, val target: String, val pass: Boolean?)
@@ -32,8 +29,6 @@ class MetricsReport(
         Row("Recall ≥ 25 km/h", recallFast, "≥ 0.95", ok(recallFast) { it >= 0.95 }),
         Row("Recall overall", recall, "≥ 0.85", ok(recall) { it >= 0.85 }),
         Row("False warnings / 100 km", falseWarningsPer100Km, "≤ 1", ok(falseWarningsPer100Km) { it <= 1.0 }),
-        Row("Bump vs pothole", kindAccuracy, "≥ 0.85", ok(kindAccuracy) { it >= 0.85 }),
-        Row("Pothole side", sideAccuracy, "≥ 0.80", ok(sideAccuracy) { it >= 0.80 }),
         Row("Spot learned within 2 passes", learnedRate, "(tracked)", null),
     )
 
@@ -60,13 +55,10 @@ class MetricsReport(
     fun toJson(): String {
         val fields = listOf(
             "precision" to precision, "recall" to recall, "recall_fast" to recallFast,
-            "false_warnings_per_100km" to falseWarningsPer100Km, "kind_accuracy" to kindAccuracy,
-            "side_accuracy" to sideAccuracy, "learned_within_2_passes" to learnedRate,
+            "false_warnings_per_100km" to falseWarningsPer100Km, "learned_within_2_passes" to learnedRate,
             "labels" to labels, "matched_labels" to matchedLabels, "labels_fast" to labelsFast, "matched_fast" to matchedFast,
             "detections" to detections, "matched_detections" to matchedDetections, "beeps" to beeps,
-            "false_warnings" to falseWarnings, "distance_km" to distanceKm, "kind_checked" to kindChecked,
-            "kind_correct" to kindCorrect, "side_checked" to sideChecked, "side_correct" to sideCorrect,
-            "spots" to spots, "spots_learned" to spotsLearned,
+            "false_warnings" to falseWarnings, "distance_km" to distanceKm, "spots" to spots, "spots_learned" to spotsLearned,
         )
         val body = fields.map { (k, v) -> "  \"$k\": " + num(v) }.toMutableList()
         if (runs.isNotEmpty()) {
@@ -92,8 +84,8 @@ class MetricsReport(
     }
 }
 
-/** One replayed recording: its labels (see [Metrics.labels]), what the engine did, and the raw samples (for GPS). */
-class Run(val name: String, val labels: List<Label>, val result: ReplayResult, val samples: List<TraceSample>)
+/** One replayed recording: its labels (see [Metrics.labels]), what the engine did, the raw samples (for GPS), the placement. */
+class Run(val name: String, val labels: List<Label>, val result: ReplayResult, val samples: List<TraceSample>, val placement: String = "unknown")
 
 /** Per-run counts, shown when several runs of one route are scored together. */
 class RunCounts(
@@ -112,18 +104,22 @@ object Metrics {
     const val FAST_KMH = 25.0
     /** A label after the last GPS fix is moved on from that fix for at most this long. */
     const val MAX_EXTRAPOLATE_MS = 2000L
-    val HAZARDS = setOf("bump", "pothole_l", "pothole_r")
+    /** A spot to be found: a bump, with or without its band (old pothole labels read as bumps, TraceReader.labels). */
+    fun isHazard(kind: String) = kind == "bump" || kind.startsWith("bump_") || kind.startsWith("pothole")
 
-    /** One felt hit, as the engine logged it. [kind] = what the spot is after this hit; [side] = left/right/unknown. */
-    class Detection(val tMs: Long, val lat: Double, val lon: Double, val kind: String, val side: String)
+    /** One felt hit, as the engine logged it. [band] = the spot's severity after this hit (mild/moderate/strong, "" unknown). */
+    class Detection(val tMs: Long, val lat: Double, val lon: Double, val band: String = "")
 
     fun detections(events: List<BumpEvent>): List<Detection> =
         events.filter { it.type == "new_bump" || it.type == "hit" }.map {
-            // new_bump note: "<kind> looks=…"; hit note: "hits 2/3 now=<kind> looks=…"; both end with "side=…" when known.
-            val kind = Regex("now=(\\w+)").find(it.note)?.groupValues?.get(1) ?: it.note.trim().substringBefore(' ')
-            val side = Regex("side=(left|right)").find(it.note)?.groupValues?.get(1) ?: "unknown"
-            Detection(it.wallTime - Replayer.WALL_BASE_MS, it.lat, it.lon, kind, side)
+            Detection(it.wallTime - Replayer.WALL_BASE_MS, it.lat, it.lon, band(it.note))
         }
+
+    /** The band in an engine note ("bump sev=moderate conf=soft …"), "" when there is none. */
+    fun band(note: String): String = Regex("sev=(\\w+)").find(note)?.groupValues?.get(1) ?: ""
+
+    /** The confidence in an engine note ("conf=soft"), "" when there is none. */
+    fun confidence(note: String): String = Regex("conf=(\\w+)").find(note)?.groupValues?.get(1) ?: ""
 
     /**
      * The passenger's labels (undo applied, [TraceReader.labels]), each placed where the car was at the moment of
@@ -183,7 +179,7 @@ object Metrics {
         }
         val out = HashMap<Int, Int>()
         val used = HashSet<Int>()
-        val order = pairs.sortedWith(compareBy<Triple<Long, Int, Int>>({ labels[it.second].kind !in HAZARDS }, { it.first }))
+        val order = pairs.sortedWith(compareBy<Triple<Long, Int, Int>>({ !isHazard(labels[it.second].kind) }, { it.first }))
         for ((_, i, j) in order) {
             if (i !in out && j !in used) { out[i] = j; used.add(j) }
         }
@@ -202,7 +198,6 @@ object Metrics {
     fun compute(runs: List<Run>): MetricsReport {
         var labelsN = 0; var matchedLabels = 0; var labelsFast = 0; var matchedFast = 0
         var detN = 0; var matchedDet = 0; var beepsN = 0; var falseN = 0; var distM = 0.0
-        var kindChecked = 0; var kindCorrect = 0; var sideChecked = 0; var sideCorrect = 0
         val placed = runs.flatMap { r -> r.labels.filter { !it.lat.isNaN() } }
         val passes = ArrayList<Pair<Label, Boolean>>()   // every hazard label, in replay order: (label, matched)
         val perRun = ArrayList<RunCounts>()
@@ -213,20 +208,10 @@ object Metrics {
             val speeds = labels.map { speedAt(fixes, it.tMs) }
             val dets = detections(run.result.events)
             val matches = match(labels, dets, speeds)
-            val hazards = labels.indices.filter { labels[it].kind in HAZARDS }
+            val hazards = labels.indices.filter { isHazard(labels[it].kind) }
             val fast = hazards.filter { speeds[it] >= FAST_KMH }
 
-            for (i in hazards.sortedBy { labels[it].tMs }) {
-                passes.add(Pair(labels[i], i in matches))
-                val d = dets[matches[i] ?: continue]
-                val kind = labels[i].kind
-                kindChecked++
-                if (d.kind == (if (kind == "bump") "bump" else "pothole")) kindCorrect++
-                if (kind != "bump") {
-                    sideChecked++
-                    if (d.side == (if (kind == "pothole_l") "left" else "right")) sideCorrect++
-                }
-            }
+            for (i in hazards.sortedBy { labels[it].tMs }) passes.add(Pair(labels[i], i in matches))
 
             // A beep is false when no label lies within WARN_M of the spot it warned about: distanceM ahead of the
             // car along its heading, or the car's own position when either is missing.
@@ -258,7 +243,6 @@ object Metrics {
 
         return MetricsReport(
             labelsN, matchedLabels, labelsFast, matchedFast, detN, matchedDet, beepsN, falseN, distM / 1000.0,
-            kindChecked, kindCorrect, sideChecked, sideCorrect,
             repeated.size, repeated.count { s -> s.take(2).any { it.second } },
             if (runs.size > 1) perRun else emptyList(),
         )
