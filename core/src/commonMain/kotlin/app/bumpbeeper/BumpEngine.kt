@@ -42,6 +42,12 @@ class EngineConfig {
     var decideAfterMs = 1200L
     /** Ignore further jolts for this long (rear axle, suspension rebound). */
     var refractoryMs = 2500L
+    /**
+     * ...unless the jolt was rejected as the phone's: then only while the phone is untrusted, if its handling began no
+     * later than this after the jolt (a jostle's own jolt comes slightly first). A jolt well before the handling (a
+     * real bump that shook the phone) keeps its refractory time.
+     */
+    var phoneJoltLeadMs = 250L
 
     /** A hit this close to a known bump (same direction) is that bump. */
     var matchRadiusM = 20.0
@@ -223,7 +229,10 @@ class BumpEngine(
     private var joltStartMs = -1L
     private var joltPeak = 0.0
     private var refractoryUntilMs = Long.MIN_VALUE / 4
-    /** The last jolt was the phone's ([handledReason]): it holds the next one off only while the phone is untrusted. */
+    /**
+     * The last jolt was the phone's ([handledReason]) and its handling had begun by then ([EngineConfig.phoneJoltLeadMs]):
+     * it holds the next one off only while the phone is untrusted.
+     */
     private var phoneJolt = false
     /** Strongest vertical jolt since the last GPS fix (to report how close a "miss" came). */
     private var maxVertSinceFix = 0.0
@@ -403,7 +412,11 @@ class BumpEngine(
     private fun decide(tMs: Long, peak: Double) {
         // The decision comes 1.2 s after the jolt, so a newer fix may already be in. Use the one closest in time.
         val fix = fixes.minByOrNull { abs(it.timeMs - tMs) }
-        handledReason(tMs)?.let { phoneJolt = true; reject(tMs, peak, it, fix); return }
+        handledReason(tMs)?.let {
+            phoneJolt = phone.episodeStartMs <= tMs + cfg.phoneJoltLeadMs
+            reject(tMs, peak, it, fix)
+            return
+        }
         if (fix == null || abs(tMs - fix.timeMs) > cfg.maxFixAgeMs) { reject(tMs, peak, "no_gps", fix); return }
         if (fix.accuracyM > cfg.maxAccuracyM) { reject(tMs, peak, "weak_gps", fix); return }
         val speedKmh = fix.speedMps * 3.6

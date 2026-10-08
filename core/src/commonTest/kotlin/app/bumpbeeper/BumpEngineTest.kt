@@ -33,6 +33,7 @@ class BumpEngineTest {
     @Test fun handHeldCallIsPhoneUse() = Scenarios.handHeldCallIsPhoneUse()
     @Test fun brakingNeedsTheGpsSpeed() = Scenarios.brakingNeedsTheGpsSpeed()
     @Test fun slipWithTheScreenOnIsNoPhoneUse() = Scenarios.slipWithTheScreenOnIsNoPhoneUse()
+    @Test fun passWhileHandledNotCounted() = Scenarios.passWhileHandledNotCounted()
     @Test fun stoppedIsNoPhoneUse() = Scenarios.stoppedIsNoPhoneUse()
     @Test fun holdLengthInEveryPlacement() = Scenarios.holdLengthInEveryPlacement()
     @Test fun noLockScreenUnlockNeedsMotion() = Scenarios.noLockScreenUnlockNeedsMotion()

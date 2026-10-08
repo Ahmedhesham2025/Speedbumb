@@ -134,6 +134,28 @@ object Scenarios {
         check(during.newBumps == 0 && during.rejected.last() == "handled", "rejected as handled: ${during.rejected}")
     }
 
+    /**
+     * A known bump passed while the phone is held is neither a hit nor a miss: the pass is not counted ("pass_handled").
+     * The next pass, phone at rest, counts again.
+     */
+    fun passWhileHandledNotCounted() {
+        log("passWhileHandledNotCounted")
+        val store = MemoryStore()
+        val t1 = Simulator(91).drive(store, DriveSpec(bumpsAt = listOf(600.0), cruiseKmh = 30.0), tripId = 1)
+        describe("learn", t1)
+        check(t1.newBumps == 1 && store.saved.size == 1, "trip 1 learns the bump: ${t1.newBumps}")
+        val before = store.saved[0].copy()
+        val t2 = Simulator(92).drive(store, DriveSpec(holdsAt = listOf(560.0 to 8.0), bumpsAt = listOf(600.0), cruiseKmh = 30.0), tripId = 2)
+        describe("passed while held", t2)
+        val b = store.saved[0]
+        check(t2.knownHits == 0 && t2.stats.misses == 0, "no hit and no miss while held: ${t2.knownHits} hits, ${t2.stats.misses} misses")
+        check(b.hits == before.hits && b.passes == before.passes && b.misses == before.misses, "the pass is not counted: ${b.hits}/${b.passes}/${b.misses}")
+        check(store.events.any { it.type == "pass_handled" && it.tripId == 2L }, "the pass is logged as pass_handled")
+        val t3 = Simulator(93).drive(store, DriveSpec(bumpsAt = listOf(600.0), cruiseKmh = 30.0), tripId = 3)
+        describe("passed at rest", t3)
+        check(t3.knownHits == 1 && store.saved[0].passes == before.passes + 1, "the next pass counts: ${t3.knownHits} hits, ${store.saved[0].passes} passes")
+    }
+
     /** Door slam while parked, and a jolt with no GPS yet: both ignored. */
     fun parkedAndNoGps() {
         log("parkedAndNoGps")
@@ -590,6 +612,7 @@ object Scenarios {
             check(r.handledS <= 12.0 && r.phone?.state != PhoneState.HANDLED, "$place: handled ${r.handledS} s, ${r.phone?.state}")
             val want = if (place == "cupholder") PhoneState.STABLE_LOOSE else PhoneState.STABLE_MOUNTED
             check(r.phone?.state == want, "$place: expected $want after the slip, got ${r.phone?.state}")
+            check(r.newBumps == 2, "$place: both bumps after the slip are learned: ${r.newBumps}, rejected ${r.rejected}")
         }
     }
 
@@ -1066,6 +1089,7 @@ object Scenarios {
         "handHeldCallIsPhoneUse" to ::handHeldCallIsPhoneUse,
         "brakingNeedsTheGpsSpeed" to ::brakingNeedsTheGpsSpeed,
         "slipWithTheScreenOnIsNoPhoneUse" to ::slipWithTheScreenOnIsNoPhoneUse,
+        "passWhileHandledNotCounted" to ::passWhileHandledNotCounted,
         "stoppedIsNoPhoneUse" to ::stoppedIsNoPhoneUse,
         "holdLengthInEveryPlacement" to ::holdLengthInEveryPlacement,
         "noLockScreenUnlockNeedsMotion" to ::noLockScreenUnlockNeedsMotion,
