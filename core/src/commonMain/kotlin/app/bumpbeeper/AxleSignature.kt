@@ -155,7 +155,7 @@ object AxleSignature {
             )
         }
         fun result(v: AxleVerdict, reason: String) =
-            AxleResult(v, score, Double.NaN, exp, g0.peak, Double.NaN, false, 0, brake, braked, reason)
+            AxleResult(v, score, Double.NaN, exp, g0.peak, Double.NaN, false, bestPitch, brake, braked, reason)
         // From here on it is not a clean pair; "no axle" needs the rear to have been plainly missing.
         if (tooStrong) return result(AxleVerdict.UNKNOWN, "second_stronger")
         if (evidence > cfg.oneMaxEvidence) return result(AxleVerdict.UNKNOWN, "unclear")

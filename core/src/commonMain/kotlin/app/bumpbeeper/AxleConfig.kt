@@ -104,7 +104,7 @@ class AxleConfig {
     /** Braking: the most speed lost in the [brakeWindowMs] before the jolt, from GPS; [brakeMinDropKmh] = braked. */
     var brakeWindowMs = 3000L
     var brakeMinDropKmh = 4.0
-    /** [AxleSignature.decideWindowMs] = Δt at the slowest plausible speed + [decideMarginMs], [decideMinMs]..[decideMaxMs]. */
+    /** [AxleSignature.decideWindowMs] = Δt at the slowest plausible speed + [decideMarginMs], within the bounds below. */
     var decideMinMs = 1200L
     var decideMarginMs = 400L
     var decideMaxMs = 1600L
@@ -133,7 +133,7 @@ class AxleResult(
     val rearPeak: Double,
     /** The trigger was the rear axle (the front one, weaker, came before it). */
     val rearFirst: Boolean,
-    /** +1 nose up at the front impulse and down at the rear, -1 the other way round, 0 unknown or not car-sized. */
+    /** Best candidate pair's pitch (also when not accepted): +1 nose up then down, -1 reversed, 0 unknown or too big. */
     val pitchOrder: Int,
     /** Speed lost in the window before the jolt, km/h; NaN without GPS fixes there. */
     val brakeDropKmh: Double,
