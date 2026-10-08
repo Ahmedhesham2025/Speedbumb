@@ -1,8 +1,10 @@
 package app.bumpbeeper.sync
 
 import app.bumpbeeper.BumpKind
+import app.bumpbeeper.Confidence
 import app.bumpbeeper.Geo
 import app.bumpbeeper.RemoteSpot
+import app.bumpbeeper.Severity
 import app.bumpbeeper.Side
 import app.bumpbeeper.SpotSource
 
@@ -20,7 +22,12 @@ class CachedSpotSource(private val store: SyncStore) : SpotSource {
     companion object {
         fun toRemote(r: SpotRow): RemoteSpot? {
             val heading = r.heading ?: return null
-            return RemoteSpot(r.id, r.lat, r.lon, heading, kindOf(r.kind), sideOf(r.side), r.severity ?: 0.0, r.nDevices)
+            return RemoteSpot(
+                r.id, r.lat, r.lon, heading, kindOf(r.kind), sideOf(r.side), r.severity ?: 0.0, r.nDevices,
+                // What spots_near_v2 adds (absent from spots_near: hits = phones, no band or confidence).
+                nHits = r.nHits ?: r.nDevices, band = Severity.values().firstOrNull { it.label == r.band },
+                confidence = Confidence.values().firstOrNull { it.label == r.confidence }, legacy = r.legacy,
+            )
         }
 
         /** Server kind text → kind; anything else (null, new values) is "unsure". */
