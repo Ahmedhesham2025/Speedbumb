@@ -1,8 +1,9 @@
 -- v2 bumps (B1): band edges, the backfill, old (1.7) and v2 payloads, no new potholes, legacy cleared by a v2 hit,
--- axle + strong = full, total hits, spots_near compatibility, spots_near_v2, training bands, moving the band edges.
+-- axle + strong = full, total hits, the app's severity average, spots_near compatibility, spots_near_v2, helpers closed
+-- to clients, training bands, moving the band edges.
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(28);
+select plan(31);
 
 insert into auth.users (id, aud, role, email)
 select ('e0000000-0000-0000-0000-00000000000' || i)::uuid, 'authenticated', 'authenticated', 'e' || i || '@test.local'
@@ -32,7 +33,8 @@ insert into public.spots (id, geom, heading, kind, side, severity, n_devices, n_
   (900002, 'SRID=4326;POINT(28.11 23.10)', 90, 'bump', 'both', 4.0, 1, 2, 'confirmed'),
   (900003, 'SRID=4326;POINT(28.12 23.10)', 90, 'bump', 'left', 2.0, 1, 1, 'confirmed'),
   (900004, 'SRID=4326;POINT(28.13 23.10)', 90, null, null, null, 1, 1, 'candidate'),
-  (900005, 'SRID=4326;POINT(28.14 23.10)', 90, 'pothole', 'left', 3.0, 1, 1, 'confirmed');
+  (900005, 'SRID=4326;POINT(28.14 23.10)', 90, 'pothole', 'left', 3.0, 1, 1, 'confirmed'),
+  (900006, 'SRID=4326;POINT(28.70 23.70)', 90, null, null, 2.0, 1, 1, 'confirmed');  -- confirmed, no kind stored
 insert into public.spot_contributors (spot_id, device_id, hits)
 select v.s, ('e0000000-0000-0000-0000-00000000000' || v.d)::uuid, v.h
 from (values (900001, 1, 3), (900001, 2, 2), (900002, 1, 2), (900003, 1, 1), (900004, 1, 1), (900005, 1, 1)) v(s, d, h);
@@ -111,6 +113,25 @@ select results_eq(
   'one hit with both axles felt makes a strong bump full (severity from sev_index, not the peak), a mild one not');
 select results_eq($$ select n_devices, n_hits, confidence from at_spot where name = 'E' $$,
   $$ values (1, 2, 'full'::text) $$, 'two hits from one phone make a bump full: total hits, not devices');
+-- The app's average (Model.kt, Bump.addSeverity): the first 10 hits count equally. Hits 2, 6, 6 give 4.67, moderate as
+-- on the phone (0.8 * old + 0.2 * new gave 3.44, mild).
+insert into public.observations (device_id, client_obs_id, kind, geom, heading, peak, observed_hour)
+select 'e0000000-0000-0000-0000-000000000001', gen_random_uuid(), v.k, 'SRID=4326;POINT(28.6 23.6)', 90, v.p,
+       date_trunc('hour', now())
+from (values (1, 'jolt', 2.0), (2, 'known_hit', 6.0), (3, 'known_hit', 6.0)) v(n, k, p)
+order by v.n;
+do $$ begin perform public.aggregate_observations(); end $$;
+select results_eq(
+  $$ select round(severity::numeric, 2), severity_band, n_hits from public.spots
+     where extensions.st_dwithin(geom, 'SRID=4326;POINT(28.6 23.6)'::extensions.geography, 15) $$,
+  $$ values (4.67, 'moderate'::text, 3) $$,
+  'hits 2, 6 and 6 average 4.67, a moderate bump as in the app (the first 10 hits count equally)');
+select is(array(select has_function_privilege(r, f, 'execute')
+                from unnest(array['anon', 'authenticated']) r,
+                     unnest(array['public.severity_band(real)', 'public.spot_confidence(boolean, int, int, text)',
+                                  'public.backfill_bump_severity()']) f),
+          array[false, false, false, false, false, false],
+          'neither anon nor signed-in users can call severity_band, spot_confidence or backfill_bump_severity');
 select is(pg_get_function_result('public.spots_near(double precision, double precision, integer)'::regprocedure),
   'TABLE(id bigint, latitude double precision, longitude double precision, heading smallint, kind text, side text, '
     'severity real, n_devices integer, last_hit timestamp with time zone)',
@@ -123,6 +144,8 @@ select results_eq(
   $$ values (900001::bigint, 'pothole'::text, 'right'::text), (900002, 'bump', 'both'), (900003, 'bump', 'left'),
             (900005, 'bump', null) $$,
   'spots_near says pothole only for a legacy spot; side as stored');
+select is((select kind from public.spots_near(23.7, 28.7, 100) where id = 900006), 'bump',
+          'a confirmed spot with no kind stored comes back from spots_near as a bump (1.7.x showed "unsure")');
 select is((select array_agg(k order by k collate "C") from public.spots_near_v2(23.1, 28.12, 10000) r,
            jsonb_object_keys(to_jsonb(r)) k where r.id = 900001),
           array['confidence', 'heading', 'id', 'lat', 'legacy', 'lon', 'n_devices', 'n_hits', 'severity', 'severity_band'],

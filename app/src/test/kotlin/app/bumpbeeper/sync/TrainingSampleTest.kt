@@ -80,6 +80,13 @@ class TrainingSampleTest {
         assertTrue(r.isNull("peak") && r.isNull("first_down") && r.isNull("classification"))
     }
 
+    @Test fun theSeverityBandUploadsAsTheClassification() {   // issue #114: the server takes the bands since B1
+        fun classification(c: String?) = TrainingJson.sample("x", JoltSample("hit", null, c, 30.0, 12.0, 4.0, 5.5, -0.4,
+            false, 0.8, Double.NaN, 77, lat0, lon0, 1_759_000_000_000L, window()), "mounted", 77)
+        for (band in listOf("mild", "moderate", "strong")) assertEquals(band, classification(band).getString("classification"))
+        for (other in listOf("bump", "pothole", "unsure", "Strong", null)) assertTrue("$other", classification(other).isNull("classification"))
+    }
+
     @Test fun brandIsSanitised() {
         assertEquals("samsung", TrainingJson.brand("Samsung"))
         assertEquals("hmd global", TrainingJson.brand("HMD Global™"))
