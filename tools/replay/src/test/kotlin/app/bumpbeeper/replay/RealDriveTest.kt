@@ -29,6 +29,7 @@ class RealDriveTest {
             val want = if (exp.exists()) Properties().apply { exp.reader(Charsets.UTF_8).use { load(it) } } else null
             // The phone placement to replay with: `placement=` in the expected file, else unknown (as before).
             val placement = want?.getProperty("placement")?.trim()?.ifEmpty { null } ?: "unknown"
+            assertTrue("${exp.name}: unknown placement $placement", placement in PLACEMENTS)   // a typo fails
             // An anonymized research trip (rr2, one file per trip) or a CSV trace.
             val rr2 = Rr2.isResearch(f)
             val samples = if (rr2) Rr2.read(listOf(f)).samples else TraceReader.read(lines.asSequence())

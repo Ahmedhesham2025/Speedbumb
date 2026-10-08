@@ -9,7 +9,8 @@ private const val USAGE = """Usage:
   replay --trace run1.csv[.gz] [--trace run2.csv …] [--out metrics.json]
       replay labelled recordings (the runs of one route, oldest first) on one shared map, print the accuracy table;
       research recordings (rr2, rr_<id>_<start>_<segment>.csv.gz) are read too, the segments of a trip as one run;
-      --placement mounted|cupholder|pocket|unknown (default) for every run, or "recording": each file's own setting
+      --placement mounted|cupholder|pocket|unknown (default) for every run, or "recording": each file's own setting;
+      --sensor-period-us N: the engine's sensor period (Prefs.sensorPeriodUs), default 20000 (≤ 100 Hz while research runs)
   anonymize --in raw.csv[.gz] --out anon.csv[.gz]      fake origin + clock at zero, before anything enters testdata/
       a research trip: --in rr_…_000.csv.gz [--in rr_…_001.csv.gz …]: also trimmed like the upload, ids and chips dropped"""
 
@@ -32,7 +33,10 @@ fun main(args: Array<String>) {
     when (args.firstOrNull()) {
         "replay" -> {
             if (traces.isEmpty()) usage()
-            val runs = replaySamples(loadRecordings(traces, opts["placement"] ?: "unknown"))
+            val placement = opts["placement"] ?: "unknown"
+            if (placement !in PLACEMENTS && placement != "recording") usage("unknown placement: $placement")
+            val period = opts["sensor-period-us"]?.let { it.toIntOrNull()?.takeIf { p -> p > 0 } ?: usage("bad sensor period: $it") }
+            val runs = replaySamples(loadRecordings(traces, placement, period ?: Rr2.DEFAULT_SENSOR_PERIOD_US))
             val report = Metrics.compute(runs)
             opts["out"]?.let { File(it).writeText(report.toJson()) }
             val title = if (traces.size == 1) traces[0].name else "${traces.size} runs (${traces.first().name} … ${traces.last().name})"
@@ -53,7 +57,8 @@ fun main(args: Array<String>) {
     }
 }
 
-private fun usage(): Nothing {
+private fun usage(why: String? = null): Nothing {
+    why?.let { System.err.println(it) }
     System.err.println(USAGE)
     exitProcess(2)
 }
@@ -66,15 +71,21 @@ fun readLines(f: File): List<String> {
 /** One drive to replay: its samples and the phone placement to replay it with (mounted, cupholder, pocket, unknown). */
 class Recording(val name: String, val samples: List<TraceSample>, val placement: String = "unknown")
 
+/** The phone placements the app knows (Prefs.placement). */
+val PLACEMENTS = listOf("mounted", "cupholder", "pocket", "unknown")
+
 /**
  * Recordings in the order given: a CSV trace is one run; research (rr2) files of one trip (same `rr_<id>_<start>`
  * name) are joined into one run, named after the trip. [placement] for all of them, or "recording": each file's own
  * setting (rr2 header `placement`, CSV `# placement=`).
  */
-fun loadRecordings(files: List<File>, placement: String = "unknown"): List<Recording> {
+fun loadRecordings(
+    files: List<File>, placement: String = "unknown", sensorPeriodUs: Int = Rr2.DEFAULT_SENSOR_PERIOD_US,
+): List<Recording> {
+    require(placement in PLACEMENTS || placement == "recording") { "unknown placement: $placement" }
     val out = ArrayList<Recording>()
     val trips = LinkedHashMap<String, MutableList<File>>()
-    fun pick(own: String?) = if (placement == "recording") own ?: "unknown" else placement
+    fun pick(own: String?) = if (placement == "recording") own?.takeIf { it in PLACEMENTS } ?: "unknown" else placement
     for (f in files) {
         if (Rr2.isResearch(f)) {
             val key = f.name.removeSuffix(".gz").removeSuffix(".csv").substringBeforeLast('_')
@@ -88,15 +99,18 @@ fun loadRecordings(files: List<File>, placement: String = "unknown"): List<Recor
     }
     return out.map { r ->
         val segments = trips[r.name] ?: return@map r
-        val trip = Rr2.read(segments)
+        val trip = Rr2.read(segments, sensorPeriodUs)
         if (!trip.complete || trip.truncated) System.err.println("${r.name}: cut short (no footer or a truncated segment)")
+        if (trip.missingSegments.isNotEmpty()) System.err.println("${r.name}: segment ${trip.missingSegments.joinToString()} missing")
         Recording(r.name, trip.samples, pick(trip.meta["placement"]))
     }
 }
 
 /** [replaySamples] for CSV traces given as lines, all replayed with [placement]. */
-fun replayRuns(recordings: List<Pair<String, List<String>>>, placement: String = "unknown"): List<Run> =
-    replaySamples(recordings.map { (name, lines) -> Recording(name, TraceReader.read(lines.asSequence()), placement) })
+fun replayRuns(recordings: List<Pair<String, List<String>>>, placement: String = "unknown"): List<Run> {
+    require(placement in PLACEMENTS) { "unknown placement: $placement" }
+    return replaySamples(recordings.map { (name, lines) -> Recording(name, TraceReader.read(lines.asSequence()), placement) })
+}
 
 /**
  * Replays recordings (name, samples) one after another on ONE map, like the same phone driving the route again:

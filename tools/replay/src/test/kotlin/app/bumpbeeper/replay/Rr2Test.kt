@@ -2,6 +2,7 @@ package app.bumpbeeper.replay
 
 import app.bumpbeeper.*
 import app.bumpbeeper.research.LineEncoder
+import app.bumpbeeper.research.RateAverager
 import app.bumpbeeper.research.ResearchFormat
 import org.junit.Assert.*
 import org.junit.Test
@@ -97,6 +98,37 @@ class Rr2Test {
         } catch (e: IllegalArgumentException) { assertTrue(e.message!!.contains("2 different trips")) }
     }
 
+    @Test fun millisecondsComeFromTheStartClockLikeOnThePhone() {
+        // The phone works in elapsedRealtime ms: 5000123.456789 ms at the start, so 0.6 ms later is already its next ms.
+        val trip = Rr2.readStreams(listOf(ByteArrayInputStream(segment(0, last = true, startNs = 5_000_123_456_789L) { e ->
+            for (t in listOf(0L, 5L, 6L, 16L)) e.sample(t, ResearchFormat.ACCEL, doubleArrayOf(0.0, 0.0, 9.81))
+            e.start(25_005, "lbl").text("bump").end()
+            e.start(25_006, "lbl").text("rough").end()
+        })), sensorPeriodUs = RateAverager.RESEARCH_PERIOD_US)
+        assertEquals(listOf(0L, 0L, 1L, 2L), trip.samples.filterIsInstance<TraceSample.Accel>().map { it.tMs })
+        assertEquals(listOf(2500L, 2501L), trip.samples.filterIsInstance<TraceSample.Event>().map { it.tMs })
+    }
+
+    @Test fun theEnginesSensorPeriodSetsTheBins() {
+        val bytes = segment(0, last = true) { e -> for (k in 0 until 500) e.sample(k * 20L, ResearchFormat.ACCEL, doubleArrayOf(0.0, 0.0, 9.81)) }
+        fun gaps(periodUs: Int?) = (if (periodUs == null) Rr2.readStreams(listOf(ByteArrayInputStream(bytes)))
+            else Rr2.readStreams(listOf(ByteArrayInputStream(bytes)), periodUs))
+            .samples.filterIsInstance<TraceSample.Accel>().zipWithNext { a, b -> b.tMs - a.tMs }.distinct()
+        assertEquals(listOf(10L), gaps(null))      // default 20000 µs, the app's: 10 ms bins
+        assertEquals(listOf(8L), gaps(8_000))      // an engine at 125 Hz: 8 ms bins
+        assertEquals(listOf(2L), gaps(5_000))      // research's own rate or faster: samples pass as they come
+    }
+
+    @Test fun segmentsGivenTwiceOrMissing() {
+        val dup = runCatching {
+            Rr2.readStreams(listOf(ByteArrayInputStream(segment(0, last = false) {}), ByteArrayInputStream(segment(0, last = false) {})))
+        }.exceptionOrNull()
+        assertTrue(dup is IllegalArgumentException && dup.message!!.contains("segment 0 given twice"))
+        val gap = Rr2.readStreams(listOf(ByteArrayInputStream(segment(3, last = true) {}), ByteArrayInputStream(segment(1, last = false) {})))
+        assertEquals(listOf(0, 2), gap.missingSegments)
+        assertEquals(emptyList<Int>(), Rr2.missingSegments(listOf(1, 0, 2)))
+    }
+
     @Test fun theCommandLineJoinsATripsSegments() {
         val dir = Files.createTempDirectory("rr2").toFile()
         try {
@@ -106,6 +138,9 @@ class Rr2Test {
             val csv = File(dir, "trace.csv").apply { writeText(TraceWriterCore.toCsv(listOf(TraceSample.Gps(0, 0.5, 0.5, 30.0, 90.0, 5.0)))) }
             assertTrue(Rr2.isResearch(File(dir, "${name}_001.csv.gz")))
             assertFalse(Rr2.isResearch(csv))
+            val formatLast = File(dir, "moved.csv.gz").apply { writeBytes(segment(0, last = true, formatLast = true) {}) }
+            assertTrue(Rr2.isResearch(formatLast))                               // whatever the header's order
+            assertTrue(Rr2.read(listOf(formatLast)).complete)
             val runs = loadRecordings(listOf(File(dir, "${name}_000.csv.gz"), csv, File(dir, "${name}_001.csv.gz")))
             assertEquals(listOf(name, "trace.csv"), runs.map { it.name })
             assertEquals(listOf(0L, 60_000L), runs[0].samples.map { it.tMs })
@@ -148,17 +183,19 @@ class Rr2Test {
 
     /** One gzip segment as the app writes it: header, lines, the footer in the last one; [cut] = killed mid-write. */
     private fun segment(
-        seg: Int, last: Boolean, format: String = "rr2", id: String = "3f2a9c1e", cut: Boolean = false, body: (LineEncoder) -> Unit,
+        seg: Int, last: Boolean, format: String = "rr2", id: String = "3f2a9c1e", cut: Boolean = false,
+        startNs: Long = 5_000_000_000L, formatLast: Boolean = false, body: (LineEncoder) -> Unit,
     ): ByteArray {
         val meta = listOf(
             "app_version=1.8.0-beta1", "android_sdk=34", "device=acme/Phone1", "placement=pocket", "start_source=user",
-            "trip_id=7", "start_utc_ms=1791403000000", "start_elapsed_ns=5000000000",
+            "trip_id=7", "start_utc_ms=1791403000000", "start_elapsed_ns=$startNs",
             "sensor.a=Accel;Acme;v1;res=0.001;max=78.4;min_delay_us=5000;max_delay_us=200000;power_ma=0.2;fifo=0;wakeup=false;batch_us=0;asked_us=5000",
             "research_id=$id", "segment=$seg",
         )
         val bos = ByteArrayOutputStream()
         val gz = GZIPOutputStream(bos, true)
-        gz.write(ResearchFormat.header(meta).joinToString("") { it.replace("format=rr2", "format=$format") + "\n" }.toByteArray())
+        val header = ResearchFormat.header(meta).map { it.replace("format=rr2", "format=$format") }
+        gz.write((if (formatLast) header.drop(1) + header[0] else header).joinToString("") { "$it\n" }.toByteArray())
         val enc = LineEncoder(1 shl 24)
         body(enc)
         val lines = enc.lines

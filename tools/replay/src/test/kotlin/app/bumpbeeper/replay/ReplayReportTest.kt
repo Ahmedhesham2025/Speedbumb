@@ -24,6 +24,10 @@ class ReplayReportTest {
             assertEquals("pocket", run.placement)
             assertTrue(DriveSummary.of(run.result, run.placement).toMarkdown("a").contains("| Placement | pocket |"))
             assertEquals("cupholder", replayRuns(listOf("b" to csv.readLines()), "cupholder").single().placement)
+            for (typo in listOf("pocet", "Mounted", "")) {                          // a typo fails, never "unknown"
+                assertTrue(typo, runCatching { loadRecordings(listOf(csv), typo) }.exceptionOrNull() is IllegalArgumentException)
+                assertTrue(typo, runCatching { replayRuns(listOf("b" to csv.readLines()), typo) }.isFailure)
+            }
         } finally {
             dir.deleteRecursively()
         }
@@ -70,5 +74,30 @@ class ReplayReportTest {
         val md = c.toMarkdown("r")
         assertTrue(md, md.contains("| Label \\ decision | hit | learned | rejected phone_moving | same_pass | (no jolt) |"))
         assertTrue(md, md.lines().last { it.isNotBlank() }.startsWith("| (no label) | 1 |"))
+    }
+
+    @Test fun twoLabelsNearOneJoltPairOneToOne() {
+        val decide = EngineConfig().decideAfterMs
+        val events = listOf(event(10_000 + decide, "new_bump", "bump sev=mild conf=soft"))
+        val labels = listOf(Label(11_800, "bump_strong", 0.5, 0.5), Label(9_500, "bump", 0.5, 0.5))   // the closer one wins
+        val c = LabelConfusion.of(listOf(Run("r", labels, ReplayResult(events, TripStats(), DrivingStats()), emptyList())))
+        assertEquals(1, c.count("bump", "learned"))
+        assertEquals(1, c.count("bump_strong", LabelConfusion.NO_JOLT))
+        assertEquals(0, c.count("bump_strong", "learned"))
+        assertNull(c.counts[LabelConfusion.NO_LABEL])
+    }
+
+    @Test fun twoJoltsNearOneLabelPairOneToOne() {
+        val decide = EngineConfig().decideAfterMs
+        val events = listOf(
+            event(20_000 + decide, "rejected", "phone_moving"),
+            event(21_500 + decide, "new_bump", "bump sev=mild conf=soft"),
+        )
+        val labels = listOf(Label(20_400, "nothing", 0.5, 0.5))
+        val c = LabelConfusion.of(listOf(Run("r", labels, ReplayResult(events, TripStats(), DrivingStats()), emptyList())))
+        assertEquals(1, c.count("nothing", "rejected phone_moving"))
+        assertEquals(0, c.count("nothing", "learned"))
+        assertEquals(1, c.count(LabelConfusion.NO_LABEL, "learned"))
+        assertEquals(2, c.counts.values.sumOf { it.values.sum() })                  // one label, two jolts: two cells
     }
 }

@@ -6,8 +6,10 @@ definition, and the code must match it. Targets are the P1 exit criteria from `R
 ## Inputs
 - **Runs**: one or more recordings of the same route (`replay --trace run1.csv --trace run2.csv …`, oldest first):
   CSV traces, or research recordings (rr2), whose segments of one trip are one run, fed to the engine at the rate the
-  phone fed it while research recorded. `--placement` sets the phone placement they are replayed with (mounted,
-  cupholder, pocket, unknown; `recording` = each file's own setting); without it, unknown.
+  phone fed it while research recorded: the app's `RateAverager` for `--sensor-period-us` (the engine's sensor period,
+  default 20000), on the phone's millisecond clock (`start_elapsed_ns` + the line's time). A segment given twice is
+  refused; a missing one is reported. `--placement` sets the phone placement they are replayed with (mounted,
+  cupholder, pocket, unknown; `recording` = each file's own setting); without it, unknown. Anything else fails.
   They are replayed one after another on **one shared map** that starts empty: a fresh engine per recording (one
   trip each, as on the phone), the same store for all. With a single recording the map is empty until the engine
   finds something, so beeps, and the two metrics built on them and on repeat passes, only mean something over

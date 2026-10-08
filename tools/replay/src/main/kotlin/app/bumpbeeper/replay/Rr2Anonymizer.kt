@@ -39,10 +39,11 @@ object Rr2Anonymizer {
     /** One anonymized trip (all [segments], any order) as text lines; refused (IllegalArgumentException) if unsafe. */
     fun anonymize(segments: List<File>, radiusM: Double = TripPrivacy.RADIUS_M): List<String> {
         require(radiusM >= TripPrivacy.RADIUS_M) { "the trim is at least ${TripPrivacy.RADIUS_M.toInt()} m" }
-        val parts = segments.map { it to ResearchReader.read(it) }.sortedBy { segmentOf(it.second) }
+        val parts = segments.map { it to ResearchReader.read(it) }.sortedBy { Rr2.segmentOf(it.second) }
         for ((_, p) in parts) require(p.meta["format"] == ResearchFormat.VERSION) { "not rr2: format=${p.meta["format"]}" }
         val trips = parts.map { listOf(it.second.meta[ResearchFormat.RESEARCH_ID], it.second.meta[ResearchFormat.START_UTC_MS]) }
         require(trips.distinct().size == 1) { "segments of different trips" }
+        Rr2.missingSegments(parts.map { Rr2.segmentOf(it.second) })   // refuses a segment given twice
         val w = ResearchTrim.window(ResearchTrim.scan(parts.map { it.first }), radiusM)
             ?: throw IllegalArgumentException("nothing to keep: under ${(2 * radiusM).toInt()} m driven, never out of the zone, or no GPS")
         val kept = parts.flatMap { it.second.records }.filter { it.tDms in w.fromT..w.toT }
@@ -91,8 +92,6 @@ object Rr2Anonymizer {
     /** A sensor description with only its rates and ranges: `res=…;max=…;min_delay_us=…;…` (or `absent`). */
     private fun sensor(v: String): String =
         if (v == "absent") v else v.split(';').filter { it.substringBefore('=') in KEEP_SENSOR && '=' in it }.joinToString(";")
-
-    private fun segmentOf(p: ResearchFile) = p.meta[ResearchFormat.SEGMENT]?.toIntOrNull() ?: 0
 
     /**
      * What of the original [parts] is still in [out]: any field equal to an original latitude or longitude, the

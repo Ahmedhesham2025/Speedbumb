@@ -88,6 +88,8 @@ class Rr2AnonymizerTest {
         val short = File(dir, "short.csv.gz").apply { writeBytes(segment(0, last = true) { drive(it, 0, 50) }) }  // 500 m
         assertTrue(runCatching { Rr2Anonymizer.anonymize(listOf(short)) }.exceptionOrNull()?.message!!.contains("nothing to keep"))
         assertTrue(runCatching { Rr2Anonymizer.anonymize(segments, radiusM = 100.0) }.isFailure)    // never less than 300 m
+        val again = File(dir, "again.csv.gz").apply { writeBytes(ordered[0].readBytes()) }
+        assertTrue(runCatching { Rr2Anonymizer.anonymize(segments + again) }.exceptionOrNull()?.message!!.contains("given twice"))
         val leaky = out + "# device=samsung/SM-A546E"
         assertTrue(Rr2Anonymizer.leaks(segments.map { ResearchReader.read(it) }, leaky).isNotEmpty())
         val original = segments.flatMap { ResearchReader.read(it).records }.first { it.code == "G" }
