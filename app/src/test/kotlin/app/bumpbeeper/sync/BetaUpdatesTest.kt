@@ -132,6 +132,8 @@ class BetaUpdatesTest {
         for (bad in listOf(
             "https://github.com/someone-else/x/releases/download/v1/evil.apk",        // a foreign repository
             "https://github.com/Ahmedhesham2025/Speedbumb/releases/../../x/evil.apk",  // climbs out of the releases
+            "https://github.com/Ahmedhesham2025/Speedbumb/releases/%2e%2e/%2E%2E/x/evil.apk",  // the same, percent-encoded
+            "https://github.com/Ahmedhesham2025/Speedbumb/releases/.%2e/x/evil.apk",
             "https://github.com/Ahmedhesham2025/Speedbumb/issues/1",
             "https://evil.github.com/Ahmedhesham2025/Speedbumb/releases/tag/v1",       // a github.com subdomain
             "https://objects.githubusercontent.com/Ahmedhesham2025/Speedbumb/releases/x.apk",

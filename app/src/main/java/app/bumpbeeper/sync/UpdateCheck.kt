@@ -190,7 +190,9 @@ object UpdateCheck {
         val uri = try { URI(s).normalize() } catch (_: Exception) { return false }
         if (!"https".equals(uri.scheme, ignoreCase = true) || uri.rawUserInfo != null || uri.port != -1) return false
         if (uri.host?.lowercase(Locale.US) != "github.com") return false
-        return (uri.path ?: "").lowercase(Locale.US).startsWith(RELEASES_PATH)
+        // uri.path is percent-decoded, so "%2e%2e" shows up here as ".." (which a browser would also climb out with).
+        val path = (uri.path ?: "").lowercase(Locale.US)
+        return ".." !in path && path.startsWith(RELEASES_PATH)
     }
 
     /** The daily background check (SyncJob): any network, battery not low; it shares the once-a-day limit. */
