@@ -945,12 +945,22 @@ class BumpService : Service(), SensorEventListener, LocationListener, EngineList
             // spots that are all only a "maybe" is not announced: each one plays its own soft beep instead.
             w.cluster != null && w.cluster!!.anyFull && v != null -> v.cluster(w.cluster!!, groupFallback)
             w.cluster != null -> groupFallback()
-            w.sound == WarnSound.STRONG && v != null -> v.strongBump()
+            w.sound.voice && v != null -> {
+                // Three beeps, then "Strong bump ahead." (no voice: the beeps alone).
+                plain()
+                handler?.postDelayed({ v.strongBump() }, Beeper.STRONG_VOICE_MS)
+            }
             else -> plain()
         }
         val group = w.cluster?.let { " (group of ${it.count})" } ?: ""
         LiveState.lastEvent = String.format(Locale.US, "WARNING: %s #%d in %.0f m%s", describe(b), b.id, w.distanceM, group)
         engine?.let { publish(it, force = true) }
+    }
+
+    /** Still too fast for the bump ahead after its warning: one short approach beep (the engine paces them). */
+    override fun onApproachBeep(b: Bump, distanceM: Double, speedKmh: Double) {
+        lastHazardWarnMs = SystemClock.elapsedRealtime()   // no speed-limit chime over them
+        beeper.approach()
     }
 
     override fun onPassed(b: Bump, felt: Boolean) {

@@ -46,8 +46,8 @@ class Voice(
         })
     }
 
-    /** Warn about a strong bump ahead ("Strong bump ahead."). */
-    fun strongBump() = say(Phrases.strongBump(Prefs.voiceLang(app)))
+    /** After the strong bump's three beeps: "Strong bump ahead." Silent if speech isn't available (the beeps played). */
+    fun strongBump() = say(Phrases.strongBump(Prefs.voiceLang(app))) {}
 
     /** Announce a group of spots ahead ("3 bumps ahead."); [fallback] plays instead if speech isn't available. */
     fun cluster(c: HazardCluster, fallback: () -> Unit) {

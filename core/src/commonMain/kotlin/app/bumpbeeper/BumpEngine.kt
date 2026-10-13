@@ -7,6 +7,7 @@ import kotlin.math.cos
 import kotlin.math.ln
 import kotlin.math.max
 import kotlin.math.min
+import kotlin.math.pow
 import kotlin.math.sin
 import kotlin.math.sqrt
 
@@ -60,6 +61,30 @@ class EngineConfig {
     var minAlertDistM = 40.0
     /** ...or further than this. */
     var maxAlertDistM = 250.0
+    /**
+     * Approach beeps ([EngineListener.onApproachBeep]): after a confirmed spot's warning, while the driver is still at
+     * [approachFastKmh] or faster (the "bump taken fast" speed, [DrivingConfig.bumpFastKmh]), short beeps from
+     * [approachDelayMs] after the warning (its sound or voice first) until the spot is [approachEndM] away. The gap
+     * between beeps shrinks from [approachStartMs] at [approachFarM] or further to [approachEndMs] at [approachNearM]
+     * or closer, along (distance fraction)^[approachCurve]. At most one sequence per spot and pass; once it stops (slower
+     * than [approachFastKmh], reached, muted, turned away) it does not start again. Never for a "maybe" spot.
+     */
+    @Volatile var approachBeeps = true
+    var approachFastKmh = 25.0
+    var approachDelayMs = 2500L
+    var approachStartMs = 1200L
+    var approachEndMs = 250L
+    var approachFarM = 100.0
+    var approachNearM = 10.0
+    var approachCurve = 1.0
+    var approachEndM = 5.0
+
+    /** Gap before the next approach beep with the spot [distanceM] away, ms. */
+    fun approachIntervalMs(distanceM: Double): Long {
+        val frac = ((distanceM - approachNearM) / (approachFarM - approachNearM)).coerceIn(0.0, 1.0)
+        return approachEndMs + ((approachStartMs - approachEndMs) * frac.pow(approachCurve)).toLong()
+    }
+
     /** Don't beep if you are already slower than this: you have clearly seen it. 0 = always beep. (setting) */
     @Volatile var quietBelowKmh = 20.0
     /**
@@ -293,6 +318,13 @@ class BumpEngine(
         var minSpeedNearMps = Double.MAX_VALUE   // slowest speed seen within 30 m of the bump
         var maxJoltNear = 0.0                     // strongest jolt felt within 40 m of the bump
         var minDistMs = startMs                   // fix time of the closest approach
+        // Approach beeps: the spot, from the last fix (distance, speed, time); next beep due; the sequence ended.
+        var seqSpot: Bump? = null
+        var seqDist = 0.0
+        var seqMps = 0.0
+        var seqFixMs = 0L
+        var nextBeepMs = 0L
+        var seqDone = false
     }
 
     /** The bump that beeped most recently (for "Mute last beep"), or -1. */
@@ -329,6 +361,7 @@ class BumpEngine(
     /** [tMs] monotonic milliseconds; x, y, z raw accelerometer in m/s² (gravity included). */
     fun onAccel(tMs: Long, x: Double, y: Double, z: Double) {
         phone.onAccel(tMs, x, y, z)
+        approachBeep(tMs)
         if (!accelReady) {
             slowX = x; slowY = y; slowZ = z
             fastX = x; fastY = y; fastZ = z
@@ -895,6 +928,12 @@ class BumpEngine(
             return
         }
 
+        // Approach beeps going on: follow the spot, or end them (slower, muted, turned away).
+        if (a.seqSpot != null && !a.seqDone) {
+            if (f.speedMps * 3.6 < cfg.approachFastKmh || !warnable(b) || aheadDiff > 90.0 || !cfg.approachBeeps) a.seqDone = true
+            a.seqSpot = b; a.seqDist = d; a.seqMps = f.speedMps; a.seqFixMs = f.timeMs
+        }
+
         // Beep: close enough for our speed, straight ahead, on our side of the road, not muted.
         val crossTrack = d * sin(degToRad(aheadDiff))
         if (!a.beeped && moving && dirDiff <= cfg.headingTolDeg && d <= alertDist &&
@@ -929,8 +968,31 @@ class BumpEngine(
                 val note = (if (remote) "remote " else "") + sound.name.lowercase() + (if (cluster != null) " group of ${cluster.count}" else "")
                 log("beep", logId, f.lat, f.lon, speedKmh, Double.NaN, Double.NaN, d, note)
                 listener.onWarning(Warning(b, d, speedKmh, sound, cluster))
+                if (cfg.approachBeeps && sound != WarnSound.SOFT && speedKmh >= cfg.approachFastKmh) {
+                    a.seqSpot = b; a.seqDist = d; a.seqMps = f.speedMps; a.seqFixMs = f.timeMs
+                    a.nextBeepMs = f.timeMs + cfg.approachDelayMs
+                }
             }
         }
+    }
+
+    /**
+     * Approach beeps, on the sensor clock: the nearest spot with a sequence going on beeps when it is due. Its distance
+     * is carried on from the last fix at that fix's speed.
+     */
+    private fun approachBeep(tMs: Long) {
+        var best: Approach? = null
+        var bestD = Double.MAX_VALUE
+        for (a in approaches.values) {
+            if (a.seqSpot == null || a.seqDone) continue
+            val d = a.seqDist - a.seqMps * (tMs - a.seqFixMs) / 1000.0
+            if (d <= cfg.approachEndM) { a.seqDone = true; continue }
+            if (d < bestD) { bestD = d; best = a }
+        }
+        val a = best ?: return
+        if (tMs < a.nextBeepMs) return
+        a.nextBeepMs = tMs + cfg.approachIntervalMs(bestD)
+        listener.onApproachBeep(a.seqSpot!!, bestD, a.seqMps * 3.6)
     }
 
     /**
