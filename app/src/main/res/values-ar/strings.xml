@@ -99,6 +99,8 @@
     <string name="settings_place_pocket">الجيب</string>
     <string name="settings_section_road_testing">اختبار الطريق</string>
     <string name="settings_label_mode_title">وضع التصنيف</string>
+    <string name="settings_beta_updates">تحديثات البيتا</string>
+    <string name="settings_beta_updates_hint">قولّي كمان على النسخ التجريبية (بيتا) من التطبيق. بيتشيّك على GitHub مرة في اليوم بالكتير.</string>
     <string name="settings_label_mode_desc">لراكب بيساعد في اختبار التطبيق: وقت التسجيل، تبويب السواقة بيعرض أزرار كبيرة لتعليم كل مطبّ وجزء وعر وإنت معدّي عليه. بيتحفظ مع تسجيل الحسّاسات لضبط الكشف.</string>
     <string name="settings_phone_where">الموبايل فين؟</string>
     <string name="settings_phone_hint">الموبايل في الحامل بيحسّ بالطريق غير اللي في حامل الأكواب أو الجيب. بيتحفظ مع التسجيلات.</string>
