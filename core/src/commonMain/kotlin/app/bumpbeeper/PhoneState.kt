@@ -236,7 +236,9 @@ class PhoneStateDetector(val cfg: PhoneStateConfig = PhoneStateConfig(), val sig
     private var lastMotionMs = NEVER
     private var lastMoveMs = NEVER   // the phone last rotated fast or was turned from where it rested
     private var movedDriving = false
-    private var outOfPocket = false   // the proximity sensor cleared or the light rose from dark during this episode
+    private var outOfPocket = false
+    /** The proximity sensor cleared or the light rose from dark during the handling going on, or the last one. */
+    val outOfPocketSeen: Boolean get() = outOfPocket   // the proximity sensor cleared or the light rose from dark during this episode
     private var pendingTiltMs = 0L     // tilted, lying still, while driving: counted if the phone moves again
     private var restedTilted = false   // it has rested (restMs) at the tilted angle in this episode
     private var tiltMs2 = 0.0   // mean square tilt over the mounted window

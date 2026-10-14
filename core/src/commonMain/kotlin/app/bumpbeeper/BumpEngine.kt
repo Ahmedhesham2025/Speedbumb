@@ -155,6 +155,36 @@ class EngineConfig {
      * replaces a shared one: the same radius that decides a jolt belongs to a known spot, so the two can't drift apart.
      */
     var remoteRadiusM = 1500.0
+
+    /**
+     * E2: the car's own signature. Every jolt is checked for both axles ([AxleSignature], with [axle]) and for a
+     * slowdown: the speed lost from the top GPS fix in the [speedBeforeMs] before the jolt to the lowest fix through it
+     * (from 1 s before up to the decision), or the braking the accelerometer felt along the learned forward axis over
+     * the same time, whichever is more; [speedEvidenceKmh] or more is a slowdown. The decision waits for the rear
+     * axle: [AxleSignature.decideWindowMs] at the lag-corrected speed, at least [decideAfterMs].
+     *  - Confirmed on its own (counts in [Bump.axleHits]): both axles felt, or a jolt of [strongJoltMs2] or more with
+     *    an axle score of at least [axleEvidenceMin] and a slowdown.
+     *  - Some evidence (an axle score of at least [axleEvidenceMin], or a slowdown): an ordinary hit.
+     *  - Neither, where the axle check could look ([AXLE_BLIND] it could not): rejected in a pocket ("no_evidence"); otherwise a new spot is only a maybe, and on a known spot the
+     *    jolt counts the pass as felt but not as a hit ("hit_weak"), so it never confirms a spot.
+     *  - "No axle" ([AxleVerdict.ONE]) is rejected in a pocket ("no_axle"); elsewhere it is no axle evidence.
+     * A jolt while the phone is handled stays the phone's unless both axles show so clearly that it can only be the
+     * car: a pair scoring [overrideMinScore] or more, Δt of at least [overrideMinDtMs], pitch order +1 with the phone
+     * itself turning less than [overrideMaxRotRads] over the pair, braking before it, a handling that began after the
+     * front impulse and, once the car has [overrideMinProfileHits] axle hits, Δt × speed within
+     * [overrideWheelbaseTolM] of the learned wheelbase. Never without a gyroscope, never after an unlock, the screen,
+     * a call or out of a pocket.
+     */
+    val axle = AxleConfig()
+    var speedBeforeMs = 5000L
+    var speedEvidenceKmh = 5.0
+    var axleEvidenceMin = 0.3
+    var strongJoltMs2 = 5.0
+    var overrideMinScore = 0.9
+    var overrideMinDtMs = 250.0
+    var overrideMaxRotRads = 0.6
+    var overrideMinProfileHits = 3
+    var overrideWheelbaseTolM = 0.3
 }
 
 /**
@@ -213,6 +243,8 @@ class BumpEngine(
     private val spotSource: SpotSource? = null,
     private val observationSink: ObservationSink? = null,
     private val sampleSink: JoltSampleSink = JoltSampleSink.NONE,
+    /** The car's wheelbase, learned from both-axle hits ([VehicleProfile.learn]); the app keeps it between trips. */
+    val vehicle: VehicleProfile = VehicleProfile(),
 ) {
     val bumps: MutableList<Bump> = store.loadBumps().toMutableList()
     val trip = TripStats()
@@ -271,6 +303,10 @@ class BumpEngine(
     private var lastAccelMs = 0L
     private var joltStartMs = -1L
     private var joltPeak = 0.0
+    /** How long after the trigger the jolt is decided: long enough for its rear axle ([axleWaitMs]). */
+    private var joltWaitMs = 0L
+    /** The car's left axis when the jolt triggered (a pick-up before the decision makes the frame be learned again). */
+    private var joltLeft: DoubleArray? = null
     private var refractoryUntilMs = Long.MIN_VALUE / 4
     /**
      * The last jolt was the phone's ([handledReason]) and its handling had begun by then ([EngineConfig.phoneJoltLeadMs]):
@@ -449,7 +485,7 @@ class BumpEngine(
 
         if (joltStartMs >= 0) {
             if (tMs - joltStartMs <= cfg.peakWindowMs) joltPeak = max(joltPeak, abs(v))
-            if (tMs - joltStartMs >= cfg.decideAfterMs) {
+            if (tMs - joltStartMs >= joltWaitMs) {
                 val start = joltStartMs
                 joltStartMs = -1
                 decide(start, joltPeak)
@@ -458,6 +494,8 @@ class BumpEngine(
             // A rejected jostle has no rear axle to wait for: a bump right after it (braking before it) still counts.
             joltStartMs = tMs
             joltPeak = abs(v)
+            joltWaitMs = axleWaitMs(tMs)
+            joltLeft = leftUnit()
             refractoryUntilMs = tMs + cfg.refractoryMs
             phoneJolt = false
         }
@@ -467,11 +505,18 @@ class BumpEngine(
     private fun decide(tMs: Long, peak: Double) {
         // The decision comes 1.2 s after the jolt, so a newer fix may already be in. Use the one closest in time.
         val fix = fixes.minByOrNull { abs(it.timeMs - tMs) }
-        handledReason(tMs)?.let {
-            phoneJolt = phone.episodeStartMs <= tMs + cfg.phoneJoltLeadMs
-            reject(tMs, peak, it, fix)
-            return
-        }
+        val ax = if (fix != null && abs(tMs - fix.timeMs) <= cfg.maxFixAgeMs) axleOf(tMs, fix.speedMps) else null
+        val axNote = ax?.let { " axle=${it.verdict.name.lowercase()} ${formatFixed(it.score, 2)} ${it.reason} dt=${formatFixed(it.dtMs, 0)} pitch=${it.pitchOrder}" } ?: ""
+        val overridden = handledReason(tMs)?.let {
+            val refused = refusedOverride(tMs, ax, fix)
+            if (refused != null) {
+                phoneJolt = phone.episodeStartMs <= tMs + cfg.phoneJoltLeadMs
+                val why = if (ax?.verdict == AxleVerdict.BOTH) " kept=$refused" else ""
+                reject(tMs, peak, it, fix, (axNote + why).trim())
+                return
+            }
+            true
+        } ?: false
         if (fix == null || abs(tMs - fix.timeMs) > cfg.maxFixAgeMs) { reject(tMs, peak, "no_gps", fix); return }
         if (fix.accuracyM > cfg.maxAccuracyM) { reject(tMs, peak, "weak_gps", fix); return }
         val speedKmh = fix.speedMps * 3.6
@@ -481,7 +526,7 @@ class BumpEngine(
         val shape = shapeOf(tMs, peak)
         // Too fast for a speed bump: kept only if, not much faster, it has a clear shape (needs the gyroscope).
         if (speedKmh > cfg.maxSpeedKmh && !clearFastJolt(speedKmh, peak, shape)) {
-            reject(tMs, peak, "too_fast", fix, shape.describe(), shape); return
+            reject(tMs, peak, "too_fast", fix, shape.describe() + axNote, shape); return
         }
 
         // GPS comes once a second; move that fix forward (or back, if it came after) to the moment of the jolt.
@@ -492,7 +537,101 @@ class BumpEngine(
         val maxRecent = fixes.filter { tMs - it.timeMs <= 10_000 }.maxOfOrNull { it.speedMps } ?: fix.speedMps
         val slowdownKmh = max(0.0, (maxRecent - fix.speedMps) * 3.6)
 
-        registerHit(tMs, pos[0], pos[1], speedKmh, peak, slowdownKmh, shape)
+        // E2: the car's own signature (EngineConfig.axle): both axles, and a slowdown.
+        val drop = speedDropKmh(tMs)
+        val slowed = drop >= cfg.speedEvidenceKmh
+        val axleSeen = ax != null && ax.score >= cfg.axleEvidenceMin
+        // The axle check could not look (rear past the decision at a crawl, too fast, no data, the hit still ringing
+        // where the rear would be): that is no evidence
+        // against it, so the jolt is an ordinary hit (a steady crawl has no slowdown either).
+        val blind = ax == null || ax.reason in AXLE_BLIND
+        val note = "$axNote slow=${formatFixed(drop, 1)}" + if (overridden) " over_handled" else ""
+        if (phone.pocketMode && ax?.verdict == AxleVerdict.ONE) { reject(tMs, peak, "no_axle", fix, note.trim(), shape); return }
+        if (phone.pocketMode && !axleSeen && !slowed && !blind) { reject(tMs, peak, "no_evidence", fix, note.trim(), shape); return }
+        val grade = when {
+            ax?.verdict == AxleVerdict.BOTH || (peak >= cfg.strongJoltMs2 && axleSeen && slowed) -> 2
+            axleSeen || slowed || blind -> 1
+            else -> 0
+        }
+        if (ax?.verdict == AxleVerdict.BOTH) vehicle.learn(ax.dtMs, fix.speedMps)
+        // For the shared map: the hit's vibration dose (SeverityIndex) and how clearly both axles showed.
+        val sev = SeverityIndex.of(bufTimes(), bufVerticals(), tMs, fix.speedMps).index
+        val hitInfo = HitInfo(sev.takeIf { !it.isNaN() }, ax?.score?.takeIf { !it.isNaN() }?.coerceIn(0.0, 1.0))
+        registerHit(tMs, pos[0], pos[1], speedKmh, peak, slowdownKmh, shape, grade, note, hitInfo)
+    }
+
+    /** The decision wait for a trigger at [tMs]: [AxleSignature.decideWindowMs] at the lag-corrected speed. */
+    private fun axleWaitMs(tMs: Long): Long {
+        val f = lastFix ?: return cfg.decideAfterMs
+        val low = AxleSignature.lowSpeedMps(fixes.toList(), tMs, f.speedMps, cfg.axle)
+        return max(cfg.decideAfterMs, AxleSignature.decideWindowMs(low, vehicle.wheelbaseM, cfg.axle))
+    }
+
+    /** The two-axle signature of the jolt at [trig], from the sample buffer (pitch nose-up; none until the frame is known). */
+    private fun axleOf(trig: Long, speedMps: Double): AxleResult {
+        val n = bufCount
+        val left = joltLeft
+        val p = if (left == null) null else DoubleArray(n) { i ->
+            val k = (bufHead - n + i + BUF) % BUF
+            -(bufGx[k] * left[0] + bufGy[k] * left[1] + bufGz[k] * left[2])
+        }
+        return AxleSignature.analyze(bufTimes(), bufVerticals(), p, trig, speedMps, vehicle.wheelbaseM, fixes.toList(), cfg.axle)
+    }
+
+    /** The sample buffer's times and vertical jolts, oldest first. */
+    private fun bufTimes() = LongArray(bufCount) { bufT[(bufHead - bufCount + it + BUF) % BUF] }
+    private fun bufVerticals() = DoubleArray(bufCount) { bufV[(bufHead - bufCount + it + BUF) % BUF] }
+
+    /** What a hit tells the shared map besides its peak ([Observation.sevIndex], [Observation.axle]); null = unknown. */
+    private class HitInfo(val sevIndex: Double?, val axle: Double?)
+
+    /** The car's left axis (up × forward) in phone axes; null without gyroscope or a known forward direction. */
+    private fun leftUnit(): DoubleArray? {
+        val fwd = forwardUnit()
+        if (!gyroSeen || fwd == null) return null
+        val g = sqrt(gravX * gravX + gravY * gravY + gravZ * gravZ)
+        val ux = gravX / g
+        val uy = gravY / g
+        val uz = gravZ / g
+        val (fx, fy, fz) = fwd
+        return doubleArrayOf(uy * fz - uz * fy, uz * fx - ux * fz, ux * fy - uy * fx)
+    }
+
+    /** Speed lost before and through the jolt at [tMs], km/h: by GPS, or felt along the forward axis ([EngineConfig.axle]). */
+    private fun speedDropKmh(tMs: Long): Double {
+        val top = fixes.filter { it.timeMs in tMs - cfg.speedBeforeMs..tMs }.maxOfOrNull { it.speedMps }
+        val low = fixes.filter { it.timeMs >= tMs - 1000 }.minOfOrNull { it.speedMps }
+        val gps = if (top == null || low == null) 0.0 else max(0.0, top - low) * 3.6
+        return max(gps, (fwdBrakeAt(lastAccelMs) - fwdBrakeAt(tMs - cfg.speedBeforeMs)) * 3.6)
+    }
+
+    /** Why a jolt while the phone is handled stays the phone's, or null: a clear two-axle pair of the car ([EngineConfig.axle]). */
+    private fun refusedOverride(tMs: Long, ax: AxleResult?, fix: Fix?): String? {
+        if (ax == null || fix == null || ax.verdict != AxleVerdict.BOTH) return "no_pair"
+        if (!gyroSeen) return "no_gyro"
+        val never = PhoneStateDetector.UNLOCK or PhoneStateDetector.SCREEN or PhoneStateDetector.CALL or
+            PhoneStateDetector.POCKET_EXIT
+        if ((phone.causes and never) != 0 || phone.outOfPocketSeen) return "signal"
+        if (ax.score < cfg.overrideMinScore) return "score"
+        if (ax.dtMs < cfg.overrideMinDtMs) return "short_dt"
+        if (ax.pitchOrder != 1) return "pitch"
+        if (ax.braked != true) return "no_braking"
+        val front = if (ax.rearFirst) tMs - ax.dtMs.toLong() else tMs
+        if (phone.episodeStartMs <= front) return "handled_first"
+        if (maxRotation(front - 100, front + ax.dtMs.toLong() + 200) > cfg.overrideMaxRotRads) return "phone_turned"
+        val agrees = vehicle.hits < cfg.overrideMinProfileHits ||
+            abs(ax.dtMs / 1000.0 * fix.speedMps - vehicle.wheelbaseM) <= cfg.overrideWheelbaseTolM
+        return if (agrees) null else "wheelbase"
+    }
+
+    /** The phone's fastest rotation from [fromMs] to [toMs], rad/s (0 without gyroscope samples there). */
+    private fun maxRotation(fromMs: Long, toMs: Long): Double {
+        var m = 0.0
+        for (i in 0 until bufCount) {
+            val k = (bufHead - bufCount + i + BUF) % BUF
+            if (bufT[k] in fromMs..toMs) m = max(m, sqrt(bufGx[k] * bufGx[k] + bufGy[k] * bufGy[k] + bufGz[k] * bufGz[k]))
+        }
+        return m
     }
 
     /**
@@ -607,6 +746,8 @@ class BumpEngine(
 
     private fun registerHit(
         tMs: Long, lat: Double, lon: Double, speedKmh: Double, peak: Double, slowdownKmh: Double, shape: JoltShape,
+        /** 2: confirmed by the car's signature, 1: some evidence, 0: none ([EngineConfig.axle]); [evidence] for the log. */
+        grade: Int, evidence: String, info: HitInfo,
     ) {
         // Nearest known bump within matchRadius, same direction of travel.
         var best: Bump? = null
@@ -635,6 +776,7 @@ class BumpEngine(
             val b = Bump(0, lat, lon, heading, hits = 1, passes = 1, misses = 0, nPos = 1, firstSeen = now, lastSeen = now)
             b.addPeak(peak, 0)
             b.addSeverity(peak, 0, cfg)   // E2: the vibration index instead of the peak
+            if (grade >= 2) b.axleHits = 1
             b.id = store.insertBump(b)
             countSpot(b)
             bumps.add(b)
@@ -644,8 +786,8 @@ class BumpEngine(
             lastHitMs[b.id] = tMs
             trip.newBumps++
             trip.hits++
-            log("new_bump", b.id, lat, lon, speedKmh, peak, slowdownKmh, 0.0, "bump ${bandNote(b)} ${shape.describe()}")
-            observe("jolt", lat, lon, speedKmh, peak, shape.score, now)
+            log("new_bump", b.id, lat, lon, speedKmh, peak, slowdownKmh, 0.0, "bump ${bandNote(b)} ${shape.describe()}$evidence")
+            observe("jolt", lat, lon, speedKmh, peak, shape.score, now, info = info)
             sample("learned", null, tMs, speedKmh, peak, shape, null, lat, lon, b.id)
             if (remoteAll.isNotEmpty()) dedupRemote()   // the new spot of your own replaces its shared twin from now on
             listener.onNewBump(b)
@@ -667,6 +809,17 @@ class BumpEngine(
             return
         }
         lastHitMs[b.id] = tMs
+        if (grade == 0) {
+            // Felt, but nothing of a car going over a bump: the pass counts as felt, the hit doesn't (it never confirms).
+            if (a != null) {
+                a.hit = true
+                if (!a.counted) { a.counted = true; b.passes++ }
+            } else b.passes++
+            store.updateBump(b)
+            log("hit_weak", b.id, lat, lon, speedKmh, peak, slowdownKmh, bestD, "hits ${b.hits}/${b.passes}$evidence")
+            sample("hit", "weak", tMs, speedKmh, peak, shape, null, lat, lon, b.id)
+            return
+        }
 
         // Refine the position: running average of all readings (the newest one always keeps ≥10% weight).
         val w = 1.0 / (min(b.nPos, 9) + 1)
@@ -677,6 +830,7 @@ class BumpEngine(
         b.addPeak(peak, b.hits)
         b.addSeverity(peak, b.hits, cfg)
         b.hits++
+        if (grade >= 2) b.axleHits++
         b.legacy = false   // felt again: an old pothole spot is an ordinary bump from now on
         b.lastSeen = now
         countSpot(b)
@@ -698,9 +852,9 @@ class BumpEngine(
         trip.hits++
         log(
             "hit", b.id, lat, lon, speedKmh, peak, slowdownKmh, bestD,
-            "hits ${b.hits}/${b.passes} now=bump ${bandNote(b)} ${shape.describe()}",
+            "hits ${b.hits}/${b.passes} now=bump ${bandNote(b)} ${shape.describe()}$evidence",
         )
-        observe("known_hit", lat, lon, speedKmh, peak, shape.score, now)
+        observe("known_hit", lat, lon, speedKmh, peak, shape.score, now, info = info)
         sample("hit", null, tMs, speedKmh, peak, shape, null, lat, lon, b.id)
         listener.onKnownBumpHit(b)
     }
@@ -786,11 +940,17 @@ class BumpEngine(
             return   // a broken cache must not stop the engine; keep what we had
         }
         remoteAll = spots.filter { it.id in 0 until Long.MAX_VALUE / 2 }.map { r ->
-            // Felt once per phone that confirmed it: two phones make it FULL. A shared pothole is an old (soft) spot.
-            @Suppress("DEPRECATION") val old = r.kind == BumpKind.POTHOLE
+            // v2: its hits (one phone twice counts) and the server's confidence and band, where it gives them; an old
+            // pothole spot (legacy) is soft until felt. Without v2 fields: one hit per phone, the band from the index.
+            @Suppress("DEPRECATION") val old = r.legacy || r.kind == BumpKind.POTHOLE
+            val hits = when (r.confidence) {
+                Confidence.FULL -> max(r.nHits, 2)
+                Confidence.SOFT -> min(r.nHits, 1)
+                null -> r.nHits
+            }.coerceAtLeast(0)
             Bump(
-                -2L - r.id, r.lat, r.lon, r.heading, hits = r.nDevices.coerceAtLeast(0), passes = 0, misses = 0, nPos = 0,
-                firstSeen = 0, lastSeen = 0, peakAvg = r.severity, sevIndex = r.severity, legacy = old,
+                -2L - r.id, r.lat, r.lon, r.heading, hits = hits, passes = 0, misses = 0, nPos = 0,
+                firstSeen = 0, lastSeen = 0, peakAvg = r.severity, sevIndex = r.severity, legacy = old, lastBand = r.band,
             )
         }
         dedupRemote()
@@ -812,12 +972,12 @@ class BumpEngine(
 
     private fun observe(
         kind: String, lat: Double, lon: Double, speedKmh: Double, peak: Double, shapeScore: Double, now: Long,
-        dir: Double = heading,
+        dir: Double = heading, info: HitInfo? = null,
     ) {
         val sink = observationSink ?: return
         try {
             // The shape score goes up as a diagnostic in the old kind_score field; bumps have no side (0).
-            sink.record(Observation(randomUuid(), kind, lat, lon, dir, speedKmh, peak, shapeScore, 0.0, now))
+            sink.record(Observation(randomUuid(), kind, lat, lon, dir, speedKmh, peak, shapeScore, 0.0, now, info?.sevIndex, info?.axle))
         } catch (e: Exception) {
             // A full or broken outbox must not stop detection.
         }
@@ -1070,6 +1230,20 @@ class BumpEngine(
         brakeInt += push * dt
         brakeHist.addLast(tMs to brakeInt)
         while (brakeHist.size > 1 && brakeHist.first().first < tMs - 5000) brakeHist.removeFirst()
+        fwdBrake?.let { fwdBrakeInt += it * dt }
+        fwdHist.addLast(tMs to fwdBrakeInt)
+        while (fwdHist.size > 1 && fwdHist.first().first < tMs - 10_000) fwdHist.removeFirst()
+    }
+
+    // Braking felt along the learned forward axis only, integrated (m/s), for [speedDropKmh].
+    private var fwdBrakeInt = 0.0
+    private val fwdHist = ArrayDeque<Pair<Long, Double>>()
+
+    /** [fwdBrakeInt] as it was at [tMs] (the oldest kept if earlier). */
+    private fun fwdBrakeAt(tMs: Long): Double {
+        var v = fwdHist.firstOrNull()?.second ?: fwdBrakeInt
+        for ((t, i) in fwdHist) { if (t > tMs) break; v = i }
+        return v
     }
 
     /** [brakeInt] as it was at [tMs] (the oldest kept if earlier). */
@@ -1235,7 +1409,10 @@ class BumpEngine(
          */
         fun remoteSpotId(bumpId: Long): Long? = if (bumpId <= -2L) -2L - bumpId else null
 
-        /** Sample buffer size: ≥ 2.5 s even if the phone delivers 200 samples per second. */
-        private const val BUF = 512
+        /** Sample buffer size: ≥ 5 s even at 200 samples per second (the axle signature's span). */
+        private const val BUF = 1024
+
+        /** [AxleResult.reason]s where the axle check could not look: no evidence either way. */
+        val AXLE_BLIND = setOf("window", "slow", "no_data", "fast", "ringing")
     }
 }

@@ -78,6 +78,16 @@ class AxleSignatureTest {
         }
     }
 
+    @Test fun aRearPastTheDataIsWindowNotUnclear() {
+        // 8.8 km/h by GPS while braking: the rear may come after the data ends, so the answer is "window", even with
+        // other knocks in the window that would read "unclear" (drive01, 426 s).
+        for (rate in listOf(50.0, 100.0)) for (seed in 1L..3L) {
+            val road = Road(seed).apply { hit(T0, 5.0, 0.06); hit(T0 + 0.75, 5.0, 0.06); hit(T0 + 1.0, 4.5, 0.06) }
+            val r = judge(road, 8.8, rate, fixes = slowingDown(8.8, 5.0))
+            assertEquals("window", r.reason, "$rate Hz, seed $seed: ${describe(r)}")
+        }
+    }
+
     @Test fun usualCrossingSpeedsAreNeverNoAxle() {
         val speeds = listOf(5.0, 7.0, 9.0, 11.0, 13.0, 15.0)
         for (rate in listOf(50.0, 100.0)) for (wb in listOf(2.4, 2.6, 3.0)) for (kmh in speeds) {
