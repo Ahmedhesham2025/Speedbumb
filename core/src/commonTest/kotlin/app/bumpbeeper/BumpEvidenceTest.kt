@@ -61,15 +61,17 @@ class BumpEvidenceTest {
     }
 
     @Test fun aClearPairOverridesALaterHandling() {
-        // A real bump while braking (both axles, pitch up then down), and the phone picked up 0.25 s after the rear axle,
-        // before the decision: the car's signature wins.
-        val v = 15 / 3.6
+        // A real bump crawled over after braking to 10 km/h (both axles, pitch up then down), and the phone picked up
+        // 0.25 s after the rear axle, seen before the decision 1.6 s after the front one: the car's signature wins.
+        val v = 10 / 3.6
+        fun spec(holdAt: Double) = DriveSpec(bumpsAt = listOf(800.0), bumpKmh = 10.0, holdsAt = listOf(holdAt to 4.0), cruiseKmh = 40.0)
         val store = MemoryStore()
-        val r = Simulator(9).drive(store, DriveSpec(bumpsAt = listOf(800.0), holdsAt = listOf(800.0 + 2.6 + 0.25 * v to 4.0), cruiseKmh = 40.0))
+        val r = Simulator(9).drive(store, spec(800.0 + 2.6 + 0.25 * v))
+        val learned = notes(store, "new_bump")
         assertEquals(1, r.newBumps, "${r.rejected} ${notes(store, "rejected")}")
-        assertTrue(notes(store, "new_bump").single().contains("axle=both") && notes(store, "new_bump").single().contains("over_handled"), "${notes(store, "new_bump")}")
+        assertTrue(learned.single().contains("axle=both") && learned.single().contains("over_handled"), "$learned")
         // Picked up a second before the front axle: the same pair stays the phone's.
-        val early = Simulator(9).drive(MemoryStore(), DriveSpec(bumpsAt = listOf(800.0), holdsAt = listOf(800.0 - 1.0 * v to 4.0), cruiseKmh = 40.0))
+        val early = Simulator(9).drive(MemoryStore(), spec(800.0 - 1.0 * v))
         assertEquals(0, early.newBumps, "${early.rejected}")
         assertTrue("handled" in early.rejected, "${early.rejected}")
     }
