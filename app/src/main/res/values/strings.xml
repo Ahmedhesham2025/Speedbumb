@@ -485,6 +485,13 @@
     <string name="settings_diagnostics_hint">What the app is doing, for test drives and support. Read-only; nothing is uploaded.</string>
     <string name="diag_title">Diagnostics</string>
     <string name="diag_hint">Read-only. Nothing here is uploaded, and it shows no positions.</string>
+    <string name="diag_group_mark">Test-drive marks</string>
+    <string name="diag_group_live">Jolt meter and last events</string>
+    <string name="diag_group_perms">Permissions</string>
+    <string name="diag_group_service">Service and sensors</string>
+    <string name="diag_group_uploads">Shared map and uploads</string>
+    <string name="diag_group_start">Auto start log</string>
+    <string name="diag_group_app">Last error and app</string>
     <string name="diag_yes">yes</string>
     <string name="diag_no">no</string>
     <string name="diag_none">none</string>

@@ -43,13 +43,7 @@ class DrivePage(private val a: MainActivity) : Page {
     private lateinit var tWarn: TextView
     private lateinit var tBumps: TextView
     private lateinit var tHoles: TextView
-    private lateinit var lastEvent: TextView
-    private lateinit var driveEvent: TextView
-    private lateinit var ignored: TextView
     private lateinit var muteBtn: View
-    private lateinit var meterCard: LinearLayout
-    private lateinit var meterToggle: TextView
-    private lateinit var graph: JoltGraphView
     private lateinit var updateCard: LinearLayout
     private lateinit var updateText: TextView
     private lateinit var labelCard: LinearLayout
@@ -366,7 +360,7 @@ class DrivePage(private val a: MainActivity) : Page {
         }
     }
 
-    /** Folded away by default: this trip's numbers, what just happened, and the jolt meter. */
+    /** Folded away by default: this trip's numbers (what just happened and the jolt meter are in Diagnostics). */
     private fun buildDetails(): LinearLayout {
         val col = LinearLayout(a).apply { orientation = LinearLayout.VERTICAL }
         val tiles = listOf(
@@ -377,26 +371,6 @@ class DrivePage(private val a: MainActivity) : Page {
         tWarn = tiles[3].second; tBumps = tiles[4].second; tHoles = tiles[5].second
         col.addView(Ui.grid(a, tiles.map { it.first }, 3), full(4))
 
-        val ev = Ui.card(a).apply { background = Ui.rounded(a, Ui.SURFACE2, Ui.Shape.TILE) }
-        lastEvent = Ui.text(a, 15f, Ui.TEXT, bold = true)
-        driveEvent = Ui.text(a, 14f, Ui.ORANGE)
-        ignored = Ui.text(a, 13f, Ui.DIM)
-        ev.addView(lastEvent)
-        ev.addView(driveEvent, full(4))
-        ev.addView(ignored, full(4))
-        col.addView(ev, full(8))
-
-        meterCard = Ui.card(a).apply { background = Ui.rounded(a, Ui.SURFACE2, Ui.Shape.TILE) }
-        meterToggle = Ui.text(a, 15f, Ui.TEXT, bold = true).apply {
-            isClickable = true
-            setOnClickListener { toggleMeter() }
-        }
-        graph = JoltGraphView(a)
-        meterCard.addView(meterToggle)
-        meterCard.addView(graph, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(120)).apply { topMargin = dp(10) })
-        meterCard.addView(Ui.text(a, 12f, Ui.DIM, value = a.getString(R.string.drive_meter_hint)))
-        col.addView(meterCard, full(8))
-        showMeter(Prefs.sp(a).getBoolean(KEY_METER, false))
         return col
     }
 
@@ -536,17 +510,6 @@ class DrivePage(private val a: MainActivity) : Page {
         else -> kind
     }
 
-    private fun toggleMeter() {
-        val on = !Prefs.sp(a).getBoolean(KEY_METER, false)
-        Prefs.sp(a).edit().putBoolean(KEY_METER, on).apply()
-        showMeter(on)
-    }
-
-    private fun showMeter(on: Boolean) {
-        meterToggle.text = a.getString(if (on) R.string.drive_meter_open else R.string.drive_meter_closed)
-        for (i in 1 until meterCard.childCount) meterCard.getChildAt(i).visibility = if (on) View.VISIBLE else View.GONE
-    }
-
     // ---------------------------------------------------------------- setup checklist
 
     override fun onShow() {
@@ -648,11 +611,6 @@ class DrivePage(private val a: MainActivity) : Page {
         tBumps.text = if (rec) LiveState.tripHits.toString() else "–"
         tHoles.text = if (rec) LiveState.tripPotholes.toString() else "–"   // strong bumps felt (the old field name)
 
-        lastEvent.text = LiveState.lastEvent.ifEmpty { a.getString(R.string.drive_nothing_yet) }
-        driveEvent.text = LiveState.lastDriveEvent
-        driveEvent.visibility = if (LiveState.lastDriveEvent.isEmpty()) View.GONE else View.VISIBLE
-        ignored.text = LiveState.lastIgnored
-        ignored.visibility = if (LiveState.lastIgnored.isEmpty()) View.GONE else View.VISIBLE
         muteBtn.visibility = if (rec) View.VISIBLE else View.GONE
 
         val labelsLive = rec && LiveState.labelMode
@@ -674,8 +632,6 @@ class DrivePage(private val a: MainActivity) : Page {
             updateCard.visibility = View.VISIBLE
         }
 
-        graph.threshold = Prefs.thresholdFor(Prefs.sensitivity(a)).toFloat()
-        if (graph.visibility == View.VISIBLE) graph.invalidate()
     }
 
     /** The live speed-limit sign and the speed's colour (orange over the limit, red over it by the chosen margin). */
@@ -699,7 +655,6 @@ class DrivePage(private val a: MainActivity) : Page {
     }
 
     companion object {
-        private const val KEY_METER = "ui_show_meter"
         private const val KEY_DETAILS = "ui_drive_details"
         private const val KEY_HIDE_AUTO = "ui_hide_auto_tip"
     }

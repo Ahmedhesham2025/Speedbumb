@@ -502,6 +502,13 @@
     <string name="settings_diagnostics_hint">التطبيق بيعمل إيه، لتجارب السواقة والدعم. للقراية بس؛ مفيش حاجة بتترفع.</string>
     <string name="diag_title">التشخيص</string>
     <string name="diag_hint">للقراية بس. مفيش حاجة هنا بتترفع، ومفيش أماكن بتظهر.</string>
+    <string name="diag_group_mark">علامات اختبار القيادة</string>
+    <string name="diag_group_live">مقياس الهزّات وآخر الأحداث</string>
+    <string name="diag_group_perms">الأذونات</string>
+    <string name="diag_group_service">الخدمة والحساسات</string>
+    <string name="diag_group_uploads">الخريطة المتشاركة والرفع</string>
+    <string name="diag_group_start">سجل التشغيل التلقائي</string>
+    <string name="diag_group_app">آخر خطأ والتطبيق</string>
     <string name="diag_yes">أيوه</string>
     <string name="diag_no">لأ</string>
     <string name="diag_none">مفيش</string>

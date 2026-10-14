@@ -4,14 +4,18 @@ import android.Manifest
 import android.app.Dialog
 import android.content.Context
 import android.content.pm.PackageManager
+import android.content.res.ColorStateList
 import android.graphics.drawable.ColorDrawable
+import android.graphics.drawable.GradientDrawable
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.os.PowerManager
 import android.os.SystemClock
+import android.view.Gravity
 import android.view.HapticFeedbackConstants
 import android.view.View
+import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
@@ -35,35 +39,76 @@ class DiagnosticsPage(private val a: MainActivity, private val onClose: () -> Un
     private val ui = Handler(Looper.getMainLooper())
     private lateinit var markBtn: TextView
     private lateinit var markWhy: TextView
-    private lateinit var body: TextView
     /** The newest saved crash, made short ([shortError]); read off the main thread in [onShow]. */
     @Volatile private var lastCrash = ""
 
     override val view: View = build()
 
+    private lateinit var groups: LinearLayout
+    private lateinit var graph: JoltGraphView
+    private lateinit var lastEvent: TextView
+    private lateinit var driveEvent: TextView
+    private lateinit var ignored: TextView
+    private var shown: List<String> = emptyList()
+
+    private fun full(top: Int = 0) = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
+        .apply { topMargin = dp(top) }
+
     private fun build(): View {
         val col = LinearLayout(a).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(16), dp(20), dp(16), dp(32))
+            setPadding(dp(16), 0, dp(16), dp(32))
         }
-        fun add(v: View, top: Int = 0) = col.addView(v, LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { topMargin = dp(top) })
-        add(Ui.text(a, 22f, Ui.TEXT, bold = true, value = a.getString(R.string.diag_title)))
-        add(Ui.text(a, 13f, Ui.DIM, value = a.getString(R.string.diag_hint)), 4)
+        fun add(v: View, top: Int = 0) = col.addView(v, full(top))
 
+        // App bar: back (closes), title.
+        add(LinearLayout(a).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            minimumHeight = dp(64)
+            addView(ImageView(a).apply {
+                setImageResource(R.drawable.ic_back)
+                imageTintList = ColorStateList.valueOf(Ui.DIM)
+                scaleType = ImageView.ScaleType.CENTER
+                contentDescription = a.getString(R.string.common_close)
+                isClickable = true
+                setOnClickListener { onClose() }
+            }, LinearLayout.LayoutParams(dp(48), dp(48)))
+            addView(Ui.text(a, 20f, Ui.TEXT, bold = true, value = a.getString(R.string.diag_title)),
+                LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { marginStart = dp(8) })
+        })
+        add(Ui.text(a, 13f, Ui.DIM, value = a.getString(R.string.diag_hint)).apply { setPadding(dp(4), 0, dp(4), 0) })
+
+        // Mark: a big button for the passenger on a test drive.
+        add(Ui.section(a, a.getString(R.string.diag_group_mark)))   // not "Mark": the button alone has that text
         val mark = Ui.card(a)
-        markBtn = Ui.button(a, a.getString(R.string.diag_mark), Ui.Style.PRIMARY) { tapMark() }
+        markBtn = Ui.bigPill(a, a.getString(R.string.diag_mark), R.drawable.ic_tag, Ui.PRIMARY, Ui.ON_PRIMARY) { tapMark() }.apply {
+            minHeight = dp(72)
+        }
         markWhy = Ui.text(a, 13f, Ui.DIM).apply { setPadding(0, dp(8), 0, 0) }
-        mark.addView(Ui.text(a, 13f, Ui.DIM, value = a.getString(R.string.diag_mark_hint)).apply { setPadding(0, 0, 0, dp(8)) })
+        mark.addView(Ui.text(a, 13f, Ui.DIM, value = a.getString(R.string.diag_mark_hint)).apply { setPadding(0, 0, 0, dp(10)) })
         mark.addView(markBtn)
         mark.addView(markWhy)
-        add(mark, 12)
+        add(mark)
 
-        val card = Ui.card(a)
-        body = Ui.text(a, 14f, Ui.TEXT).apply { setLineSpacing(0f, 1.25f); setTextIsSelectable(true) }
-        card.addView(body)
-        add(card, 12)
-        add(Ui.button(a, a.getString(R.string.common_close)) { onClose() }, 16)
+        // The jolt meter and the last events (they were on the Drive screen).
+        add(Ui.section(a, a.getString(R.string.diag_group_live)))
+        val live = Ui.card(a)
+        graph = JoltGraphView(a)
+        live.addView(graph, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(110)))
+        live.addView(Ui.text(a, 12f, Ui.DIM, value = a.getString(R.string.drive_meter_hint)).apply { setPadding(0, dp(6), 0, dp(4)) })
+        live.addView(Ui.divider(a))
+        lastEvent = Ui.text(a, 15f, Ui.TEXT, bold = true)
+        driveEvent = Ui.text(a, 14f, Ui.WARN)
+        ignored = Ui.text(a, 13f, Ui.DIM)
+        live.addView(lastEvent)
+        live.addView(driveEvent, full(4))
+        live.addView(ignored, full(4))
+        add(live)
+
+        // Status rows, one card per group of lines().
+        groups = LinearLayout(a).apply { orientation = LinearLayout.VERTICAL }
+        add(groups)
         return ScrollView(a).apply { setBackgroundColor(Ui.BG); addView(col) }
     }
 
@@ -94,8 +139,64 @@ class DiagnosticsPage(private val a: MainActivity, private val onClose: () -> Un
             else -> a.getString(R.string.diag_mark_ready)
         }
         if (markWhy.text.toString() != why) markWhy.text = why
-        val t = lines(a, lastCrash).joinToString("\n")
-        if (body.text.toString() != t) body.text = t
+
+        graph.threshold = Prefs.thresholdFor(Prefs.sensitivity(a)).toFloat()
+        graph.invalidate()
+        lastEvent.text = LiveState.lastEvent.ifEmpty { a.getString(R.string.drive_nothing_yet) }
+        driveEvent.text = LiveState.lastDriveEvent
+        driveEvent.visibility = if (LiveState.lastDriveEvent.isEmpty()) View.GONE else View.VISIBLE
+        ignored.text = LiveState.lastIgnored
+        ignored.visibility = if (LiveState.lastIgnored.isEmpty()) View.GONE else View.VISIBLE
+
+        val lines = lines(a, lastCrash)
+        if (lines != shown) {
+            shown = lines
+            showGroups(lines)
+        }
+    }
+
+    /**
+     * The same lines as before, as cards: one per group (they are separated by blank lines), a row per line with
+     * an OK, warning or neutral dot. "Name: value" lines put the value at the end.
+     */
+    private fun showGroups(lines: List<String>) {
+        groups.removeAllViews()
+        val yes = a.getString(R.string.diag_yes)
+        val no = a.getString(R.string.diag_no)
+        val ok = a.getString(R.string.diag_ok)
+        val titles = listOf(R.string.diag_group_perms, R.string.diag_group_service, R.string.diag_group_uploads,
+            R.string.diag_group_start, R.string.diag_group_app)
+        val split = ArrayList<MutableList<String>>().apply { add(ArrayList()) }
+        for (l in lines) if (l.isEmpty()) split.add(ArrayList()) else split.last().add(l)
+        split.filter { it.isNotEmpty() }.forEachIndexed { g, group ->
+            groups.addView(Ui.section(a, a.getString(titles.getOrElse(g) { R.string.diag_group_app })))
+            val card = Ui.card(a, 0).apply { setPadding(0, dp(4), 0, dp(4)) }
+            for (line in group) {
+                val at = line.lastIndexOf(": ")
+                val key = if (at > 0) line.substring(0, at) else line
+                val value = if (at > 0) line.substring(at + 2) else ""
+                val state = when {
+                    value == yes || value == ok || value.startsWith(ok) -> Ui.OK
+                    value == no -> Ui.WARN
+                    else -> Ui.FAINT
+                }
+                card.addView(LinearLayout(a).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    gravity = Gravity.CENTER_VERTICAL
+                    minimumHeight = dp(44)
+                    setPadding(dp(16), dp(6), dp(16), dp(6))
+                    addView(View(a).apply { background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(state) } },
+                        LinearLayout.LayoutParams(dp(10), dp(10)).apply { marginEnd = dp(12) })
+                    addView(Ui.text(a, 14f, Ui.TEXT, value = key).apply { setTextIsSelectable(true) },
+                        LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+                    if (value.isNotEmpty()) addView(Ui.text(a, 14f, Ui.DIM, value = value).apply {
+                        textAlignment = View.TEXT_ALIGNMENT_VIEW_END
+                        setPadding(dp(8), 0, 0, 0)
+                    })
+                })
+            }
+            groups.addView(card)
+        }
     }
 
     companion object {
