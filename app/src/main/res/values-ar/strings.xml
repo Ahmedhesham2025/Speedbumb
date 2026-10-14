@@ -8,8 +8,8 @@
     <string name="common_delete">مسح</string>
     <string name="common_continue">كمّل</string>
     <string name="common_later">بعدين</string>
-    <string name="unit_min">%1$d دقيقة</string>
-    <string name="unit_h_min">%1$d س %2$d د</string>
+    <string name="unit_min">%1$s دقيقة</string>
+    <string name="unit_h_min">%1$s س %2$s د</string>
     <string name="unit_km">%1$s كم</string>
     <string name="drive_update_hint">بيفتح صفحة الإصدار على GitHub. نزّله فوق التطبيق ده، والخريطة والرحلات بتفضل زي ما هي.</string>
     <string name="drive_download">نزّل</string>

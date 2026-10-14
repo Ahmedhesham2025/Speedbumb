@@ -314,8 +314,9 @@ object Ui {
         val m = ((seconds % 3600) / 60).toInt()
         val r = res
         return when {
-            r != null && h > 0 -> r.getString(R.string.unit_h_min, h, m)
-            r != null -> r.getString(R.string.unit_min, m)
+            // Western digits in every language, as elsewhere in the app ("23 دقيقة", not Arabic-Indic digits).
+            r != null && h > 0 -> r.getString(R.string.unit_h_min, h.toString(), m.toString())
+            r != null -> r.getString(R.string.unit_min, m.toString())
             h > 0 -> "${h} h ${m} min"
             else -> "${m} min"
         }

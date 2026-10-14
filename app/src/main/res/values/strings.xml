@@ -7,8 +7,8 @@
     <string name="common_delete">Delete</string>
     <string name="common_continue">Continue</string>
     <string name="common_later">Later</string>
-    <string name="unit_min">%1$d min</string>
-    <string name="unit_h_min">%1$d h %2$d min</string>
+    <string name="unit_min">%1$s min</string>
+    <string name="unit_h_min">%1$s h %2$s min</string>
     <string name="unit_km">%1$s km</string>
     <string name="drive_update_hint">Opens the release page on GitHub. Install it over this app; your map and trips stay.</string>
     <string name="drive_download">Download</string>
@@ -369,7 +369,7 @@
     <string name="auto_status_watching">Watching for driving</string>
     <string name="auto_fix">Fix</string>
     <string name="auto_stop_never">Never stop by itself when parked</string>
-    <string name="auto_stop_after">Stop after parked for %1$d min</string>
+    <string name="auto_stop_after">Stop after parked for %1$s min</string>
     <string name="auto_stop_hint">Only after real driving, and never while your car\'s Bluetooth is connected.</string>
     <string name="auto_disclosure_title">Location in the background</string>
     <string name="auto_disclosure_msg">Bump Beeper collects location data to notice when you start driving and to start recording without Bluetooth, even when the app is closed or not in use.\n\nIt uses the motion sensor, short GPS checks and location updates that other apps already asked for. All of this is checked on your phone.\n\nYour location stays on the phone, unless you turned on the shared map, real speed limits or “Help improve detection” (see the privacy policy). You can turn this off at any time in Settings.</string>
