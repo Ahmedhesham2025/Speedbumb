@@ -10,6 +10,8 @@ import android.util.TypedValue
 import android.view.Gravity
 import android.view.HapticFeedbackConstants
 import android.view.View
+import android.widget.FrameLayout
+import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
@@ -47,7 +49,6 @@ class DrivePage(private val a: MainActivity) : Page {
     private lateinit var meterCard: LinearLayout
     private lateinit var meterToggle: TextView
     private lateinit var graph: JoltGraphView
-    private lateinit var afterTrip: TextView
     private lateinit var updateCard: LinearLayout
     private lateinit var updateText: TextView
     private lateinit var labelCard: LinearLayout
@@ -56,9 +57,156 @@ class DrivePage(private val a: MainActivity) : Page {
     private var wasRecording: Boolean? = null
     private var updateShown: String? = null
 
+    // Ready (not recording): the map with your bumps, a few chips, one setup row, the last trip, Start drive.
+    private lateinit var readyView: View
+    private lateinit var liveView: View
+    private lateinit var map: BumpMapView
+    private lateinit var autoChip: TextView
+    private lateinit var readyHint: TextView
+    private lateinit var lastTripRow: LinearLayout
+    private lateinit var lastTripBadge: TextView
+    private lateinit var lastTripTitle: TextView
+    private var mapCentred = false
+
     override val view: View = build()
 
     private fun build(): View {
+        readyView = buildReady()
+        liveView = buildLive()
+        return FrameLayout(a).apply {
+            setBackgroundColor(Ui.BG)
+            addView(readyView, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
+            addView(liveView, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
+        }
+    }
+
+    private fun wrap() = LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT)
+    private fun full(top: Int = 0) = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
+        .apply { topMargin = dp(top) }
+
+    private fun buildReady(): View {
+        map = BumpMapView(a).apply { radiusM = 600.0 }
+        val o = Ui.Space.OVERLAY
+
+        // Top: what starts the next drive, and the shared map (tap: Settings).
+        autoChip = Ui.chip(a, "", R.drawable.ic_bluetooth)
+        syncLine = Ui.chip(a, "", R.drawable.ic_people).apply {
+            isClickable = true
+            setOnClickListener { if (!LiveState.recording) a.select(MainActivity.TAB_SETTINGS) }
+        }
+        val chips = LinearLayout(a).apply {
+            orientation = LinearLayout.HORIZONTAL
+            addView(autoChip, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { marginEnd = dp(8) })
+            addView(syncLine, wrap())
+        }
+
+        // "New version available" banner; filled in by tick() once the update check in MainActivity answers.
+        updateCard = Ui.card(a).apply {
+            background = Ui.rounded(a, Ui.SURFACE, Ui.Shape.CARD, Ui.PRIMARY)
+            elevation = Ui.dpf(a, 3f)
+            visibility = View.GONE
+        }
+        updateText = Ui.text(a, 16f, Ui.TEXT, bold = true)
+        updateCard.addView(updateText)
+        updateCard.addView(Ui.text(a, 13f, Ui.DIM, value = a.getString(R.string.drive_update_hint)))
+        updateCard.addView(Ui.row(a,
+            Ui.button(a, a.getString(R.string.drive_download), Ui.Style.PRIMARY) { a.openUpdate() },
+            Ui.button(a, a.getString(R.string.common_not_now), Ui.Style.QUIET) { a.dismissUpdate(); updateCard.visibility = View.GONE },
+        ).apply { setPadding(0, dp(10), 0, 0) })
+
+        // One setup row at a time (onShow picks the first thing missing).
+        setupCard = Ui.card(a, 12).apply { elevation = Ui.dpf(a, 3f) }
+
+        val top = LinearLayout(a).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(o), dp(o), dp(o), 0)
+            addView(chips, full())
+            addView(updateCard, full(10))
+            addView(setupCard, full(10))
+        }
+
+        // Bottom: my-location button, then the sheet with the last trip and Start drive.
+        val me = Ui.fab(a, R.drawable.ic_my_location, a.getString(R.string.drive_me)) { centreOnMe() }
+        lastTripBadge = Ui.scoreBadge(a)
+        lastTripTitle = Ui.text(a, 16f, Ui.TEXT, bold = true)
+        lastTripRow = LinearLayout(a).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            minimumHeight = dp(Ui.Space.ROW)
+            isClickable = true
+            setOnClickListener { a.select(MainActivity.TAB_TRIPS) }
+            addView(lastTripBadge, wrap())
+            addView(LinearLayout(a).apply {
+                orientation = LinearLayout.VERTICAL
+                setPadding(dp(14), 0, dp(8), 0)
+                addView(lastTripTitle)
+                addView(Ui.text(a, 13f, Ui.DIM, value = a.getString(R.string.drive_last_trip_more)))
+            }, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+            addView(ImageView(a).apply {
+                setImageResource(R.drawable.ic_chevron)
+                imageTintList = ColorStateList.valueOf(Ui.DIM)
+            }, wrap())
+        }
+        readyHint = Ui.text(a, 13f, Ui.DIM).apply { gravity = Gravity.CENTER }
+        val sheet = Ui.sheet(a).apply {
+            addView(lastTripRow, full())
+            addView(Ui.bigPill(a, a.getString(R.string.drive_start_drive), R.drawable.ic_play, Ui.PRIMARY, Ui.ON_PRIMARY) {
+                a.toggleRecording()
+            }, full(10))
+            addView(readyHint, full(10))
+        }
+        val bottom = LinearLayout(a).apply {
+            orientation = LinearLayout.VERTICAL
+            addView(me, LinearLayout.LayoutParams(dp(48), dp(48)).apply {
+                gravity = Gravity.END
+                marginEnd = dp(o)
+                bottomMargin = dp(o)
+            })
+            addView(sheet, full())
+        }
+
+        return FrameLayout(a).apply {
+            addView(map, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
+            addView(top, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.WRAP_CONTENT, Gravity.TOP))
+            addView(bottom, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.WRAP_CONTENT, Gravity.BOTTOM))
+        }
+    }
+
+    /** Your bumps on the Drive map, loaded off the main thread like the Map tab does. */
+    private fun loadMap() {
+        Thread {
+            val db = BumpDb(a.applicationContext)
+            val loaded = try { db.loadBumps() } finally { db.close() }
+            a.runOnUiThread {
+                map.bumps = loaded
+                if (!mapCentred && loaded.isNotEmpty() && map.meLat.isNaN()) {
+                    map.centerLat = loaded.map { it.lat }.average()
+                    map.centerLon = loaded.map { it.lon }.average()
+                    map.invalidate()
+                }
+            }
+        }.start()
+    }
+
+    /** The blue dot from the newest position Android has; centres on it the first time (or when asked). */
+    private fun updateMe(centre: Boolean) {
+        val me = a.lastLocation() ?: return
+        map.meLat = me.latitude
+        map.meLon = me.longitude
+        if (centre || !mapCentred) {
+            map.centerLat = me.latitude
+            map.centerLon = me.longitude
+            mapCentred = true
+        }
+        map.invalidate()
+    }
+
+    private fun centreOnMe() {
+        if (a.lastLocation() == null) a.toast(a.getString(R.string.map_location_unknown)) else updateMe(centre = true)
+    }
+
+    // Recording: until the map-first recording screen (part 3), the trip's numbers as before.
+    private fun buildLive(): View {
         val col = LinearLayout(a).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(16), dp(20), dp(16), dp(24))
@@ -77,15 +225,6 @@ class DrivePage(private val a: MainActivity) : Page {
             addView(Ui.text(a, 22f, Ui.TEXT, bold = true, value = a.getString(R.string.app_name)), LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
             addView(status)
         })
-        // Shared map, one quiet line (never a popup here: this screen is used while driving).
-        syncLine = Ui.text(a, 12f, Ui.DIM).apply {
-            gravity = Gravity.END or Gravity.CENTER_VERTICAL
-            minHeight = dp(48)   // a real touch target, though the text stays small
-            setPadding(0, 0, dp(4), 0)
-            isClickable = true
-            setOnClickListener { if (!LiveState.recording) a.select(MainActivity.TAB_SETTINGS) }
-        }
-        add(syncLine)
         // Offline and the shared spots are out of date (OfflineBanner): one line, never a popup while driving.
         offline = Ui.text(a, 14f, Ui.ORANGE, bold = true, value = a.getString(R.string.drive_offline_banner)).apply {
             gravity = Gravity.CENTER
@@ -93,24 +232,7 @@ class DrivePage(private val a: MainActivity) : Page {
             background = Ui.rounded(a, Ui.SURFACE, 14, Ui.ORANGE)
             visibility = View.GONE
         }
-        add(offline, 4)
-
-        // "New version available" banner; filled in by tick() once MainActivity's update check answers.
-        updateCard = Ui.card(a).apply {
-            background = Ui.rounded(a, Ui.SURFACE, 18, Ui.ACCENT)
-            visibility = View.GONE
-        }
-        updateText = Ui.text(a, 16f, Ui.TEXT, bold = true)
-        updateCard.addView(updateText)
-        updateCard.addView(Ui.text(a, 13f, Ui.DIM, value = a.getString(R.string.drive_update_hint)))
-        updateCard.addView(Ui.row(a,
-            Ui.button(a, a.getString(R.string.drive_download), Ui.Style.PRIMARY) { a.openUpdate() },
-            Ui.button(a, a.getString(R.string.common_not_now), Ui.Style.QUIET) { a.dismissUpdate(); updateCard.visibility = View.GONE },
-        ).apply { setPadding(0, dp(10), 0, 0) })
-        add(updateCard, 12)
-
-        setupCard = Ui.card(a)
-        add(setupCard, 12)
+        add(offline, 8)
 
         // Big round Start / Stop.
         startBtn = TextView(a).apply {
@@ -145,14 +267,6 @@ class DrivePage(private val a: MainActivity) : Page {
         }, 12)
         gps = Ui.text(a, 13f, Ui.DIM).apply { gravity = Gravity.CENTER }
         add(gps)
-        afterTrip = Ui.text(a, 15f, Ui.TEXT).apply {
-            gravity = Gravity.CENTER
-            setPadding(dp(12), dp(10), dp(12), dp(10))
-            background = Ui.rounded(a, Ui.SURFACE, 14)
-            isClickable = true
-            setOnClickListener { a.select(MainActivity.TAB_TRIPS) }
-        }
-        add(afterTrip, 10)
         add(buildLabelPanel(), 12)
 
         // This trip.
@@ -191,6 +305,7 @@ class DrivePage(private val a: MainActivity) : Page {
         showMeter(Prefs.sp(a).getBoolean(KEY_METER, false))
 
         return ScrollView(a).apply {
+            setBackgroundColor(Ui.BG)
             isFillViewport = true
             addView(col)
         }
@@ -264,8 +379,9 @@ class DrivePage(private val a: MainActivity) : Page {
     override fun onShow() {
         setupCard.removeAllViews()
         var rows = 0
+        // One row at a time over the map: the first thing missing; the next shows once it is done.
         fun item(title: String, why: String, action: String, onClick: () -> Unit) {
-            if (rows > 0) setupCard.addView(Ui.divider(a))
+            if (rows > 0) return
             setupCard.addView(LinearLayout(a).apply {
                 orientation = LinearLayout.HORIZONTAL
                 gravity = Gravity.CENTER_VERTICAL
@@ -282,7 +398,7 @@ class DrivePage(private val a: MainActivity) : Page {
         setupCard.addView(Ui.text(a, 12f, Ui.ACCENT, bold = true, value = a.getString(R.string.drive_setup_header)).apply { setPadding(0, 0, 0, dp(8)) })
         if (a.missingBasics().isNotEmpty()) item(a.getString(R.string.drive_setup_location_title), a.getString(R.string.drive_setup_location_why), a.getString(R.string.common_allow)) { a.requestBasics() }
         if (!a.batteryOk()) item(a.getString(R.string.drive_setup_background_title), a.getString(R.string.drive_setup_background_why), a.getString(R.string.common_allow)) { a.batterySettings() }
-        if (!a.autoStartOn() && !Prefs.sp(a).getBoolean(KEY_HIDE_AUTO, false)) {
+        if (rows == 0 && !a.autoStartOn() && !Prefs.sp(a).getBoolean(KEY_HIDE_AUTO, false)) {
             item(a.getString(R.string.drive_setup_auto_title), a.getString(R.string.drive_setup_auto_why), a.getString(R.string.drive_setup_auto_action)) { a.setupAuto() }
             setupCard.addView(Ui.button(a, a.getString(R.string.common_not_now), Ui.Style.QUIET) {
                 Prefs.sp(a).edit().putBoolean(KEY_HIDE_AUTO, true).apply()
@@ -290,6 +406,8 @@ class DrivePage(private val a: MainActivity) : Page {
             })
         }
         setupCard.visibility = if (rows == 0) View.GONE else View.VISIBLE
+        loadMap()
+        updateMe(centre = false)
         tick()
     }
 
@@ -315,6 +433,9 @@ class DrivePage(private val a: MainActivity) : Page {
         if (wasRecording != rec) {
             styleStart(rec)
             wasRecording = rec
+            readyView.visibility = if (rec) View.GONE else View.VISIBLE
+            liveView.visibility = if (rec) View.VISIBLE else View.GONE
+            if (!rec) loadMap()   // a trip just ended: its new bumps
         }
         val gpsOk = rec && LiveState.lastFixAtMs > 0 && SystemClock.elapsedRealtime() - LiveState.lastFixAtMs < 5000
         status.text = when {
@@ -326,8 +447,14 @@ class DrivePage(private val a: MainActivity) : Page {
         val line = SyncChoice.driveLine(a)
         if (syncLine.text.toString() != line) syncLine.text = line
         syncLine.visibility = if (line.isEmpty()) View.GONE else View.VISIBLE
+        val auto = if (a.autoStartOn()) a.getString(R.string.drive_gps_auto, Prefs.carName(a)) else ""
+        if (autoChip.text.toString() != auto) autoChip.text = auto
+        autoChip.visibility = if (auto.isEmpty()) View.INVISIBLE else View.VISIBLE
+        readyHint.text = a.getString(if (a.autoStartOn()) R.string.drive_ready_auto_hint else R.string.drive_ready_hint)
+        if (!rec && ticks % 8 == 0) updateMe(centre = false)
         // Once a second is enough for the network check; off at once when recording stops.
-        if (!rec || ticks++ % 4 == 0) offline.visibility = if (rec && OfflineBanner.show(a)) View.VISIBLE else View.GONE
+        ticks++
+        if (!rec || ticks % 4 == 0) offline.visibility = if (rec && OfflineBanner.show(a)) View.VISIBLE else View.GONE
 
         speed.text = if (gpsOk) a.getString(R.string.drive_speed_kmh, String.format(Locale.US, "%.0f", LiveState.speedKmh))
             else if (rec) a.getString(R.string.drive_speed_unknown) else ""
@@ -340,10 +467,10 @@ class DrivePage(private val a: MainActivity) : Page {
         }
 
         val last = LiveState.lastTripScore
-        afterTrip.visibility = if (!rec && last >= 0) View.VISIBLE else View.GONE
+        lastTripRow.visibility = if (!rec && last >= 0) View.VISIBLE else View.GONE
         if (!rec && last >= 0) {
-            afterTrip.text = a.getString(R.string.drive_last_trip, last, DrivingStats.grade(last))
-            afterTrip.setTextColor(Ui.scoreColor(last))
+            Ui.setScore(lastTripBadge, last)
+            lastTripTitle.text = a.getString(R.string.drive_last_trip_title, DrivingStats.grade(last))
         }
 
         tDist.text = if (rec) a.getString(R.string.drive_km, String.format(Locale.US, "%.1f", LiveState.tripKm)) else "–"
