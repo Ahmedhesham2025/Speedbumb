@@ -298,6 +298,8 @@ class BumpEngine(
     private var joltPeak = 0.0
     /** How long after the trigger the jolt is decided: long enough for its rear axle ([axleWaitMs]). */
     private var joltWaitMs = 0L
+    /** The car's left axis when the jolt triggered (a pick-up before the decision makes the frame be learned again). */
+    private var joltLeft: DoubleArray? = null
     private var refractoryUntilMs = Long.MIN_VALUE / 4
     /**
      * The last jolt was the phone's ([handledReason]) and its handling had begun by then ([EngineConfig.phoneJoltLeadMs]):
@@ -486,6 +488,7 @@ class BumpEngine(
             joltStartMs = tMs
             joltPeak = abs(v)
             joltWaitMs = axleWaitMs(tMs)
+            joltLeft = leftUnit()
             refractoryUntilMs = tMs + cfg.refractoryMs
             phoneJolt = false
         }
@@ -555,7 +558,7 @@ class BumpEngine(
         val n = bufCount
         val t = LongArray(n)
         val v = DoubleArray(n)
-        val left = leftUnit()
+        val left = joltLeft
         val p = if (left == null) null else DoubleArray(n)
         for (i in 0 until n) {
             val k = (bufHead - n + i + BUF) % BUF
