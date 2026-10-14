@@ -38,9 +38,15 @@ object ResearchQueue {
 
     // ---------------------------------------------------------------- trips (BumpService, engine thread)
 
-    /** Research recording started for BumpDb trip [tripId]; [guessed]: it started by itself and may be held. */
-    fun tripStarted(ctx: Context, stamp: String, tripId: Long, guessed: Boolean, now: Long = System.currentTimeMillis()) =
-        quietly("trip start") { edit(ctx) { it.startTrip(stamp, tripId, guessed, now) } }
+    /**
+     * Research recording started for BumpDb trip [tripId]; [guessed]: it started by itself and may be held; [pending]:
+     * an automatic start not confirmed yet (auto.TripConfirm), never uploaded until [tripConfirmed].
+     */
+    fun tripStarted(ctx: Context, stamp: String, tripId: Long, guessed: Boolean, pending: Boolean = false, now: Long = System.currentTimeMillis()) =
+        quietly("trip start") { edit(ctx) { it.startTrip(stamp, tripId, guessed, now, pending) } }
+
+    /** The trip had its 30 s of driving (auto.TripConfirm): it may be uploaded like any other. */
+    fun tripConfirmed(ctx: Context, stamp: String) = quietly("trip confirmed") { edit(ctx) { it.trip(stamp)?.remove("pending") } }
 
     /** Trip end, after a trip that started by itself was held (TripHold.hold): from now on it may be uploaded. */
     fun tripEnded(ctx: Context, stamp: String) = quietly("trip end") { edit(ctx) { it.trip(stamp)?.put("ended", true) } }
@@ -132,8 +138,8 @@ object ResearchQueue {
 
         fun stamps(): List<String> = trips.keys().asSequence().toList()
         fun trip(stamp: String): JSONObject? = trips.optJSONObject(stamp)
-        fun startTrip(stamp: String, id: Long, guessed: Boolean, at: Long) {
-            trips.put(stamp, JSONObject().put("id", id).put("guessed", guessed).put("at", at))
+        fun startTrip(stamp: String, id: Long, guessed: Boolean, at: Long, pending: Boolean = false) {
+            trips.put(stamp, JSONObject().put("id", id).put("guessed", guessed).put("at", at).also { if (pending) it.put("pending", true) })
         }
         /** Never uploaded, and why; the first reason stays. */
         fun skip(stamp: String, why: String) {

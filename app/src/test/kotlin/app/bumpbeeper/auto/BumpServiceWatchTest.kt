@@ -12,6 +12,7 @@ import app.bumpbeeper.BumpDb
 import app.bumpbeeper.BumpService
 import app.bumpbeeper.LiveState
 import app.bumpbeeper.Prefs
+import app.bumpbeeper.research.ResearchQueue
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -165,11 +166,41 @@ class BumpServiceWatchTest {
         gps(0, 34, 40.0)
         settle { BumpService.chimes > 0 }
         assertEquals(1, BumpService.chimes)  // confirmed at 32 s
+        assertEquals(-1L, PendingTrip.get(app))   // confirmed: a restart would keep it
         assertTrue(LiveState.recording)      // now shown as running
         assertTrue(LiveState.tripKm > 0.2)   // the fixes from 0 s are in the trip, not only those after 30 s
         gps(36, 60, 40.0)
         settle()
         assertEquals(1, BumpService.chimes)  // once per trip
+    }
+
+    @Test fun aCarTripKilledBeforeThirtySecondsIsNeverUploadedAndGoesAtTheNextStart() {
+        BumpService.chimes = 0
+        Prefs.setResearchRecording(app, true)
+        startAuto(BumpService.SOURCE_CAR)
+        gps(0, 20, 40.0)
+        settle { ResearchQueue.read(app) { it.stamps().isNotEmpty() } }
+        val stamp = ResearchQueue.read(app) { it.stamps().single() }
+        assertTrue("research files marked pending: the uploader skips them", ResearchQueue.read(app) { it.trip(stamp)!!.optBoolean("pending") })
+        val id = PendingTrip.get(app)
+        assertTrue(id > 0)
+        assertEquals(1, tripCount())
+        // Killed here (no stop, no onDestroy). The next process start (AppStart) cleans up:
+        PendingTrip.cleanUp(app)
+        assertEquals(0, tripCount())
+        assertEquals(-1L, PendingTrip.get(app))
+        assertEquals("unconfirmed", ResearchQueue.read(app) { it.trip(stamp)!!.getString("skip") })
+        assertEquals(0, BumpService.chimes)
+    }
+
+    @Test fun aSilentTripNotConfirmedWithinThreeMinutesStopsAndIsDiscarded() {
+        startAuto(BumpService.SOURCE_CAR)   // parked with the car's Bluetooth on: no driving
+        assertEquals(1, tripCount())
+        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofSeconds(181))
+        settle { tripCount() == 0 }
+        assertEquals(0, tripCount())
+        assertEquals(-1L, PendingTrip.get(app))
+        assertFalse(LiveState.recording)
     }
 
     @Test fun drivingDetectedWhileRecordingStartsNothingNew() {

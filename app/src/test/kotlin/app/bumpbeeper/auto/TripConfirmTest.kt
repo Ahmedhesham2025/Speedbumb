@@ -49,6 +49,16 @@ class TripConfirmTest {
         assertEquals(0, c.drive(60, 40.0))            // no chime later either
     }
 
+    @Test fun notConfirmedWithinThreeMinutesTimesOut() {
+        val c = TripConfirm(automatic = true, startedMs = 10_000)
+        assertEquals(180, c.maxPendingS)
+        assertFalse(c.timedOut(189_999))
+        assertTrue(c.timedOut(190_000))
+        c.confirmNow()
+        assertFalse(c.timedOut(10 * 60_000L))       // confirmed: runs as long as the drive
+        assertFalse(TripConfirm(automatic = false).timedOut(10 * 60_000L))
+    }
+
     @Test fun confirmedTripsUnderThirtySecondsOrTwoHundredMetresAreDiscarded() {
         val c = TripConfirm(automatic = false)
         assertFalse(c.keep(29_999, 5_000.0))

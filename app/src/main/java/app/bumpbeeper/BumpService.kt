@@ -30,6 +30,7 @@ import android.util.Log
 import app.bumpbeeper.auto.AutoDetect
 import app.bumpbeeper.auto.AutoStop
 import app.bumpbeeper.auto.DriveWatcher
+import app.bumpbeeper.auto.PendingTrip
 import app.bumpbeeper.auto.PowerPolicy
 import app.bumpbeeper.auto.TripCheck
 import app.bumpbeeper.auto.TripConfirm
@@ -452,6 +453,17 @@ class BumpService : Service(), SensorEventListener, LocationListener, EngineList
         (getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager).notify(NOTIF_ID, buildNotification(getString(R.string.notif_recording)))
     }
 
+    /** Engine thread: the trip is confirmed. Its research files may now be uploaded; a restart no longer deletes it. */
+    private fun confirmedOnEngine() {
+        research?.let { ResearchQueue.tripConfirmed(this, it.stamp) }
+        PendingTrip.clear(this, tripId)
+    }
+
+    /** Engine thread: not confirmed within TripConfirm.maxPendingS (3 min): stop, and the trip goes. */
+    private val pendingCheck = Runnable {
+        if (confirm?.timedOut(SystemClock.elapsedRealtime()) == true) main.post { if (running && pending) stopRecording(manual = false) }
+    }
+
     /** The watcher saw driving speed. Internal for tests. */
     internal fun drivingDetected() {
         if (watching && !running) startRecording(SOURCE_MOTION)
@@ -569,7 +581,7 @@ class BumpService : Service(), SensorEventListener, LocationListener, EngineList
         if (running) {
             if (source == null && pending) {
                 // Start pressed during a silent automatic trip: it is the user's now, shown at once, no chime.
-                handler?.post { confirm?.confirmNow() }
+                handler?.post { if (confirm?.confirmNow() == true) confirmedOnEngine() }
                 showConfirmed(chime = false)
             }
             if (source == SOURCE_CAR) {
@@ -625,6 +637,8 @@ class BumpService : Service(), SensorEventListener, LocationListener, EngineList
         voice = Voice(this, { ok -> engine?.cfg?.groupWarnings = ok }) { beeper.strong() }
         tripStartMs = System.currentTimeMillis()
         tripId = db.startTrip(tripStartMs)
+        // Killed before it is confirmed: the next start deletes it (PendingTrip.cleanUp).
+        if (silent) PendingTrip.set(this, tripId)
 
         val t = HandlerThread("bump-engine").also { it.start() }
         val h = Handler(t.looper)
@@ -646,7 +660,9 @@ class BumpService : Service(), SensorEventListener, LocationListener, EngineList
                 it.carConnected = source == SOURCE_CAR
                 if (guessed) it.autoStarted(SystemClock.elapsedRealtime())
             }
-            confirm = TripConfirm(automatic = silent)
+            confirm = TripConfirm(automatic = silent, startedMs = SystemClock.elapsedRealtime()).also {
+                if (silent) h.postDelayed(pendingCheck, it.maxPendingS * 1000L)
+            }
             h.postDelayed(parkedCheck, PARKED_CHECK_MS)
             val store = TracingStore(db, null)
             tracingStore = store
@@ -709,7 +725,7 @@ class BumpService : Service(), SensorEventListener, LocationListener, EngineList
         LiveState.researchRunning = research != null
         if (research != null) h.post { accelAvg = RateAverager.forPeriod(periodUs); gyroAvg = RateAverager.forPeriod(periodUs) }
         // The upload queue learns the trip and whether it may be held ("Was this a drive?"). Engine thread: file I/O.
-        research?.let { r -> val id = tripId; h.post { ResearchQueue.tripStarted(this, r.stamp, id, guessed) } }
+        research?.let { r -> val id = tripId; h.post { ResearchQueue.tripStarted(this, r.stamp, id, guessed, pending = silent) } }
 
         Prefs.sp(this).registerOnSharedPreferenceChangeListener(prefListener)
     }
@@ -736,6 +752,7 @@ class BumpService : Service(), SensorEventListener, LocationListener, EngineList
         val wasPending = pending   // never confirmed: ends as silently as it began
         pending = false
         h?.removeCallbacks(parkedCheck)
+        h?.removeCallbacks(pendingCheck)
         h?.post {
             phoneFeed?.stop()
             phoneFeed = null
@@ -766,6 +783,7 @@ class BumpService : Service(), SensorEventListener, LocationListener, EngineList
                 engine?.let { database.endTrip(tripId, endMs, it.trip, monitor?.stats) }
                 monitor?.stats?.let { LiveState.lastTripScore = it.score() }
             }
+            PendingTrip.clear(this, tripId)   // deleted or kept: nothing left for the next start to clean up
             // Started by itself and never confirmed: hold everything that would leave the phone (#49).
             val ask = !short && unconfirmed && engine != null
             if (ask) TripHold.hold(this, tripId)
@@ -925,7 +943,10 @@ class BumpService : Service(), SensorEventListener, LocationListener, EngineList
         val kmh = fix.speedMps * 3.6
         autoStop?.onFix(fix.timeMs, kmh, fix.lat, fix.lon)
         // A silent automatic trip: 30 s at driving speed confirm it (chime, shown as running).
-        if (confirm?.onFix(fix.timeMs, kmh) == true) main.post { if (running && pending) showConfirmed(chime = true) }
+        if (confirm?.onFix(fix.timeMs, kmh) == true) {
+            confirmedOnEngine()
+            main.post { if (running && pending) showConfirmed(chime = true) }
+        }
         if (power.onFix(fix.timeMs, kmh)) applyPower()
         publish(eng, force = false)
     }

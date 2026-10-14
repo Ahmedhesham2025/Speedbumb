@@ -23,6 +23,8 @@ class AppStart : Application() {
         TripHold.installBuiltIns()
         TripHold.installTraining(this)
         TripHold.installResearch()
+        // An automatic trip the app died in before it was confirmed (TripConfirm): deleted, never uploaded.
+        PendingTrip.cleanUp(this)
         if (RestoreReset.noticePending(this)) registerActivityLifecycleCallbacks(RestoreNotice())
         // Research files: 14 days / 2 GB at most, also after research recording was switched off (background thread).
         ResearchFiles.tidyLater(this)
