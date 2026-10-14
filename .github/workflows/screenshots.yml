@@ -78,15 +78,20 @@ jobs:
             # Per-app language (Android 13+); the app process starts fresh for each pass.
             adb shell am force-stop $PKG || true
             adb shell cmd locale set-app-locales $PKG --locales "$1"
-            out=$(adb shell am instrument -w -e class app.bumpbeeper.ScreenshotTest $PKG.test/androidx.test.runner.AndroidJUnitRunner)
+            out=$(adb shell am instrument -w -e class app.bumpbeeper.RedesignShotsTest $PKG.test/androidx.test.runner.AndroidJUnitRunner)
             echo "$out"
             echo "$out" | grep -q "OK (1 test)" || { echo "::error::Screenshot test failed for $1"; return 1; }
             rm -rf pulled
             adb pull "$REMOTE" pulled
+            if [ -n "${2:-}" ]; then for d in pulled/*; do mv "$d" "$d-$2"; done; fi
             cp -r pulled/. shots/
           }
           pass en-US
           pass ar-EG
+          adb shell cmd uimode night yes
+          sleep 5
+          pass en-US dark
+          pass ar-EG dark
           ls -lR shots
           EOF
 
