@@ -23,8 +23,18 @@ class ApproachBeepsTest {
         val beeps = ArrayList<Beep>()
         var t = 0L
         var p = 0.0
+        /** The GPS speed is this late, ms. */
+        var gpsLagMs = 0L
+        /** A voice warning is "spoken" this long after it starts (the app's onDone); null = never. */
+        var spokenAfterMs: Long? = 1500L
+        private var spokenAt = Long.MAX_VALUE
+        /** True speed, m/s, at each sample time. */
+        val speeds = LinkedHashMap<Long, Double>()
         val e = BumpEngine(cfg, MemoryStore(), object : EngineListener {
-            override fun onWarning(w: Warning) { warnings.add(t to w) }
+            override fun onWarning(w: Warning) {
+                warnings.add(t to w)
+                if ((w.sound.voice || w.cluster != null) && spokenAfterMs != null) spokenAt = t + spokenAfterMs!!
+            }
             override fun onApproachBeep(b: Bump, distanceM: Double, speedKmh: Double) {
                 beeps.add(Beep(t, distanceM, Geo.distance(at(p)[0], at(p)[1], b.lat, b.lon)))
             }
@@ -33,14 +43,20 @@ class ApproachBeepsTest {
 
         /** Drive east to [to] m, at [mps] m/s from the speed [speedAt] gives for the position; 50 Hz sensors, 1 Hz GPS. */
         fun drive(to: Double, speedAt: (Double) -> Double) {
+            var prev = Double.NaN
             while (p <= to) {
                 val v = speedAt(p)
+                // The phone lies flat, forward along y: speeding up and braking show on y.
+                val along = if (prev.isNaN()) 0.0 else (v - prev) / 0.02
+                prev = v
+                speeds[t] = v
+                if (t >= spokenAt) { spokenAt = Long.MAX_VALUE; e.warningSpoken() }
                 if (t % 1000 == 0L) at(p).let {
-                    e.onFix(Fix(t, it[0], it[1], v, 90.0, 5.0))
+                    e.onFix(Fix(t, it[0], it[1], speeds[t - gpsLagMs] ?: v, 90.0, 5.0))
                     mon?.onFix(e.lastFix!!)
                 }
-                e.onAccel(t, 0.0, 0.0, 9.81)
-                mon?.onAccel(t, 0.0, 0.0, 9.81)
+                e.onAccel(t, 0.0, along, 9.81)
+                mon?.onAccel(t, 0.0, along, 9.81)
                 t += 20
                 p += v * 0.02
             }
@@ -49,11 +65,11 @@ class ApproachBeepsTest {
 
     /** Still at 50 km/h: beeps from 2.5 s after the warning, faster as the bump nears, none in the last 5 m or after. */
     @Test fun beepsFasterAsTheBumpNears() {
-        val r = Run(listOf(spot(1, 1000.0)))
+        val r = Run(listOf(spot(1, 1000.0, severity = 4.2)))
         r.drive(1100.0) { 14.0 }
         assertEquals(1, r.warnings.size)
         val (warnMs, w) = r.warnings[0]
-        assertEquals(WarnSound.STRONG, w.sound)
+        assertEquals(WarnSound.MODERATE, w.sound)
         assertTrue(r.beeps.size >= 5, "beeps: ${r.beeps.size}")
         assertTrue(r.beeps.first().tMs - warnMs in 2500L..2520L, "first beep ${r.beeps.first().tMs - warnMs} ms after the warning")
         for (i in 1 until r.beeps.size) {
@@ -64,6 +80,39 @@ class ApproachBeepsTest {
         }
         assertTrue(r.beeps.all { it.distM > 5.0 && it.trueM > 3.0 && abs(it.distM - it.trueM) < 15.0 }, "distances")
         assertTrue(r.beeps.last().tMs - r.beeps[r.beeps.size - 2].tMs <= 400, "fast at the end")
+    }
+
+    /** A strong bump: the beeps wait for the voice to end (0.4 s after it), or 6 s if the app never says so. */
+    @Test fun strongWaitsForTheVoice() {
+        for ((spoken, first) in listOf(2000L to 2400L, 3500L to 3900L, null to 6000L)) {
+            val r = Run(listOf(spot(1, 1100.0)))
+            r.spokenAfterMs = spoken
+            r.drive(1200.0) { 12.0 }
+            assertEquals(WarnSound.STRONG, r.warnings.single().second.sound)
+            val after = r.beeps.first().tMs - r.warnings[0].first
+            assertTrue(after in first..first + 20, "spoken after $spoken ms: first beep $after ms after the warning")
+        }
+    }
+
+    /** Braking at 3 m/s² from 45 km/h, the GPS speed 1 s late: no beep once the true speed is under 25 km/h (+0.5 s). */
+    @Test fun brakingStopsThemOnTime() {
+        val r = Run(listOf(spot(1, 1000.0, severity = 4.2)))
+        r.gpsLagMs = 1000
+        r.drive(1100.0) { p -> if (p < 950.0) 12.5 else kotlin.math.sqrt(kotlin.math.max(9.0, 12.5 * 12.5 - 2 * 3.0 * (p - 950.0))) }
+        val crossMs = r.speeds.entries.first { it.value * 3.6 < 25.0 }.key
+        assertTrue(r.beeps.any { it.tMs < crossMs }, "beeps before braking")
+        val late = r.beeps.filter { it.tMs > crossMs + 500 }.map { it.tMs - crossMs }
+        assertTrue(late.isEmpty(), "beeps after the true speed fell under 25 km/h: $late ms")
+    }
+
+    /** Another bump's warning holds the running sequence for 2 s, so they never play over each other. */
+    @Test fun anotherWarningHoldsThem() {
+        val r = Run(listOf(spot(1, 1000.0, severity = 4.2), spot(2, 1080.0, severity = 3.0)))
+        r.drive(1200.0) { 14.0 }
+        assertEquals(2, r.warnings.size)
+        val second = r.warnings[1].first
+        assertTrue(r.beeps.any { it.tMs < second }, "the first sequence ran")
+        assertTrue(r.beeps.none { it.tMs >= second && it.tMs < second + 2000 }, "held: ${r.beeps.map { it.tMs - second }}")
     }
 
     @Test fun intervalCurve() {
@@ -128,7 +177,7 @@ class ApproachBeepsTest {
         val first = r.beeps.filter { it.tMs < split }
         val second = r.beeps.filter { it.tMs >= split }
         assertTrue(first.isNotEmpty() && second.isNotEmpty())
-        assertTrue(second.first().tMs - split >= 2500, "the second sequence waits for its own warning")
+        assertTrue(second.first().tMs - split >= 1900, "the second sequence waits for its own warning (and voice)")
     }
 
     /** Mild one beep, moderate two, strong three and then the voice; a "maybe" one soft beep. */

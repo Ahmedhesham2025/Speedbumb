@@ -939,16 +939,18 @@ class BumpService : Service(), SensorEventListener, LocationListener, EngineList
         val plain = { beeper.warn(w.sound) }
         // The group line couldn't be spoken: play this spot's sound and let the silenced ones warn on their own.
         val groupFallback = { plain(); engine?.ungroup(); Unit }
+        // The voice is over (or never came): approach beeps may follow (engine thread).
+        val spoken = { handler?.post { engine?.warningSpoken() }; Unit }
         val v = voice
         when {
             // Several spots close together: say it once ("3 bumps ahead"); the ones after it stay silent. A group of
             // spots that are all only a "maybe" is not announced: each one plays its own soft beep instead.
-            w.cluster != null && w.cluster!!.anyFull && v != null -> v.cluster(w.cluster!!, groupFallback)
-            w.cluster != null -> groupFallback()
-            w.sound.voice && v != null -> {
+            w.cluster != null && w.cluster!!.anyFull && v != null -> v.cluster(w.cluster!!, groupFallback, spoken)
+            w.cluster != null -> { groupFallback(); handler?.postDelayed({ engine?.warningSpoken() }, Beeper.STRONG_VOICE_MS) }
+            w.sound.voice -> {
                 // Three beeps, then "Strong bump ahead." (no voice: the beeps alone).
                 plain()
-                handler?.postDelayed({ v.strongBump() }, Beeper.STRONG_VOICE_MS)
+                handler?.postDelayed({ if (v != null) v.strongBump(spoken) else engine?.warningSpoken() }, Beeper.STRONG_VOICE_MS)
             }
             else -> plain()
         }
