@@ -334,7 +334,7 @@ class Simulator(seed: Long) {
 
             for (sb in bumps) {
                 val wb = spec.wheelbaseM
-                // The front wheels lift the nose (pitch up), the rear ones a wheelbase later the tail (pitch down).
+                // The front wheels lift the nose, the rear ones a wheelbase later the tail.
                 if (s < sb && sNew >= sb) crossings.add(doubleArrayOf(t, bumpAmp(vNew), 1.0))                  // front axle
                 if (s < sb + wb && sNew >= sb + wb) crossings.add(doubleArrayOf(t, 0.8 * bumpAmp(vNew), -1.0)) // rear axle
             }
@@ -392,7 +392,13 @@ class Simulator(seed: Long) {
                 twist += degToRad(40.0) * (if (k < 0.6) k / 0.6 else 1.0 - (k - 0.6) / 0.6)
             }
             val lateral = v * (yaw)   // sideways (to the left) force from turning
-            for (c in crossings) pitch += c.getOrElse(2) { 1.0 } * swing(t - c[0], 0.05 * c[1], 0.2)
+            for (c in crossings) {
+                // Axle hits (c[2] = +1 front, -1 rear): the nose lifts, then the tail, a 150 ms half-sine each (pitch
+                // about left is nose-down positive). A one-off jolt rocks the car both ways.
+                val tau = t - c[0]
+                pitch += if (c.size < 3) swing(tau, 0.05 * c[1], 0.2)
+                else if (tau >= 0 && tau < 0.15) -c[2] * 0.05 * c[1] * sin(PI * tau / 0.15) else 0.0
+            }
             for (c in holeHits) { roll += c[2] * swing(t - c[0], 0.08 * c[1], 0.15); pitch += swing(t - c[0], 0.015 * c[1], 0.15) }
             for (c in seamHits) pitch += swing(t - c[0], 0.005 * c[1], 0.1)   // a seam is too short to rock the car
             crossings.removeAll { t - it[0] > 0.5 }
