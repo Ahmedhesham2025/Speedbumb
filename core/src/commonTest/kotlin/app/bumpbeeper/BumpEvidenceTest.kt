@@ -67,13 +67,14 @@ class BumpEvidenceTest {
         fun spec(holdAt: Double) =
             DriveSpec(bumpsAt = listOf(800.0), bumpKmh = 20.0, holdsAt = listOf(holdAt to 4.0), holdShake = 0.0, cruiseKmh = 40.0)
         val diag = ArrayList<String>()
-        for (seed in 9L..12L) for (off in listOf(0.2, 0.3, 0.5)) {
+        for (seed in 7L..10L) for (zone in listOf(false, true)) for (off in listOf(-9.0, 0.2, 0.35)) {
             val st = MemoryStore()
-            Simulator(seed).drive(st, spec(800.0 + 2.6 + off * v))
-            diag.add("$seed/$off: " + st.events.filter { it.type == "new_bump" || it.type == "rejected" }.map { it.type + " " + it.note })
-            val st2 = MemoryStore()
-            Simulator(seed).drive(st2, DriveSpec(bumpsAt = listOf(800.0), bumpKmh = 20.0, cruiseKmh = 40.0))
-            diag.add("$seed none: " + st2.events.filter { it.type == "new_bump" || it.type == "rejected" }.map { it.type + " " + it.note })
+            val sp = DriveSpec(
+                bumpsAt = listOf(800.0), bumpKmh = 20.0, cruiseKmh = 50.0, slowZonesAt = if (zone) listOf(800.0) else emptyList(),
+                holdsAt = if (off < 0) emptyList() else listOf(800.0 + 2.6 + off * v to 4.0), holdShake = 0.0,
+            )
+            Simulator(seed).drive(st, sp)
+            diag.add("$seed zone=$zone off=$off: " + st.events.filter { it.type == "new_bump" || it.type == "rejected" }.map { it.type + " " + it.note })
         }
         for (d in diag) println("DIAG $d")
         val store = MemoryStore()
