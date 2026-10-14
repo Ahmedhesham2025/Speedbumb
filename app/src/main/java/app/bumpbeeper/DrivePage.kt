@@ -462,22 +462,32 @@ class DrivePage(private val a: MainActivity) : Page {
 
     /** Big buttons for the passenger who marks what the car just drove over (Settings → Road testing). */
     private fun buildLabelPanel(): View {
-        labelCard = Ui.card(a, 12).apply {
-            background = Ui.rounded(a, Ui.SURFACE, 18, Ui.LINE)
+        // Label mode: the passenger's panel inside the sheet. Child order matters to tick(): the header first, the
+        // "starts with the next recording" line last, everything between shown only while labels are accepted.
+        labelCard = LinearLayout(a).apply {
+            orientation = LinearLayout.VERTICAL
             visibility = View.GONE
         }
-        labelCard.addView(Ui.text(a, 12f, Ui.ACCENT, bold = true, value = a.getString(R.string.drive_label_header)).apply {
-            setPadding(dp(4), 0, 0, 0)
+        labelCard.addView(Ui.text(a, 13f, Ui.WARN, bold = true, value = a.getString(R.string.drive_label_header)).apply {
+            background = Ui.rounded(a, Ui.WARN_CONT, Ui.Shape.CHIP)
+            setPadding(dp(14), dp(10), dp(14), dp(10))
+            setCompoundDrawablesRelative(Ui.icon(a, R.drawable.ic_tag, Ui.WARN, 18), null, null, null)
+            compoundDrawablePadding = dp(10)
         })
-        labelCard.addView(Ui.text(a, 12f, Ui.DIM, value = a.getString(R.string.drive_label_driver_note)).apply {
-            setPadding(dp(4), dp(2), 0, dp(8))
+        labelCard.addView(Ui.text(a, 13f, Ui.DIM, value = a.getString(R.string.drive_label_driver_note)).apply {
+            setPadding(dp(4), dp(8), 0, dp(8))
         })
-        fun btn(kind: String, bg: Int, fg: Int) = Ui.bigButton(a, labelName(kind), bg, fg) { v -> tapLabel(v, kind) }
-        fun gap() = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
-            .apply { topMargin = dp(8) }
+        fun btn(kind: String, bg: Int, fg: Int, heightDp: Int) = Ui.bigButton(a, labelName(kind), bg, fg) { v -> tapLabel(v, kind) }.apply {
+            minHeight = dp(heightDp)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 20f)
+        }
         // No pothole buttons since v2: every spot is a bump (replay reads old pothole labels as bumps).
-        labelCard.addView(Ui.row(a, btn(Labels.BUMP, Ui.ACCENT, Ui.ON_ACCENT), btn(Labels.ROUGH, 0xFFB0BEC5.toInt(), 0xFF101418.toInt())))
-        labelCard.addView(btn(Labels.UNDO, 0xFF3A1F22.toInt(), Ui.RED), gap())
+        labelCard.addView(Ui.row(a,
+            btn(Labels.BUMP, Ui.SEV_MOD, Ui.SEV_MOD_INK, 88),
+            btn(Labels.ROUGH, Ui.SURFACE3, Ui.TEXT, 88),
+            gapDp = 10,
+        ))
+        labelCard.addView(btn(Labels.UNDO, Ui.ERR_CONT, Ui.ERR, Ui.Space.DRIVE_TARGET), full(10))
         labelStatus = Ui.text(a, 15f, Ui.TEXT, bold = true).apply { setPadding(dp(4), dp(10), 0, 0) }
         labelCard.addView(labelStatus)
         // Turned on mid-trip: the service only accepts labels from the next recording on.
@@ -599,7 +609,7 @@ class DrivePage(private val a: MainActivity) : Page {
         lastTripRow.visibility = if (!rec && last >= 0) View.VISIBLE else View.GONE
         if (!rec && last >= 0) {
             Ui.setScore(lastTripBadge, last)
-            lastTripTitle.text = a.getString(R.string.drive_last_trip_title, DrivingStats.grade(last))
+            lastTripTitle.text = a.getString(R.string.drive_last_trip_title, Ui.grade(a, last))
         }
 
         tDist.text = if (rec) a.getString(R.string.drive_km, String.format(Locale.US, "%.1f", LiveState.tripKm)) else "–"
@@ -619,6 +629,10 @@ class DrivePage(private val a: MainActivity) : Page {
         for (i in 1 until labelCard.childCount - 1) labelCard.getChildAt(i).visibility = if (labelsLive) View.VISIBLE else View.GONE
         labelLater.visibility = if (labelsPending) View.VISIBLE else View.GONE
         if (labelsLive) updateLabelStatus()
+        // While a passenger labels, the trip details stay folded away: the buttons sit right above Stop.
+        detailsToggle.visibility = if (labelsLive) View.GONE else View.VISIBLE
+        if (labelsLive) details.visibility = View.GONE
+        else if (details.visibility == View.GONE && Prefs.sp(a).getBoolean(KEY_DETAILS, false)) details.visibility = View.VISIBLE
 
         // No distractions while driving: the banner waits until recording stops.
         val up = if (rec) null else a.pendingUpdate()
