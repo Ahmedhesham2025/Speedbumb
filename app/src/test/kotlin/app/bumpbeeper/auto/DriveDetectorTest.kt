@@ -3,6 +3,7 @@ package app.bumpbeeper.auto
 import app.bumpbeeper.auto.DriveDetector.Action
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -120,20 +121,51 @@ class DriveDetectorTest {
         }
     }
 
-    @Test fun noFixIndoorsGivesUpAfterAMinute() {
+    @Test fun motionThatIsNotWalkingChecksEvenInAPause() {
+        val log = ArrayList<StartLog.Reason>()
+        val d = DriveDetector(log = { log += it })
+        val end = d.walkingMiss(0)                                     // walked to the car: a 3 min pause
+        assertTrue(d.wantsMotionKind(end + 30_000))
+        assertEquals(Action.RETRY_LATER, d.onMotion(end + 30_000, walking = false))   // the last check only just ended
+        assertEquals(end + 60_000, d.retryAtMs)
+        assertEquals(Action.NONE, d.onMotion(end + 60_000, walking = true))           // still walking: the pause holds
+        assertEquals(Action.START_CHECK, d.onMotion(end + 60_000, walking = false))   // the car drives off
+        assertEquals(Action.DRIVING, d.run(((end + 60_000) / 1000).toInt(), 20, 25.0))
+        assertEquals(listOf(StartLog.Reason.MOTION_CHECK, StartLog.Reason.SKIP_SLOW, StartLog.Reason.MOTION_WALKING,
+            StartLog.Reason.MOTION_CHECK, StartLog.Reason.WAITING_FOR_SPEED), log)
+    }
+
+    @Test fun motionAtHomeWithGpsWanderUnderTwentyNeverStarts() {
+        val log = ArrayList<StartLog.Reason>()
+        val d = DriveDetector(log = { log += it })
+        var gpsOnS = 0
+        for (s in 0 until 3600 step 2) {                               // an hour; the phone is moved every 2 min
+            val t = s * 1000L
+            if (s % 120 == 0) d.onMotion(t, walking = false)
+            if (d.checking) {
+                gpsOnS += 2
+                assertNotEquals(Action.DRIVING, d.onFix(t, if (s % 6 == 0) 18.0 else 4.0))   // wander: jumps, never 20
+            }
+            if (s % 10 == 0) d.onTimer(t)
+        }
+        assertTrue(StartLog.Reason.SKIP_SLOW in log)
+        assertTrue("GPS on $gpsOnS s of 3600", gpsOnS < 1800)
+    }
+
+    @Test fun noFixIndoorsGivesUpAfterNinetySeconds() {
         val d = DriveDetector()
         d.onMotion(0)
-        assertEquals(Action.NONE, d.onTimer(50_000))
-        assertEquals(Action.END_CHECK, d.onTimer(60_000))
+        assertEquals(Action.NONE, d.onTimer(80_000))                   // a cold GPS in a car park may need a minute
+        assertEquals(Action.END_CHECK, d.onTimer(90_000))
     }
 
     @Test fun checksWithoutAFixDontGrowThePause() {
         val d = DriveDetector()
         d.onMotion(0)
-        d.onTimer(60_000)                                              // no fix: 3 min pause
-        d.assertPause(60_000, 3)
-        assertEquals(Action.END_CHECK, d.onTimer(240_000 + 60_000))    // no fix again
-        d.assertPause(300_000, 3)                                      // still 3 min, not 6
+        d.onTimer(90_000)                                              // no fix: 3 min pause
+        d.assertPause(90_000, 3)
+        assertEquals(Action.END_CHECK, d.onTimer(270_000 + 90_000))    // no fix again
+        d.assertPause(360_000, 3)                                      // still 3 min, not 6
     }
 
     @Test fun vehicleSpeedChecksAgainAtOnce() {
@@ -149,8 +181,8 @@ class DriveDetectorTest {
         d.onMotion(0)
         assertEquals(Action.END_CHECK, d.run(0, 800, 17.0))            // a bus crawling: 5 windows of 150 s
         d.assertPause(750_000, 3)
-        d.onTimer(990_000)                                             // that check: no fix
-        d.assertPause(990_000, 3)
+        d.onTimer(1_020_000)                                           // that check: no fix
+        d.assertPause(1_020_000, 3)
     }
 
     @Test fun pauseDecaysAfterThirtyMinutesWithoutAMiss() {
@@ -161,7 +193,7 @@ class DriveDetectorTest {
         assertEquals(Action.END_CHECK, d.onTimer(end + 330_000))       // second miss: next pause would be 6
         end += 330_000
         d.assertPause(end, 6)
-        d.onTimer(end + 6 * 60_000L + 60_000)                          // no-fix check, no growth
+        d.onTimer(end + 6 * 60_000L + 90_000)                          // no-fix check, no growth
         end = d.walkingMiss(end + 40 * 60_000L)                        // 40 min later, walking again
         d.assertPause(end, 3)                                          // decayed to 3 min
     }
@@ -176,11 +208,11 @@ class DriveDetectorTest {
     @Test fun passiveFixAtSpeedChecksEvenInAPause() {
         val d = DriveDetector()
         d.onMotion(0)
-        d.onTimer(60_000)                                              // gave up: no fix
-        assertEquals(Action.NONE, d.onPassiveFix(70_000, 70_000, 10.0))
-        assertEquals(Action.START_CHECK, d.onPassiveFix(80_000, 80_000, 50.0))
+        d.onTimer(90_000)                                              // gave up: no fix
+        assertEquals(Action.NONE, d.onPassiveFix(100_000, 100_000, 10.0))
+        assertEquals(Action.START_CHECK, d.onPassiveFix(110_000, 110_000, 50.0))
         assertTrue(d.checking)
-        assertEquals(Action.DRIVING, d.run(82, 60, 50.0))
+        assertEquals(Action.DRIVING, d.run(112, 60, 50.0))
     }
 
     @Test fun stalePassiveFixesAreIgnored() {

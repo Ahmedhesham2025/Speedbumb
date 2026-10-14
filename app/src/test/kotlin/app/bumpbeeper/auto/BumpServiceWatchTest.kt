@@ -8,6 +8,7 @@ import android.content.Intent
 import android.location.Location
 import android.location.LocationManager
 import android.os.Looper
+import android.os.SystemClock
 import app.bumpbeeper.BumpDb
 import app.bumpbeeper.BumpService
 import app.bumpbeeper.LiveState
@@ -201,6 +202,47 @@ class BumpServiceWatchTest {
         assertEquals(0, tripCount())
         assertEquals(-1L, PendingTrip.get(app))
         assertFalse(LiveState.recording)
+    }
+
+    /** The phone parts of the drive watcher: the test moves the phone and feeds the GPS check. */
+    private class Phone : DriveWatcher.Hardware {
+        var motion: (() -> Unit)? = null
+        var gps: ((Long, Double) -> Unit)? = null
+        override fun armMotion(onMotion: () -> Unit) { motion = onMotion }
+        override fun cancelMotion() { motion = null }
+        override fun startPassive(onFix: (Long, Double) -> Unit) {}
+        override fun stopPassive() {}
+        override fun startGps(onFix: (Long, Double) -> Unit) { gps = onFix }
+        override fun stopGps() { gps = null }
+        override fun acquireWake(timeoutMs: Long) {}
+        override fun releaseWake() {}
+        override fun sampleMotion(ms: Long, onDone: (Boolean) -> Unit) = onDone(false)
+        override fun cancelSample() {}
+    }
+
+    @Test fun motionThenTwentyFiveForFortySecondsWithoutBluetoothIsAConfirmedTrip() {
+        BumpService.chimes = 0
+        val phone = Phone()
+        BumpService.watchHardware = phone
+        try {
+            send("app.bumpbeeper.WATCH")
+            phone.motion!!.invoke()                       // significant motion: a short GPS check
+            val check = phone.gps!!
+            val now = SystemClock.elapsedRealtime()
+            check(now, 25.0)
+            check(now + 2_000, 25.0)                      // driving speed twice: recording starts, silently
+            assertNull(phone.gps)
+            assertEquals(1, tripCount())
+            assertFalse(LiveState.recording)
+            gps(0, 40, 25.0)                              // the recording's own GPS: 40 s at 25 km/h
+            settle { BumpService.chimes > 0 }
+            assertEquals(1, BumpService.chimes)           // confirmed after 30 s
+            assertTrue(LiveState.recording)
+            val log = StartLog.read(app).list.map { it.second }
+            assertTrue(log.toString(), log.containsAll(listOf(StartLog.Reason.MOTION_CHECK, StartLog.Reason.STARTED_MOTION, StartLog.Reason.CONFIRMED)))
+        } finally {
+            BumpService.watchHardware = null
+        }
     }
 
     @Test fun drivingDetectedWhileRecordingStartsNothingNew() {

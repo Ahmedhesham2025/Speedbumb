@@ -42,7 +42,7 @@ class SpeedGate(
  *  - Significant motion (the phone moved) starts a GPS check of [checkMs].
  *  - Driving speed ([SpeedGate.startKmh], two fixes in a row) is enough: [Action.DRIVING] starts a silent recording
  *    at once, so no data is lost; BumpService confirms it only after 30 s of driving ([TripConfirm]).
- *  - A check that saw [SpeedGate.resetKmh] or more is in a vehicle (a slow car-park exit, a jam): no back-off, the
+ *  - A check that saw [SpeedGate.resetKmh] or more (two fixes in a row) is in a vehicle (a slow car-park exit, a jam): no back-off, the
  *    check simply goes on, up to [maxFastRechecks] more windows; after that a [firstCooldownMs] pause.
  *  - No fix at all within [noFixMs] (indoors, a cold GPS in an underground car park) doesn't grow the pause.
  *  - Only a real miss (fixes, all slow: walking around) grows the pause, [firstCooldownMs] doubling up to
@@ -81,6 +81,7 @@ class DriveDetector(
     private var lastCheckEndMs = Long.MIN_VALUE / 2
     private var gotFix = false
     private var sawVehicleSpeed = false
+    private var lastFast = false
     private var fastRechecks = 0
     private var cooldownUntilMs = Long.MIN_VALUE
     private var cooldownMs = firstCooldownMs
@@ -119,7 +120,11 @@ class DriveDetector(
     fun onFix(tMs: Long, kmh: Double): Action {
         if (!checking) return Action.NONE
         gotFix = true
-        if (kmh >= gate.resetKmh && !sawVehicleSpeed) {
+        // Two fixes in a row: one GPS jump at home (wander) is not a vehicle.
+        val fast = kmh >= gate.resetKmh
+        val twice = fast && lastFast
+        lastFast = fast
+        if (twice && !sawVehicleSpeed) {
             sawVehicleSpeed = true
             log(StartLog.Reason.WAITING_FOR_SPEED)
         }
@@ -178,6 +183,7 @@ class DriveDetector(
         this.quick = quick
         checkStartMs = nowMs
         gotFix = false
+        lastFast = false
         sawVehicleSpeed = false
         fastRechecks = 0
         gate.reset()

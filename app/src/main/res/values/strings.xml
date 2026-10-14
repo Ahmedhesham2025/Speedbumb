@@ -359,7 +359,7 @@
     <string name="auto_detect_hint">Notices that you are driving without Bluetooth, using the motion sensor and short GPS checks. Uses your location in the background.</string>
     <string name="auto_status_off">Off</string>
     <string name="auto_status_needs_permission">Needs a permission before it can work</string>
-    <string name="auto_status_google">On: Google\'s driving detection</string>
+    <string name="auto_status_google">On: Google\'s driving detection and the motion sensor</string>
     <string name="auto_status_motion">On: motion sensor and short GPS checks</string>
     <string name="auto_status_passive">On, but limited: this phone has no motion sensor, so it starts only from other apps\' location updates or your car\'s Bluetooth</string>
     <string name="auto_status_not_running">On, but Android stopped it. Tap Fix to try again.</string>
