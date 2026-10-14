@@ -8,8 +8,10 @@ import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 /** Approach beeps after a bump's warning while the driver is still too fast, and the beeps of each sound. */
+/** A point [p] m east along the test road. */
+private fun at(p: Double) = Geo.move(30.0444, 31.2357, 90.0, p)
+
 class ApproachBeepsTest {
-    private fun at(p: Double) = Geo.move(30.0444, 31.2357, 90.0, p)
     private fun spot(id: Long, p: Double, severity: Double = 7.0, devices: Int = 3) =
         at(p).let { RemoteSpot(id, it[0], it[1], 90.0, BumpKind.BUMP, Side.RIGHT, severity, devices) }
 
