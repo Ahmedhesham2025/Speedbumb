@@ -56,7 +56,8 @@ class MainActivity : Activity() {
 
     private val ui = Handler(Looper.getMainLooper())
     private lateinit var content: FrameLayout
-    private val pages = arrayOfNulls<Page>(4)
+    /** The four tabs (internal: the screenshot test opens pages inside them). */
+    internal val pages = arrayOfNulls<Page>(4)
     private val tabs = ArrayList<Pair<ImageView, TextView>>()
     private var current = -1
     private var mapPage: MapPage? = null

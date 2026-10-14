@@ -260,7 +260,8 @@ class TripsPage(private val a: MainActivity) : Page, BackHandler {
         addView(MeterView(a).apply { value = maxOf(v, 0) }, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(6)).apply { topMargin = dp(4) })
     }
 
-    private fun details(tr: BumpDb.TripRow) {
+    /** Opens a trip's summary page (also used by the screenshot test). */
+    internal fun details(tr: BumpDb.TripRow) {
         Thread {
             val db = BumpDb(a.applicationContext)
             val events = try { db.tripEvents(tr.id) } finally { db.close() }
