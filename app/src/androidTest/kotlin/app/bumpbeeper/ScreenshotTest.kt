@@ -73,6 +73,7 @@ class ScreenshotTest {
                     scenario.onActivity { it.select(tab) }
                     settle(8000)   // style and tiles from OpenFreeMap
                     shot(dir, name)
+                    mapCheck(scenario, tab, File(dir, "$name.txt"))
                 }
             } finally {
                 network(false)
@@ -170,6 +171,23 @@ class ScreenshotTest {
         scenario.onActivity { (it.pages[MainActivity.TAB_SETTINGS] as SettingsPage).back() }
         scenario.onActivity { it.select(MainActivity.TAB_DRIVE) }
         settle(800)
+    }
+
+    /**
+     * Next to a street-map shot, a line saying what the map had (style loaded, spots, your position, camera, pins
+     * drawn), so a blank or pin-less shot can be explained. Read through the page's map, as it was drawn.
+     */
+    private fun mapCheck(scenario: ActivityScenario<MainActivity>, tab: Int, out: File) {
+        var line = "no map"
+        scenario.onActivity { a ->
+            line = try {
+                val page = a.pages[tab]!!
+                val map = page.javaClass.getDeclaredField("map").apply { isAccessible = true }.get(page)!!
+                map.javaClass.methods.first { it.name.startsWith("debug") }.invoke(map).toString()
+            } catch (e: Exception) { "no map check: $e" }
+        }
+        out.writeText(line + "
+")
     }
 
     /** Wi-Fi and mobile data on or off (the workflow starts with both off). */
