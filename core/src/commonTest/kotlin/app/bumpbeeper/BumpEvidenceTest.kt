@@ -61,26 +61,27 @@ class BumpEvidenceTest {
     }
 
     @Test fun aClearPairOverridesALaterHandling() {
-        // A real bump at the end of a slow zone (braked from 25 to 20 km/h: both axles, pitch up then down), the phone
-        // lifted without a shake 0.35 s after the rear axle and seen before the decision: the car's signature wins.
-        // The simulator's GPS is 0.8 s late and its rear hit 0.8 of the front: its pairs score 0.8-0.9, so here the
-        // score gate is 0.75; every other gate is the default.
-        val cfg = EngineConfig().apply { overrideMinScore = 0.75 }
+        // A real bump after braking from 50 to 20 km/h (both axles, nose up then tail up), and the phone lifted without
+        // a shake 0.35 s after the rear axle, seen before the decision: the car's signature wins, with every default gate.
         val v = 20 / 3.6
-        fun spec(holdAt: Double) = DriveSpec(
-            bumpsAt = listOf(800.0), bumpKmh = 20.0, slowZonesAt = listOf(800.0), cruiseKmh = 50.0,
-            holdsAt = listOf(holdAt to 4.0), holdShake = 0.0,
-        )
+        fun spec(holdAt: Double) =
+            DriveSpec(bumpsAt = listOf(1500.0), bumpKmh = 20.0, cruiseKmh = 50.0, holdsAt = listOf(holdAt to 4.0), holdShake = 0.0)
         val store = MemoryStore()
-        val r = Simulator(9).drive(store, spec(800.0 + 2.6 + 0.35 * v), cfg)
+        val r = Simulator(9).drive(store, spec(1500.0 + 2.6 + 0.35 * v))
         val learned = notes(store, "new_bump")
         assertEquals(1, r.newBumps, "${r.rejected} ${notes(store, "rejected")}")
         assertTrue(learned.single().contains("axle=both") && learned.single().contains("over_handled"), "$learned")
         // Picked up a second before the front axle: the same pair stays the phone's.
         val early = MemoryStore()
-        val e = Simulator(9).drive(early, spec(800.0 - 1.0 * v), cfg)
+        val e = Simulator(9).drive(early, spec(1500.0 - 1.0 * v))
         assertEquals(0, e.newBumps, "${e.rejected}")
         assertTrue(notes(early, "rejected").any { it.startsWith("handled") }, "${notes(early, "rejected")}")
+        // No gyroscope: never.
+        val g = MemoryStore()
+        val n = Simulator(9).drive(g, spec(1500.0 + 2.6 + 0.35 * v).let {
+            DriveSpec(bumpsAt = it.bumpsAt, bumpKmh = 20.0, cruiseKmh = 50.0, holdsAt = it.holdsAt, holdShake = 0.0, gyro = false)
+        })
+        assertTrue(notes(g, "new_bump").none { "over_handled" in it }, "${notes(g, "new_bump")} ${notes(g, "rejected")} ${n.rejected}")
     }
 
     @Test fun theWheelbaseIsLearned() {
