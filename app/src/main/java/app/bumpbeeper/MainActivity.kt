@@ -11,7 +11,6 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.content.res.ColorStateList
 import android.content.res.Configuration
-import android.graphics.Typeface
 import android.location.Location
 import android.location.LocationManager
 import android.net.Uri
@@ -225,7 +224,7 @@ class MainActivity : Activity() {
             img.imageTintList = ColorStateList.valueOf(if (on) Ui.ON_PRIMARY_CONT else Ui.DIM)
             img.background = if (on) Ui.rounded(this, Ui.PRIMARY_CONT, 16) else null
             label.setTextColor(if (on) Ui.TEXT else Ui.DIM)
-            label.typeface = if (on) Typeface.DEFAULT_BOLD else Typeface.DEFAULT
+            label.typeface = Ui.font(this, if (on) 700 else 500)
         }
         page.onShow()
     }

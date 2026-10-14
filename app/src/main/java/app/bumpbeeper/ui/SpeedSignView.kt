@@ -3,7 +3,6 @@ package app.bumpbeeper.ui
 import android.content.Context
 import android.graphics.Canvas
 import android.graphics.Paint
-import android.graphics.Typeface
 import android.view.View
 
 /** A round speed-limit sign like the real ones: white disc, red ring, black number. Drawn in code, no images. */
@@ -13,7 +12,7 @@ class SpeedSignView(ctx: Context) : View(ctx) {
     private val num = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = 0xFF111111.toInt()
         textAlign = Paint.Align.CENTER
-        typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+        typeface = app.bumpbeeper.Ui.font(ctx, 700)
     }
 
     var value: String = LiveLimitText.UNKNOWN
