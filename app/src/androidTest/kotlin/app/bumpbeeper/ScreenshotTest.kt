@@ -183,7 +183,7 @@ class ScreenshotTest {
             line = try {
                 val page = a.pages[tab]!!
                 val map = page.javaClass.getDeclaredField("map").apply { isAccessible = true }.get(page)!!
-                map.javaClass.methods.first { it.name.startsWith("debug") }.invoke(map).toString()
+                map.javaClass.methods.first { it.name.startsWith("debug") && it.returnType == String::class.java && it.parameterCount == 0 }.invoke(map).toString()
             } catch (e: Exception) { "no map check: $e" }
         }
         out.writeText(line + System.lineSeparator())
