@@ -546,7 +546,10 @@ class BumpEngine(
             else -> 0
         }
         if (ax?.verdict == AxleVerdict.BOTH) vehicle.learn(ax.dtMs, fix.speedMps)
-        registerHit(tMs, pos[0], pos[1], speedKmh, peak, slowdownKmh, shape, grade, note)
+        // For the shared map: the hit's vibration dose (SeverityIndex) and how clearly both axles showed.
+        val sev = SeverityIndex.of(bufTimes(), bufVerticals(), tMs, fix.speedMps).index
+        val hitInfo = HitInfo(sev.takeIf { !it.isNaN() }, ax?.score?.takeIf { !it.isNaN() }?.coerceIn(0.0, 1.0))
+        registerHit(tMs, pos[0], pos[1], speedKmh, peak, slowdownKmh, shape, grade, note, hitInfo)
     }
 
     /** The decision wait for a trigger at [tMs]: [AxleSignature.decideWindowMs] at the lag-corrected speed. */
@@ -559,18 +562,20 @@ class BumpEngine(
     /** The two-axle signature of the jolt at [trig], from the sample buffer (pitch nose-up; none until the frame is known). */
     private fun axleOf(trig: Long, speedMps: Double): AxleResult {
         val n = bufCount
-        val t = LongArray(n)
-        val v = DoubleArray(n)
         val left = joltLeft
-        val p = if (left == null) null else DoubleArray(n)
-        for (i in 0 until n) {
+        val p = if (left == null) null else DoubleArray(n) { i ->
             val k = (bufHead - n + i + BUF) % BUF
-            t[i] = bufT[k]
-            v[i] = bufV[k]
-            if (p != null && left != null) p[i] = -(bufGx[k] * left[0] + bufGy[k] * left[1] + bufGz[k] * left[2])
+            -(bufGx[k] * left[0] + bufGy[k] * left[1] + bufGz[k] * left[2])
         }
-        return AxleSignature.analyze(t, v, p, trig, speedMps, vehicle.wheelbaseM, fixes.toList(), cfg.axle)
+        return AxleSignature.analyze(bufTimes(), bufVerticals(), p, trig, speedMps, vehicle.wheelbaseM, fixes.toList(), cfg.axle)
     }
+
+    /** The sample buffer's times and vertical jolts, oldest first. */
+    private fun bufTimes() = LongArray(bufCount) { bufT[(bufHead - bufCount + it + BUF) % BUF] }
+    private fun bufVerticals() = DoubleArray(bufCount) { bufV[(bufHead - bufCount + it + BUF) % BUF] }
+
+    /** What a hit tells the shared map besides its peak ([Observation.sevIndex], [Observation.axle]); null = unknown. */
+    private class HitInfo(val sevIndex: Double?, val axle: Double?)
 
     /** The car's left axis (up × forward) in phone axes; null without gyroscope or a known forward direction. */
     private fun leftUnit(): DoubleArray? {
@@ -734,7 +739,7 @@ class BumpEngine(
     private fun registerHit(
         tMs: Long, lat: Double, lon: Double, speedKmh: Double, peak: Double, slowdownKmh: Double, shape: JoltShape,
         /** 2: confirmed by the car's signature, 1: some evidence, 0: none ([EngineConfig.axle]); [evidence] for the log. */
-        grade: Int, evidence: String,
+        grade: Int, evidence: String, info: HitInfo,
     ) {
         // Nearest known bump within matchRadius, same direction of travel.
         var best: Bump? = null
@@ -774,7 +779,7 @@ class BumpEngine(
             trip.newBumps++
             trip.hits++
             log("new_bump", b.id, lat, lon, speedKmh, peak, slowdownKmh, 0.0, "bump ${bandNote(b)} ${shape.describe()}$evidence")
-            observe("jolt", lat, lon, speedKmh, peak, shape.score, now)
+            observe("jolt", lat, lon, speedKmh, peak, shape.score, now, info = info)
             sample("learned", null, tMs, speedKmh, peak, shape, null, lat, lon, b.id)
             if (remoteAll.isNotEmpty()) dedupRemote()   // the new spot of your own replaces its shared twin from now on
             listener.onNewBump(b)
@@ -841,7 +846,7 @@ class BumpEngine(
             "hit", b.id, lat, lon, speedKmh, peak, slowdownKmh, bestD,
             "hits ${b.hits}/${b.passes} now=bump ${bandNote(b)} ${shape.describe()}$evidence",
         )
-        observe("known_hit", lat, lon, speedKmh, peak, shape.score, now)
+        observe("known_hit", lat, lon, speedKmh, peak, shape.score, now, info = info)
         sample("hit", null, tMs, speedKmh, peak, shape, null, lat, lon, b.id)
         listener.onKnownBumpHit(b)
     }
@@ -927,11 +932,17 @@ class BumpEngine(
             return   // a broken cache must not stop the engine; keep what we had
         }
         remoteAll = spots.filter { it.id in 0 until Long.MAX_VALUE / 2 }.map { r ->
-            // Felt once per phone that confirmed it: two phones make it FULL. A shared pothole is an old (soft) spot.
-            @Suppress("DEPRECATION") val old = r.kind == BumpKind.POTHOLE
+            // v2: its hits (one phone twice counts) and the server's confidence and band, where it gives them; an old
+            // pothole spot (legacy) is soft until felt. Without v2 fields: one hit per phone, the band from the index.
+            @Suppress("DEPRECATION") val old = r.legacy || r.kind == BumpKind.POTHOLE
+            val hits = when (r.confidence) {
+                Confidence.FULL -> max(r.nHits, 2)
+                Confidence.SOFT -> min(r.nHits, 1)
+                null -> r.nHits
+            }.coerceAtLeast(0)
             Bump(
-                -2L - r.id, r.lat, r.lon, r.heading, hits = r.nDevices.coerceAtLeast(0), passes = 0, misses = 0, nPos = 0,
-                firstSeen = 0, lastSeen = 0, peakAvg = r.severity, sevIndex = r.severity, legacy = old,
+                -2L - r.id, r.lat, r.lon, r.heading, hits = hits, passes = 0, misses = 0, nPos = 0,
+                firstSeen = 0, lastSeen = 0, peakAvg = r.severity, sevIndex = r.severity, legacy = old, lastBand = r.band,
             )
         }
         dedupRemote()
@@ -953,12 +964,12 @@ class BumpEngine(
 
     private fun observe(
         kind: String, lat: Double, lon: Double, speedKmh: Double, peak: Double, shapeScore: Double, now: Long,
-        dir: Double = heading,
+        dir: Double = heading, info: HitInfo? = null,
     ) {
         val sink = observationSink ?: return
         try {
             // The shape score goes up as a diagnostic in the old kind_score field; bumps have no side (0).
-            sink.record(Observation(randomUuid(), kind, lat, lon, dir, speedKmh, peak, shapeScore, 0.0, now))
+            sink.record(Observation(randomUuid(), kind, lat, lon, dir, speedKmh, peak, shapeScore, 0.0, now, info?.sevIndex, info?.axle))
         } catch (e: Exception) {
             // A full or broken outbox must not stop detection.
         }

@@ -697,7 +697,7 @@ class BumpService : Service(), SensorEventListener, LocationListener, EngineList
             // "Help improve detection" (separate opt-in): jolt samples with their signal window, no coordinates uploaded.
             training = if (Prefs.trainingActive(this)) TrainingSink(Prefs.placement(this), System.currentTimeMillis(), batteryPercent()) else null
             val eng = BumpEngine(cfg, store, this, { System.currentTimeMillis() }, tripId, CachedSpotSource(syncStore), outbox,
-                training ?: JoltSampleSink.NONE)
+                training ?: JoltSampleSink.NONE, Prefs.vehicle(this))
             eng.cfg.groupWarnings = voice?.speaks == true
             engine = eng
             val logStore = store
@@ -784,6 +784,8 @@ class BumpService : Service(), SensorEventListener, LocationListener, EngineList
             val tc = confirm
             confirm = null
             val short = tc == null || !tc.keep(endMs - startMs, distM)
+            // The car's wheelbase learned on this trip carries over to the next one (also from a short trip: the car is the same).
+            engine?.let { Prefs.setVehicle(this, it.vehicle) }
             if (short) {
                 try {
                     database.deleteSpotsOnlyFrom(tripId)
