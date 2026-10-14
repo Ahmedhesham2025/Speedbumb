@@ -6,9 +6,13 @@ import android.app.Activity
 import android.app.AlertDialog
 import android.app.Dialog
 import android.bluetooth.BluetoothManager
+import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.content.res.ColorStateList
+import android.content.res.Configuration
+import android.graphics.Typeface
+import android.location.Location
 import android.location.LocationManager
 import android.net.Uri
 import android.os.Build
@@ -80,7 +84,20 @@ class MainActivity : Activity() {
         }
     }
 
+    /**
+     * Arabic with Western digits ("ar-EG-u-nu-latn"): numbers read the same in both languages and match the ones
+     * the app writes with Locale.US (speeds, distances, scores). Strings, dates and layout direction stay Arabic.
+     */
+    override fun attachBaseContext(newBase: Context) {
+        super.attachBaseContext(Ui.latinDigits(newBase))
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
+        // Light or dark from the system setting, before any view or dialog is built. The manifest's theme only covers
+        // the launch window; this one follows the setting, colours the dialogs and the system bars' icons.
+        Ui.dark = (resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) != Configuration.UI_MODE_NIGHT_NO
+        setTheme(R.style.Theme_BumpBeeper)
+        Ui.res = resources   // units ("min", "km") in the app's language
         super.onCreate(savedInstanceState)
         CrashLog.install(this)   // first, so a crash while building the screen is kept too
         Sync.onAppStart(this)    // no network until the user answered the shared-map question
@@ -149,28 +166,34 @@ class MainActivity : Activity() {
 
     private fun buildShell(): View {
         content = FrameLayout(this)
+        // Material 3 navigation bar: 80 dp, the selected tab's icon on a pill.
         val nav = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             setBackgroundColor(Ui.SURFACE)
-            setPadding(0, Ui.dp(this@MainActivity, 6), 0, Ui.dp(this@MainActivity, 6))
+            elevation = Ui.dpf(this@MainActivity, 3f)
+            setPadding(0, Ui.dp(this@MainActivity, 12), 0, Ui.dp(this@MainActivity, 12))
         }
         listOf(
             R.string.tab_drive to R.drawable.ic_nav_drive, R.string.tab_map to R.drawable.ic_nav_map,
             R.string.tab_trips to R.drawable.ic_nav_trips, R.string.tab_settings to R.drawable.ic_nav_settings,
         ).forEachIndexed { i, (nameRes, icon) ->
             val name = getString(nameRes)
-            val img = ImageView(this).apply { setImageResource(icon) }
+            val img = ImageView(this).apply {
+                setImageResource(icon)
+                scaleType = ImageView.ScaleType.CENTER
+            }
             val label = TextView(this).apply {
                 text = name
                 setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
                 gravity = Gravity.CENTER
+                setPadding(0, Ui.dp(this@MainActivity, 4), 0, 0)
             }
             val item = LinearLayout(this).apply {
                 orientation = LinearLayout.VERTICAL
                 gravity = Gravity.CENTER
                 isClickable = true
                 setOnClickListener { select(i) }
-                addView(img, LinearLayout.LayoutParams(Ui.dp(this@MainActivity, 24), Ui.dp(this@MainActivity, 24)))
+                addView(img, LinearLayout.LayoutParams(Ui.dp(this@MainActivity, 64), Ui.dp(this@MainActivity, 32)))
                 addView(label)
                 contentDescription = name
             }
@@ -198,14 +221,24 @@ class MainActivity : Activity() {
             current = tab
         }
         tabs.forEachIndexed { i, (img, label) ->
-            val c = if (i == tab) Ui.ACCENT else Ui.DIM
-            img.imageTintList = ColorStateList.valueOf(c)
-            label.setTextColor(c)
+            val on = i == tab
+            img.imageTintList = ColorStateList.valueOf(if (on) Ui.ON_PRIMARY_CONT else Ui.DIM)
+            img.background = if (on) Ui.rounded(this, Ui.PRIMARY_CONT, 16) else null
+            label.setTextColor(if (on) Ui.TEXT else Ui.DIM)
+            label.typeface = if (on) Typeface.DEFAULT_BOLD else Typeface.DEFAULT
         }
         page.onShow()
     }
 
     fun refreshMap() { mapPage?.onShow() }
+
+    /** Back first closes what a tab has open inside it (a trip's summary), then leaves the app as usual. */
+    @Deprecated("Framework Activity back API; this app targets the classic back behaviour")
+    override fun onBackPressed() {
+        if ((pages.getOrNull(current) as? BackHandler)?.back() == true) return
+        @Suppress("DEPRECATION")
+        super.onBackPressed()
+    }
 
     // ---------------------------------------------------------------- shared map question
 
@@ -291,6 +324,18 @@ class MainActivity : Activity() {
     fun toast(msg: String) = Toast.makeText(this, msg, Toast.LENGTH_LONG).show()
 
     fun has(p: String) = checkSelfPermission(p) == PackageManager.PERMISSION_GRANTED
+
+    /**
+     * The newest position Android already has (no new GPS request): while recording it is the service's own fix,
+     * at most a second old. Null without a location permission.
+     */
+    fun lastLocation(): Location? {
+        if (!has(Manifest.permission.ACCESS_FINE_LOCATION) && !has(Manifest.permission.ACCESS_COARSE_LOCATION)) return null
+        val lm = getSystemService(LOCATION_SERVICE) as LocationManager
+        return listOf(LocationManager.GPS_PROVIDER, LocationManager.NETWORK_PROVIDER, LocationManager.PASSIVE_PROVIDER)
+            .mapNotNull { p -> try { lm.getLastKnownLocation(p) } catch (e: Exception) { null } }
+            .maxByOrNull { it.time }
+    }
 
     // ---------------------------------------------------------------- start / stop
 

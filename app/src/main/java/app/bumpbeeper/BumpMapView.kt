@@ -2,7 +2,9 @@ package app.bumpbeeper
 
 import android.content.Context
 import android.graphics.Canvas
+import android.graphics.DashPathEffect
 import android.graphics.Paint
+import android.graphics.Typeface
 import android.util.TypedValue
 import android.view.MotionEvent
 import android.view.View
@@ -16,7 +18,7 @@ import kotlin.math.sin
 
 /**
  * A simple offline map: your bumps as dots around you (no streets: the app has no internet access).
- * Orange = speed bump, red = pothole, grey = not sure yet, hollow = muted. The little tick shows the travel direction.
+ * Pins in the severity colours (strong ones bigger, with "!"), a dashed ring for a "maybe", hollow = muted. The little tick shows the travel direction.
  * Drag to move, +/- buttons (outside this view) to zoom, tap a dot to select it.
  */
 class BumpMapView(ctx: Context) : View(ctx) {
@@ -38,25 +40,37 @@ class BumpMapView(ctx: Context) : View(ctx) {
         set(v) { field = v.coerceIn(50.0, 50_000.0); invalidate() }
 
     private val density = resources.displayMetrics.density
-    private val bg = Paint().apply { color = 0xFF1C1F24.toInt() }
-    private val grid = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = 0x33FFFFFF; strokeWidth = density; style = Paint.Style.STROKE }
+    private val bg = Paint().apply { color = Ui.SURFACE2 }
+    private val grid = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Ui.LINE; strokeWidth = density; style = Paint.Style.STROKE }
     private val fill = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
     private val ring = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeWidth = 2f * density }
-    private val tick = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeWidth = 2f * density; color = 0xCCFFFFFF.toInt() }
+    private val tick = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeWidth = 2f * density; color = Ui.DIM }
     private val text = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = 0xFFB0BEC5.toInt()
+        color = Ui.DIM
         textSize = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_SP, 11f, resources.displayMetrics)
     }
 
     /** The band edges [colorOf] judges by (not a setting). */
     private val bands = EngineConfig()
 
-    /** Grey for a "maybe" spot, red for a strong bump, orange for the others. */
+    /** The severity colours: mild, moderate, strong; the "maybe" grey (drawn as a dashed ring); muted grey. */
     fun colorOf(b: Bump): Int = when {
-        b.confidence(bands) == Confidence.SOFT -> 0xFFB0BEC5.toInt()
-        b.severity(bands) == Severity.STRONG -> 0xFFEF5350.toInt()
-        else -> 0xFFFFA726.toInt()
+        b.isMuted(cfg) -> Ui.SEV_MUTED
+        b.confidence(bands) == Confidence.SOFT -> Ui.SEV_MAYBE
+        else -> Ui.sevColor(b.severity(bands))
     }
+
+    private val dash = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.STROKE
+        strokeWidth = 2.5f * density
+        pathEffect = DashPathEffect(floatArrayOf(4f * density, 3f * density), 0f)
+    }
+    private val bang = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        textAlign = Paint.Align.CENTER
+        typeface = Typeface.DEFAULT_BOLD
+        textSize = 12f * density
+    }
+    private val rings = context.getString(R.string.map_rings)
 
     private fun pxPerM(): Double = (height / 2.0) / radiusM
     private fun toX(lon: Double): Float =
@@ -76,39 +90,56 @@ class BumpMapView(ctx: Context) : View(ctx) {
             r += step
         }
         canvas.drawText(
-            String.format(Locale.US, "rings every %s · N ↑", if (step >= 1000) "${(step / 1000).toInt()} km" else "${step.toInt()} m"),
+            String.format(Locale.US, rings, if (step >= 1000) "${(step / 1000).toInt()} km" else "${step.toInt()} m"),
             8 * density, h - 8 * density, text,
         )
 
-        val dot = 6f * density
+        val dot = 7f * density
         for (b in bumps) {
             val x = toX(b.lon); val y = toY(b.lat)
-            if (x < -dot || x > w + dot || y < -dot || y > h + dot) continue
+            if (x < -dot * 2 || x > w + dot * 2 || y < -dot * 2 || y > h + dot * 2) continue
             val c = colorOf(b)
+            val strong = b.severity(bands) == Severity.STRONG && b.confidence(bands) == Confidence.FULL && !b.isMuted(cfg)
+            val r = if (strong) dot * 1.25f else dot
             // Direction tick: the way you drive when it beeps.
             val a = b.heading * PI / 180
-            canvas.drawLine(x, y, (x + sin(a) * dot * 2.2).toFloat(), (y - cos(a) * dot * 2.2).toFloat(), tick)
-            if (b.isMuted(cfg)) {
-                ring.color = c
-                canvas.drawCircle(x, y, dot, ring)
-            } else {
-                fill.color = c
-                canvas.drawCircle(x, y, dot, fill)
-            }
+            canvas.drawLine(x, y, (x + sin(a) * r * 2.2).toFloat(), (y - cos(a) * r * 2.2).toFloat(), tick)
             if (b.id == selectedId) {
-                ring.color = 0xFFFFFFFF.toInt()
-                canvas.drawCircle(x, y, dot * 2f, ring)
+                fill.color = (c and 0x00FFFFFF) or 0x40000000
+                canvas.drawCircle(x, y, r * 2.2f, fill)
+            }
+            when {
+                b.isMuted(cfg) -> {
+                    ring.color = c
+                    canvas.drawCircle(x, y, r, ring)
+                }
+                b.confidence(bands) == Confidence.SOFT -> {
+                    // A "maybe": a dashed ring on the surface colour, never a solid pin.
+                    fill.color = Ui.SURFACE
+                    canvas.drawCircle(x, y, r, fill)
+                    dash.color = c
+                    canvas.drawCircle(x, y, r, dash)
+                }
+                else -> {
+                    fill.color = c
+                    canvas.drawCircle(x, y, r, fill)
+                    ring.color = Ui.SURFACE
+                    canvas.drawCircle(x, y, r, ring)
+                    if (strong) {
+                        bang.color = Ui.SEV_STRONG_INK
+                        canvas.drawText("!", x, y - (bang.descent() + bang.ascent()) / 2, bang)
+                    }
+                }
             }
         }
 
         if (!meLat.isNaN()) {
             val x = toX(meLon); val y = toY(meLat)
-            fill.color = 0xFF42A5F5.toInt()
+            fill.color = Ui.PRIMARY
             canvas.drawCircle(x, y, dot * 1.1f, fill)
-            ring.color = 0xFFFFFFFF.toInt()
+            ring.color = Ui.SURFACE
             canvas.drawCircle(x, y, dot * 1.1f, ring)
         }
-        if (bumps.isEmpty()) canvas.drawText("No bumps recorded yet", 8 * density, 18 * density, text)
     }
 
     private fun niceStep(x: Double): Double {
