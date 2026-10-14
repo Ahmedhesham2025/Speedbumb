@@ -498,9 +498,11 @@ class BumpEngine(
         val ax = if (fix != null && abs(tMs - fix.timeMs) <= cfg.maxFixAgeMs) axleOf(tMs, fix.speedMps) else null
         val axNote = ax?.let { " axle=${it.verdict.name.lowercase()} ${formatFixed(it.score, 2)} ${it.reason}" } ?: ""
         val overridden = handledReason(tMs)?.let {
-            if (!overridesHandling(tMs, ax, fix)) {
+            val refused = refusedOverride(tMs, ax, fix)
+            if (refused != null) {
                 phoneJolt = phone.episodeStartMs <= tMs + cfg.phoneJoltLeadMs
-                reject(tMs, peak, it, fix, axNote.trim())
+                val why = if (ax?.verdict == AxleVerdict.BOTH) " kept=$refused" else ""
+                reject(tMs, peak, it, fix, (axNote + why).trim())
                 return
             }
             true
@@ -584,20 +586,23 @@ class BumpEngine(
         return max(gps, (fwdBrakeAt(lastAccelMs) - fwdBrakeAt(tMs - cfg.speedBeforeMs)) * 3.6)
     }
 
-    /** Only a clear two-axle pair of the car itself may be a bump while the phone is handled ([EngineConfig.axle]). */
-    private fun overridesHandling(tMs: Long, ax: AxleResult?, fix: Fix?): Boolean {
-        if (ax == null || fix == null || ax.verdict != AxleVerdict.BOTH || !gyroSeen) return false
+    /** Why a jolt while the phone is handled stays the phone's, or null: a clear two-axle pair of the car ([EngineConfig.axle]). */
+    private fun refusedOverride(tMs: Long, ax: AxleResult?, fix: Fix?): String? {
+        if (ax == null || fix == null || ax.verdict != AxleVerdict.BOTH) return "no_pair"
+        if (!gyroSeen) return "no_gyro"
         val never = PhoneStateDetector.UNLOCK or PhoneStateDetector.SCREEN or PhoneStateDetector.CALL or
             PhoneStateDetector.POCKET_EXIT
-        if ((phone.causes and never) != 0 || phone.outOfPocketSeen) return false
-        if (ax.score < cfg.overrideMinScore || ax.dtMs < cfg.overrideMinDtMs || ax.pitchOrder != 1 || ax.braked != true) {
-            return false
-        }
+        if ((phone.causes and never) != 0 || phone.outOfPocketSeen) return "signal"
+        if (ax.score < cfg.overrideMinScore) return "score"
+        if (ax.dtMs < cfg.overrideMinDtMs) return "short_dt"
+        if (ax.pitchOrder != 1) return "pitch"
+        if (ax.braked != true) return "no_braking"
         val front = if (ax.rearFirst) tMs - ax.dtMs.toLong() else tMs
-        if (phone.episodeStartMs <= front) return false
-        if (maxRotation(front - 100, front + ax.dtMs.toLong() + 200) > cfg.overrideMaxRotRads) return false
-        return vehicle.hits < cfg.overrideMinProfileHits ||
+        if (phone.episodeStartMs <= front) return "handled_first"
+        if (maxRotation(front - 100, front + ax.dtMs.toLong() + 200) > cfg.overrideMaxRotRads) return "phone_turned"
+        val agrees = vehicle.hits < cfg.overrideMinProfileHits ||
             abs(ax.dtMs / 1000.0 * fix.speedMps - vehicle.wheelbaseM) <= cfg.overrideWheelbaseTolM
+        return if (agrees) null else "wheelbase"
     }
 
     /** The phone's fastest rotation from [fromMs] to [toMs], rad/s (0 without gyroscope samples there). */
