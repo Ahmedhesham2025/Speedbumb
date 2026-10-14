@@ -186,6 +186,30 @@ class DriveDetectorTest {
         assertEquals(Action.START_CHECK, d.onMotion(t + 5_000, MotionKind.Kind.WALKING))   // full checks again
     }
 
+    @Test fun aWashingMachineGetsAtMostThreeCarLikeChecksPerBackOff() {
+        val log = ArrayList<StartLog.Reason>()
+        val d = DriveDetector(log = { log += it })
+        var end = d.walkingMiss(0)
+        end = d.quickMiss(end + 60_000)
+        end = d.quickMiss(end + 60_000)                                // 10 min of rest from here
+        for (i in 1..3) end = d.quickMiss(end + 60_000)                // car-like, three times: let through
+        assertEquals(Action.NONE, d.onMotion(end + 60_000, MotionKind.Kind.VEHICLE))   // the fourth: not
+        assertEquals(StartLog.Reason.SKIP_BACKOFF, log.last())
+        // An hour on the machine, vibrating like a car every minute, the GPS standing still.
+        var checks = 3
+        var t = end + 60_000
+        while (t < end + 3600_000) {
+            if (d.onMotion(t, MotionKind.Kind.VEHICLE) == Action.START_CHECK) {
+                checks++
+                d.onFix(t + 2_000, 0.5)
+                assertEquals(Action.END_CHECK, d.onTimer(t + 30_000))
+                t += 30_000
+            }
+            t += 60_000
+        }
+        assertTrue("$checks car-like checks in an hour", checks <= 8)   // without the cap: one every 90 s, 40
+    }
+
     @Test fun aDriveStartingFiveMinutesIntoABackOffStarts() {
         val d = DriveDetector()
         var end = d.walkingMiss(0)

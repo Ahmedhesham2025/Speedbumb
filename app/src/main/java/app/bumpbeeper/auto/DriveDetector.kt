@@ -61,6 +61,7 @@ class SpeedGate(
  *    other motion start no check for [firstBackoffMs], then 10 min longer each time up to [maxBackoffMs], and after
  *    that only vehicle-like vibration does. Vehicle speed or a drive resets it; so does any recording (car
  *    Bluetooth, Google), because the watcher and this detector are made anew after it.
+ *    At most [maxVehiclePasses] car-like checks get through one back-off (a phone on a running washing machine).
  *  - A passive fix (another app's GPS, free; at most [maxPassiveAgeMs] old) at driving speed starts a check even
  *    during a pause.
  *  - [snooze] (after the user pressed Stop) ignores everything for a while.
@@ -81,6 +82,8 @@ class DriveDetector(
     val missesBeforeBackoff: Int = 3,
     val firstBackoffMs: Long = 10 * 60_000L,
     val maxBackoffMs: Long = 30 * 60_000L,
+    /** Car-like checks one back-off lets through (a phone on a running washing machine vibrates like a car). */
+    val maxVehiclePasses: Int = 3,
     private val log: (StartLog.Reason) -> Unit = {},
 ) {
     enum class Action { NONE, START_CHECK, END_CHECK, DRIVING, RETRY_LATER }
@@ -106,6 +109,7 @@ class DriveDetector(
     private var missesInRow = 0
     private var backoffUntilMs = Long.MIN_VALUE
     private var backoffMs = firstBackoffMs
+    private var passes = 0   // car-like checks let through the current back-off (kept when a miss extends it)
 
     /** Motion now could start a check: the watcher should first ask the accelerometer what kind of motion it is. */
     fun wantsMotionKind(nowMs: Long): Boolean = !checking && nowMs >= snoozeUntilMs
@@ -114,12 +118,20 @@ class DriveDetector(
      * The significant-motion sensor fired; [kind]: what the accelerometer says ([MotionKind]). Not known counts as
      * walking: a pause then holds, as before.
      */
-    fun onMotion(nowMs: Long, kind: MotionKind.Kind = MotionKind.Kind.WALKING): Action = when {
+    fun onMotion(nowMs: Long, kind: MotionKind.Kind = MotionKind.Kind.WALKING): Action {
+        if (nowMs >= backoffUntilMs) passes = 0   // that back-off is over
+        return motion(nowMs, kind)
+    }
+
+    private fun motion(nowMs: Long, kind: MotionKind.Kind): Action = when {
         checking -> Action.NONE
         nowMs < snoozeUntilMs -> { log(StartLog.Reason.SKIP_SNOOZED); Action.NONE }
         kind == MotionKind.Kind.STILL -> { log(StartLog.Reason.SKIP_STILL); Action.NONE }
-        // A drive may begin during a back-off: only the car's own vibration gets through it.
-        nowMs < backoffUntilMs && kind != MotionKind.Kind.VEHICLE -> { log(StartLog.Reason.SKIP_BACKOFF); Action.NONE }
+        // A drive may begin during a back-off: only the car's own vibration gets through it, [maxVehiclePasses] times.
+        nowMs < backoffUntilMs && (kind != MotionKind.Kind.VEHICLE || passes >= maxVehiclePasses) -> {
+            log(StartLog.Reason.SKIP_BACKOFF)
+            Action.NONE
+        }
         // In a pause, or after a back-off, only vehicle-like motion checks: moving around at home costs nothing.
         kind != MotionKind.Kind.VEHICLE && (nowMs < cooldownUntilMs || backedOff) -> {
             log(StartLog.Reason.MOTION_WALKING)
@@ -131,6 +143,7 @@ class DriveDetector(
         }
         nowMs - lastCheckEndMs >= vehicleRetryMs -> {
             log(StartLog.Reason.MOTION_CHECK)
+            if (nowMs < backoffUntilMs) passes++
             startCheck(nowMs, quick = true)
         }
         else -> { retryAtMs = lastCheckEndMs + vehicleRetryMs; Action.RETRY_LATER }
@@ -140,6 +153,7 @@ class DriveDetector(
 
     private fun resetBackoff() {
         missesInRow = 0
+        passes = 0
         backoffMs = firstBackoffMs
         backoffUntilMs = Long.MIN_VALUE
     }
