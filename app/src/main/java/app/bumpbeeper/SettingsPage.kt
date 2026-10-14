@@ -12,7 +12,7 @@ import android.util.TypedValue
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
-import android.widget.CompoundButton
+import android.widget.CheckBox
 import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.LinearLayout
@@ -47,12 +47,12 @@ class SettingsPage(private val a: MainActivity) : Page, BackHandler {
     private lateinit var autoText: TextView
     private lateinit var autoBtn: TextView
     private lateinit var traceInfo: TextView
-    private var detectBox: CompoundButton? = null
+    private var detectBox: CheckBox? = null
     private lateinit var detectStatus: TextView
     private lateinit var detectFix: TextView
     /** True while the screen itself moves the auto-detect switch. */
     private var settingDetect = false
-    private var trainBox: CompoundButton? = null
+    private var trainBox: CheckBox? = null
     private lateinit var trainToggle: View
     private lateinit var trainNeedMap: TextView
     private lateinit var trainChoose: TextView
@@ -60,18 +60,18 @@ class SettingsPage(private val a: MainActivity) : Page, BackHandler {
     private lateinit var trainProblem: TextView
     /** True while the screen itself moves the training switch. */
     private var settingTrain = false
-    private var researchBox: CompoundButton? = null
+    private var researchBox: CheckBox? = null
     private lateinit var researchInfo: TextView
     private lateinit var researchProblem: TextView
     private lateinit var researchId: TextView
     /** True while the screen itself moves the research switch. */
     private var settingResearch = false
-    private var debugBox: CompoundButton? = null
-    private var limitsBox: CompoundButton? = null
+    private var debugBox: CheckBox? = null
+    private var limitsBox: CheckBox? = null
     private lateinit var limitsStatus: TextView
     /** True while the screen itself moves the speed-limit switch (so it isn't taken as the user's choice). */
     private var settingLimits = false
-    private var liveBox: CompoundButton? = null
+    private var liveBox: CheckBox? = null
     private lateinit var liveExtras: LinearLayout
     private lateinit var liveStatus: TextView
     /** True while the screen itself moves the live-limit switch. */
@@ -215,13 +215,13 @@ class SettingsPage(private val a: MainActivity) : Page, BackHandler {
                 if (settingLimits) return@toggle
                 if (on) { showLimitsSwitch(false); askLimits() }   // only the consent dialog turns it on
                 else { SpeedLimitSync.setEnabled(a, false); showLimitsSwitch(false) }
-            }.also { limitsBox = ((it as? ViewGroup)?.getChildAt(0) ?: it) as? CompoundButton },
+            }.also { limitsBox = ((it as? ViewGroup)?.getChildAt(0) ?: it) as? CheckBox },
             Ui.text(a, 13f, Ui.ORANGE).also { limitsStatus = it; it.setPadding(0, 0, 0, dp(6)) },
             Ui.toggle(a, a.getString(R.string.live_limit_switch), a.getString(R.string.live_limit_switch_hint), Prefs.liveLimits(a)) { on ->
                 if (settingLive) return@toggle
                 if (on) { showLive(false); askLive() }   // only "Turn on" in the consent dialog turns it on
                 else { sp.edit().putBoolean(Prefs.LIVE_LIMITS, false).apply(); showLive() }
-            }.also { liveBox = ((it as? ViewGroup)?.getChildAt(0) ?: it) as? CompoundButton },
+            }.also { liveBox = ((it as? ViewGroup)?.getChildAt(0) ?: it) as? CheckBox },
             Ui.text(a, 13f, Ui.ORANGE).also { liveStatus = it; it.setPadding(0, 0, 0, dp(6)) },
             buildLiveExtras(),
         )
@@ -260,7 +260,7 @@ class SettingsPage(private val a: MainActivity) : Page, BackHandler {
                 if (settingDetect) return@toggle
                 if (on) { showDetect(false); a.turnOnAutoDetect { showDetect() } }   // only "Continue" turns it on
                 else { AutoDetect.setEnabled(a, false); showDetect() }
-            }.also { detectBox = ((it as? ViewGroup)?.getChildAt(0) ?: it) as? CompoundButton },
+            }.also { detectBox = ((it as? ViewGroup)?.getChildAt(0) ?: it) as? CheckBox },
             detectStatus,
             detectFix,
             Ui.slider(a, 0, 30, 1, Prefs.autoStopMinutes(a), { AutoDetectText.autoStop(a, it) }) {
@@ -288,7 +288,7 @@ class SettingsPage(private val a: MainActivity) : Page, BackHandler {
             if (settingTrain) return@toggle
             if (on) { showTraining(false); askTraining() }   // only the consent dialog turns it on
             else { TrainingConsent.setEnabled(a, false); a.toast(a.getString(R.string.train_off_toast)); showTraining() }
-        }.also { trainBox = ((it as? ViewGroup)?.getChildAt(0) ?: it) as? CompoundButton }
+        }.also { trainBox = ((it as? ViewGroup)?.getChildAt(0) ?: it) as? CheckBox }
         trainInfo = Ui.text(a, 13f, Ui.DIM).apply { setPadding(0, 0, 0, dp(4)) }
         trainProblem = Ui.text(a, 13f, Ui.ORANGE).apply { setPadding(0, 0, 0, dp(4)) }
         card(a.getString(R.string.settings_section_training), trainNeedMap, trainChoose, trainToggle, trainInfo, trainProblem)
@@ -301,7 +301,7 @@ class SettingsPage(private val a: MainActivity) : Page, BackHandler {
                 if (settingResearch) return@toggle
                 if (on) { showResearch(false); a.showResearchChoice { showResearch() } }   // only the consent screen's Yes turns it on
                 else { ResearchConsent.setEnabled(a, false); a.toast(a.getString(R.string.research_off_toast)); showResearch() }
-            }.also { researchBox = ((it as? ViewGroup)?.getChildAt(0) ?: it) as? CompoundButton },
+            }.also { researchBox = ((it as? ViewGroup)?.getChildAt(0) ?: it) as? CheckBox },
             researchInfo, researchProblem,
             Ui.button(a, a.getString(R.string.settings_share_recordings)) { ResearchFiles.share(a) },
             hint(a.getString(R.string.research_share_hint, ResearchFiles.SHARE_COPY_FOLDER)),
@@ -350,7 +350,7 @@ class SettingsPage(private val a: MainActivity) : Page, BackHandler {
             Ui.toggle(a, a.getString(R.string.settings_debug_title), a.getString(R.string.settings_debug_desc, TraceWriter.KEEP), Prefs.debugRecording(a)) {
                 sp.edit().putBoolean(Prefs.DEBUG_RECORDING, it).apply()
                 showTraces()
-            }.also { debugBox = ((it as? ViewGroup)?.getChildAt(0) ?: it) as? CompoundButton },
+            }.also { debugBox = ((it as? ViewGroup)?.getChildAt(0) ?: it) as? CheckBox },
             traceInfo,
             Ui.row(a, Ui.button(a, a.getString(R.string.settings_export_recordings)) { exportTraces() }, Ui.button(a, a.getString(R.string.settings_share_recordings)) { shareTraces() }),
             Ui.button(a, a.getString(R.string.settings_delete_recordings), Ui.Style.QUIET) { deleteTraces() }.also {
