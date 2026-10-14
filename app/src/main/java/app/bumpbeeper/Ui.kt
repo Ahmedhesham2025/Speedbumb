@@ -4,17 +4,18 @@ import android.content.Context
 import android.content.res.ColorStateList
 import android.content.res.Configuration
 import android.content.res.Resources
-import android.graphics.PorterDuff
 import android.graphics.Typeface
 import android.graphics.drawable.Drawable
 import android.graphics.drawable.GradientDrawable
 import android.graphics.drawable.InsetDrawable
+import android.graphics.drawable.LayerDrawable
+import android.graphics.drawable.StateListDrawable
 import android.graphics.drawable.RippleDrawable
 import android.text.TextUtils
 import android.util.TypedValue
 import android.view.Gravity
 import android.view.View
-import android.widget.Switch
+import android.widget.CheckBox
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.SeekBar
@@ -399,16 +400,17 @@ object Ui {
 
     /** A setting that is on or off, with an explanation under it. */
     fun toggle(ctx: Context, title: String, hint: String?, value: Boolean, onChange: (Boolean) -> Unit): View {
-        // A Material 3 style switch at the end of the row (it was a check box at the start).
-        val box = Switch(ctx).apply {
+        // Looks like a Material 3 switch at the end of the row, but stays a CheckBox (tests and callers rely on it):
+        // the box is hidden and a switch drawable sits at the end; its checked state comes from the CheckBox.
+        val box = CheckBox(ctx).apply {
             text = title
             setTextColor(TEXT)
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f)
             minHeight = dp(ctx, Space.ROW)
-            val states = arrayOf(intArrayOf(android.R.attr.state_checked), intArrayOf())
-            thumbTintList = ColorStateList(states, intArrayOf(ON_PRIMARY, FAINT))
-            trackTintList = ColorStateList(states, intArrayOf(PRIMARY, SURFACE3))
-            trackTintMode = PorterDuff.Mode.SRC
+            buttonDrawable = null
+            setPadding(0, 0, 0, 0)
+            setCompoundDrawablesRelative(null, null, switchDrawable(ctx), null)
+            compoundDrawablePadding = dp(ctx, 16)
             isChecked = value
             setOnCheckedChangeListener { _, on -> onChange(on) }
         }
@@ -417,6 +419,34 @@ object Ui {
             orientation = LinearLayout.VERTICAL
             addView(box)
             addView(text(ctx, 13f, DIM, value = hint).apply { setPadding(0, 0, dp(ctx, 64), dp(ctx, 8)) })
+        }
+    }
+
+    /** A 52 x 32 dp switch: the track and the thumb, on (primary, thumb at the end) or off (surface, outlined). */
+    private fun switchDrawable(ctx: Context): Drawable {
+        fun layer(on: Boolean): Drawable {
+            val track = GradientDrawable().apply {
+                cornerRadius = dpf(ctx, 16f)
+                setColor(if (on) PRIMARY else SURFACE3)
+                if (!on) setStroke(dp(ctx, 2), FAINT)
+            }
+            val thumbSize = dp(ctx, if (on) 24 else 16)
+            val thumb = GradientDrawable().apply {
+                shape = GradientDrawable.OVAL
+                setColor(if (on) ON_PRIMARY else FAINT)
+                setSize(thumbSize, thumbSize)
+            }
+            return LayerDrawable(arrayOf(track, thumb)).apply {
+                val inset = (dp(ctx, 32) - thumbSize) / 2
+                setLayerGravity(1, (if (on) Gravity.END else Gravity.START) or Gravity.CENTER_VERTICAL)
+                setLayerInsetRelative(1, inset, 0, inset, 0)
+                setLayerSize(1, thumbSize, thumbSize)
+            }
+        }
+        return StateListDrawable().apply {
+            addState(intArrayOf(android.R.attr.state_checked), layer(true))
+            addState(intArrayOf(), layer(false))
+            setBounds(0, 0, dp(ctx, 52), dp(ctx, 32))
         }
     }
 
