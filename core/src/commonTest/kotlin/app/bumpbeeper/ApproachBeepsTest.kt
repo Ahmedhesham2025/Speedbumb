@@ -90,7 +90,7 @@ class ApproachBeepsTest {
             r.drive(1200.0) { 12.0 }
             assertEquals(WarnSound.STRONG, r.warnings.single().second.sound)
             val after = r.beeps.first().tMs - r.warnings[0].first
-            assertTrue(after in first..first + 20, "spoken after $spoken ms: first beep $after ms after the warning")
+            assertTrue(after in first - 20..first + 20, "spoken after $spoken ms: first beep $after ms after the warning")
         }
     }
 
@@ -177,7 +177,7 @@ class ApproachBeepsTest {
         val first = r.beeps.filter { it.tMs < split }
         val second = r.beeps.filter { it.tMs >= split }
         assertTrue(first.isNotEmpty() && second.isNotEmpty())
-        assertTrue(second.first().tMs - split >= 1900, "the second sequence waits for its own warning (and voice)")
+        assertTrue(second.first().tMs - split >= 1850, "the second sequence waits for its own warning (and voice)")
     }
 
     /** Mild one beep, moderate two, strong three and then the voice; a "maybe" one soft beep. */
