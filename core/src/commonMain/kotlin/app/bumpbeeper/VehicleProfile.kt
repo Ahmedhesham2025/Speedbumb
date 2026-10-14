@@ -12,7 +12,7 @@ class VehicleConfig {
     /** One axle hit's Δt × speed outside this is a wrong pairing or a bad speed: ignored. */
     var measuredMinM = 1.8
     var measuredMaxM = 3.8
-    /** The newest hit keeps at least this weight, so another car (a shared phone) is learned within about 10 hits. */
+    /** The newest hit keeps at least this weight: another car (a shared phone) is mostly learned in about 15 hits. */
     var minWeight = 0.1
     /** Forward must lean at least this far from up (sine of the angle) to tell where the nose points... */
     var forwardMinSine = 0.25
