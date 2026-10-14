@@ -264,6 +264,10 @@ class DrivePage(private val a: MainActivity) : Page {
         offline = Ui.chip(a, a.getString(R.string.drive_offline_banner), R.drawable.ic_cloud_off).apply {
             background = Ui.rounded(a, Ui.WARN_CONT, Ui.Shape.CHIP)
             setTextColor(Ui.WARN)
+            // The Arabic line is long: wrap to two lines rather than cut it.
+            maxLines = 2
+            ellipsize = null
+            setPadding(paddingLeft, dp(6), paddingRight, dp(6))
             visibility = View.GONE
         }
         val chips = LinearLayout(a).apply {
@@ -292,7 +296,7 @@ class DrivePage(private val a: MainActivity) : Page {
             gravity = Gravity.CENTER_HORIZONTAL
             visibility = View.GONE
             addView(sign, LinearLayout.LayoutParams(dp(56), dp(56)))
-            addView(Ui.text(a, 9f, Ui.FAINT, value = SpeedLimitScoring.ATTRIBUTION).apply { gravity = Gravity.CENTER })
+            addView(Ui.text(a, Ui.Type.CAPTION, Ui.DIM, value = SpeedLimitScoring.ATTRIBUTION).apply { gravity = Gravity.CENTER })
         }
         scoreRing = ScoreRingView(a).apply { caption = a.getString(R.string.drive_score_short) }
         val dash = LinearLayout(a).apply {
@@ -438,7 +442,7 @@ class DrivePage(private val a: MainActivity) : Page {
                 setColor(if (i < n.beeps) ink else (ink and 0x00FFFFFF) or 0x4D000000)
             }
         }
-        nextBeeps.contentDescription = a.getString(R.string.drive_next_beeps, n.beeps)
+        nextBeeps.contentDescription = a.resources.getQuantityString(R.plurals.drive_next_beeps, n.beeps, n.beeps)
         nextCard.contentDescription = nextWhat.text.toString() + ", " + nextDist.text
         nextSlow.visibility = if (near) View.VISIBLE else View.GONE
         if (near) {

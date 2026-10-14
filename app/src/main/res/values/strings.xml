@@ -73,7 +73,10 @@
     <string name="drive_next_strong">Strong bump ahead</string>
     <string name="drive_next_maybe">Maybe a bump</string>
     <string name="drive_next_then">Then: %1$s in %2$s</string>
-    <string name="drive_next_beeps">%1$d beeps</string>
+    <plurals name="drive_next_beeps">
+        <item quantity="one">%1$d beep</item>
+        <item quantity="other">%1$d beeps</item>
+    </plurals>
     <string name="drive_slow_to">Slow to %1$d km/h</string>
     <string name="settings_title">Settings</string>
     <string name="settings_section_warnings">Warnings</string>

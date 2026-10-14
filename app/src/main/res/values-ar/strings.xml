@@ -74,7 +74,14 @@
     <string name="drive_next_strong">مطبّ قوي قدّام</string>
     <string name="drive_next_maybe">ممكن يكون فيه مطبّ</string>
     <string name="drive_next_then">بعده: %1$s بعد %2$s</string>
-    <string name="drive_next_beeps">عدد الصفارات: %1$d</string>
+    <plurals name="drive_next_beeps">
+        <item quantity="zero">مفيش صفارات</item>
+        <item quantity="one">صفارة واحدة</item>
+        <item quantity="two">صفارتين</item>
+        <item quantity="few">%1$d صفارات</item>
+        <item quantity="many">%1$d صفارة</item>
+        <item quantity="other">%1$d صفارة</item>
+    </plurals>
     <string name="drive_slow_to">هدّي لـ %1$d كم/س</string>
     <string name="settings_title">الإعدادات</string>
     <string name="settings_section_warnings">التحذيرات</string>
