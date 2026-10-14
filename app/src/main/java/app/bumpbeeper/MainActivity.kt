@@ -9,6 +9,7 @@ import android.bluetooth.BluetoothManager
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.content.res.ColorStateList
+import android.content.res.Configuration
 import android.location.LocationManager
 import android.net.Uri
 import android.os.Build
@@ -81,6 +82,10 @@ class MainActivity : Activity() {
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        // Light or dark from the system setting, before any view or dialog is built. The manifest's theme only covers
+        // the launch window; this one follows the setting, colours the dialogs and the system bars' icons.
+        Ui.dark = (resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) != Configuration.UI_MODE_NIGHT_NO
+        setTheme(R.style.Theme_BumpBeeper)
         super.onCreate(savedInstanceState)
         CrashLog.install(this)   // first, so a crash while building the screen is kept too
         Sync.onAppStart(this)    // no network until the user answered the shared-map question

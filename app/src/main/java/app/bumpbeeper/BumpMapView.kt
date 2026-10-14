@@ -38,13 +38,13 @@ class BumpMapView(ctx: Context) : View(ctx) {
         set(v) { field = v.coerceIn(50.0, 50_000.0); invalidate() }
 
     private val density = resources.displayMetrics.density
-    private val bg = Paint().apply { color = 0xFF1C1F24.toInt() }
-    private val grid = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = 0x33FFFFFF; strokeWidth = density; style = Paint.Style.STROKE }
+    private val bg = Paint().apply { color = Ui.SURFACE2 }
+    private val grid = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Ui.LINE; strokeWidth = density; style = Paint.Style.STROKE }
     private val fill = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
     private val ring = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeWidth = 2f * density }
-    private val tick = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeWidth = 2f * density; color = 0xCCFFFFFF.toInt() }
+    private val tick = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeWidth = 2f * density; color = Ui.DIM }
     private val text = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = 0xFFB0BEC5.toInt()
+        color = Ui.DIM
         textSize = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_SP, 11f, resources.displayMetrics)
     }
 
@@ -96,16 +96,16 @@ class BumpMapView(ctx: Context) : View(ctx) {
                 canvas.drawCircle(x, y, dot, fill)
             }
             if (b.id == selectedId) {
-                ring.color = 0xFFFFFFFF.toInt()
+                ring.color = Ui.TEXT
                 canvas.drawCircle(x, y, dot * 2f, ring)
             }
         }
 
         if (!meLat.isNaN()) {
             val x = toX(meLon); val y = toY(meLat)
-            fill.color = 0xFF42A5F5.toInt()
+            fill.color = Ui.PRIMARY
             canvas.drawCircle(x, y, dot * 1.1f, fill)
-            ring.color = 0xFFFFFFFF.toInt()
+            ring.color = Ui.SURFACE
             canvas.drawCircle(x, y, dot * 1.1f, ring)
         }
         if (bumps.isEmpty()) canvas.drawText("No bumps recorded yet", 8 * density, 18 * density, text)

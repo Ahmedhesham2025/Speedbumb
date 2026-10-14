@@ -296,16 +296,17 @@ class DrivePage(private val a: MainActivity) : Page {
     // ---------------------------------------------------------------- live
 
     private fun styleStart(rec: Boolean) {
-        val color = if (rec) Ui.RED else Ui.GREEN
+        // Start in the primary colour, Stop as the error tonal pair (the redesign's one primary action per state).
+        val color = if (rec) Ui.ERR_CONT else Ui.PRIMARY
         val face = GradientDrawable().apply {
             shape = GradientDrawable.OVAL
             setColor(color)
-            setStroke(dp(6), (color and 0x00FFFFFF) or 0x55000000)
+            setStroke(dp(6), (color and 0x00FFFFFF) or 0x33000000)
         }
         val mask = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(0xFFFFFFFF.toInt()) }
-        startBtn.background = RippleDrawable(ColorStateList.valueOf(0x44FFFFFF), face, mask)
+        startBtn.background = RippleDrawable(ColorStateList.valueOf(Ui.RIPPLE), face, mask)
         startBtn.text = a.getString(if (rec) R.string.drive_stop else R.string.drive_start)
-        startBtn.setTextColor(0xFFFFFFFF.toInt())
+        startBtn.setTextColor(if (rec) Ui.ERR else Ui.ON_PRIMARY)
         startBtn.contentDescription = a.getString(if (rec) R.string.drive_stop_desc else R.string.drive_start_desc)
     }
 

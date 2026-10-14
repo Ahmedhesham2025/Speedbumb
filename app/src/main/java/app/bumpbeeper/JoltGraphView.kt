@@ -18,25 +18,25 @@ class JoltGraphView(ctx: Context) : View(ctx) {
 
     private val density = resources.displayMetrics.density
     private val path = Path()
-    private val bgPaint = Paint().apply { color = 0xFF1C1F24.toInt() }
+    private val bgPaint = Paint().apply { color = Ui.SURFACE2 }
     private val linePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = 0xFF4FC3F7.toInt()
+        color = Ui.PRIMARY
         strokeWidth = 2f * density
         style = Paint.Style.STROKE
         strokeJoin = Paint.Join.ROUND
     }
     private val thresholdPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = 0xFFFFB74D.toInt()
+        color = Ui.SEV_MOD
         strokeWidth = 1.5f * density
         style = Paint.Style.STROKE
         pathEffect = DashPathEffect(floatArrayOf(10f * density, 6f * density), 0f)
     }
     private val hitPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = 0xFFFF5252.toInt()
+        color = Ui.SEV_STRONG
         style = Paint.Style.FILL
     }
     private val textPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = 0xFFB0BEC5.toInt()
+        color = Ui.DIM
         textSize = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_SP, 11f, resources.displayMetrics)
     }
 

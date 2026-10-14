@@ -16,32 +16,134 @@ import android.widget.TextView
 import java.util.Locale
 
 /**
- * The app's look in one place: a dark theme (easy on the eyes in a car at night), cards, big touch targets.
- * Everything is built in code, no extra libraries.
+ * The app's look in one place: Material 3 style tokens in a light and a dark set (the system's dark theme picks one),
+ * cards, big touch targets. Everything is built in code, no extra libraries. Map-first redesign: blue primary,
+ * severity colours for bumps, the amber only for the launcher icon.
  */
 object Ui {
-    const val BG = 0xFF0E1116.toInt()
-    const val SURFACE = 0xFF181D24.toInt()
-    const val SURFACE2 = 0xFF232A33.toInt()
-    const val LINE = 0xFF2E3640.toInt()
-    const val TEXT = 0xFFECEFF1.toInt()
-    const val DIM = 0xFF9AA5B1.toInt()
-    const val ACCENT = 0xFFFFB300.toInt()      // the app's amber
-    const val ON_ACCENT = 0xFF1B1300.toInt()
-    const val GREEN = 0xFF4CAF50.toInt()
-    const val RED = 0xFFEF5350.toInt()
-    const val ORANGE = 0xFFFFA726.toInt()
-    const val BLUE = 0xFF42A5F5.toInt()
+    /**
+     * Dark or light tokens. MainActivity sets it from the system setting before any view is built (Android recreates
+     * the activity when that setting changes). Dark by default, as the app always was (services, unit tests).
+     */
+    @Volatile var dark = true
+
+    private fun pick(light: Long, darkColor: Long): Int = (if (dark) darkColor else light).toInt()
+
+    // ---------------------------------------------------------------- colour tokens (light, dark)
+    val PRIMARY: Int get() = pick(0xFF1A6BE0, 0xFF8AB4FF)
+    val ON_PRIMARY: Int get() = pick(0xFFFFFFFF, 0xFF06204F)
+    val PRIMARY_CONT: Int get() = pick(0xFFDCE7FF, 0xFF1E3A6E)
+    val ON_PRIMARY_CONT: Int get() = pick(0xFF0A2A63, 0xFFDCE7FF)
+    val BG: Int get() = pick(0xFFF3F4F7, 0xFF0F1216)
+    val SURFACE: Int get() = pick(0xFFFFFFFF, 0xFF1A1E24)
+    val SURFACE2: Int get() = pick(0xFFF1F3F6, 0xFF232830)
+    val SURFACE3: Int get() = pick(0xFFE6E9EE, 0xFF2C323B)
+    /** Outlines and dividers. */
+    val LINE: Int get() = pick(0xFFD5DAE1, 0xFF38404B)
+    val TEXT: Int get() = pick(0xFF14181F, 0xFFECEFF3)
+    /** Secondary text. */
+    val DIM: Int get() = pick(0xFF5A6472, 0xFFA9B2BE)
+    /** Tertiary text: captions, attributions. */
+    val FAINT: Int get() = pick(0xFF8A94A3, 0xFF7A8492)
+    val OK: Int get() = pick(0xFF1E8E3E, 0xFF5BD07A)
+    val OK_CONT: Int get() = pick(0xFFE3F4E7, 0xFF173A22)
+    val WARN: Int get() = pick(0xFFB26A00, 0xFFFFB84D)
+    val WARN_CONT: Int get() = pick(0xFFFFF1D6, 0xFF3D2C0C)
+    val ERR: Int get() = pick(0xFFC62828, 0xFFFF7A70)
+    val ERR_CONT: Int get() = pick(0xFFFDE3E1, 0xFF43191A)
+    /** Touch ripple over surfaces. */
+    val RIPPLE: Int get() = pick(0x1F000000, 0x33FFFFFF)
+
+    /** The app's amber: launcher icon only, so it never competes with the bump severity colours. */
+    const val BRAND = 0xFFFFB300.toInt()
+
+    // Older names, kept so every screen follows the tokens without touching each call.
+    val ACCENT: Int get() = PRIMARY
+    val ON_ACCENT: Int get() = ON_PRIMARY
+    val GREEN: Int get() = OK
+    val RED: Int get() = ERR
+    val ORANGE: Int get() = WARN
+    val BLUE: Int get() = PRIMARY
+
+    // ---------------------------------------------------------------- severity (map pins, next-bump card, labels)
+    val SEV_MILD: Int get() = pick(0xFFF2B200, 0xFFFFC93C)
+    val SEV_MILD_INK: Int get() = pick(0xFF3B2B00, 0xFF2E2200)
+    val SEV_MOD: Int get() = pick(0xFFF27A00, 0xFFFF9A3D)
+    val SEV_MOD_INK: Int get() = pick(0xFFFFFFFF, 0xFF2A1400)
+    val SEV_STRONG: Int get() = pick(0xFFD93025, 0xFFFF5A4E)
+    val SEV_STRONG_INK: Int get() = pick(0xFFFFFFFF, 0xFF2A0503)
+    /** A "maybe" spot: a dashed ring in this colour on a surface fill, never a solid pin. */
+    val SEV_MAYBE: Int get() = pick(0xFF7A8699, 0xFF9AA5B1)
+    val SEV_MUTED: Int get() = pick(0xFFB4BCC8, 0xFF5A6371)
+
+    fun sevColor(s: Severity): Int = when (s) {
+        Severity.MILD -> SEV_MILD
+        Severity.MODERATE -> SEV_MOD
+        Severity.STRONG -> SEV_STRONG
+    }
+
+    /** Text and icons drawn on [sevColor]. */
+    fun sevInk(s: Severity): Int = when (s) {
+        Severity.MILD -> SEV_MILD_INK
+        Severity.MODERATE -> SEV_MOD_INK
+        Severity.STRONG -> SEV_STRONG_INK
+    }
+
+    /** Beeps per warning, as Beeper plays them: mild 1, moderate 2, strong 3 (a "maybe" is one soft beep). */
+    fun beepsOf(s: Severity): Int = when (s) {
+        Severity.MILD -> 1
+        Severity.MODERATE -> 2
+        Severity.STRONG -> 3
+    }
+
+    // ---------------------------------------------------------------- type scale (sp), shapes and spacing (dp)
+    object Type {
+        const val SPEED = 56f
+        const val NEXT = 34f
+        const val NEXT_NEAR = 48f
+        const val SCORE = 38f
+        const val HEADLINE = 22f
+        const val TITLE = 17f
+        const val BODY = 14f
+        const val LABEL = 13f
+        const val CAPTION = 11f
+    }
+
+    object Shape {
+        const val CARD = 20
+        const val SHEET = 28
+        const val CHIP = 16
+        const val FAB = 16
+        const val PILL = 28
+        const val TILE = 14
+    }
+
+    object Space {
+        const val GUTTER = 16
+        const val OVERLAY = 12
+        /** Minimum list row and touch target. */
+        const val ROW = 56
+        /** Anything used while the car moves. */
+        const val DRIVE_TARGET = 56
+    }
 
     fun dp(ctx: Context, v: Int): Int = (v * ctx.resources.displayMetrics.density).toInt()
     fun dpf(ctx: Context, v: Float): Float = v * ctx.resources.displayMetrics.density
 
+    /** Score colours follow the grades: Excellent and Good green, Fair amber, Needs work red. */
     fun scoreColor(score: Int): Int = when {
         score < 0 -> DIM
-        score >= 90 -> GREEN
-        score >= 75 -> 0xFF9CCC65.toInt()
-        score >= 60 -> ORANGE
-        else -> RED
+        score >= 75 -> OK
+        score >= 60 -> WARN
+        else -> ERR
+    }
+
+    /** The soft background behind a score badge, same bands as [scoreColor]. */
+    fun scoreContainer(score: Int): Int = when {
+        score < 0 -> SURFACE2
+        score >= 75 -> OK_CONT
+        score >= 60 -> WARN_CONT
+        else -> ERR_CONT
     }
 
     fun rounded(ctx: Context, color: Int, radiusDp: Int = 16, stroke: Int? = null): GradientDrawable =
@@ -58,15 +160,14 @@ object Ui {
         text = value
     }
 
-    /** Small grey caps title above a group. */
-    fun section(ctx: Context, title: String) = text(ctx, 12f, DIM, bold = true, value = title.uppercase(Locale.US)).apply {
-        letterSpacing = 0.08f
-        setPadding(dp(ctx, 4), dp(ctx, 20), 0, dp(ctx, 8))
+    /** Group title above a card, Material 3 style: primary colour, sentence case. */
+    fun section(ctx: Context, title: String) = text(ctx, Type.LABEL, PRIMARY, bold = true, value = title).apply {
+        setPadding(dp(ctx, 4), dp(ctx, 20), dp(ctx, 4), dp(ctx, 8))
     }
 
     fun card(ctx: Context, padDp: Int = 16): LinearLayout = LinearLayout(ctx).apply {
         orientation = LinearLayout.VERTICAL
-        background = rounded(ctx, SURFACE, 18)
+        background = rounded(ctx, SURFACE, Shape.CARD)
         val p = dp(ctx, padDp)
         setPadding(p, p, p, p)
     }
@@ -78,8 +179,8 @@ object Ui {
         val (bg, fg) = when (style) {
             Style.PRIMARY -> ACCENT to ON_ACCENT
             Style.SECONDARY -> SURFACE2 to TEXT
-            Style.DANGER -> 0xFF3A1F22.toInt() to RED
-            Style.QUIET -> 0x00000000 to ACCENT
+            Style.DANGER -> ERR_CONT to ERR
+            Style.QUIET -> 0x00000000 to PRIMARY
         }
         return TextView(ctx).apply {
             text = label
@@ -88,9 +189,10 @@ object Ui {
             typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
             gravity = Gravity.CENTER
             minHeight = dp(ctx, 48)
-            val h = dp(ctx, 16)
+            val h = dp(ctx, 20)
             setPadding(h, dp(ctx, 10), h, dp(ctx, 10))
-            background = RippleDrawable(ColorStateList.valueOf(0x33FFFFFF), rounded(ctx, bg, 14), rounded(ctx, 0xFFFFFFFF.toInt(), 14))
+            // Pill shape, as Material 3 buttons.
+            background = RippleDrawable(ColorStateList.valueOf(RIPPLE), rounded(ctx, bg, Shape.PILL), rounded(ctx, 0xFFFFFFFF.toInt(), Shape.PILL))
             isClickable = true
             isFocusable = true
             setOnClickListener { onClick() }
@@ -106,7 +208,7 @@ object Ui {
         gravity = Gravity.CENTER
         minHeight = dp(ctx, 76)
         setPadding(dp(ctx, 8), dp(ctx, 10), dp(ctx, 8), dp(ctx, 10))
-        background = RippleDrawable(ColorStateList.valueOf(0x55FFFFFF), rounded(ctx, bg, 16), rounded(ctx, 0xFFFFFFFF.toInt(), 16))
+        background = RippleDrawable(ColorStateList.valueOf(RIPPLE), rounded(ctx, bg, 24), rounded(ctx, 0xFFFFFFFF.toInt(), 24))
         isClickable = true
         isFocusable = true
         contentDescription = label
@@ -128,7 +230,7 @@ object Ui {
         val value = text(ctx, 22f, TEXT, bold = true, value = "–")
         val box = LinearLayout(ctx).apply {
             orientation = LinearLayout.VERTICAL
-            background = rounded(ctx, SURFACE2, 14)
+            background = rounded(ctx, SURFACE2, Shape.TILE)
             setPadding(dp(ctx, 12), dp(ctx, 10), dp(ctx, 12), dp(ctx, 10))
             addView(value)
             addView(text(ctx, 12f, DIM, value = label).apply { maxLines = 1; ellipsize = TextUtils.TruncateAt.END })
