@@ -71,6 +71,40 @@ class SpotMap(ctx: Context, interactive: Boolean) : FrameLayout(ctx) {
             camera()
         }
 
+    /** Follows the car (Drive). A finger on the map stops it until [recenter]; [onPanned] shows the button. */
+    var following = true
+        private set
+    var onPanned: () -> Unit = {}
+    /** Drive: your puck about 70 % down the map, so more of the road ahead is visible. */
+    var puckLow = false
+        set(v) { field = v; street.topPaddingPx = if (v) height * 0.4 else 0.0; last = null; camera() }
+
+    fun recenter() {
+        following = true
+        last = null
+        camera()
+    }
+
+    /** The road you are on, from the tiles on screen (null: unknown, or the offline map is showing). */
+    fun roadName(arabic: Boolean): String? =
+        if (streetsOn && !meLat.isNaN()) street.roadNameAt(meLat, meLon, arabic) else null
+
+    /**
+     * The road to a strong bump [distanceM] ahead, tinted red: from you along your heading (the engine says how far,
+     * the spot is on the road ahead within a few degrees). Null distance clears it.
+     */
+    fun aheadStrong(distanceM: Double?) {
+        if (!street.available) return
+        if (distanceM == null || meLat.isNaN() || heading.isNaN()) { street.setAhead(null, null); return }
+        val d = distanceM / 6_371_000.0
+        val b = Math.toRadians(heading)
+        val la = Math.toRadians(meLat)
+        val lo = Math.toRadians(meLon)
+        val la2 = Math.asin(Math.sin(la) * Math.cos(d) + Math.cos(la) * Math.sin(d) * Math.cos(b))
+        val lo2 = lo + Math.atan2(Math.sin(b) * Math.sin(d) * Math.cos(la), Math.cos(d) - Math.sin(la) * Math.sin(la2))
+        street.setAhead(meLat to meLon, Math.toDegrees(la2) to Math.toDegrees(lo2))
+    }
+
     /** True while the street map is on screen (false: the offline map is). */
     val showingStreets: Boolean get() = streetsOn
 
@@ -82,6 +116,7 @@ class SpotMap(ctx: Context, interactive: Boolean) : FrameLayout(ctx) {
             street.onReady = { streetsOn = true; street.view.visibility = View.VISIBLE; pushPins(); pushMe(); camera() }
             street.onFailed = { streetsOn = false; street.view.visibility = View.INVISIBLE }
             street.onSpot = { key -> bumps.firstOrNull { "m${it.id}" == key }?.let { selectedId = it.id; onSelect(it) } }
+            street.onUserMove = { if (headingUp && following) { following = false; onPanned() } }
         }
     }
 
@@ -114,6 +149,7 @@ class SpotMap(ctx: Context, interactive: Boolean) : FrameLayout(ctx) {
      */
     private fun camera() {
         if (!street.available || centerLat == 0.0 && centerLon == 0.0) return
+        if (headingUp && !following) return   // a finger moved the map: leave it until Recenter
         val zoom = zoomFor(radiusM, centerLat)
         val bearing = if (headingUp && !heading.isNaN()) heading else 0.0
         val l = last
@@ -136,6 +172,8 @@ class SpotMap(ctx: Context, interactive: Boolean) : FrameLayout(ctx) {
 
     override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
         super.onSizeChanged(w, h, oldw, oldh)
+        if (puckLow) street.topPaddingPx = h * 0.4
+        last = null
         camera()
     }
 
