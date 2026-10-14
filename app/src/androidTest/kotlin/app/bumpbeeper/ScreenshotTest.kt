@@ -186,8 +186,7 @@ class ScreenshotTest {
                 map.javaClass.methods.first { it.name.startsWith("debug") }.invoke(map).toString()
             } catch (e: Exception) { "no map check: $e" }
         }
-        out.writeText(line + "
-")
+        out.writeText(line + System.lineSeparator())
     }
 
     /** Wi-Fi and mobile data on or off (the workflow starts with both off). */
