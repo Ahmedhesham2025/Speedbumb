@@ -41,7 +41,8 @@ class DriveWatcherTest {
 
     private val hw = FakeHardware()
     private var drives = 0
-    private val watcher = DriveWatcher(hw, { drives++ })
+    private var drivenSince = -1L
+    private val watcher = DriveWatcher(hw, { since -> drives++; drivenSince = since })
 
     /** [seconds] of GPS fixes every 2 s at [kmh], letting the main looper (and its 10 s timer) run in between. */
     private fun gpsFor(seconds: Int, kmh: Double) {
@@ -72,8 +73,10 @@ class DriveWatcherTest {
         watcher.start()
         hw.move()
         val gps = hw.gps!!
+        val firstFix = SystemClock.elapsedRealtime()
         gpsFor(70, 35.0)
         assertEquals(1, drives)
+        assertEquals(firstFix, drivenSince)   // the trip starts at the first fast fix, not 30 s later
         assertNull(hw.gps)
         assertFalse(hw.wakeHeld)
         assertNull(hw.motion)

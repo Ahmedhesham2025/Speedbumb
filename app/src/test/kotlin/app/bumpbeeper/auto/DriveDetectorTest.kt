@@ -15,10 +15,12 @@ class DriveDetectorTest {
     private fun SpeedGate.feed(fromS: Int, seconds: Int, kmh: Double, stepS: Int = 2): Boolean =
         (fromS until fromS + seconds step stepS).map { add(it * 1000L, kmh) }.any { it }
 
-    @Test fun sixtySecondsAtTwentyIsADrive() {
+    @Test fun moreThanThirtySecondsAtTwentyIsADrive() {
         val g = SpeedGate()
-        assertFalse(g.feed(0, 60, 25.0))      // fixes at 0..58 s
-        assertTrue(g.add(60_000, 25.0))
+        assertFalse(g.feed(0, 30, 25.0))      // fixes at 0..28 s
+        assertFalse(g.add(30_000, 25.0))      // exactly 30 s: not yet
+        assertTrue(g.add(31_000, 25.0))
+        assertEquals(0L, g.since)             // the drive began with the first fast fix
     }
 
     @Test fun cyclingAtEighteenNeverOpens() {
@@ -34,10 +36,11 @@ class DriveDetectorTest {
 
     @Test fun droppingBelowFifteenStartsOver() {
         val g = SpeedGate()
-        g.feed(0, 50, 30.0)
-        g.add(50_000, 10.0)
-        assertFalse(g.feed(52, 50, 30.0))
-        assertTrue(g.feed(102, 12, 30.0))
+        g.feed(0, 26, 30.0)
+        g.add(26_000, 10.0)
+        assertFalse(g.feed(28, 30, 30.0))     // 28..56 s: only 28 s fast so far
+        assertEquals(28_000L, g.since)
+        assertTrue(g.feed(58, 4, 30.0))
     }
 
     @Test fun aLongGapStartsOver() {
@@ -71,6 +74,7 @@ class DriveDetectorTest {
         assertEquals(Action.NONE, d.run(0, 10, null))           // GPS warming up
         assertEquals(Action.DRIVING, d.run(10, 120, 35.0))
         assertFalse(d.checking)
+        assertEquals(10_000L, d.drivingSinceMs)                     // the trip starts with the first fast fix
     }
 
     @Test fun walkingEndsTheCheckAndBacksOff() {

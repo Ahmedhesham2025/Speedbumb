@@ -34,6 +34,7 @@ import app.bumpbeeper.auto.PowerPolicy
 import app.bumpbeeper.auto.ShortTrip
 import app.bumpbeeper.auto.TripCheck
 import app.bumpbeeper.auto.TripHold
+import app.bumpbeeper.auto.TripStart
 import app.bumpbeeper.crash.CrashLog
 import app.bumpbeeper.research.RateAverager
 import app.bumpbeeper.research.ResearchFiles
@@ -92,8 +93,6 @@ class BumpService : Service(), SensorEventListener, LocationListener, EngineList
         private const val SNOOZE_AFTER_STOP_MS = 15 * 60_000L
         /** A speeding warning waits this long after a bump or pothole warning (those come first). */
         private const val HAZARD_FIRST_MS = 6_000L
-        /** The trip start goes back at most this far (a detection never takes longer than its 3 min check). */
-        private const val MAX_BACKDATE_MS = 5 * 60_000L
 
         /** The running service, for [label]. Set in onCreate, cleared in onDestroy. */
         @Volatile private var instance: BumpService? = null
@@ -592,9 +591,7 @@ class BumpService : Service(), SensorEventListener, LocationListener, EngineList
         // No speech available → the two-tone strong-bump sound instead, and no group announcements (EngineConfig.groupWarnings).
         voice = Voice(this, { ok -> engine?.cfg?.groupWarnings = ok }) { beeper.strong() }
         // Driving detected: the trip starts where the movement started, not 30 s later when it was confirmed.
-        val now = System.currentTimeMillis()
-        val early = if (movedSinceMs >= 0) (SystemClock.elapsedRealtime() - movedSinceMs).coerceIn(0L, MAX_BACKDATE_MS) else 0L
-        tripStartMs = now - early
+        tripStartMs = TripStart.wallMs(System.currentTimeMillis(), SystemClock.elapsedRealtime(), movedSinceMs)
         tripId = db.startTrip(tripStartMs)
         // Started by itself: say so with its own sound (a user who pressed Start knows).
         if (source != null) beeper.tripStarted()

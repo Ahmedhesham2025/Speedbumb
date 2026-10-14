@@ -6,6 +6,7 @@ import android.app.Notification
 import android.app.Service
 import android.content.Intent
 import android.os.Looper
+import app.bumpbeeper.BumpDb
 import app.bumpbeeper.BumpService
 import app.bumpbeeper.LiveState
 import app.bumpbeeper.Prefs
@@ -82,6 +83,30 @@ class BumpServiceWatchTest {
         assertFalse(LiveState.recording)
         assertTrue(LiveState.watching)
         assertTrue(svc.currentWatcher!!.snoozed)   // the user may still be driving: no new recording for 15 min
+    }
+
+    private fun tripCount(): Int {
+        val db = BumpDb(app)
+        try {
+            return db.readableDatabase.rawQuery("SELECT COUNT(*) FROM trips", null).use { it.moveToFirst(); it.getInt(0) }
+        } finally {
+            db.close()
+        }
+    }
+
+    @Test fun aTripStoppedWithinThirtySecondsIsNotKept() {
+        send("app.bumpbeeper.WATCH")
+        svc.drivingDetected()
+        assertEquals(1, tripCount())
+        send("app.bumpbeeper.STOP")
+        // The trip is closed (here: deleted) on the engine thread.
+        var n = 1
+        for (i in 0 until 30) {
+            n = tripCount()
+            if (n == 0) break
+            Thread.sleep(100)
+        }
+        assertEquals(0, n)
     }
 
     @Test fun drivingDetectedWhileRecordingStartsNothingNew() {
