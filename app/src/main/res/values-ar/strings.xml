@@ -232,6 +232,10 @@
     <string name="trips_title">سواقتك</string>
     <string name="trips_out_of_100">من 100</string>
     <string name="trips_section_trend">الدرجة لكل رحلة</string>
+    <string name="trips_section_made_of">درجتك متكوّنة من إيه</string>
+    <string name="trips_trend_older">أقدم</string>
+    <string name="trips_trend_latest">الأحدث</string>
+    <string name="trips_trend_empty">الدرجات هتظهر هنا بعد أول رحلات</string>
     <string name="trips_section_all_time">الإجمالي</string>
     <string name="trips_tile_distance">المسافة</string>
     <string name="trips_tile_time">وقت السواقة</string>

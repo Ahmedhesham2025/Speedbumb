@@ -227,6 +227,10 @@
     <string name="trips_title">Your driving</string>
     <string name="trips_out_of_100">out of 100</string>
     <string name="trips_section_trend">Score per trip</string>
+    <string name="trips_section_made_of">What your score is made of</string>
+    <string name="trips_trend_older">older</string>
+    <string name="trips_trend_latest">latest</string>
+    <string name="trips_trend_empty">Scores appear here after your first trips</string>
     <string name="trips_section_all_time">All time</string>
     <string name="trips_tile_distance">Distance</string>
     <string name="trips_tile_time">Driving time</string>
