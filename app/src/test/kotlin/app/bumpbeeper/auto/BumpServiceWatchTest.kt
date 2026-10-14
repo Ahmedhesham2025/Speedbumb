@@ -126,7 +126,7 @@ class BumpServiceWatchTest {
                 longitude = 31.0
                 speed = (kmh / 3.6).toFloat()
                 accuracy = 5f
-                time = System.currentTimeMillis()
+                time = 1_700_000_000_000L + s * 1000L
                 elapsedRealtimeNanos = s * 1_000_000_000L
             }
             shadowOf(lm).simulateLocation(l)
