@@ -50,7 +50,7 @@
     <string name="drive_speed_unknown">– كم/س</string>
     <string name="drive_gps_auto">هيبدأ لوحده لما %1$s يتوصّل</string>
     <string name="drive_gps_tap_start">اضغط ابدأ قبل ما تسوق</string>
-    <string name="drive_gps_accuracy">GPS ±%1$s م · %2$s</string>
+    <string name="drive_gps_accuracy">\u2066GPS\u00A0±%1$s\u00A0م\u2069 · %2$s</string>
     <string name="drive_gps_looking">بندوّر على الـ GPS… (اطلع بره أو قرّب من شباك)</string>
     <string name="drive_km">%1$s كم</string>
     <string name="drive_nothing_yet">لسه مفيش حاجة</string>

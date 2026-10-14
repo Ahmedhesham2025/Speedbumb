@@ -49,7 +49,7 @@
     <string name="drive_speed_unknown">– km/h</string>
     <string name="drive_gps_auto">Starts by itself when %1$s connects</string>
     <string name="drive_gps_tap_start">Tap START before you drive</string>
-    <string name="drive_gps_accuracy">GPS ±%1$s m · %2$s</string>
+    <string name="drive_gps_accuracy">\u2066GPS\u00A0±%1$s\u00A0m\u2069 · %2$s</string>
     <string name="drive_gps_looking">Looking for GPS… (go outside or near a window)</string>
     <string name="drive_km">%1$s km</string>
     <string name="drive_nothing_yet">Nothing yet</string>
