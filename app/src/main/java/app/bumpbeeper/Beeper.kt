@@ -47,6 +47,12 @@ class Beeper(private val ctx: Context) {
     /** The beeps of one warning; a strong bump's voice follows from [Voice], [STRONG_VOICE_MS] after they start. */
     fun warn(sound: WarnSound) = play(tones(patternFor(sound)))
 
+    /**
+     * A recording started by itself (the car, or driving detected): a rising three-note chime (C5, E5, G5, ringing
+     * out), so you know it is recording without looking. Unlike every warning, it goes up and has three notes.
+     */
+    fun tripStarted() = play(tones(doubleArrayOf(523.3, 659.3, 784.0), 120, 30, 0.8, decayMs = 120.0))
+
     /** Soft tick when a new bump is recorded on the first pass. */
     fun click() = play(tones(doubleArrayOf(1568.0), 35, 0, 0.4))
 

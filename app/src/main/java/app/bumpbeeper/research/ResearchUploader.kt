@@ -179,6 +179,8 @@ object ResearchUploader {
             if (quiet < STALE_MS) return emptyList()    // still recording
             if (t.optBoolean("guessed")) { ResearchQueue.edit(ctx) { it.skip(stamp, "unended") }; return emptyList() }   // never asked
         }
+        // An automatic start never confirmed (killed before its 30 s of driving, auto.TripConfirm): never.
+        if (t.optBoolean("pending")) { ResearchQueue.edit(ctx) { it.skip(stamp, "unconfirmed") }; return emptyList() }
         if (TripHold.mustHold(ctx, t.optLong("id", -1L))) return emptyList()   // "Was this a drive?" not answered yet
         val segments = files.sortedBy { ResearchFiles.parse(it.name)?.seg ?: Int.MAX_VALUE }
         var stats: List<ResearchTrim.Stats>? = null
