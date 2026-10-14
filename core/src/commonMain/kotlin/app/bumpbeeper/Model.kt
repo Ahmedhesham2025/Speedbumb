@@ -135,7 +135,7 @@ class Fix(
 class BumpEvent(
     val wallTime: Long,
     val tripId: Long,
-    /** new_bump, hit, hit_repeat, miss, pass_slow, beep, beep_quiet, beep_grouped, rejected, user_mute */
+    /** new_bump, hit, hit_repeat, miss, pass_slow, pass_handled, beep, beep_quiet, beep_grouped, rejected, user_mute */
     val type: String,
     val bumpId: Long,
     val lat: Double,
@@ -175,16 +175,19 @@ interface BumpStore {
     fun logEvent(e: BumpEvent)
 }
 
-/** How a warning should sound. The engine picks it (so it can be tested); the app plays it. */
-enum class WarnSound {
+/** How a warning should sound: [beeps] beeps, then the voice if [voice]. The engine picks it (so it can be tested); the app plays it. */
+enum class WarnSound(val beeps: Int, val voice: Boolean = false) {
     /** A spot that is only a "maybe" ([Confidence.SOFT]), whatever its severity: one soft, short beep. */
-    SOFT,
+    SOFT(1),
     /** Mild bump: one beep. */
-    MILD,
+    MILD(1),
     /** Moderate bump: two beeps. */
-    MODERATE,
-    /** Strong bump: the voice says "Strong bump ahead." ([Phrases.strongBump]). */
-    STRONG,
+    MODERATE(2),
+    /**
+     * Strong bump: three beeps, then the voice says "Strong bump ahead." ([Phrases.strongBump]). A long bump will get
+     * the same once E2 measures how long a bump is.
+     */
+    STRONG(3, voice = true),
 }
 
 /** Several known spots close together ahead: announced once by voice ("3 bumps ahead") instead of one sound each. */
@@ -218,6 +221,12 @@ interface EngineListener {
     /** A warning ahead, with the sound to play. By default it is handed on to [onBeep]. */
     fun onWarning(w: Warning) { onBeep(w.spot, w.distanceM, w.speedKmh) }
     fun onBeep(b: Bump, distanceM: Double, speedKmh: Double) {}
+    /**
+     * Approach beep: after its warning, the driver is still too fast for spot [b] ([EngineConfig.approachFastKmh]):
+     * play one short beep now. They come faster as the spot nears ([EngineConfig.approachIntervalMs]), parking-sensor
+     * style, and stop for good once the driver slows down, the spot is reached or it is muted. Bumps only.
+     */
+    fun onApproachBeep(b: Bump, distanceM: Double, speedKmh: Double) {}
     fun onPassed(b: Bump, felt: Boolean) {}
     fun onJoltRejected(peak: Double, reason: String) {}
 }

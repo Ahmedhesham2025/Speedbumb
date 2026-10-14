@@ -45,10 +45,16 @@ class MetricsTest {
         assertEquals(1.0, r.recallFast, 1e-9)
     }
 
-    @Test fun kindAndSide() {
-        assertEquals(1.0, r.kindAccuracy, 1e-9)
-        assertEquals(1, r.sideChecked)
-        assertEquals(0.0, r.sideAccuracy, 1e-9)
+    @Test fun noPotholeRowsAndBandedBumpsCount() {
+        // v2: every jolt is a bump; labels with a band are hazards too, and the table has no bump-vs-pothole rows.
+        val md = r.toMarkdown("t")
+        assertFalse(md, md.contains("pothole"))
+        assertFalse(r.toJson().contains("kind_"))
+        assertTrue(Metrics.isHazard("bump_strong") && Metrics.isHazard("bump") && !Metrics.isHazard("rough") && !Metrics.isHazard("nothing"))
+        val banded = listOf(label(10_000, "bump_moderate", 100.0))
+        assertEquals(1, Metrics.compute(banded, ReplayResult(events, trip, DrivingStats()), samples).matchedLabels)
+        assertEquals("moderate", Metrics.band("hits 2/3 now=bump sev=moderate conf=full score=-0.20"))
+        assertEquals("", Metrics.band("same pass"))
     }
 
     @Test fun falseWarnings() {
@@ -90,7 +96,7 @@ class MetricsTest {
     @Test fun fastHitsGetAWiderGate() {
         // 54 km/h: the jolt at 10.0 s (logged 1.2 s later), tapped 1 s after it, 25 m further on. 15 m alone: a miss.
         val lab = listOf(label(11_000, "bump", 125.0))
-        val det = listOf(Metrics.Detection(11_200, at(100.0)[0], at(100.0)[1], "bump", "unknown"))
+        val det = listOf(Metrics.Detection(11_200, at(100.0)[0], at(100.0)[1]))
         assertEquals(15.0 + 15.0, Metrics.gateM(54.0, 1000), 1e-9)
         assertEquals(15.0 + 30.0, Metrics.gateM(54.0, 5000), 1e-9)      // time gap capped at 2 s
         assertEquals(mapOf(0 to 0), Metrics.match(lab, det, listOf(54.0)))
@@ -100,7 +106,7 @@ class MetricsTest {
     @Test fun hazardLabelsArePairedBeforeRough() {
         // The rough tap is closer in time, but the detection belongs to the bump.
         val lab = listOf(label(10_000, "bump", 100.0), label(10_900, "rough", 104.0))
-        val det = listOf(Metrics.Detection(11_000, at(101.0)[0], at(101.0)[1], "bump", "unknown"))
+        val det = listOf(Metrics.Detection(11_000, at(101.0)[0], at(101.0)[1]))
         assertEquals(mapOf(0 to 0), Metrics.match(lab, det))
     }
 }

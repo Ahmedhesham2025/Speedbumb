@@ -71,7 +71,7 @@ class TripsPage(private val a: MainActivity) : Page {
         add(Ui.section(a, a.getString(R.string.trips_section_all_time)))
         val t = listOf(
             R.string.trips_tile_distance, R.string.trips_tile_time, R.string.trips_tile_trips,
-            R.string.trips_tile_bumps, R.string.trips_tile_potholes, R.string.trips_tile_warnings,
+            R.string.trips_tile_bumps, R.string.trips_tile_strong, R.string.trips_tile_warnings,
         ).map { Ui.tile(a, a.getString(it)) }
         totals = t.map { it.second }
         add(Ui.grid(a, t.map { it.first }, 3))

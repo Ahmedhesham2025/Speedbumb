@@ -14,6 +14,7 @@ import app.bumpbeeper.Prefs
 import app.bumpbeeper.R
 import app.bumpbeeper.TraceWriter
 import java.io.File
+import java.io.IOException
 import java.io.OutputStream
 import java.security.SecureRandom
 import java.text.SimpleDateFormat
@@ -69,15 +70,44 @@ object ResearchFiles {
      * 8 random hex digits naming this phone's research files, used for nothing else. Kept in noBackupFilesDir (a restored
      * backup or a new phone gets a new one) and replaced by [renewId] at each new opt-in, so files from before an opt-out
      * can't be linked to later ones.
+     *
+     * A new id is made only when there is none (or the file holds no id, or the last one wasn't saved). A saved id that
+     * can't be read is tried [READ_TRIES] times and then throws: the recorder then records nothing this trip (its
+     * writer stops at the first file) rather than start a new id, which would make this opt-in's unsent trips look
+     * withdrawn, and those are deleted. Sleeps between tries: call it off the main thread (the recorder's writer does).
      */
     @Synchronized
-    fun researchId(ctx: Context): String = (if (unsaved(ctx)) null else readId(ctx)) ?: renewId(ctx)
+    fun researchId(ctx: Context): String {
+        if (unsaved(ctx)) return renewId(ctx)
+        val f = File(ctx.noBackupFilesDir, ID_FILE)
+        var error: Exception? = null
+        for (i in 1..READ_TRIES) {
+            try {
+                if (f.exists()) return f.readText().trim().takeIf { HEX8.matches(it) } ?: renewId(ctx)   // read, but no id
+                error = null
+            } catch (e: Exception) {
+                error = e
+            }
+            if (i < READ_TRIES) Thread.sleep(READ_RETRY_MS)
+        }
+        if (error != null) throw IOException("research id unreadable", error)
+        return renewId(ctx)   // none: the first recording since the opt-in
+    }
 
-    /** A new random [researchId]. If it can't be saved, no file counts as current ([storedId]) until one is. */
+    private const val READ_TRIES = 3
+    private const val READ_RETRY_MS = 50L
+
+    /**
+     * A new random [researchId]. If it can't be saved, no file counts as current ([storedId]) until one is: the old id
+     * file is deleted (that needs no free space), so it can't count as current again even if the flag below can't be
+     * written either, say on a full disk, and the app restarts.
+     */
     @Synchronized
     fun renewId(ctx: Context): String {
         val id = String.format(Locale.US, "%08x", SecureRandom().nextInt())
-        val saved = try { File(ctx.noBackupFilesDir, ID_FILE).writeText(id); true } catch (e: Exception) { Log.w(TAG, "research id not saved: $e"); false }
+        val file = File(ctx.noBackupFilesDir, ID_FILE)
+        val saved = try { file.writeText(id); true } catch (e: Exception) { Log.w(TAG, "research id not saved: $e"); false }
+        if (!saved) try { file.delete() } catch (_: Exception) {}
         unsavedNow = !saved
         try { Prefs.sp(ctx).edit().putBoolean(ID_UNSAVED, !saved).commit() } catch (_: Exception) {}
         return id

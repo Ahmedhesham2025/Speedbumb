@@ -7,6 +7,7 @@ import android.media.AudioManager
 import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
 import java.util.Locale
+import java.util.concurrent.ConcurrentHashMap
 
 /**
  * Spoken warnings ("Strong bump ahead.", "3 bumps ahead."), using the phone's own text-to-speech
@@ -32,6 +33,8 @@ class Voice(
     val speaks: Boolean get() = ready && !broken
     private var lang = ""
     private var n = 0
+    /** Called when an utterance ends, spoken or failed (by utterance id). */
+    private val ends = ConcurrentHashMap<String, () -> Unit>()
     private val tts: TextToSpeech = TextToSpeech(app) { status ->
         ready = status == TextToSpeech.SUCCESS
         onSpeechChange(speaks)
@@ -41,18 +44,26 @@ class Voice(
         tts.setAudioAttributes(attrs)
         tts.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
             override fun onStart(utteranceId: String?) {}
-            override fun onDone(utteranceId: String?) { am.abandonAudioFocusRequest(focus) }
-            @Deprecated("Deprecated in Android") override fun onError(utteranceId: String?) { am.abandonAudioFocusRequest(focus) }
+            override fun onDone(utteranceId: String?) { am.abandonAudioFocusRequest(focus); ended(utteranceId) }
+            @Deprecated("Deprecated in Android") override fun onError(utteranceId: String?) { am.abandonAudioFocusRequest(focus); ended(utteranceId) }
         })
     }
 
-    /** Warn about a strong bump ahead ("Strong bump ahead."). */
-    fun strongBump() = say(Phrases.strongBump(Prefs.voiceLang(app)))
+    private fun ended(id: String?) { if (id != null) ends.remove(id)?.invoke() }
 
-    /** Announce a group of spots ahead ("3 bumps ahead."); [fallback] plays instead if speech isn't available. */
-    fun cluster(c: HazardCluster, fallback: () -> Unit) {
+    /**
+     * After the strong bump's three beeps: "Strong bump ahead." Silent if speech isn't available (the beeps played).
+     * [onEnd] runs once it has been spoken, or at once if it can't be.
+     */
+    fun strongBump(onEnd: () -> Unit = {}) = say(Phrases.strongBump(Prefs.voiceLang(app)), {}, onEnd)
+
+    /**
+     * Announce a group of spots ahead ("3 bumps ahead."); [fallback] plays instead if speech isn't available.
+     * [onEnd] runs once the line has been spoken or the fallback played.
+     */
+    fun cluster(c: HazardCluster, fallback: () -> Unit, onEnd: () -> Unit = {}) {
         val text = Phrases.cluster(Prefs.voiceLang(app), c.count, c.maxSeverity == Severity.STRONG)
-        if (text == null) fallback() else say(text, fallback)
+        if (text == null) { fallback(); onEnd() } else say(text, fallback, onEnd)
     }
 
     /** After the speeding tone: "Speed limit 60." Silent if speech isn't available (the tone already played). */
@@ -63,21 +74,25 @@ class Voice(
         fallback()
     }
 
-    fun say(text: String, fallback: () -> Unit = onUnavailable) {
+    fun say(text: String, fallback: () -> Unit = onUnavailable, onEnd: () -> Unit = {}) {
         val code = Prefs.voiceLang(app)
-        if (!ready) { fallback(); return }
+        if (!ready) { fallback(); onEnd(); return }
         if (code != lang) {
             val r = tts.setLanguage(if (code == "ar") Locale("ar", "EG") else Locale.US)
             if (r == TextToSpeech.LANG_MISSING_DATA || r == TextToSpeech.LANG_NOT_SUPPORTED) {
                 // Arabic voice not installed: fall back to English rather than staying silent.
-                if (code == "ar") tts.setLanguage(Locale.US) else { fail(fallback); return }
+                if (code == "ar") tts.setLanguage(Locale.US) else { fail(fallback); onEnd(); return }
             }
             lang = code
         }
         am.requestAudioFocus(focus)
-        if (tts.speak(text, TextToSpeech.QUEUE_FLUSH, null, "w${n++}") != TextToSpeech.SUCCESS) {
+        val id = "w${n++}"
+        ends[id] = onEnd
+        if (tts.speak(text, TextToSpeech.QUEUE_FLUSH, null, id) != TextToSpeech.SUCCESS) {
+            ends.remove(id)
             am.abandonAudioFocusRequest(focus)
             fail(fallback)
+            onEnd()
         }
     }
 

@@ -24,8 +24,8 @@ import java.util.zip.ZipOutputStream
  *
  * Columns: t_s (seconds since start), type (accel | gps | event), the sensor values for that type,
  * and for events: event, bump_id, peak, note. gx/gy/gz stay empty until the first gyroscope reading. Load it in pandas and filter on `type`.
- * Extra event rows: `event=label` (note = what the driver tapped: bump, pothole_l, pothole_r, rough, undo)
- * and `event=battery` (peak = battery percent, every 5 minutes).
+ * Extra event rows: `event=label` (note = what the driver tapped: bump, pothole_l, pothole_r, rough, undo),
+ * `event=battery` (peak = battery percent, every 5 minutes) and `event=mark` (Diagnostics' Mark button, label mode only).
  */
 class TraceWriter(dir: File, meta: List<String> = emptyList()) {
     val file: File
@@ -71,6 +71,12 @@ class TraceWriter(dir: File, meta: List<String> = emptyList()) {
     @Synchronized fun label(kind: String, lat: Double, lon: Double, speedKmh: Double) {
         eventRow("label", lat, lon, speedKmh, Double.NaN, "", Double.NaN, kind)
         out.flush()   // a label is rare and precious: don't lose it if the app dies
+    }
+
+    /** Diagnostics' "Mark" (a test-drive passenger picked up the phone): its own event, never a label. */
+    @Synchronized fun mark(lat: Double, lon: Double, speedKmh: Double) {
+        eventRow("mark", lat, lon, speedKmh, Double.NaN, "", Double.NaN, "")
+        out.flush()
     }
 
     /** Battery level in percent, so we can see what recording costs. */
