@@ -62,7 +62,13 @@ class BumpDb(ctx: Context) : SQLiteOpenHelper(ctx, "bumps.db", null, 9), BumpSto
 
     /** Version 9: the most over the fixed speeding threshold, for the score breakdown ([DrivingStats.scoreBreakdown]). */
     private fun addBreakdownColumns(db: SQLiteDatabase) {
-        db.execSQL("ALTER TABLE trips ADD COLUMN max_excess_kmh REAL NOT NULL DEFAULT 0")
+        // Already there when an older database was built by today's onCreate (tests do that): add it only once.
+        val has = db.rawQuery("PRAGMA table_info(trips)", null).use { c ->
+            var found = false
+            while (c.moveToNext()) if (c.getString(1) == "max_excess_kmh") found = true
+            found
+        }
+        if (!has) db.execSQL("ALTER TABLE trips ADD COLUMN max_excess_kmh REAL NOT NULL DEFAULT 0")
     }
 
     /**
