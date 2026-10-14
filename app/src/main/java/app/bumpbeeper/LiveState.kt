@@ -24,6 +24,10 @@ object LiveState {
     @Volatile var tripMovingS = 0.0
     @Volatile var tripEvents = 0
     @Volatile var speedingPct = 0.0
+    /** The next spots on the road ahead, nearest first, at most two (Drive card: "Then: strong bump in 650 m"). */
+    @Volatile var spotsAhead: List<SpotAhead> = emptyList()
+    /** Where this trip's points went so far; null while too short to score. */
+    @Volatile var scoreBreakdown: ScoreBreakdown? = null
     @Volatile var lastDriveEvent = ""
     /** "Help improve detection": elements waiting for upload. */
     @Volatile var trainingQueued = 0

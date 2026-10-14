@@ -21,7 +21,7 @@ import kotlin.math.roundToInt
  * plus the shared-map sync tables (outbox, remote_spots, sync_state), see [SyncStore], and the training outbox
  * ("Help improve detection"), see [TrainingStore].
  */
-class BumpDb(ctx: Context) : SQLiteOpenHelper(ctx, "bumps.db", null, 8), BumpStore {
+class BumpDb(ctx: Context) : SQLiteOpenHelper(ctx, "bumps.db", null, 9), BumpStore {
 
     init {
         setWriteAheadLoggingEnabled(true)
@@ -57,6 +57,18 @@ class BumpDb(ctx: Context) : SQLiteOpenHelper(ctx, "bumps.db", null, 8), BumpSto
         TrainingStore.createTables(db)
         addSeverityColumns(db)
         SyncStore.addSpotColumns(db)
+        addBreakdownColumns(db)
+    }
+
+    /** Version 9: the most over the fixed speeding threshold, for the score breakdown ([DrivingStats.scoreBreakdown]). */
+    private fun addBreakdownColumns(db: SQLiteDatabase) {
+        // Already there when an older database was built by today's onCreate (tests do that): add it only once.
+        val has = db.rawQuery("PRAGMA table_info(trips)", null).use { c ->
+            var found = false
+            while (c.moveToNext()) if (c.getString(1) == "max_excess_kmh") found = true
+            found
+        }
+        if (!has) db.execSQL("ALTER TABLE trips ADD COLUMN max_excess_kmh REAL NOT NULL DEFAULT 0")
     }
 
     /**
@@ -119,6 +131,8 @@ class BumpDb(ctx: Context) : SQLiteOpenHelper(ctx, "bumps.db", null, 8), BumpSto
                     "legacy = CASE WHEN kind_votes > 0 AND kind_score >= $OLD_POTHOLE_MARGIN THEN 1 ELSE 0 END"
             )
         }
+        // Version 9: one trips column; trips saved before read 0 km/h over.
+        if (oldVersion < 9) addBreakdownColumns(db)
     }
 
     // ---------------- BumpStore (used by the engine) ----------------
@@ -199,7 +213,7 @@ class BumpDb(ctx: Context) : SQLiteOpenHelper(ctx, "bumps.db", null, 8), BumpSto
             put("potholes", s.strong)   // until DB v8 / the trips screen rework: strong bumps felt
             if (d != null) {
                 put("moving_s", d.movingS); put("speeding_s", d.speedingS); put("speeding_excess", d.speedingExcess)
-                put("max_speed", d.maxSpeedKmh); put("harsh_brakes", d.harshBrakes); put("harsh_accels", d.harshAccels)
+                put("max_speed", d.maxSpeedKmh); put("max_excess_kmh", d.maxExcessKmh); put("harsh_brakes", d.harshBrakes); put("harsh_accels", d.harshAccels)
                 put("harsh_corners", d.harshCorners); put("swerves", d.swerves); put("bumps_fast", d.bumpsFast)
                 put("phone_use", d.phoneUse); put("score", d.score())
                 putSpeedLimits(d)
@@ -253,6 +267,8 @@ class BumpDb(ctx: Context) : SQLiteOpenHelper(ctx, "bumps.db", null, 8), BumpSto
         val id: Long, val startTs: Long, val endTs: Long, val hits: Int, val newBumps: Int, val beeps: Int,
         val potholes: Int, val drive: DrivingStats, val score: Int,
     ) {
+        /** Where the trip's points went, for the trip summary; null if too short to score. */
+        val breakdown: ScoreBreakdown? get() = drive.scoreBreakdown()
         val durationS: Long get() = ((endTs - startTs) / 1000).coerceAtLeast(0)
         val limitsLookedUp: Boolean get() = drive.limitKnownShare >= 0
     }
@@ -266,7 +282,7 @@ class BumpDb(ctx: Context) : SQLiteOpenHelper(ctx, "bumps.db", null, 8), BumpSto
         readableDatabase.rawQuery(
             "SELECT id, start_ts, end_ts, hits, new_bumps, beeps, potholes, distance_m, moving_s, speeding_s, speeding_excess, " +
                 "max_speed, harsh_brakes, harsh_accels, harsh_corners, swerves, bumps_fast, phone_use, score, " +
-                "limit_known_share, limit_known_s, over_limit_10_s, over_limit_20_s, over_limit_30_s, max_over_limit_kmh " +
+                "limit_known_share, limit_known_s, over_limit_10_s, over_limit_20_s, over_limit_30_s, max_over_limit_kmh, max_excess_kmh " +
                 "FROM trips $where LIMIT $limit", null
         ).use { c ->
             fun i(k: Int) = if (c.isNull(k)) 0 else c.getInt(k)
@@ -278,6 +294,7 @@ class BumpDb(ctx: Context) : SQLiteOpenHelper(ctx, "bumps.db", null, 8), BumpSto
                     bumpsFast = i(16); phoneUse = i(17)
                     limitKnownShare = if (c.isNull(19)) -1.0 else c.getDouble(19); limitKnownS = dd(20)
                     overLimit10S = dd(21); overLimit20S = dd(22); overLimit30S = dd(23); maxOverLimitKmh = dd(24)
+                    maxExcessKmh = dd(25)
                 }
                 // Trips recorded before driving scores existed have no score: leave them unscored.
                 val score = if (c.isNull(18)) -1 else c.getInt(18)

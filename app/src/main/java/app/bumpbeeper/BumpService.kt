@@ -1106,11 +1106,13 @@ class BumpService : Service(), SensorEventListener, LocationListener, EngineList
         LiveState.tripHarshPotholes = 0
         LiveState.potholesOnMap = eng.bumps.count { it.legacy }
         LiveState.harshOnMap = eng.bumps.count { it.severity(eng.cfg) == Severity.STRONG }
+        LiveState.spotsAhead = eng.spotsAhead
         monitor?.stats?.let { d ->
             LiveState.liveScore = d.score()
             LiveState.tripMovingS = d.movingS
             LiveState.tripEvents = d.harshBrakes + d.harshAccels + d.harshCorners + d.swerves + d.bumpsFast + d.phoneUse
             LiveState.speedingPct = d.speedingShare * 100
+            LiveState.scoreBreakdown = d.scoreBreakdown()
         }
 
         val now = SystemClock.elapsedRealtime()

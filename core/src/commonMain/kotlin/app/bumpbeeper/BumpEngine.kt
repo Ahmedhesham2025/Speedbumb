@@ -62,6 +62,13 @@ class EngineConfig {
     /** ...or further than this. */
     var maxAlertDistM = 250.0
     /**
+     * The Drive card's next spots ([BumpEngine.spotsAhead]): spots in the same direction within [aheadRangeM], straight
+     * ahead within [aheadNearDeg] of the heading up to [approachRadiusM] away and within [aheadFarDeg] beyond it.
+     */
+    var aheadRangeM = 1000.0
+    var aheadNearDeg = 60.0
+    var aheadFarDeg = 25.0
+    /**
      * Approach beeps ([EngineListener.onApproachBeep]): after a confirmed spot's warning, while the driver is still at
      * [approachFastKmh] or faster (the "bump taken fast" speed, [DrivingConfig.bumpFastKmh]), short beeps from
      * [approachDelayMs] after the warning (its sound or voice first) until the spot is [approachEndM] away. The gap
@@ -1054,7 +1061,31 @@ class BumpEngine(
         return ((now.bearingDeg - before.bearingDeg) % 360.0 + 540.0) % 360.0 - 180.0
     }
 
+    /**
+     * The next spots on the road ahead, nearest first (at most two: "Strong bump in 120 m. Then: mild bump in 650 m"),
+     * your own and shared, not muted. Updated on every fix while moving; empty until the heading is known.
+     */
+    var spotsAhead: List<SpotAhead> = emptyList()
+        private set
+
+    private fun updateSpotsAhead(f: Fix) {
+        if (f.speedMps < 1.5 || heading.isNaN()) return
+        val out = ArrayList<SpotAhead>()
+        for (s in bumps.asSequence() + remoteActive.asSequence()) {
+            if (abs(s.lat - f.lat) > 0.01 || abs(s.lon - f.lon) > 0.012) continue   // more than ~1 km away
+            if (!warnable(s) || Geo.angleDiff(heading, s.heading) > cfg.headingTolDeg) continue
+            val d = Geo.distance(f.lat, f.lon, s.lat, s.lon)
+            if (d > cfg.aheadRangeM || d < 1.0) continue
+            val off = Geo.angleDiff(heading, Geo.bearing(f.lat, f.lon, s.lat, s.lon))
+            if (off > (if (d <= cfg.approachRadiusM) cfg.aheadNearDeg else cfg.aheadFarDeg)) continue
+            out.add(SpotAhead(s, d, s.severity(cfg), s.confidence(cfg), soundFor(s)))
+        }
+        out.sortBy { it.distanceM }
+        spotsAhead = out.take(2)
+    }
+
     private fun updateApproaches(f: Fix, joltSinceFix: Double) {
+        updateSpotsAhead(f)
         val moving = f.speedMps >= 1.5
         val alertDist = (f.speedMps * cfg.leadSeconds).coerceIn(cfg.minAlertDistM, cfg.maxAlertDistM)
         for (b in bumps) watch(b, false, f, joltSinceFix, moving, alertDist)
