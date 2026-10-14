@@ -609,7 +609,7 @@ class DrivePage(private val a: MainActivity) : Page {
         lastTripRow.visibility = if (!rec && last >= 0) View.VISIBLE else View.GONE
         if (!rec && last >= 0) {
             Ui.setScore(lastTripBadge, last)
-            lastTripTitle.text = a.getString(R.string.drive_last_trip_title, DrivingStats.grade(last))
+            lastTripTitle.text = a.getString(R.string.drive_last_trip_title, Ui.grade(a, last))
         }
 
         tDist.text = if (rec) a.getString(R.string.drive_km, String.format(Locale.US, "%.1f", LiveState.tripKm)) else "–"

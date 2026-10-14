@@ -258,6 +258,16 @@
     <string name="trips_bd_ok">مفيش خصم</string>
     <string name="trips_bd_max_over">أقصى زيادة %1$s</string>
     <string name="trips_no_score">مفيش درجة لسه</string>
+    <string name="grade_excellent">ممتاز</string>
+    <string name="grade_good">كويس</string>
+    <string name="grade_fair">مقبول</string>
+    <string name="grade_needs_work">محتاج تحسين</string>
+    <string name="grade_none">قصيرة على إنها تتحسب</string>
+    <string name="trips_part_speed">السرعة</string>
+    <string name="trips_part_braking">الفرامل والتسارع</string>
+    <string name="trips_part_steering">اللف والتمايل</string>
+    <string name="trips_part_bumps">المطبّات</string>
+    <string name="trips_part_phone">استخدام الموبايل</string>
     <string name="trips_basis_none">سوق على الأقل 0.5 كم والتسجيل شغّال عشان تاخد درجة.</string>
     <string name="trips_basis_one">من آخر %1$d رحلة (%2$s كم)</string>
     <string name="trips_basis_many">من آخر %1$d رحلات (%2$s كم)</string>
@@ -507,6 +517,8 @@
     <string name="settings_diagnostics_hint">التطبيق بيعمل إيه، لتجارب السواقة والدعم. للقراية بس؛ مفيش حاجة بتترفع.</string>
     <string name="diag_title">التشخيص</string>
     <string name="diag_hint">للقراية بس. مفيش حاجة هنا بتترفع، ومفيش أماكن بتظهر.</string>
+    <string name="diag_meter_trigger">حدّ التنبيه %1$.1f م/ث²</string>
+    <string name="diag_meter_idle">بيتحرك أثناء التسجيل</string>
     <string name="diag_group_mark">علامات اختبار القيادة</string>
     <string name="diag_group_live">مقياس الهزّات وآخر الأحداث</string>
     <string name="diag_group_perms">الأذونات</string>

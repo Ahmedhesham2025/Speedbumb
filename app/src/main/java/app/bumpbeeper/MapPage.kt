@@ -259,7 +259,7 @@ class MapPage(private val a: MainActivity) : Page {
     /** The tapped spot in the sheet (it was a dialog): what it is, where, how sure, and Mute / Maps / Delete. */
     private fun showSpot(b: Bump) {
         val me = lastLocation()
-        val date = SimpleDateFormat("d MMM yyyy", Locale.US).format(Date(b.firstSeen))
+        val date = SimpleDateFormat("d MMM yyyy", Ui.locale(a)).format(Date(b.firstSeen))
         val info = a.getString(R.string.map_spot_info, b.hits, b.passes, String.format(Locale.US, "%.1f", b.peakAvg), date)
         spotBox.removeAllViews()
         spotBox.addView(LinearLayout(a).apply {
