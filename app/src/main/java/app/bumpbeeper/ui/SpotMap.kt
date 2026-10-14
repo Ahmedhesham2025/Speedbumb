@@ -7,8 +7,10 @@ import app.bumpbeeper.Bump
 import app.bumpbeeper.BumpMapView
 import app.bumpbeeper.Confidence
 import app.bumpbeeper.EngineConfig
+import app.bumpbeeper.Geo
 import app.bumpbeeper.Severity
 import app.bumpbeeper.Ui
+import kotlin.math.abs
 import kotlin.math.cos
 import kotlin.math.ln
 import kotlin.math.max
@@ -63,7 +65,11 @@ class SpotMap(ctx: Context, interactive: Boolean) : FrameLayout(ctx) {
         set(v) { field = v; pushMe(); if (headingUp) camera() }
     /** Driving: the street map turns so the road ahead points up. The offline map stays north-up. */
     var headingUp = false
-        set(v) { field = v; camera() }
+        set(v) {
+            if (field != v) street.setMaxFps(if (v) DRIVE_FPS else 60)   // driving: a calm 30 frames a second
+            field = v
+            camera()
+        }
 
     /** True while the street map is on screen (false: the offline map is). */
     val showingStreets: Boolean get() = streetsOn
@@ -100,10 +106,26 @@ class SpotMap(ctx: Context, interactive: Boolean) : FrameLayout(ctx) {
         if (street.available) street.setMe(meLat, meLon, heading)
     }
 
+    private var last: DoubleArray? = null   // lat, lon, zoom, bearing last sent to the street map
+
+    /**
+     * Sends the camera to the street map, but only when it moved enough to see (3 m, a twentieth of a zoom step,
+     * 3°): each move redraws the map, and while driving a fix comes every second (battery).
+     */
     private fun camera() {
         if (!street.available || centerLat == 0.0 && centerLon == 0.0) return
-        street.moveTo(centerLat, centerLon, zoomFor(radiusM, centerLat), if (headingUp && !heading.isNaN()) heading else 0.0)
+        val zoom = zoomFor(radiusM, centerLat)
+        val bearing = if (headingUp && !heading.isNaN()) heading else 0.0
+        val l = last
+        if (l != null && Geo.distance(l[0], l[1], centerLat, centerLon) < 3.0 && abs(l[2] - zoom) < 0.05 &&
+            abs(((l[3] - bearing + 540.0) % 360.0) - 180.0) < 3.0) return
+        last = doubleArrayOf(centerLat, centerLon, zoom, bearing)
+        street.moveTo(centerLat, centerLon, zoom, bearing)
     }
+
+    /** For the screenshot test's check file. */
+    internal fun debug(): String = "streets=$streetsOn available=${street.available} bumps=${bumps.size} " +
+        "centre=$centerLat,$centerLon radius=$radiusM ${if (street.available) street.debug() else ""}"
 
     /** The street map's zoom that shows about [radiusM] from the centre to the top edge (512 px tiles, in dp). */
     private fun zoomFor(radiusM: Double, lat: Double): Double {
@@ -130,5 +152,6 @@ class SpotMap(ctx: Context, interactive: Boolean) : FrameLayout(ctx) {
 
     private companion object {
         const val EARTH_M = 40_075_016.686
+        const val DRIVE_FPS = 30
     }
 }

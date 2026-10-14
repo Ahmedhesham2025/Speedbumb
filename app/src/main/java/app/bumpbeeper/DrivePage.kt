@@ -56,7 +56,7 @@ class DrivePage(private val a: MainActivity) : Page {
     // Ready (not recording): the map with your bumps, a few chips, one setup row, the last trip, Start drive.
     private lateinit var readyView: View
     private lateinit var liveView: View
-    private lateinit var map: SpotMap
+    internal lateinit var map: SpotMap   // internal: the screenshot test checks it
     private lateinit var autoChip: TextView
     private lateinit var readyHint: TextView
     private lateinit var lastTripRow: LinearLayout
