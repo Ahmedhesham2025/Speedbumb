@@ -134,6 +134,27 @@ object Ui {
         const val DRIVE_TARGET = 56
     }
 
+    // ---------------------------------------------------------------- font
+    private val fonts = HashMap<Int, Typeface>()
+
+    /**
+     * Roboto Flex (assets/fonts, SIL OFL 1.1, licence next to it) at a [weight] of the type scale: 400 body, 500
+     * labels and chips, 700 titles and numbers. Falls back to the system font if it can't be read. Letters it has no
+     * glyph for (Arabic) come from the system's fallback fonts, as with any font.
+     */
+    fun font(ctx: Context, weight: Int): Typeface = synchronized(fonts) {
+        fonts.getOrPut(weight) {
+            try {
+                Typeface.Builder(ctx.assets, FONT_FILE).setFontVariationSettings("'wght' $weight").setWeight(weight).build()
+                    ?: fallback(weight)
+            } catch (_: Exception) { fallback(weight) }
+        }
+    }
+
+    private fun fallback(weight: Int): Typeface = Typeface.create(Typeface.DEFAULT, if (weight >= 600) Typeface.BOLD else Typeface.NORMAL)
+
+    private const val FONT_FILE = "fonts/RobotoFlex-Variable.ttf"
+
     fun dp(ctx: Context, v: Int): Int = (v * ctx.resources.displayMetrics.density).toInt()
     fun dpf(ctx: Context, v: Float): Float = v * ctx.resources.displayMetrics.density
 
@@ -163,7 +184,7 @@ object Ui {
     fun text(ctx: Context, sizeSp: Float, color: Int = TEXT, bold: Boolean = false, value: String = "") = TextView(ctx).apply {
         setTextSize(TypedValue.COMPLEX_UNIT_SP, sizeSp)
         setTextColor(color)
-        if (bold) typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+        typeface = font(ctx, if (bold) 700 else 400)
         text = value
     }
 
@@ -193,7 +214,7 @@ object Ui {
             text = label
             setTextColor(fg)
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
-            typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+            typeface = font(ctx, 700)
             gravity = Gravity.CENTER
             minHeight = dp(ctx, 48)
             val h = dp(ctx, 20)
@@ -211,7 +232,7 @@ object Ui {
         text = label
         setTextColor(fg)
         setTextSize(TypedValue.COMPLEX_UNIT_SP, 19f)
-        typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+        typeface = font(ctx, 700)
         gravity = Gravity.CENTER
         minHeight = dp(ctx, 76)
         setPadding(dp(ctx, 8), dp(ctx, 10), dp(ctx, 8), dp(ctx, 10))
@@ -266,7 +287,7 @@ object Ui {
         text = label
         setTextSize(TypedValue.COMPLEX_UNIT_SP, Type.LABEL)
         setTextColor(TEXT)
-        typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+        typeface = font(ctx, 500)
         gravity = Gravity.CENTER_VERTICAL
         minHeight = dp(ctx, 36)
         maxLines = 1
@@ -335,7 +356,7 @@ object Ui {
         text = label
         setTextColor(fg)
         setTextSize(TypedValue.COMPLEX_UNIT_SP, 19f)
-        typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+        typeface = font(ctx, 700)
         gravity = Gravity.CENTER
         minHeight = dp(ctx, 64)
         setPadding(dp(ctx, 24), dp(ctx, 10), dp(ctx, 24), dp(ctx, 10))
@@ -352,7 +373,7 @@ object Ui {
     fun scoreBadge(ctx: Context, sizeDp: Int = 44): TextView = TextView(ctx).apply {
         gravity = Gravity.CENTER
         setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
-        typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+        typeface = font(ctx, 700)
         minWidth = dp(ctx, sizeDp)
         minHeight = dp(ctx, sizeDp)
     }
@@ -465,7 +486,7 @@ object Ui {
                 text = label
                 gravity = Gravity.CENTER
                 setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
-                typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+                typeface = font(ctx, 500)
                 minHeight = dp(ctx, 48)
                 maxLines = 2
                 setPadding(dp(ctx, 6), 0, dp(ctx, 6), 0)
