@@ -71,6 +71,11 @@ class BumpEvidenceTest {
             bumpsAt = listOf(800.0), bumpKmh = 20.0, slowZonesAt = listOf(800.0), cruiseKmh = 50.0,
             holdsAt = listOf(holdAt to 4.0), holdShake = 0.0,
         )
+        for (seed in 9L..11L) for (zone in listOf(true, false)) {
+            val st = MemoryStore()
+            Simulator(seed).drive(st, DriveSpec(bumpsAt = listOf(800.0, 1500.0), bumpKmh = 20.0, slowZonesAt = if (zone) listOf(800.0) else emptyList(), cruiseKmh = 50.0))
+            println("DIAG $seed $zone " + notes(st, "new_bump"))
+        }
         val store = MemoryStore()
         val r = Simulator(9).drive(store, spec(800.0 + 2.6 + 0.2 * v), cfg)
         val learned = notes(store, "new_bump")
