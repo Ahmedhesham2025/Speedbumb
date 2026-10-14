@@ -61,10 +61,11 @@ class BumpEvidenceTest {
     }
 
     @Test fun aClearPairOverridesALaterHandling() {
-        // A real bump crawled over after braking to 10 km/h (both axles, pitch up then down), and the phone picked up
-        // 0.25 s after the rear axle, seen before the decision 1.6 s after the front one: the car's signature wins.
-        val v = 10 / 3.6
-        fun spec(holdAt: Double) = DriveSpec(bumpsAt = listOf(800.0), bumpKmh = 10.0, holdsAt = listOf(holdAt to 4.0), cruiseKmh = 40.0)
+        // A real bump after braking to 20 km/h (both axles, pitch up then down), and the phone lifted (without a shake)
+        // 0.25 s after the rear axle, seen before the decision: the car's signature wins.
+        val v = 20 / 3.6
+        fun spec(holdAt: Double) =
+            DriveSpec(bumpsAt = listOf(800.0), bumpKmh = 20.0, holdsAt = listOf(holdAt to 4.0), holdShake = 0.0, cruiseKmh = 40.0)
         val store = MemoryStore()
         val r = Simulator(9).drive(store, spec(800.0 + 2.6 + 0.25 * v))
         val learned = notes(store, "new_bump")

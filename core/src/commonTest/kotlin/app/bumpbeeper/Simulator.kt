@@ -83,6 +83,8 @@ class DriveSpec(
     val holdsAt: List<Pair<Double, Double>> = emptyList(),
     val holdDeg: Double = 70.0,
     val holdLiftS: Double = 0.3,
+    /** How hard the hand shakes the phone while lifting and putting it back, m/s². */
+    val holdShake: Double = 2.0,
     /** The phone feels 5 m/s² of braking for 1.2 s (it slides, or tips in a pocket) while the car keeps its speed. */
     val brakeSpikesAt: List<Double> = emptyList(),
     /** The driver stops there (a red light) and waits: (position, seconds). */
@@ -420,7 +422,7 @@ class Simulator(seed: Long) {
                 val h = t - holdStart
                 val up = spec.holdLiftS
                 if (h < holdS + 2 * up) extraTilt += degToRad(spec.holdDeg) * when { h < up -> h / up; h < up + holdS -> 1.0; else -> 1.0 - (h - up - holdS) / up }
-                if (h < 0.6 || (h > holdS + 0.2 && h < holdS + 0.8)) shake = max(shake, 2.0)
+                if (h < 0.6 || (h > holdS + 0.2 && h < holdS + 0.8)) shake = max(shake, spec.holdShake)
             }
             for ((i, st) in slipStart.withIndex()) {
                 if (st < 0) continue
