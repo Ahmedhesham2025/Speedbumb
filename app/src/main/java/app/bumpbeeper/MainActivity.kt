@@ -6,6 +6,7 @@ import android.app.Activity
 import android.app.AlertDialog
 import android.app.Dialog
 import android.bluetooth.BluetoothManager
+import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.content.res.ColorStateList
@@ -81,6 +82,14 @@ class MainActivity : Activity() {
             else window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
             ui.postDelayed(this, 250)
         }
+    }
+
+    /**
+     * Arabic with Western digits ("ar-EG-u-nu-latn"): numbers read the same in both languages and match the ones
+     * the app writes with Locale.US (speeds, distances, scores). Strings, dates and layout direction stay Arabic.
+     */
+    override fun attachBaseContext(newBase: Context) {
+        super.attachBaseContext(Ui.latinDigits(newBase))
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -222,6 +231,14 @@ class MainActivity : Activity() {
     }
 
     fun refreshMap() { mapPage?.onShow() }
+
+    /** Back first closes what a tab has open inside it (a trip's summary), then leaves the app as usual. */
+    @Deprecated("Framework Activity back API; this app targets the classic back behaviour")
+    override fun onBackPressed() {
+        if ((pages.getOrNull(current) as? BackHandler)?.back() == true) return
+        @Suppress("DEPRECATION")
+        super.onBackPressed()
+    }
 
     // ---------------------------------------------------------------- shared map question
 

@@ -40,6 +40,9 @@ class JoltGraphView(ctx: Context) : View(ctx) {
         textSize = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_SP, 11f, resources.displayMetrics)
     }
 
+    private val trigger = ctx.getString(R.string.diag_meter_trigger)
+    private val idle = ctx.getString(R.string.diag_meter_idle)
+
     override fun onDraw(canvas: Canvas) {
         val w = width.toFloat()
         val h = height.toFloat()
@@ -50,11 +53,11 @@ class JoltGraphView(ctx: Context) : View(ctx) {
         canvas.drawRoundRect(0f, 0f, w, h, 10f * density, 10f * density, bgPaint)
         val ty = y(threshold)
         canvas.drawLine(pad, ty, w - pad, ty, thresholdPaint)
-        canvas.drawText(String.format(Locale.US, "trigger %.1f m/s²", threshold), pad + 4 * density, ty - 4 * density, textPaint)
+        canvas.drawText(String.format(Locale.US, trigger, threshold), pad + 4 * density, ty - 4 * density, textPaint)
 
         val data = LiveState.graphSnapshot()
         if (data.isEmpty()) {
-            canvas.drawText("Moves while recording", pad + 4 * density, h - pad - 4 * density, textPaint)
+            canvas.drawText(idle, pad + 4 * density, h - pad - 4 * density, textPaint)
             return
         }
         val n = LiveState.GRAPH_POINTS
