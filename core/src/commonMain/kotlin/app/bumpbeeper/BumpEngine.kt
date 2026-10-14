@@ -7,6 +7,7 @@ import kotlin.math.cos
 import kotlin.math.ln
 import kotlin.math.max
 import kotlin.math.min
+import kotlin.math.pow
 import kotlin.math.sin
 import kotlin.math.sqrt
 
@@ -60,6 +61,41 @@ class EngineConfig {
     var minAlertDistM = 40.0
     /** ...or further than this. */
     var maxAlertDistM = 250.0
+    /**
+     * Approach beeps ([EngineListener.onApproachBeep]): after a confirmed spot's warning, while the driver is still at
+     * [approachFastKmh] or faster (the "bump taken fast" speed, [DrivingConfig.bumpFastKmh]), short beeps from
+     * [approachDelayMs] after the warning (its sound or voice first) until the spot is [approachEndM] away. The gap
+     * between beeps shrinks from [approachStartMs] at [approachFarM] or further to [approachEndMs] at [approachNearM]
+     * or closer, along (distance fraction)^[approachCurve]. At most one sequence per spot and pass; once it stops (slower
+     * than [approachFastKmh], reached, muted, turned away) it does not start again. Never for a "maybe" spot.
+     * The speed is judged on every sensor sample: the last fix's GPS speed, which is [approachGpsLagS] late, less the
+     * braking the accelerometer felt since then (along the learned forward axis; before it is learned, any horizontal
+     * push above [approachBrakeDeadMs2] while the GPS speed isn't rising), or less the GPS deceleration carried on
+     * over the lag, whichever is lower.
+     * Every warning holds them for [approachHoldMs]; one with a voice (a strong bump, a group line) until the app
+     * says it was spoken ([warningSpoken]), at most [approachVoiceMaxMs], then [approachAfterVoiceMs] more.
+     */
+    @Volatile var approachBeeps = true
+    var approachFastKmh = 25.0
+    var approachDelayMs = 2500L
+    var approachStartMs = 1200L
+    var approachEndMs = 250L
+    var approachFarM = 100.0
+    var approachNearM = 10.0
+    var approachCurve = 1.0
+    var approachEndM = 5.0
+    var approachGpsLagS = 1.0
+    var approachBrakeDeadMs2 = 0.5
+    var approachHoldMs = 2000L
+    var approachVoiceMaxMs = 6000L
+    var approachAfterVoiceMs = 400L
+
+    /** Gap before the next approach beep with the spot [distanceM] away, ms. */
+    fun approachIntervalMs(distanceM: Double): Long {
+        val frac = ((distanceM - approachNearM) / (approachFarM - approachNearM)).coerceIn(0.0, 1.0)
+        return approachEndMs + ((approachStartMs - approachEndMs) * frac.pow(approachCurve)).toLong()
+    }
+
     /** Don't beep if you are already slower than this: you have clearly seen it. 0 = always beep. (setting) */
     @Volatile var quietBelowKmh = 20.0
     /**
@@ -293,6 +329,16 @@ class BumpEngine(
         var minSpeedNearMps = Double.MAX_VALUE   // slowest speed seen within 30 m of the bump
         var maxJoltNear = 0.0                     // strongest jolt felt within 40 m of the bump
         var minDistMs = startMs                   // fix time of the closest approach
+        // Approach beeps: the spot, from the last fix (distance, speed, time); next beep due; the sequence ended.
+        var seqSpot: Bump? = null
+        var seqDist = 0.0
+        var seqMps = 0.0
+        var seqFixMs = 0L
+        var seqDecel = 0.0   // m/s², from the last two fixes (> 0 braking)
+        var seqBrakeAtLag = 0.0   // [brakeInt] when the last fix's speed was true (fix time − GPS lag)
+        var seqRising = false     // the GPS speed rose at the last fix
+        var nextBeepMs = 0L
+        var seqDone = false
     }
 
     /** The bump that beeped most recently (for "Mute last beep"), or -1. */
@@ -371,7 +417,9 @@ class BumpEngine(
             val hy = y - alongG * gravY / gg
             val hz = z - alongG * gravZ / gg
             horX += aSlow * (hx - horX); horY += aSlow * (hy - horY); horZ += aSlow * (hz - horZ)
+            noteBraking(tMs, dt, hx, hy, hz, aFast)
         }
+        approachBeep(tMs)
 
         bufT[bufHead] = tMs
         bufV[bufHead] = v
@@ -895,6 +943,16 @@ class BumpEngine(
             return
         }
 
+        // Approach beeps going on: follow the spot, or end them (slower, muted, turned away).
+        if (a.seqSpot != null && !a.seqDone) {
+            val dt = (f.timeMs - a.seqFixMs) / 1000.0
+            a.seqDecel = if (dt > 0 && dt <= 3.0) (a.seqMps - f.speedMps) / dt else 0.0
+            a.seqRising = f.speedMps > a.seqMps + 0.3
+            a.seqSpot = b; a.seqDist = d; a.seqMps = f.speedMps; a.seqFixMs = f.timeMs
+            a.seqBrakeAtLag = brakeIntAt(f.timeMs - (cfg.approachGpsLagS * 1000).toLong())
+            if (!warnable(b) || aheadDiff > 90.0 || !cfg.approachBeeps) a.seqDone = true
+        }
+
         // Beep: close enough for our speed, straight ahead, on our side of the road, not muted.
         val crossTrack = d * sin(degToRad(aheadDiff))
         if (!a.beeped && moving && dirDiff <= cfg.headingTolDeg && d <= alertDist &&
@@ -928,9 +986,77 @@ class BumpEngine(
                 val cluster = clusterAhead(b, d, f)
                 val note = (if (remote) "remote " else "") + sound.name.lowercase() + (if (cluster != null) " group of ${cluster.count}" else "")
                 log("beep", logId, f.lat, f.lon, speedKmh, Double.NaN, Double.NaN, d, note)
+                // Approach beeps wait for this warning: a voice until it is spoken, beeps for a fixed hold.
+                val voice = sound.voice || cluster != null
+                approachHoldUntilMs = f.timeMs + if (voice) cfg.approachVoiceMaxMs else cfg.approachHoldMs
+                if (cfg.approachBeeps && sound != WarnSound.SOFT && speedKmh >= cfg.approachFastKmh) {
+                    a.seqSpot = b; a.seqDist = d; a.seqMps = f.speedMps; a.seqFixMs = f.timeMs; a.seqDecel = 0.0
+                    a.seqBrakeAtLag = brakeIntAt(f.timeMs - (cfg.approachGpsLagS * 1000).toLong()); a.seqRising = false
+                    a.nextBeepMs = if (voice) f.timeMs else f.timeMs + cfg.approachDelayMs
+                }
                 listener.onWarning(Warning(b, d, speedKmh, sound, cluster))
             }
         }
+    }
+
+    /**
+     * Approach beeps, on the sensor clock: the nearest spot with a sequence going on beeps when it is due. Its distance
+     * is carried on from the last fix at that fix's speed.
+     */
+    private fun approachBeep(tMs: Long) {
+        var best: Approach? = null
+        var bestD = Double.MAX_VALUE
+        var bestMps = 0.0
+        for (a in approaches.values) {
+            if (a.seqSpot == null || a.seqDone) continue
+            val sinceS = (tMs - a.seqFixMs) / 1000.0
+            val d = a.seqDist - a.seqMps * sinceS
+            // The GPS speed is ~1 s late: take off the deceleration over that lag and since the fix.
+            val byGps = a.seqMps - max(0.0, a.seqDecel) * (cfg.approachGpsLagS + sinceS)
+            val felt = if (a.seqRising && fwdBrake == null) 0.0 else brakeInt - a.seqBrakeAtLag
+            val mps = min(byGps, a.seqMps - felt)
+            if (d <= cfg.approachEndM || mps * 3.6 < cfg.approachFastKmh) { a.seqDone = true; continue }
+            if (d < bestD) { bestD = d; best = a; bestMps = mps }
+        }
+        val a = best ?: return
+        if (tMs < a.nextBeepMs || tMs < approachHoldUntilMs) return
+        a.nextBeepMs = tMs + cfg.approachIntervalMs(bestD)
+        listener.onApproachBeep(a.seqSpot!!, bestD, bestMps * 3.6)
+    }
+
+    // Braking felt by the accelerometer, integrated (m/s), with its recent history for [brakeIntAt].
+    private var brakeInt = 0.0
+    private var brkX = 0.0; private var brkY = 0.0; private var brkZ = 0.0   // horizontal push, fast low-pass
+    private var fwdBrake: Double? = null   // the last sample's braking along the learned forward axis, if learned
+    private val brakeHist = ArrayDeque<Pair<Long, Double>>()
+    private val brkFwd = DoubleArray(3)
+
+    private fun noteBraking(tMs: Long, dt: Double, hx: Double, hy: Double, hz: Double, aFast: Double) {
+        brkX += aFast * (hx - brkX); brkY += aFast * (hy - brkY); brkZ += aFast * (hz - brkZ)
+        val f = brkFwd
+        fwdBrake = if (forwardInto(f)) max(0.0, -(brkX * f[0] + brkY * f[1] + brkZ * f[2])) else null
+        val push = fwdBrake ?: sqrt(brkX * brkX + brkY * brkY + brkZ * brkZ).let { if (it >= cfg.approachBrakeDeadMs2) it else 0.0 }
+        brakeInt += push * dt
+        brakeHist.addLast(tMs to brakeInt)
+        while (brakeHist.size > 1 && brakeHist.first().first < tMs - 5000) brakeHist.removeFirst()
+    }
+
+    /** [brakeInt] as it was at [tMs] (the oldest kept if earlier). */
+    private fun brakeIntAt(tMs: Long): Double {
+        var v = brakeHist.firstOrNull()?.second ?: brakeInt
+        for ((t, i) in brakeHist) { if (t > tMs) break; v = i }
+        return v
+    }
+
+    /** Until then no approach beep (a warning is playing). */
+    private var approachHoldUntilMs = Long.MIN_VALUE / 4
+
+    /**
+     * The app finished speaking a warning (or its sound fell back to beeps): approach beeps may follow
+     * [EngineConfig.approachAfterVoiceMs] from now. Call on the engine thread.
+     */
+    fun warningSpoken() {
+        approachHoldUntilMs = min(approachHoldUntilMs, lastAccelMs + cfg.approachAfterVoiceMs)
     }
 
     /**
