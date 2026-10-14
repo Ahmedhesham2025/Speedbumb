@@ -62,12 +62,12 @@ class BumpEvidenceTest {
 
     @Test fun aClearPairOverridesALaterHandling() {
         // A real bump after braking from 50 to 20 km/h (both axles, nose up then tail up), and the phone lifted without
-        // a shake 0.35 s after the rear axle, seen before the decision: the car's signature wins, with every default gate.
+        // a shake 0.27 s after the rear axle, seen before the decision: the car's signature wins, with every default gate.
         val v = 20 / 3.6
         fun spec(holdAt: Double) =
             DriveSpec(bumpsAt = listOf(1500.0), bumpKmh = 20.0, cruiseKmh = 50.0, holdsAt = listOf(holdAt to 4.0), holdShake = 0.0)
         val store = MemoryStore()
-        val r = Simulator(9).drive(store, spec(1500.0 + 2.6 + 0.35 * v))
+        val r = Simulator(9).drive(store, spec(1500.0 + 2.6 + 0.27 * v))
         val learned = notes(store, "new_bump")
         assertEquals(1, r.newBumps, "${r.rejected} ${notes(store, "rejected")}")
         assertTrue(learned.single().contains("axle=both") && learned.single().contains("over_handled"), "$learned")
@@ -78,7 +78,7 @@ class BumpEvidenceTest {
         assertTrue(notes(early, "rejected").any { it.startsWith("handled") }, "${notes(early, "rejected")}")
         // No gyroscope: never.
         val g = MemoryStore()
-        val n = Simulator(9).drive(g, spec(1500.0 + 2.6 + 0.35 * v).let {
+        val n = Simulator(9).drive(g, spec(1500.0 + 2.6 + 0.27 * v).let {
             DriveSpec(bumpsAt = it.bumpsAt, bumpKmh = 20.0, cruiseKmh = 50.0, holdsAt = it.holdsAt, holdShake = 0.0, gyro = false)
         })
         assertTrue(notes(g, "new_bump").none { "over_handled" in it }, "${notes(g, "new_bump")} ${notes(g, "rejected")} ${n.rejected}")
