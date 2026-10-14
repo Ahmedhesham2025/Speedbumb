@@ -7,6 +7,7 @@ import kotlin.math.cos
 import kotlin.math.ln
 import kotlin.math.max
 import kotlin.math.min
+import kotlin.math.pow
 import kotlin.math.sin
 import kotlin.math.sqrt
 
@@ -42,8 +43,12 @@ class EngineConfig {
     var decideAfterMs = 1200L
     /** Ignore further jolts for this long (rear axle, suspension rebound). */
     var refractoryMs = 2500L
-    /** Angle between the fast and slow "down" estimates that means the phone is being moved. */
-    var tiltRejectDeg = 25.0
+    /**
+     * ...unless the jolt was rejected as the phone's: then only while the phone is untrusted, if its handling began no
+     * later than this after the jolt (a jostle's own jolt comes slightly first). A jolt well before the handling (a
+     * real bump that shook the phone) keeps its refractory time.
+     */
+    var phoneJoltLeadMs = 250L
 
     /** A hit this close to a known bump (same direction) is that bump. */
     var matchRadiusM = 20.0
@@ -56,6 +61,41 @@ class EngineConfig {
     var minAlertDistM = 40.0
     /** ...or further than this. */
     var maxAlertDistM = 250.0
+    /**
+     * Approach beeps ([EngineListener.onApproachBeep]): after a confirmed spot's warning, while the driver is still at
+     * [approachFastKmh] or faster (the "bump taken fast" speed, [DrivingConfig.bumpFastKmh]), short beeps from
+     * [approachDelayMs] after the warning (its sound or voice first) until the spot is [approachEndM] away. The gap
+     * between beeps shrinks from [approachStartMs] at [approachFarM] or further to [approachEndMs] at [approachNearM]
+     * or closer, along (distance fraction)^[approachCurve]. At most one sequence per spot and pass; once it stops (slower
+     * than [approachFastKmh], reached, muted, turned away) it does not start again. Never for a "maybe" spot.
+     * The speed is judged on every sensor sample: the last fix's GPS speed, which is [approachGpsLagS] late, less the
+     * braking the accelerometer felt since then (along the learned forward axis; before it is learned, any horizontal
+     * push above [approachBrakeDeadMs2] while the GPS speed isn't rising), or less the GPS deceleration carried on
+     * over the lag, whichever is lower.
+     * Every warning holds them for [approachHoldMs]; one with a voice (a strong bump, a group line) until the app
+     * says it was spoken ([warningSpoken]), at most [approachVoiceMaxMs], then [approachAfterVoiceMs] more.
+     */
+    @Volatile var approachBeeps = true
+    var approachFastKmh = 25.0
+    var approachDelayMs = 2500L
+    var approachStartMs = 1200L
+    var approachEndMs = 250L
+    var approachFarM = 100.0
+    var approachNearM = 10.0
+    var approachCurve = 1.0
+    var approachEndM = 5.0
+    var approachGpsLagS = 1.0
+    var approachBrakeDeadMs2 = 0.5
+    var approachHoldMs = 2000L
+    var approachVoiceMaxMs = 6000L
+    var approachAfterVoiceMs = 400L
+
+    /** Gap before the next approach beep with the spot [distanceM] away, ms. */
+    fun approachIntervalMs(distanceM: Double): Long {
+        val frac = ((distanceM - approachNearM) / (approachFarM - approachNearM)).coerceIn(0.0, 1.0)
+        return approachEndMs + ((approachStartMs - approachEndMs) * frac.pow(approachCurve)).toLong()
+    }
+
     /** Don't beep if you are already slower than this: you have clearly seen it. 0 = always beep. (setting) */
     @Volatile var quietBelowKmh = 20.0
     /**
@@ -170,6 +210,12 @@ class BumpEngine(
     val bumps: MutableList<Bump> = store.loadBumps().toMutableList()
     val trip = TripStats()
 
+    /**
+     * Whether the phone rests in a holder, rests loose or is being handled ([PhoneStateDetector]), fed with the same
+     * samples as the engine. The app fills in its [PhoneStateDetector.signals] (screen, unlock, calls, proximity, light).
+     */
+    val phone = PhoneStateDetector()
+
     /** Latest vertical acceleration with gravity removed, m/s². For the live graph. */
     var lastVertical = 0.0
         private set
@@ -216,12 +262,14 @@ class BumpEngine(
     private var fastZ = 0.0
     private var accelReady = false
     private var lastAccelMs = 0L
-    /** Last time the phone was being moved (picked up, adjusted). */
-    var lastUnstableMs = Long.MIN_VALUE / 4
-        private set
     private var joltStartMs = -1L
     private var joltPeak = 0.0
     private var refractoryUntilMs = Long.MIN_VALUE / 4
+    /**
+     * The last jolt was the phone's ([handledReason]) and its handling had begun by then ([EngineConfig.phoneJoltLeadMs]):
+     * it holds the next one off only while the phone is untrusted.
+     */
+    private var phoneJolt = false
     /** Strongest vertical jolt since the last GPS fix (to report how close a "miss" came). */
     private var maxVertSinceFix = 0.0
 
@@ -281,6 +329,16 @@ class BumpEngine(
         var minSpeedNearMps = Double.MAX_VALUE   // slowest speed seen within 30 m of the bump
         var maxJoltNear = 0.0                     // strongest jolt felt within 40 m of the bump
         var minDistMs = startMs                   // fix time of the closest approach
+        // Approach beeps: the spot, from the last fix (distance, speed, time); next beep due; the sequence ended.
+        var seqSpot: Bump? = null
+        var seqDist = 0.0
+        var seqMps = 0.0
+        var seqFixMs = 0L
+        var seqDecel = 0.0   // m/s², from the last two fixes (> 0 braking)
+        var seqBrakeAtLag = 0.0   // [brakeInt] when the last fix's speed was true (fix time − GPS lag)
+        var seqRising = false     // the GPS speed rose at the last fix
+        var nextBeepMs = 0L
+        var seqDone = false
     }
 
     /** The bump that beeped most recently (for "Mute last beep"), or -1. */
@@ -309,12 +367,14 @@ class BumpEngine(
 
     /** Rotation rate in rad/s, phone axes. Optional: without it, a jolt's shape is judged from the jolt alone. */
     fun onGyro(tMs: Long, x: Double, y: Double, z: Double) {
+        phone.onGyro(tMs, x, y, z)
         gyroX = x; gyroY = y; gyroZ = z
         gyroSeen = true
     }
 
     /** [tMs] monotonic milliseconds; x, y, z raw accelerometer in m/s² (gravity included). */
     fun onAccel(tMs: Long, x: Double, y: Double, z: Double) {
+        phone.onAccel(tMs, x, y, z)
         if (!accelReady) {
             slowX = x; slowY = y; slowZ = z
             fastX = x; fastY = y; fastZ = z
@@ -357,7 +417,9 @@ class BumpEngine(
             val hy = y - alongG * gravY / gg
             val hz = z - alongG * gravZ / gg
             horX += aSlow * (hx - horX); horY += aSlow * (hy - horY); horZ += aSlow * (hz - horZ)
+            noteBraking(tMs, dt, hx, hy, hz, aFast)
         }
+        approachBeep(tMs)
 
         bufT[bufHead] = tMs
         bufV[bufHead] = v
@@ -368,10 +430,9 @@ class BumpEngine(
         if (bufCount < BUF) bufCount++
         ring?.let { addToRing(it, tMs, v) }
 
-        // Is the phone being moved (picked up, dropped, adjusted)?
+        // Is the phone turning (picked up, dropped, adjusted)? Whether it is handled is [phone]'s call; the angle is its fast turn.
         val cosTilt = ((slowX * fastX + slowY * fastY + slowZ * fastZ) / (g * f)).coerceIn(-1.0, 1.0)
-        if (radToDeg(acos(cosTilt)) > cfg.tiltRejectDeg) {
-            lastUnstableMs = tMs
+        if (radToDeg(acos(cosTilt)) > phone.cfg.turnDeg) {
             // It may sit differently when it is put back: learn gravity and "forward" again.
             gravX = slowX; gravY = slowY; gravZ = slowZ
             gravSettledS = 0.0
@@ -386,10 +447,12 @@ class BumpEngine(
                 joltStartMs = -1
                 decide(start, joltPeak)
             }
-        } else if (abs(v) >= cfg.joltThreshold && tMs >= refractoryUntilMs) {
+        } else if (abs(v) >= cfg.joltThreshold && (tMs >= refractoryUntilMs || (phoneJolt && !phone.untrusted(tMs, tMs)))) {
+            // A rejected jostle has no rear axle to wait for: a bump right after it (braking before it) still counts.
             joltStartMs = tMs
             joltPeak = abs(v)
             refractoryUntilMs = tMs + cfg.refractoryMs
+            phoneJolt = false
         }
     }
 
@@ -397,7 +460,11 @@ class BumpEngine(
     private fun decide(tMs: Long, peak: Double) {
         // The decision comes 1.2 s after the jolt, so a newer fix may already be in. Use the one closest in time.
         val fix = fixes.minByOrNull { abs(it.timeMs - tMs) }
-        if (lastUnstableMs >= tMs - 1500) { reject(tMs, peak, "phone_moving", fix); return }
+        handledReason(tMs)?.let {
+            phoneJolt = phone.episodeStartMs <= tMs + cfg.phoneJoltLeadMs
+            reject(tMs, peak, it, fix)
+            return
+        }
         if (fix == null || abs(tMs - fix.timeMs) > cfg.maxFixAgeMs) { reject(tMs, peak, "no_gps", fix); return }
         if (fix.accuracyM > cfg.maxAccuracyM) { reject(tMs, peak, "weak_gps", fix); return }
         val speedKmh = fix.speedMps * 3.6
@@ -419,6 +486,17 @@ class BumpEngine(
         val slowdownKmh = max(0.0, (maxRecent - fix.speedMps) * 3.6)
 
         registerHit(tMs, pos[0], pos[1], speedKmh, peak, slowdownKmh, shape)
+    }
+
+    /**
+     * Why a jolt at [tMs] is the phone's and not the road's, or null: its readings were not trusted from the jolt until
+     * now ([PhoneStateDetector.untrusted]: handled, or within 2 s after a handling; a jostle ends 0.5 s after its motion,
+     * with no margin). The decision waits [EngineConfig.decideAfterMs], so a pick-up that starts with the jolt is seen.
+     * A jostle in pocket mode is "phone_moving", anything else "handled". No new spot, no hit, in someone's hand.
+     */
+    private fun handledReason(tMs: Long): String? {
+        if (!phone.untrusted(tMs, lastAccelMs)) return null
+        return if (phone.pocketMode && phone.onlyJostles(tMs, lastAccelMs)) "phone_moving" else "handled"
     }
 
     /**
@@ -672,6 +750,7 @@ class BumpEngine(
         fixes.addLast(f)
         while (fixes.size > 1 && f.timeMs - fixes.first().timeMs > 12_000) fixes.removeFirst()
         lastFix = f
+        phone.onFix(f)
 
         // GPS bearing is garbage when crawling; keep the last good one.
         if (!brg.isNaN() && speed >= 1.5) heading = brg
@@ -864,6 +943,16 @@ class BumpEngine(
             return
         }
 
+        // Approach beeps going on: follow the spot, or end them (slower, muted, turned away).
+        if (a.seqSpot != null && !a.seqDone) {
+            val dt = (f.timeMs - a.seqFixMs) / 1000.0
+            a.seqDecel = if (dt > 0 && dt <= 3.0) (a.seqMps - f.speedMps) / dt else 0.0
+            a.seqRising = f.speedMps > a.seqMps + 0.3
+            a.seqSpot = b; a.seqDist = d; a.seqMps = f.speedMps; a.seqFixMs = f.timeMs
+            a.seqBrakeAtLag = brakeIntAt(f.timeMs - (cfg.approachGpsLagS * 1000).toLong())
+            if (!warnable(b) || aheadDiff > 90.0 || !cfg.approachBeeps) a.seqDone = true
+        }
+
         // Beep: close enough for our speed, straight ahead, on our side of the road, not muted.
         val crossTrack = d * sin(degToRad(aheadDiff))
         if (!a.beeped && moving && dirDiff <= cfg.headingTolDeg && d <= alertDist &&
@@ -897,9 +986,77 @@ class BumpEngine(
                 val cluster = clusterAhead(b, d, f)
                 val note = (if (remote) "remote " else "") + sound.name.lowercase() + (if (cluster != null) " group of ${cluster.count}" else "")
                 log("beep", logId, f.lat, f.lon, speedKmh, Double.NaN, Double.NaN, d, note)
+                // Approach beeps wait for this warning: a voice until it is spoken, beeps for a fixed hold.
+                val voice = sound.voice || cluster != null
+                approachHoldUntilMs = f.timeMs + if (voice) cfg.approachVoiceMaxMs else cfg.approachHoldMs
+                if (cfg.approachBeeps && sound != WarnSound.SOFT && speedKmh >= cfg.approachFastKmh) {
+                    a.seqSpot = b; a.seqDist = d; a.seqMps = f.speedMps; a.seqFixMs = f.timeMs; a.seqDecel = 0.0
+                    a.seqBrakeAtLag = brakeIntAt(f.timeMs - (cfg.approachGpsLagS * 1000).toLong()); a.seqRising = false
+                    a.nextBeepMs = if (voice) f.timeMs else f.timeMs + cfg.approachDelayMs
+                }
                 listener.onWarning(Warning(b, d, speedKmh, sound, cluster))
             }
         }
+    }
+
+    /**
+     * Approach beeps, on the sensor clock: the nearest spot with a sequence going on beeps when it is due. Its distance
+     * is carried on from the last fix at that fix's speed.
+     */
+    private fun approachBeep(tMs: Long) {
+        var best: Approach? = null
+        var bestD = Double.MAX_VALUE
+        var bestMps = 0.0
+        for (a in approaches.values) {
+            if (a.seqSpot == null || a.seqDone) continue
+            val sinceS = (tMs - a.seqFixMs) / 1000.0
+            val d = a.seqDist - a.seqMps * sinceS
+            // The GPS speed is ~1 s late: take off the deceleration over that lag and since the fix.
+            val byGps = a.seqMps - max(0.0, a.seqDecel) * (cfg.approachGpsLagS + sinceS)
+            val felt = if (a.seqRising && fwdBrake == null) 0.0 else brakeInt - a.seqBrakeAtLag
+            val mps = min(byGps, a.seqMps - felt)
+            if (d <= cfg.approachEndM || mps * 3.6 < cfg.approachFastKmh) { a.seqDone = true; continue }
+            if (d < bestD) { bestD = d; best = a; bestMps = mps }
+        }
+        val a = best ?: return
+        if (tMs < a.nextBeepMs || tMs < approachHoldUntilMs) return
+        a.nextBeepMs = tMs + cfg.approachIntervalMs(bestD)
+        listener.onApproachBeep(a.seqSpot!!, bestD, bestMps * 3.6)
+    }
+
+    // Braking felt by the accelerometer, integrated (m/s), with its recent history for [brakeIntAt].
+    private var brakeInt = 0.0
+    private var brkX = 0.0; private var brkY = 0.0; private var brkZ = 0.0   // horizontal push, fast low-pass
+    private var fwdBrake: Double? = null   // the last sample's braking along the learned forward axis, if learned
+    private val brakeHist = ArrayDeque<Pair<Long, Double>>()
+    private val brkFwd = DoubleArray(3)
+
+    private fun noteBraking(tMs: Long, dt: Double, hx: Double, hy: Double, hz: Double, aFast: Double) {
+        brkX += aFast * (hx - brkX); brkY += aFast * (hy - brkY); brkZ += aFast * (hz - brkZ)
+        val f = brkFwd
+        fwdBrake = if (forwardInto(f)) max(0.0, -(brkX * f[0] + brkY * f[1] + brkZ * f[2])) else null
+        val push = fwdBrake ?: sqrt(brkX * brkX + brkY * brkY + brkZ * brkZ).let { if (it >= cfg.approachBrakeDeadMs2) it else 0.0 }
+        brakeInt += push * dt
+        brakeHist.addLast(tMs to brakeInt)
+        while (brakeHist.size > 1 && brakeHist.first().first < tMs - 5000) brakeHist.removeFirst()
+    }
+
+    /** [brakeInt] as it was at [tMs] (the oldest kept if earlier). */
+    private fun brakeIntAt(tMs: Long): Double {
+        var v = brakeHist.firstOrNull()?.second ?: brakeInt
+        for ((t, i) in brakeHist) { if (t > tMs) break; v = i }
+        return v
+    }
+
+    /** Until then no approach beep (a warning is playing). */
+    private var approachHoldUntilMs = Long.MIN_VALUE / 4
+
+    /**
+     * The app finished speaking a warning (or its sound fell back to beeps): approach beeps may follow
+     * [EngineConfig.approachAfterVoiceMs] from now. Call on the engine thread.
+     */
+    fun warningSpoken() {
+        approachHoldUntilMs = min(approachHoldUntilMs, lastAccelMs + cfg.approachAfterVoiceMs)
     }
 
     /**
@@ -957,6 +1114,13 @@ class BumpEngine(
     private fun finishPass(b: Bump, a: Approach, f: Fix) {
         if (ring != null && !a.hit) nearMs[b.id] = Near(a.minDistMs, passKmh(a, f), a.maxJoltNear)
         val nearNote = "strongest jolt nearby ${formatFixed(a.maxJoltNear, 1)} m/s²"
+        val near = phone.cfg.marginMs
+        if (!a.counted && !a.hit && phone.untrusted(a.minDistMs - near, a.minDistMs + near)) {
+            // The phone was in someone's hand over the spot: its jolts weren't trusted, so the pass says nothing.
+            log("pass_handled", b.id, f.lat, f.lon, passKmh(a, f), a.maxJoltNear, Double.NaN, a.minDist, "not counted, phone handled")
+            listener.onPassed(b, false)
+            return
+        }
         if (!a.counted && !a.hit && a.minSpeedNearMps * 3.6 < cfg.minInformativeKmh) {
             // Crawled over it without feeling anything: can't tell, so it counts neither way.
             log("pass_slow", b.id, f.lat, f.lon, a.minSpeedNearMps * 3.6, a.maxJoltNear, Double.NaN, a.minDist, "not counted, $nearNote")

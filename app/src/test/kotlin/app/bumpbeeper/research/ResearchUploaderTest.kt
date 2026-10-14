@@ -219,6 +219,21 @@ class ResearchUploaderTest {
         assertTrue("never, not even after a Yes", quiet())
     }
 
+    @Test fun aSilentTripTheAppDiedInBeforeItWasConfirmedNeverGoes() {
+        fun died() {
+            setUp(); trip()   // a car start: not guessed, so without this it would go after 12 h
+            ResearchQueue.edit(ctx) { it.trip(stamp)!!.put("ended", false).put("pending", true) }
+            ResearchFiles.dir(ctx).listFiles()!!.forEach { it.setLastModified(now - 13 * 3600_000L) }
+        }
+        died()
+        assertTrue(quiet())
+        assertEquals("unconfirmed", ResearchQueue.read(ctx) { it.trip(stamp)!!.getString("skip") })
+        died()
+        ResearchQueue.tripConfirmed(ctx, stamp)   // it had its 30 s of driving before the app died
+        run(Server())
+        assertTrue(uploaded(0) && uploaded(1))
+    }
+
     @Test fun itStopsBeforeTheNextFileWhenWiFiGoesTheJobStopsOrResearchIsOff() {
         var wifi = true
         val stops = listOf<() -> Unit>({ wifi = false }, { ResearchUploader.stopRequested = true },
@@ -291,7 +306,8 @@ class ResearchUploaderTest {
         Prefs.setResearchState(ctx, false, 1, offPending = false, onPending = false, serverOn = true, note = "")
         Prefs.setResearchState(ctx, true, 1, offPending = false, onPending = false, serverOn = true, note = "")   // new opt-in: not saved
         assertNull(ResearchFiles.storedId(ctx))
-        assertTrue("the old id still reads, but counts for nothing: no upload", quiet())
+        assertFalse("the old id is gone with the failed save", idFile().exists())
+        assertTrue("so nothing counts as current: no upload", quiet())
         assertEquals(2, ResearchFiles.list(ctx).size)
         idFile().setWritable(true)
         ResearchFiles.researchId(ctx)   // what the next recording does: saves a new id

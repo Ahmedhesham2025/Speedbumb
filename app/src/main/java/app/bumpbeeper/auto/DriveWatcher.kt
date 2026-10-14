@@ -20,8 +20,9 @@ import android.util.Log
  * Runs inside BumpService while it is in the foreground with the quiet "ready to detect driving" notification:
  *
  *  - The significant-motion sensor (a hardware trigger that costs next to nothing) wakes us when the phone moves.
- *  - Then a short GPS check (2 s fixes, at most 3.5 min per window, under a wake lock) asks [DriveDetector] whether
- *    it is a drive: 20 km/h or more for 60 s. Walking around ends the check and backs off.
+ *  - Then a short GPS check (2 s fixes, at most 2.5 min per window, under a wake lock) asks [DriveDetector] whether
+ *    it is a drive: 20 km/h or more (two fixes in a row). Recording then starts silently and BumpService
+ *    confirms the trip after 30 s of driving ([TripConfirm]). Walking around ends the check and backs off.
  *  - Fixes other apps ask for (the passive provider, free) at driving speed start a check too; on phones without a
  *    significant-motion sensor they are, with the car's Bluetooth, the only trigger.
  *

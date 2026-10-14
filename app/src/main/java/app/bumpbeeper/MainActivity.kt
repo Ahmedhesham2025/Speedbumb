@@ -34,8 +34,6 @@ import app.bumpbeeper.sync.UpdateCheck
 import app.bumpbeeper.ui.AutoSetup
 import app.bumpbeeper.ui.ResearchChoice
 import app.bumpbeeper.ui.SyncChoice
-import java.net.URI
-import java.util.Locale
 
 /** One part of the app shown under the bottom tabs. */
 interface Page {
@@ -279,22 +277,15 @@ class MainActivity : Activity() {
 
     fun dismissUpdate() { updateDismissed = true }
 
-    /** Opens the release page (or the file) in the browser, but only if it really points at GitHub. */
+    /** Opens the release page (or the file) in the browser, but only if it is one of this app's releases on GitHub. */
     fun openUpdate() {
         val u = update ?: return
-        val url = listOfNotNull(u.htmlUrl, u.downloadUrl).firstOrNull { trustedUpdateUrl(it) } ?: return
+        val url = listOfNotNull(u.htmlUrl, u.downloadUrl).firstOrNull { UpdateCheck.trusted(it) } ?: return
         try {
             startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)).addCategory(Intent.CATEGORY_BROWSABLE))
         } catch (e: Exception) {
             toast(getString(R.string.main_no_browser))
         }
-    }
-
-    private fun trustedUpdateUrl(s: String): Boolean {
-        val uri = try { URI(s) } catch (e: Exception) { return false }
-        if (!"https".equals(uri.scheme, ignoreCase = true) || uri.userInfo != null) return false
-        val host = uri.host?.lowercase(Locale.US) ?: return false
-        return host == "github.com" || host.endsWith(".github.com") || host == "objects.githubusercontent.com"
     }
 
     fun toast(msg: String) = Toast.makeText(this, msg, Toast.LENGTH_LONG).show()

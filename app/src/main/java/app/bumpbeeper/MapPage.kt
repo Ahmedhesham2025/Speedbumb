@@ -43,12 +43,12 @@ class MapPage(private val a: MainActivity) : Page {
             col.addView(v, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, h).apply { topMargin = dp(top) })
 
         add(Ui.text(a, 22f, Ui.TEXT, bold = true, value = a.getString(R.string.map_title)))
-        val t = listOf(R.string.map_tile_bumps, R.string.map_tile_potholes, R.string.map_tile_harsh, R.string.map_tile_muted).map { Ui.tile(a, a.getString(it)) }
+        val t = listOf(R.string.map_tile_bumps, R.string.map_tile_old, R.string.map_tile_harsh, R.string.map_tile_muted).map { Ui.tile(a, a.getString(it)) }
         tiles = t.map { it.second }
         add(Ui.grid(a, t.map { it.first }, 4), 12)
 
         // Filter chips.
-        val names = listOf(R.string.map_chip_all, R.string.map_chip_bumps, R.string.map_chip_potholes, R.string.map_chip_harsh).map { a.getString(it) }
+        val names = listOf(R.string.map_chip_all, R.string.map_chip_bumps, R.string.map_chip_old, R.string.map_chip_harsh).map { a.getString(it) }
         chips = names.mapIndexed { i, n ->
             Ui.text(a, 14f, Ui.TEXT, bold = true, value = n).apply {
                 gravity = Gravity.CENTER
@@ -94,7 +94,7 @@ class MapPage(private val a: MainActivity) : Page {
         }.start()
     }
 
-    // Until this screen is reworked (A1), the old filters and tiles show old pothole spots not felt again and strong bumps.
+    // Filters and tiles: bumps, old spots (from before v2, not felt again: Bump.legacy), strong bumps.
     private fun matches(b: Bump) = when (filter) {
         1 -> !b.legacy
         2 -> b.legacy

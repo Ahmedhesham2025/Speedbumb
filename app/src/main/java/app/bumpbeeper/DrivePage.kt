@@ -16,6 +16,7 @@ import android.widget.TextView
 import android.widget.Toast
 import app.bumpbeeper.ui.LiveLimitText
 import app.bumpbeeper.ui.SpeedSignView
+import app.bumpbeeper.sync.OfflineBanner
 import app.bumpbeeper.ui.SyncChoice
 import java.util.Locale
 
@@ -25,6 +26,8 @@ class DrivePage(private val a: MainActivity) : Page {
 
     private lateinit var status: TextView
     private lateinit var syncLine: TextView
+    private lateinit var offline: TextView
+    private var ticks = 0
     private lateinit var setupCard: LinearLayout
     private lateinit var startBtn: TextView
     private lateinit var speed: TextView
@@ -83,6 +86,14 @@ class DrivePage(private val a: MainActivity) : Page {
             setOnClickListener { if (!LiveState.recording) a.select(MainActivity.TAB_SETTINGS) }
         }
         add(syncLine)
+        // Offline and the shared spots are out of date (OfflineBanner): one line, never a popup while driving.
+        offline = Ui.text(a, 14f, Ui.ORANGE, bold = true, value = a.getString(R.string.drive_offline_banner)).apply {
+            gravity = Gravity.CENTER
+            setPadding(dp(12), dp(8), dp(12), dp(8))
+            background = Ui.rounded(a, Ui.SURFACE, 14, Ui.ORANGE)
+            visibility = View.GONE
+        }
+        add(offline, 4)
 
         // "New version available" banner; filled in by tick() once MainActivity's update check answers.
         updateCard = Ui.card(a).apply {
@@ -148,7 +159,7 @@ class DrivePage(private val a: MainActivity) : Page {
         add(Ui.section(a, a.getString(R.string.drive_section_this_trip)))
         val tiles = listOf(
             R.string.drive_tile_distance, R.string.drive_tile_time, R.string.drive_tile_score,
-            R.string.drive_tile_warnings, R.string.drive_tile_bumps, R.string.drive_tile_potholes,
+            R.string.drive_tile_warnings, R.string.drive_tile_bumps, R.string.drive_tile_strong,
         ).map { Ui.tile(a, a.getString(it)) }
         tDist = tiles[0].second; tTime = tiles[1].second; tScore = tiles[2].second
         tWarn = tiles[3].second; tBumps = tiles[4].second; tHoles = tiles[5].second
@@ -202,10 +213,8 @@ class DrivePage(private val a: MainActivity) : Page {
         fun btn(kind: String, bg: Int, fg: Int) = Ui.bigButton(a, labelName(kind), bg, fg) { v -> tapLabel(v, kind) }
         fun gap() = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
             .apply { topMargin = dp(8) }
+        // No pothole buttons since v2: every spot is a bump (replay reads old pothole labels as bumps).
         labelCard.addView(Ui.row(a, btn(Labels.BUMP, Ui.ACCENT, Ui.ON_ACCENT), btn(Labels.ROUGH, 0xFFB0BEC5.toInt(), 0xFF101418.toInt())))
-        labelCard.addView(Ui.row(a,
-            btn(Labels.POTHOLE_LEFT, Ui.BLUE, 0xFF06121F.toInt()), btn(Labels.POTHOLE_RIGHT, Ui.BLUE, 0xFF06121F.toInt()),
-        ), gap())
         labelCard.addView(btn(Labels.UNDO, 0xFF3A1F22.toInt(), Ui.RED), gap())
         labelStatus = Ui.text(a, 15f, Ui.TEXT, bold = true).apply { setPadding(dp(4), dp(10), 0, 0) }
         labelCard.addView(labelStatus)
@@ -234,8 +243,6 @@ class DrivePage(private val a: MainActivity) : Page {
 
     private fun labelName(kind: String): String = when (kind) {
         Labels.BUMP -> a.getString(R.string.drive_label_bump)
-        Labels.POTHOLE_LEFT -> a.getString(R.string.drive_label_pothole_left)
-        Labels.POTHOLE_RIGHT -> a.getString(R.string.drive_label_pothole_right)
         Labels.ROUGH -> a.getString(R.string.drive_label_rough)
         Labels.UNDO -> a.getString(R.string.drive_label_undo)
         else -> kind
@@ -318,6 +325,8 @@ class DrivePage(private val a: MainActivity) : Page {
         val line = SyncChoice.driveLine(a)
         if (syncLine.text.toString() != line) syncLine.text = line
         syncLine.visibility = if (line.isEmpty()) View.GONE else View.VISIBLE
+        // Once a second is enough for the network check; off at once when recording stops.
+        if (!rec || ticks++ % 4 == 0) offline.visibility = if (rec && OfflineBanner.show(a)) View.VISIBLE else View.GONE
 
         speed.text = if (gpsOk) a.getString(R.string.drive_speed_kmh, String.format(Locale.US, "%.0f", LiveState.speedKmh))
             else if (rec) a.getString(R.string.drive_speed_unknown) else ""
@@ -343,8 +352,7 @@ class DrivePage(private val a: MainActivity) : Page {
         tScore.setTextColor(if (rec) Ui.scoreColor(s) else Ui.TEXT)
         tWarn.text = if (rec) LiveState.tripBeeps.toString() else "–"
         tBumps.text = if (rec) LiveState.tripHits.toString() else "–"
-        val harsh = if (LiveState.tripHarshPotholes > 0) a.getString(R.string.drive_potholes_harsh, LiveState.tripHarshPotholes) else ""
-        tHoles.text = if (rec) "${LiveState.tripPotholes}$harsh" else "–"
+        tHoles.text = if (rec) LiveState.tripPotholes.toString() else "–"   // strong bumps felt (the old field name)
 
         lastEvent.text = LiveState.lastEvent.ifEmpty { a.getString(R.string.drive_nothing_yet) }
         driveEvent.text = LiveState.lastDriveEvent

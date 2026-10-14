@@ -5,10 +5,14 @@ import android.app.Application
 import android.app.Notification
 import android.app.Service
 import android.content.Intent
+import android.location.Location
+import android.location.LocationManager
 import android.os.Looper
+import app.bumpbeeper.BumpDb
 import app.bumpbeeper.BumpService
 import app.bumpbeeper.LiveState
 import app.bumpbeeper.Prefs
+import app.bumpbeeper.research.ResearchQueue
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -61,7 +65,9 @@ class BumpServiceWatchTest {
         assertEquals("Ready to detect driving", text(shadowOf(svc).lastForegroundNotification))
 
         svc.drivingDetected()
-        assertTrue(LiveState.recording)
+        assertFalse(LiveState.recording)     // recording, but silently until 30 s of driving
+        assertEquals("Ready to detect driving", text(shadowOf(svc).lastForegroundNotification))
+        assertEquals(1, tripCount())
         assertNull(svc.currentWatcher)       // no detection while recording, so nothing can start a second one
 
         // The car's Bluetooth wasn't involved: a disconnect message ends it after the grace, not as a manual Stop.
@@ -84,12 +90,125 @@ class BumpServiceWatchTest {
         assertTrue(svc.currentWatcher!!.snoozed)   // the user may still be driving: no new recording for 15 min
     }
 
+    private fun tripCount(): Int {
+        val db = BumpDb(app)
+        try {
+            return db.readableDatabase.rawQuery("SELECT COUNT(*) FROM trips", null).use { it.moveToFirst(); it.getInt(0) }
+        } finally {
+            db.close()
+        }
+    }
+
+    @Test fun aTripStoppedWithinThirtySecondsIsNotKept() {
+        send("app.bumpbeeper.WATCH")
+        svc.drivingDetected()
+        assertEquals(1, tripCount())
+        send("app.bumpbeeper.STOP")
+        // The trip is closed (here: deleted) on the engine thread.
+        var n = 1
+        for (i in 0 until 30) {
+            n = tripCount()
+            if (n == 0) break
+            Thread.sleep(100)
+        }
+        assertEquals(0, n)
+    }
+
+    private fun startAuto(source: String) {
+        svc.onStartCommand(Intent(app, BumpService::class.java).setAction("app.bumpbeeper.START").putExtra("source", source), 0, 1)
+    }
+
+    /** GPS fixes every 2 s at [kmh], fix times [fromS]..[toS] s, delivered to the recording on its engine thread. */
+    private fun gps(fromS: Int, toS: Int, kmh: Double) {
+        val lm = app.getSystemService(LocationManager::class.java)
+        for (s in fromS..toS step 2) {
+            val l = Location(LocationManager.GPS_PROVIDER).apply {
+                latitude = 30.0 + s * kmh / 3.6 / 111_320.0
+                longitude = 31.0
+                speed = (kmh / 3.6).toFloat()
+                accuracy = 5f
+                time = 1_700_000_000_000L + s * 1000L
+                elapsedRealtimeNanos = s * 1_000_000_000L
+            }
+            shadowOf(lm).simulateLocation(l)
+        }
+    }
+
+    /** Waits for the engine thread, then runs what it posted to the main thread. */
+    private fun settle(until: () -> Boolean = { false }) {
+        for (i in 0 until 30) {
+            Thread.sleep(100)
+            shadowOf(Looper.getMainLooper()).idle()
+            if (until()) return
+        }
+    }
+
+    @Test fun googleStartWithTwentySecondsOfDrivingIsDiscardedSilently() {
+        BumpService.chimes = 0
+        startAuto(BumpService.SOURCE_VEHICLE)
+        assertFalse(LiveState.recording)     // recording at once, but nothing shown
+        assertEquals(1, tripCount())
+        gps(0, 20, 40.0)
+        settle()
+        assertEquals(0, BumpService.chimes)
+        assertFalse(LiveState.recording)
+        send("app.bumpbeeper.STOP")
+        settle { tripCount() == 0 }
+        assertEquals(0, tripCount())         // never 30 s of driving: nothing kept
+        assertEquals(0, BumpService.chimes)
+    }
+
+    @Test fun bluetoothStartWithThirtyFiveSecondsChimesOnceAndRecordsFromZero() {
+        BumpService.chimes = 0
+        startAuto(BumpService.SOURCE_CAR)
+        assertFalse(LiveState.recording)
+        assertEquals(1, tripCount())         // the trip (and its data) began with the connection, at 0 s
+        gps(0, 34, 40.0)
+        settle { BumpService.chimes > 0 }
+        assertEquals(1, BumpService.chimes)  // confirmed at 32 s
+        assertEquals(-1L, PendingTrip.get(app))   // confirmed: a restart would keep it
+        assertTrue(LiveState.recording)      // now shown as running
+        assertTrue(LiveState.tripKm > 0.2)   // the fixes from 0 s are in the trip, not only those after 30 s
+        gps(36, 60, 40.0)
+        settle()
+        assertEquals(1, BumpService.chimes)  // once per trip
+    }
+
+    @Test fun aCarTripKilledBeforeThirtySecondsIsNeverUploadedAndGoesAtTheNextStart() {
+        BumpService.chimes = 0
+        Prefs.setResearchRecording(app, true)
+        startAuto(BumpService.SOURCE_CAR)
+        gps(0, 20, 40.0)
+        settle { ResearchQueue.read(app) { it.stamps().isNotEmpty() } }
+        val stamp = ResearchQueue.read(app) { it.stamps().single() }
+        assertTrue("research files marked pending: the uploader skips them", ResearchQueue.read(app) { it.trip(stamp)!!.optBoolean("pending") })
+        val id = PendingTrip.get(app)
+        assertTrue(id > 0)
+        assertEquals(1, tripCount())
+        // Killed here (no stop, no onDestroy). The next process start (AppStart) cleans up:
+        PendingTrip.cleanUp(app)
+        assertEquals(0, tripCount())
+        assertEquals(-1L, PendingTrip.get(app))
+        assertEquals("unconfirmed", ResearchQueue.read(app) { it.trip(stamp)!!.getString("skip") })
+        assertEquals(0, BumpService.chimes)
+    }
+
+    @Test fun aSilentTripNotConfirmedWithinThreeMinutesStopsAndIsDiscarded() {
+        startAuto(BumpService.SOURCE_CAR)   // parked with the car's Bluetooth on: no driving
+        assertEquals(1, tripCount())
+        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofSeconds(181))
+        settle { tripCount() == 0 }
+        assertEquals(0, tripCount())
+        assertEquals(-1L, PendingTrip.get(app))
+        assertFalse(LiveState.recording)
+    }
+
     @Test fun drivingDetectedWhileRecordingStartsNothingNew() {
         send("app.bumpbeeper.WATCH")
         svc.drivingDetected()
         val started = LiveState.lastEvent
         svc.drivingDetected()
-        assertTrue(LiveState.recording)
+        assertEquals(1, tripCount())
         assertEquals(started, LiveState.lastEvent)
     }
 

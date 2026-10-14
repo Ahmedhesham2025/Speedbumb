@@ -188,7 +188,8 @@ class SpotRow(
  * `kind_score`: the engine's [Observation.kindScore] runs -1 (speed bump) .. +1 (pothole), but the server column
  * is `check (between 0 and 1)` and its aggregation calls `>= 0.5` a pothole, so the phone sends `(kindScore + 1) / 2`.
  * Every element says `"schema": 2` ([SCHEMA], supabase/README.md): this build's spots are bumps with a severity, so
- * its hit on an old pothole spot makes it an ordinary bump on the server too.
+ * its hit on an old pothole spot makes it an ordinary bump on the server too. `sev_index` (0..100) and `axle` (0..1)
+ * go along when the hit has them ([Observation.sevIndex], [Observation.axle]), else they are left out.
  */
 object ObservationJson {
     /** The upload format version: 2 = bumps with a severity (missing = 1, a 1.7.x phone). */
@@ -208,6 +209,9 @@ object ObservationJson {
         put("kind_score", fit((o.kindScore + 1) / 2, 0.0, 1.0))
         put("side_score", fit(o.sideScore, -1.0, 1.0))
         put("observed_at", isoUtc(o.wallTimeMs))
+        // Optional (v2): left out when the engine had none, so the server averages peak instead / counts no axle hit.
+        o.sevIndex?.takeIf { !it.isNaN() }?.let { put("sev_index", it.coerceIn(0.0, 100.0)) }
+        o.axle?.takeIf { !it.isNaN() }?.let { put("axle", it.coerceIn(0.0, 1.0)) }
     }
 
     private fun fit(x: Double, lo: Double, hi: Double) = if (x.isNaN()) 0.0 else x.coerceIn(lo, hi)

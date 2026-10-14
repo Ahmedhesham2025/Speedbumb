@@ -23,11 +23,17 @@ class Beeper(private val ctx: Context) {
     private val am = ctx.getSystemService(Context.AUDIO_SERVICE) as AudioManager
     private val main = Handler(Looper.getMainLooper())
 
-    /** Bump warning: [count] short high beeps (mild 1, moderate 2). */
-    fun beep(count: Int) = play(tones(DoubleArray(count) { 1046.5 }, 140, 90, 0.9))
+    /** Bump warning: [count] short high beeps (mild 1, moderate 2, strong 3). */
+    fun beep(count: Int) = play(tones(bumpBeeps(count)))
 
     /** A spot that is only a "maybe": one beep, quieter and shorter than the bump beeps. */
-    fun soft() = play(tones(doubleArrayOf(1046.5), 90, 0, 0.45))
+    fun soft() = play(tones(SOFT))
+
+    /**
+     * Approach beep: one very short, higher blip, repeated by the engine faster and faster while the driver stays too
+     * fast for the bump ahead (parking-sensor style). Same channel and volume settings as the warning beeps.
+     */
+    fun approach() = play(tones(APPROACH))
 
     /**
      * Over the road's speed limit: a rising two-note chime (E5 → B5, ringing out), the opposite of the falling
@@ -38,13 +44,14 @@ class Beeper(private val ctx: Context) {
     /** Strong bump without speech: a falling two-tone "uh-oh", so you can tell it apart without looking. */
     fun strong() = play(tones(doubleArrayOf(784.0, 523.3), 220, 70, 0.9))
 
-    /** The sound for one warning (a strong bump's voice is played by [Voice]; this is its fallback). */
-    fun warn(sound: WarnSound) = when (sound) {
-        WarnSound.SOFT -> soft()
-        WarnSound.MILD -> beep(1)
-        WarnSound.MODERATE -> beep(2)
-        WarnSound.STRONG -> strong()
-    }
+    /** The beeps of one warning; a strong bump's voice follows from [Voice], [STRONG_VOICE_MS] after they start. */
+    fun warn(sound: WarnSound) = play(tones(patternFor(sound)))
+
+    /**
+     * A recording started by itself (the car, or driving detected): a rising three-note chime (C5, E5, G5, ringing
+     * out), so you know it is recording without looking. Unlike every warning, it goes up and has three notes.
+     */
+    fun tripStarted() = play(tones(doubleArrayOf(523.3, 659.3, 784.0), 120, 30, 0.8, decayMs = 120.0))
 
     /** Soft tick when a new bump is recorded on the first pass. */
     fun click() = play(tones(doubleArrayOf(1568.0), 35, 0, 0.4))
@@ -53,6 +60,8 @@ class Beeper(private val ctx: Context) {
      * [decayMs] > 0: instead of a flat tone, each one starts at full volume and dies away (bell-like), with a
      * little of the octave mixed in so a low tone still carries on small phone speakers.
      */
+    private fun tones(p: Pattern) = tones(p.freqsHz, p.onMs, p.gapMs, p.volume)
+
     private fun tones(freqsHz: DoubleArray, onMs: Int, gapMs: Int, volume: Double, decayMs: Double = 0.0): ShortArray {
         val count = freqsHz.size
         val on = SAMPLE_RATE * onMs / 1000
@@ -116,8 +125,22 @@ class Beeper(private val ctx: Context) {
         }
     }
 
+    /** A run of equal flat tones: one per entry of [freqsHz], [onMs] long, [gapMs] apart, at [volume] (0..1). */
+    class Pattern(val freqsHz: DoubleArray, val onMs: Int, val gapMs: Int, val volume: Double) {
+        val count: Int get() = freqsHz.size
+    }
+
     companion object {
         private const val SAMPLE_RATE = 44_100
+        private val SOFT = Pattern(doubleArrayOf(1046.5), 90, 0, 0.45)
+        val APPROACH = Pattern(doubleArrayOf(1318.5), 60, 0, 0.75)
+        fun bumpBeeps(count: Int) = Pattern(DoubleArray(count) { 1046.5 }, 140, 90, 0.9)
+
+        /** What each warning sound plays: a "maybe" one soft beep; mild 1, moderate 2, strong 3 bump beeps. */
+        fun patternFor(sound: WarnSound): Pattern = if (sound == WarnSound.SOFT) SOFT else bumpBeeps(sound.beeps)
+
+        /** Length of three bump beeps (250 ms lead + 3 × 140 + 2 × 90 + 30), plus a little room: then the strong-bump voice. */
+        const val STRONG_VOICE_MS = 950L
         /** Length of [speeding] (250 ms lead + 180 + 40 + 180 + 30), plus a little room before the voice. */
         const val SPEEDING_MS = 800L
     }
