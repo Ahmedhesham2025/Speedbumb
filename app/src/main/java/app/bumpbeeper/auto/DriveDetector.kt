@@ -36,39 +36,49 @@ class SpeedGate(
 }
 
 /**
- * When to spend GPS on checking for a drive, and when to give up (#49, foss edition and play without Google).
+ * When to spend GPS on checking for a drive, and when to give up (#49; foss, and play next to Google's detection).
  * Pure Kotlin; [DriveWatcher] feeds it from the significant-motion sensor, passive fixes and its own short GPS check.
  *
- *  - Significant motion (the phone moved) starts a GPS check of [checkMs]; a fast stretch still running at the end
- *    may finish, so one check lasts at most [checkMs] + [SpeedGate.sustainMs] (2.5 min).
+ *  - Significant motion (the phone moved) starts a GPS check of [checkMs].
  *  - Driving speed ([SpeedGate.startKmh], two fixes in a row) is enough: [Action.DRIVING] starts a silent recording
  *    at once, so no data is lost; BumpService confirms it only after 30 s of driving ([TripConfirm]).
  *  - A check that saw [SpeedGate.resetKmh] or more is in a vehicle (a slow car-park exit, a jam): no back-off, the
- *    check simply goes on, up to [maxFastRechecks] more windows (a bus crawling for 15 min shouldn't keep GPS on
- *    forever); after that a [firstCooldownMs] pause, which doesn't grow.
- *  - No fix at all within [noFixMs] (indoors, an underground car park) is no evidence of walking: the pause doesn't
- *    grow.
+ *    check simply goes on, up to [maxFastRechecks] more windows; after that a [firstCooldownMs] pause.
+ *  - No fix at all within [noFixMs] (indoors, a cold GPS in an underground car park) doesn't grow the pause.
  *  - Only a real miss (fixes, all slow: walking around) grows the pause, [firstCooldownMs] doubling up to
  *    [maxCooldownMs]. After [decayMs] without a miss, or after a drive, it is back to [firstCooldownMs].
+ *  - During a pause, motion that is not walking ([DriveWatcher] asks the accelerometer for a few seconds first, see
+ *    [wantsMotionKind]) is a phone in a moving vehicle: a short check of [quickCheckMs] runs anyway, at most one per
+ *    [vehicleRetryMs]; motion that comes sooner is retried then ([Action.RETRY_LATER], [retryAtMs]). Before this,
+ *    motion during a pause was dropped: walking to the car (a miss, then 3-10 min of pause) hid the drive after it.
  *  - A passive fix (another app's GPS, free; at most [maxPassiveAgeMs] old) at driving speed starts a check even
  *    during a pause.
  *  - [snooze] (after the user pressed Stop) ignores everything for a while.
+ * Every decision worth knowing goes to [log] (Diagnostics, [StartLog]).
  */
 class DriveDetector(
     val gate: SpeedGate = SpeedGate(sustainMs = 0L),
     val checkMs: Long = 150_000L,
-    val noFixMs: Long = 60_000L,
+    val noFixMs: Long = 90_000L,
     val firstCooldownMs: Long = 3 * 60_000L,
     val maxCooldownMs: Long = 10 * 60_000L,
     val decayMs: Long = 30 * 60_000L,
     val maxFastRechecks: Int = 4,
     val maxPassiveAgeMs: Long = 30_000L,
+    val quickCheckMs: Long = 45_000L,
+    val vehicleRetryMs: Long = 60_000L,
+    private val log: (StartLog.Reason) -> Unit = {},
 ) {
-    enum class Action { NONE, START_CHECK, END_CHECK, DRIVING }
+    enum class Action { NONE, START_CHECK, END_CHECK, DRIVING, RETRY_LATER }
 
     var checking = false
         private set
+    /** After [Action.RETRY_LATER]: when to call [onMotion] again (elapsedRealtime ms). */
+    var retryAtMs = -1L
+        private set
+    private var quick = false
     private var checkStartMs = -1L
+    private var lastCheckEndMs = Long.MIN_VALUE / 2
     private var gotFix = false
     private var sawVehicleSpeed = false
     private var fastRechecks = 0
@@ -77,9 +87,21 @@ class DriveDetector(
     private var lastMissMs: Long? = null
     private var snoozeUntilMs = Long.MIN_VALUE
 
-    /** The significant-motion sensor fired. */
-    fun onMotion(nowMs: Long): Action =
-        if (checking || nowMs < cooldownUntilMs || nowMs < snoozeUntilMs) Action.NONE else startCheck(nowMs)
+    /** In a pause, motion only counts if it isn't walking: the watcher should find that out first. */
+    fun wantsMotionKind(nowMs: Long): Boolean = !checking && nowMs >= snoozeUntilMs && nowMs < cooldownUntilMs
+
+    /**
+     * The significant-motion sensor fired; [walking]: the accelerometer says someone walks with the phone ([MotionKind]).
+     * Not known counts as walking: a pause then holds, as before.
+     */
+    fun onMotion(nowMs: Long, walking: Boolean = true): Action = when {
+        checking -> Action.NONE
+        nowMs < snoozeUntilMs -> { log(StartLog.Reason.SKIP_SNOOZED); Action.NONE }
+        nowMs >= cooldownUntilMs -> { log(StartLog.Reason.MOTION_CHECK); startCheck(nowMs, quick = false) }
+        walking -> { log(StartLog.Reason.MOTION_WALKING); Action.NONE }
+        nowMs - lastCheckEndMs >= vehicleRetryMs -> { log(StartLog.Reason.MOTION_CHECK); startCheck(nowMs, quick = true) }
+        else -> { retryAtMs = lastCheckEndMs + vehicleRetryMs; Action.RETRY_LATER }
+    }
 
     /**
      * A fix another app asked for, taken at [tMs]. Ignored during a check (the check's own fixes arrive there too)
@@ -88,7 +110,7 @@ class DriveDetector(
     fun onPassiveFix(nowMs: Long, tMs: Long, kmh: Double): Action {
         if (checking || nowMs < snoozeUntilMs || nowMs - tMs > maxPassiveAgeMs) return Action.NONE
         if (kmh.isNaN() || kmh < gate.startKmh) return Action.NONE
-        startCheck(nowMs)
+        startCheck(nowMs, quick = false)
         onFix(tMs, kmh)
         return Action.START_CHECK
     }
@@ -97,7 +119,10 @@ class DriveDetector(
     fun onFix(tMs: Long, kmh: Double): Action {
         if (!checking) return Action.NONE
         gotFix = true
-        if (kmh >= gate.resetKmh) sawVehicleSpeed = true
+        if (kmh >= gate.resetKmh && !sawVehicleSpeed) {
+            sawVehicleSpeed = true
+            log(StartLog.Reason.WAITING_FOR_SPEED)
+        }
         if (!gate.add(tMs, kmh)) return Action.NONE
         checking = false
         fastRechecks = 0
@@ -109,7 +134,7 @@ class DriveDetector(
     fun onTimer(nowMs: Long): Action {
         if (!checking) return Action.NONE
         val age = nowMs - checkStartMs
-        val over = (age >= checkMs && !gate.pending) || age >= checkMs + gate.sustainMs || (!gotFix && age >= noFixMs)
+        val over = age >= (if (quick) quickCheckMs else checkMs) || (!gotFix && age >= noFixMs)
         if (!over) return Action.NONE
         if (sawVehicleSpeed && fastRechecks < maxFastRechecks) {
             // In a vehicle but not at 20 km/h yet: check again at once, GPS stays on.
@@ -120,11 +145,19 @@ class DriveDetector(
         }
         checking = false
         fastRechecks = 0
+        lastCheckEndMs = nowMs
         if (lastMissMs.let { it == null || nowMs - it >= decayMs }) cooldownMs = firstCooldownMs
         when {
-            sawVehicleSpeed -> cooldownUntilMs = nowMs + firstCooldownMs
-            !gotFix -> cooldownUntilMs = nowMs + cooldownMs
+            sawVehicleSpeed -> {
+                log(StartLog.Reason.SKIP_VEHICLE_SLOW)
+                cooldownUntilMs = nowMs + firstCooldownMs
+            }
+            !gotFix -> {
+                log(StartLog.Reason.SKIP_NO_FIX)
+                cooldownUntilMs = nowMs + cooldownMs
+            }
             else -> {
+                log(StartLog.Reason.SKIP_SLOW)
                 cooldownUntilMs = nowMs + cooldownMs
                 cooldownMs = minOf(cooldownMs * 2, maxCooldownMs)
                 lastMissMs = nowMs
@@ -140,13 +173,31 @@ class DriveDetector(
 
     fun snoozed(nowMs: Long): Boolean = nowMs < snoozeUntilMs
 
-    private fun startCheck(nowMs: Long): Action {
+    private fun startCheck(nowMs: Long, quick: Boolean): Action {
         checking = true
+        this.quick = quick
         checkStartMs = nowMs
         gotFix = false
         sawVehicleSpeed = false
         fastRechecks = 0
         gate.reset()
         return Action.START_CHECK
+    }
+}
+
+/**
+ * Walking or riding? From a few seconds of accelerometer magnitudes (m/s²): walking with the phone swings it by
+ * several m/s² at every step; a phone lying or held in a moving car stays within about 1 m/s². Pure Kotlin.
+ */
+object MotionKind {
+    const val WALKING_SD = 1.5
+    const val MIN_SAMPLES = 20
+
+    /** Too few samples (no accelerometer): not walking, so a check may run. */
+    fun walking(mags: List<Double>): Boolean {
+        if (mags.size < MIN_SAMPLES) return false
+        val mean = mags.average()
+        val sd = Math.sqrt(mags.sumOf { (it - mean) * (it - mean) } / mags.size)
+        return sd > WALKING_SD
     }
 }

@@ -32,6 +32,7 @@ import app.bumpbeeper.auto.AutoStop
 import app.bumpbeeper.auto.DriveWatcher
 import app.bumpbeeper.auto.PendingTrip
 import app.bumpbeeper.auto.PowerPolicy
+import app.bumpbeeper.auto.StartLog
 import app.bumpbeeper.auto.TripCheck
 import app.bumpbeeper.auto.TripConfirm
 import app.bumpbeeper.auto.TripHold
@@ -448,6 +449,7 @@ class BumpService : Service(), SensorEventListener, LocationListener, EngineList
         }
         if (chime) {
             chimes++
+            StartLog.add(this, StartLog.Reason.CONFIRMED)
             beeper.tripStarted()
         }
         (getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager).notify(NOTIF_ID, buildNotification(getString(R.string.notif_recording)))
@@ -627,6 +629,11 @@ class BumpService : Service(), SensorEventListener, LocationListener, EngineList
         running = true
         pending = silent
         startSource = source
+        when (source) {
+            SOURCE_CAR -> StartLog.add(this, StartLog.Reason.STARTED_CAR)
+            SOURCE_VEHICLE -> StartLog.add(this, StartLog.Reason.STARTED_GOOGLE)
+            SOURCE_MOTION -> StartLog.add(this, StartLog.Reason.STARTED_MOTION)
+        }
         LiveState.resetTrip()
         LiveState.recording = !silent
         if (!silent) LiveState.lastEvent = "Recording started"
@@ -750,6 +757,7 @@ class BumpService : Service(), SensorEventListener, LocationListener, EngineList
         val database = db
         val startMs = tripStartMs
         val wasPending = pending   // never confirmed: ends as silently as it began
+        if (wasPending) StartLog.add(this, StartLog.Reason.DISCARDED)
         pending = false
         h?.removeCallbacks(parkedCheck)
         h?.removeCallbacks(pendingCheck)
