@@ -1,10 +1,10 @@
 package app.bumpbeeper
 
-import android.app.AlertDialog
 import android.os.Handler
 import android.os.Looper
 import android.view.Gravity
 import android.view.View
+import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
@@ -16,7 +16,7 @@ import java.util.Locale
 import kotlin.math.roundToInt
 
 /** How you drive: overall score out of 100, what it's made of, the trend, totals, and every trip. */
-class TripsPage(private val a: MainActivity) : Page {
+class TripsPage(private val a: MainActivity) : Page, BackHandler {
     private fun dp(v: Int) = Ui.dp(a, v)
     private val ui = Handler(Looper.getMainLooper())
 
@@ -32,7 +32,26 @@ class TripsPage(private val a: MainActivity) : Page {
     /** Trips whose route is waiting on the phone for a speed-limit lookup. */
     private var waiting: Set<Long> = emptySet()
 
-    override val view: View = build()
+    private lateinit var listView: View
+    private val summary = TripSummaryPage(a) { closeSummary() }
+
+    override val view: View = FrameLayout(a).apply {
+        listView = build()
+        addView(listView, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
+        addView(summary.view.apply { visibility = View.GONE },
+            FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
+    }
+
+    private fun closeSummary() {
+        summary.view.visibility = View.GONE
+        listView.visibility = View.VISIBLE
+    }
+
+    override fun back(): Boolean {
+        if (summary.view.visibility != View.VISIBLE) return false
+        closeSummary()
+        return true
+    }
 
     private fun build(): View {
         val col = LinearLayout(a).apply {
@@ -81,7 +100,7 @@ class TripsPage(private val a: MainActivity) : Page {
         add(list)
         add(Ui.row(a,
             Ui.button(a, a.getString(R.string.trips_share_csv)) { Sharing.shareTripsCsv(a) },
-            Ui.button(a, a.getString(R.string.trips_how_scored)) { explain() },
+            Ui.button(a, a.getString(R.string.trips_how_scored)) { TripSummaryPage.explain(a) },
         ), 12)
 
         return ScrollView(a).apply { addView(col) }
@@ -177,64 +196,11 @@ class TripsPage(private val a: MainActivity) : Page {
         Thread {
             val db = BumpDb(a.applicationContext)
             val events = try { db.tripEvents(tr.id) } finally { db.close() }
-            ui.post { showDetails(tr, events) }
+            ui.post {
+                summary.show(tr, events, tr.id in waiting)
+                summary.view.visibility = View.VISIBLE
+                listView.visibility = View.GONE
+            }
         }.start()
-    }
-
-    private fun showDetails(tr: BumpDb.TripRow, events: List<BumpEvent>) {
-        val d = tr.drive
-        val box = LinearLayout(a).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(20), dp(12), dp(20), dp(4))
-        }
-        box.addView(ScoreRingView(a).apply { score = tr.score; caption = DrivingStats.grade(tr.score) },
-            LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(150)))
-        val facts = listOf(
-            a.getString(R.string.trips_fact_distance) to Ui.km(d.distanceM),
-            a.getString(R.string.trips_fact_time) to Ui.duration(tr.durationS),
-            a.getString(R.string.trips_fact_speed) to a.getString(R.string.trips_fact_speed_value, d.avgSpeedKmh.roundToInt(), d.maxSpeedKmh.roundToInt()),
-            a.getString(R.string.trips_fact_over_limit) to a.getString(R.string.trips_fact_over_limit_value, String.format(Locale.US, "%.0f", d.speedingShare * 100)),
-            a.getString(R.string.trips_fact_braking) to d.harshBrakes.toString(),
-            a.getString(R.string.trips_fact_accel) to d.harshAccels.toString(),
-            a.getString(R.string.trips_fact_cornering) to d.harshCorners.toString(),
-            a.getString(R.string.trips_fact_swerves) to d.swerves.toString(),
-            a.getString(R.string.trips_fact_bumps_fast) to d.bumpsFast.toString(),
-            a.getString(R.string.trips_fact_phone) to d.phoneUse.toString(),
-            a.getString(R.string.trips_fact_totals) to "${tr.hits} · ${tr.potholes} · ${tr.beeps}",
-        ) + if (d.usesSpeedLimits) listOf(
-            a.getString(R.string.limits_fact_bands) to SpeedLimitText.bands(d),
-            a.getString(R.string.limits_fact_max_over) to SpeedLimitText.maxOver(a, d),
-        ) else emptyList()
-        for ((k, v) in facts) box.addView(LinearLayout(a).apply {
-            orientation = LinearLayout.HORIZONTAL
-            setPadding(0, dp(3), 0, dp(3))
-            addView(Ui.text(a, 14f, Ui.DIM, value = k), LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
-            addView(Ui.text(a, 14f, Ui.TEXT, bold = true, value = v))
-        })
-        SpeedLimitText.tripLine(a, d, tr.id in waiting)?.let {
-            box.addView(Ui.text(a, 13f, Ui.DIM, value = it).apply { setPadding(0, dp(6), 0, 0) })
-        }
-        if (events.isNotEmpty()) {
-            box.addView(Ui.section(a, a.getString(R.string.trips_section_happened)))
-            val tf = SimpleDateFormat("HH:mm", Locale.US)
-            for (e in events.take(30)) box.addView(Ui.text(a, 13f, Ui.TEXT,
-                value = "${tf.format(Date(e.wallTime))}  ${DriveText.event(a, e.type, e.note)}" +
-                    if (!e.speedKmh.isNaN()) a.getString(R.string.trips_event_speed, e.speedKmh.roundToInt()) else ""))
-        }
-        box.addView(Ui.section(a, a.getString(R.string.trips_section_tips)))
-        box.addView(Ui.text(a, 14f, Ui.TEXT, value = DriveText.tips(a, d).joinToString("\n") { "• $it" }))
-        AlertDialog.Builder(a)
-            .setView(ScrollView(a).apply { addView(box) })
-            .setPositiveButton(R.string.trips_share) { _, _ -> Sharing.shareTrip(a, tr) }
-            .setNegativeButton(R.string.common_close, null)
-            .show()
-    }
-
-    private fun explain() {
-        AlertDialog.Builder(a)
-            .setTitle(a.getString(R.string.trips_explain_title))
-            .setMessage(a.getString(R.string.trips_explain_msg))
-            .setPositiveButton(R.string.common_ok, null)
-            .show()
     }
 }

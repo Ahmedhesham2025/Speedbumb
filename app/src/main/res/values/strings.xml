@@ -237,6 +237,12 @@
     <string name="trips_section_trips">Trips</string>
     <string name="trips_share_csv">Share trips (CSV)</string>
     <string name="trips_how_scored">How it\'s scored</string>
+    <string name="trips_back">Back</string>
+    <string name="trips_section_breakdown">Score breakdown</string>
+    <string name="trips_bd_none">None</string>
+    <string name="trips_bd_count">Count: %1$d</string>
+    <string name="trips_bd_ok">No points lost</string>
+    <string name="trips_bd_max_over">most %1$s</string>
     <string name="trips_no_score">No score yet</string>
     <string name="trips_basis_none">Drive at least 0.5 km with recording on to get a score.</string>
     <string name="trips_basis_one">From your last %1$d trip (%2$s km)</string>

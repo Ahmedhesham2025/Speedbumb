@@ -223,6 +223,14 @@ class MainActivity : Activity() {
 
     fun refreshMap() { mapPage?.onShow() }
 
+    /** Back first closes what a tab has open inside it (a trip's summary), then leaves the app as usual. */
+    @Deprecated("Framework Activity back API; this app targets the classic back behaviour")
+    override fun onBackPressed() {
+        if ((pages.getOrNull(current) as? BackHandler)?.back() == true) return
+        @Suppress("DEPRECATION")
+        super.onBackPressed()
+    }
+
     // ---------------------------------------------------------------- shared map question
 
     /**
