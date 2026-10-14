@@ -477,7 +477,7 @@
     <string name="diag_training">Help improve detection: %1$s, %2$d waiting</string>
     <string name="diag_start_log">Auto start, newest first:</string>
     <string name="start_motion_check">Motion: checking speed</string>
-    <string name="start_motion_walking">Motion while walking: waiting</string>
+    <string name="start_motion_walking">Motion, not a vehicle: waiting</string>
     <string name="start_waiting_speed">Waiting for speed (in a vehicle, not 20 km/h yet)</string>
     <string name="start_skip_no_fix">Skipped: no GPS fix</string>
     <string name="start_skip_slow">Skipped: walking speed only</string>

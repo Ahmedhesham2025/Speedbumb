@@ -11,4 +11,8 @@ object MotionSignals {
     val car = signal { t -> 9.81 + 0.35 * Math.sin(2 * Math.PI * 11 * t) + noise(t, 0.2) }
     /** Walking, phone in a pocket: about 2 steps a second, several m/s² each. */
     val walking = signal { t -> 9.81 + 3.5 * Math.sin(2 * Math.PI * 2 * t) + noise(t, 0.5) }
+    /** Carried gently around the flat: a slow sway, about 1 Hz. */
+    val carried = signal { t -> 9.81 + 0.6 * Math.sin(2 * Math.PI * 1 * t) + noise(t, 0.03) }
+    /** Picked up and put down: one burst, then still. */
+    val putDown = signal { t -> 9.81 + (if (t < 1.0) 1.2 * Math.sin(2 * Math.PI * 3 * t) else 0.0) + noise(t, 0.03) }
 }

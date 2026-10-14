@@ -103,7 +103,7 @@ class DriveWatcherTest {
     @Test fun movingInACarDuringAPauseChecksAgainWithinAMinute() {
         watcher.start()
         hw.move()
-        gpsFor(160, 5.0)                  // walked to the car: a miss, 3 min pause
+        gpsFor(64, 5.0)                   // walked to the car: a miss after 60 s, 3 min pause
         assertNull(hw.gps)
         hw.signal = MotionSignals.car     // now riding: road vibration
         hw.move()                         // just after the check ended: retried 60 s after it

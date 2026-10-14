@@ -210,7 +210,7 @@ class DriveWatcher(
 
         override fun sampleMotion(ms: Long, onDone: (MotionKind.Kind) -> Unit) {
             cancelSample()
-            val s = accel ?: return onDone(MotionKind.Kind.VEHICLE)
+            val s = accel ?: return onDone(MotionKind.Kind.MOVED)
             val mags = ArrayList<Double>()
             val l = object : SensorEventListener {
                 override fun onSensorChanged(e: SensorEvent) {

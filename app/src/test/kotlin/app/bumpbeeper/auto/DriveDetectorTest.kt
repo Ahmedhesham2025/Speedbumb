@@ -83,7 +83,7 @@ class DriveDetectorTest {
     }
 
     @Test fun walkingEndsTheCheckAndBacksOff() {
-        val d = DriveDetector()
+        val d = DriveDetector(checkMs = 150_000L)
         d.onMotion(0)
         assertEquals(Action.END_CHECK, d.run(0, 200, 5.0))
         val end = 150_000L
@@ -141,7 +141,9 @@ class DriveDetectorTest {
         var gpsOnS = 0
         for (s in 0 until 3600 step 2) {                               // an hour; the phone is moved every 2 min
             val t = s * 1000L
-            if (s % 120 == 0) d.onMotion(t, MotionKind.Kind.VEHICLE)   // worst case: carried gently, never walking
+            // Carried around, picked up and put down, walked with: household motion, never a car's vibration.
+            val house = listOf(MotionSignals.carried, MotionSignals.putDown, MotionSignals.walking)
+            if (s % 120 == 0) d.onMotion(t, MotionKind.of(house[s / 120 % 3]))
             if (d.checking) {
                 gpsOnS += 2
                 assertNotEquals(Action.DRIVING, d.onFix(t, if (s % 6 == 0) 18.0 else 4.0))   // wander: jumps, never 20
@@ -156,21 +158,24 @@ class DriveDetectorTest {
     private fun DriveDetector.quickMiss(t: Long): Long {
         assertEquals(Action.START_CHECK, onMotion(t, MotionKind.Kind.VEHICLE))
         onFix(t + 2_000, 4.0)
-        assertEquals(Action.END_CHECK, onTimer(t + 30_000))
+        assertEquals(Action.END_CHECK, onTimer(t + 30_000))   // a slow fix: 30 s
         return t + 30_000
     }
 
     @Test fun threeChecksWithoutAVehicleBackOffTenTwentyThirtyMinutes() {
-        val d = DriveDetector()
+        val log = ArrayList<StartLog.Reason>()
+        val d = DriveDetector(log = { log += it })
         var end = d.walkingMiss(0)
         end = d.quickMiss(end + 60_000)
         end = d.quickMiss(end + 60_000)                                // the third: 10 min of rest
         for (min in listOf(10, 20, 30, 30)) {
             val t = end + min * 60_000L
-            assertFalse(d.wantsMotionKind(t - 1_000))                  // not even the accelerometer is asked
-            assertEquals(Action.NONE, d.onMotion(t - 1_000, MotionKind.Kind.VEHICLE))
-            assertEquals(Action.NONE, d.onMotion(t, MotionKind.Kind.WALKING))   // walking never checks after it
-            end = d.quickMiss(t)                                       // vehicle-like motion: a quick check only
+            assertEquals(Action.NONE, d.onMotion(t - 1_000, MotionKind.Kind.MOVED))
+            assertEquals(StartLog.Reason.SKIP_BACKOFF, log.last())     // still resting
+            assertEquals(Action.NONE, d.onMotion(t, MotionKind.Kind.MOVED))
+            assertEquals(StartLog.Reason.MOTION_WALKING, log.last())   // rest over, but still not a vehicle
+            assertEquals(Action.NONE, d.onMotion(t, MotionKind.Kind.WALKING))
+            end = d.quickMiss(t)                                       // car-like vibration: a quick check only
         }
         // In the car after all: vehicle speed resets the back-off, and the drive starts.
         val t = end + 30 * 60_000L
@@ -179,6 +184,42 @@ class DriveDetectorTest {
         assertEquals(Action.DRIVING, d.onFix(t + 4_000, 25.0))
         assertTrue(d.wantsMotionKind(t + 5_000))
         assertEquals(Action.START_CHECK, d.onMotion(t + 5_000, MotionKind.Kind.WALKING))   // full checks again
+    }
+
+    @Test fun aDriveStartingFiveMinutesIntoABackOffStarts() {
+        val d = DriveDetector()
+        var end = d.walkingMiss(0)
+        end = d.quickMiss(end + 60_000)
+        end = d.quickMiss(end + 60_000)                                // 10 min of rest from here
+        val t = end + 5 * 60_000L
+        assertEquals(Action.NONE, d.onMotion(t, MotionKind.Kind.WALKING))    // walking to the car: resting
+        assertEquals(Action.START_CHECK, d.onMotion(t + 30_000, MotionKind.Kind.VEHICLE))   // the car moves
+        assertEquals(Action.NONE, d.onFix(t + 32_000, 25.0))
+        assertEquals(Action.DRIVING, d.onFix(t + 34_000, 25.0))
+    }
+
+    @Test fun aColdGpsInTheCarGetsNinetySecondsASlowFixStillEndsAtThirty() {
+        val d = DriveDetector()
+        val t = d.walkingMiss(0) + 60_000
+        assertEquals(Action.START_CHECK, d.onMotion(t, MotionKind.Kind.VEHICLE))
+        for (s in 10..80 step 10) assertEquals(Action.NONE, d.onTimer(t + s * 1000L))   // no fix yet: keeps going
+        assertEquals(Action.NONE, d.onFix(t + 82_000, 25.0))           // the first fix after 80 s
+        assertEquals(Action.DRIVING, d.onFix(t + 84_000, 25.0))
+        val slow = DriveDetector()
+        val u = slow.walkingMiss(0) + 60_000
+        slow.onMotion(u, MotionKind.Kind.VEHICLE)
+        slow.onFix(u + 2_000, 4.0)
+        assertEquals(Action.NONE, slow.onTimer(u + 20_000))
+        assertEquals(Action.END_CHECK, slow.onTimer(u + 30_000))
+    }
+
+    @Test fun householdMotionIsNeverCarLike() {
+        assertEquals(MotionKind.Kind.VEHICLE, MotionKind.of(MotionSignals.car))
+        assertEquals(MotionKind.Kind.MOVED, MotionKind.of(MotionSignals.carried))
+        assertEquals(MotionKind.Kind.MOVED, MotionKind.of(MotionSignals.putDown))
+        assertEquals(MotionKind.Kind.WALKING, MotionKind.of(MotionSignals.walking))
+        assertEquals(MotionKind.Kind.STILL, MotionKind.of(MotionSignals.still))
+        assertEquals(MotionKind.Kind.MOVED, MotionKind.of(emptyList()))   // no accelerometer
     }
 
     @Test fun aPhoneLyingStillNeverChecks() {
@@ -216,7 +257,7 @@ class DriveDetectorTest {
     }
 
     @Test fun vehicleSpeedRechecksAreCappedWithoutGrowth() {
-        val d = DriveDetector()
+        val d = DriveDetector(checkMs = 150_000L)
         d.onMotion(0)
         assertEquals(Action.END_CHECK, d.run(0, 800, 17.0))            // a bus crawling: 5 windows of 150 s
         d.assertPause(750_000, 3)
@@ -238,7 +279,7 @@ class DriveDetectorTest {
     }
 
     @Test fun aDriveStartingLateInTheCheckMayFinish() {
-        val d = DriveDetector()
+        val d = DriveDetector(checkMs = 150_000L)
         d.onMotion(0)
         assertEquals(Action.NONE, d.run(0, 120, 5.0))                 // walking to the car
         assertEquals(Action.DRIVING, d.run(120, 90, 30.0))            // past 150 s, but the fast stretch finishes
