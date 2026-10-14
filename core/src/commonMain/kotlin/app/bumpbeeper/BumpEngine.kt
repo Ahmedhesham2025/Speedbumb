@@ -513,7 +513,7 @@ class BumpEngine(
         val shape = shapeOf(tMs, peak)
         // Too fast for a speed bump: kept only if, not much faster, it has a clear shape (needs the gyroscope).
         if (speedKmh > cfg.maxSpeedKmh && !clearFastJolt(speedKmh, peak, shape)) {
-            reject(tMs, peak, "too_fast", fix, shape.describe(), shape); return
+            reject(tMs, peak, "too_fast", fix, shape.describe() + axNote, shape); return
         }
 
         // GPS comes once a second; move that fix forward (or back, if it came after) to the moment of the jolt.
@@ -792,6 +792,7 @@ class BumpEngine(
             } else b.passes++
             store.updateBump(b)
             log("hit_weak", b.id, lat, lon, speedKmh, peak, slowdownKmh, bestD, "hits ${b.hits}/${b.passes}$evidence")
+            sample("hit", "weak", tMs, speedKmh, peak, shape, null, lat, lon, b.id)
             return
         }
 

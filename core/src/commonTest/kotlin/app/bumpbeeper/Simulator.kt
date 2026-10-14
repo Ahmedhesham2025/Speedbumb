@@ -91,6 +91,8 @@ class DriveSpec(
     val slipsAt: List<Pair<Double, Double>> = emptyList(),
     /** The phone twists 40° about the vertical and straight back, 0.6 s each way: the gyroscope turns both ways. */
     val wigglesAt: List<Double> = emptyList(),
+    /** The car's wheelbase: the rear wheels cross a bump this far after the front ones. */
+    val wheelbaseM: Double = 2.6,
     /** Sets the phone's own signals on every sample: (seconds driven, metres driven, speed m/s, the signals, sensor time ms). */
     val phoneSignals: ((Double, Double, Double, PhoneSignals, Long) -> Unit)? = null,
 )
@@ -186,6 +188,8 @@ class Simulator(seed: Long) {
         observationSink: ObservationSink? = null,
         /** Press "Mute last beep" right after every beep (at the next GPS fix, like the app's button would). */
         muteEveryBeep: Boolean = false,
+        /** The engine's learned car (E2); a fresh one by default. */
+        vehicle: VehicleProfile = VehicleProfile(),
     ): TripResult {
         val len = spec.roadM
         fun travel(p: Double) = if (spec.westbound) len - p else p   // road position ↔ distance travelled
@@ -235,7 +239,8 @@ class Simulator(seed: Long) {
             }
             override fun onJoltRejected(peak: Double, reason: String) { rejected.add(reason) }
         }
-        val engine = BumpEngine(cfg, sink, listener, { 1_700_000_000_000L + (t * 1000).toLong() }, tripId, spotSource, observationSink)
+        val engine = BumpEngine(cfg, sink, listener, { 1_700_000_000_000L + (t * 1000).toLong() }, tripId, spotSource, observationSink,
+            vehicle = vehicle)
         monitor = DrivingMonitor(drivingCfg, engine) { type, lat, lon, kmh, value, note ->
             sink.logEvent(BumpEvent(1_700_000_000_000L + (t * 1000).toLong(), tripId, type, -1, lat, lon, kmh, Double.NaN, value, Double.NaN, Double.NaN, note))
         }
@@ -326,8 +331,10 @@ class Simulator(seed: Long) {
             val sNew = s + (v + vNew) / 2 * dt
 
             for (sb in bumps) {
-                if (s < sb && sNew >= sb) crossings.add(doubleArrayOf(t, bumpAmp(vNew)))                  // front axle
-                if (s < sb + 2.6 && sNew >= sb + 2.6) crossings.add(doubleArrayOf(t, 0.8 * bumpAmp(vNew))) // rear axle
+                val wb = spec.wheelbaseM
+                // The front wheels lift the nose (pitch up), the rear ones a wheelbase later the tail (pitch down).
+                if (s < sb && sNew >= sb) crossings.add(doubleArrayOf(t, bumpAmp(vNew), 1.0))                  // front axle
+                if (s < sb + wb && sNew >= sb + wb) crossings.add(doubleArrayOf(t, 0.8 * bumpAmp(vNew), -1.0)) // rear axle
             }
             for (sj in jolts) if (s < sj && sNew >= sj) crossings.add(doubleArrayOf(t, 6.0))
             for (ss in seams) {
@@ -383,7 +390,7 @@ class Simulator(seed: Long) {
                 twist += degToRad(40.0) * (if (k < 0.6) k / 0.6 else 1.0 - (k - 0.6) / 0.6)
             }
             val lateral = v * (yaw)   // sideways (to the left) force from turning
-            for (c in crossings) pitch += swing(t - c[0], 0.05 * c[1], 0.2)
+            for (c in crossings) pitch += c.getOrElse(2) { 1.0 } * swing(t - c[0], 0.05 * c[1], 0.2)
             for (c in holeHits) { roll += c[2] * swing(t - c[0], 0.08 * c[1], 0.15); pitch += swing(t - c[0], 0.015 * c[1], 0.15) }
             for (c in seamHits) pitch += swing(t - c[0], 0.005 * c[1], 0.1)   // a seam is too short to rock the car
             crossings.removeAll { t - it[0] > 0.5 }
