@@ -496,7 +496,7 @@ class BumpEngine(
         // The decision comes 1.2 s after the jolt, so a newer fix may already be in. Use the one closest in time.
         val fix = fixes.minByOrNull { abs(it.timeMs - tMs) }
         val ax = if (fix != null && abs(tMs - fix.timeMs) <= cfg.maxFixAgeMs) axleOf(tMs, fix.speedMps) else null
-        val axNote = ax?.let { " axle=${it.verdict.name.lowercase()} ${formatFixed(it.score, 2)} ${it.reason}" } ?: ""
+        val axNote = ax?.let { " axle=${it.verdict.name.lowercase()} ${formatFixed(it.score, 2)} ${it.reason} dt=${formatFixed(it.dtMs, 0)} pitch=${it.pitchOrder}" } ?: ""
         val overridden = handledReason(tMs)?.let {
             val refused = refusedOverride(tMs, ax, fix)
             if (refused != null) {
