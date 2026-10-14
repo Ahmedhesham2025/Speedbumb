@@ -8,6 +8,7 @@ import android.content.Intent
 import android.location.Location
 import android.location.LocationManager
 import android.os.Looper
+import android.os.SystemClock
 import app.bumpbeeper.BumpDb
 import app.bumpbeeper.BumpService
 import app.bumpbeeper.LiveState
@@ -201,6 +202,115 @@ class BumpServiceWatchTest {
         assertEquals(0, tripCount())
         assertEquals(-1L, PendingTrip.get(app))
         assertFalse(LiveState.recording)
+    }
+
+    /** The phone parts of the drive watcher: the test moves the phone and feeds the GPS check. */
+    private class Phone : DriveWatcher.Hardware {
+        var motion: (() -> Unit)? = null
+        var gps: ((Long, Double) -> Unit)? = null
+        override fun armMotion(onMotion: () -> Unit) { motion = onMotion }
+        override fun cancelMotion() { motion = null }
+        override fun startPassive(onFix: (Long, Double) -> Unit) {}
+        override fun stopPassive() {}
+        override fun startGps(onFix: (Long, Double) -> Unit) { gps = onFix }
+        override fun stopGps() { gps = null }
+        override fun acquireWake(timeoutMs: Long) {}
+        override fun releaseWake() {}
+        var signal = MotionSignals.car
+        override fun sampleMotion(ms: Long, onDone: (MotionKind.Kind) -> Unit) = onDone(MotionKind.of(signal))
+        override fun cancelSample() {}
+    }
+
+    private fun idle(s: Long) = shadowOf(Looper.getMainLooper()).idleFor(Duration.ofSeconds(s))
+
+    /** The watcher's GPS check gets a fix every 2 s at [kmh] for [seconds]. */
+    private fun Phone.fixes(seconds: Int, kmh: Double) = repeat(seconds / 2) {
+        gps?.invoke(SystemClock.elapsedRealtime(), kmh)
+        idle(2)
+    }
+
+    /** From a silent automatic start: 40 s at 25 km/h on the recording's own GPS confirm the trip. */
+    private fun assertConfirmed() {
+        assertEquals(1, tripCount())
+        gps(0, 40, 25.0)
+        settle { BumpService.chimes > 0 }
+        assertEquals(1, BumpService.chimes)
+        assertTrue(LiveState.recording)
+    }
+
+    @Test fun aColdGpsInTheCarStillStartsTheTrip() {
+        BumpService.chimes = 0
+        val phone = Phone()
+        BumpService.watchHardware = phone
+        try {
+            send("app.bumpbeeper.WATCH")
+            phone.signal = MotionSignals.walking
+            phone.motion!!.invoke()
+            phone.fixes(64, 5.0)                          // walked to the car: a miss, 3 min pause
+            assertNull(phone.gps)
+            idle(60)
+            phone.signal = MotionSignals.car
+            phone.motion!!.invoke()                       // the car moves: a quick check, GPS cold
+            idle(70)
+            assertNotNull("no fix yet: the check keeps going", phone.gps)
+            phone.fixes(4, 25.0)                          // first fix at 70 s, at 25 km/h
+            assertNull(phone.gps)
+            assertConfirmed()
+        } finally {
+            BumpService.watchHardware = null
+        }
+    }
+
+    @Test fun aDriveStartingFiveMinutesIntoABackOffIsConfirmed() {
+        BumpService.chimes = 0
+        val phone = Phone()
+        BumpService.watchHardware = phone
+        try {
+            send("app.bumpbeeper.WATCH")
+            phone.signal = MotionSignals.walking
+            for (pause in listOf(180L, 360L, 0L)) {          // three walks around the house, each a miss
+                phone.motion!!.invoke()
+                assertNotNull(phone.gps)
+                phone.fixes(64, 5.0)
+                idle(pause)
+            }
+            idle(5 * 60)                                  // 5 min into the 10 min back-off
+            phone.motion!!.invoke()                       // walking: still resting
+            assertNull(phone.gps)
+            assertTrue(StartLog.read(app).list.any { it.second == StartLog.Reason.SKIP_BACKOFF })
+            phone.signal = MotionSignals.car
+            phone.motion!!.invoke()                       // the car's vibration gets through
+            phone.fixes(4, 25.0)
+            assertNull(phone.gps)
+            assertConfirmed()
+        } finally {
+            BumpService.watchHardware = null
+        }
+    }
+
+    @Test fun motionThenTwentyFiveForFortySecondsWithoutBluetoothIsAConfirmedTrip() {
+        BumpService.chimes = 0
+        val phone = Phone()
+        BumpService.watchHardware = phone
+        try {
+            send("app.bumpbeeper.WATCH")
+            phone.motion!!.invoke()                       // significant motion: a short GPS check
+            val check = phone.gps!!
+            val now = SystemClock.elapsedRealtime()
+            check(now, 25.0)
+            check(now + 2_000, 25.0)                      // driving speed twice: recording starts, silently
+            assertNull(phone.gps)
+            assertEquals(1, tripCount())
+            assertFalse(LiveState.recording)
+            gps(0, 40, 25.0)                              // the recording's own GPS: 40 s at 25 km/h
+            settle { BumpService.chimes > 0 }
+            assertEquals(1, BumpService.chimes)           // confirmed after 30 s
+            assertTrue(LiveState.recording)
+            val log = StartLog.read(app).list.map { it.second }
+            assertTrue(log.toString(), log.containsAll(listOf(StartLog.Reason.MOTION_CHECK, StartLog.Reason.STARTED_MOTION, StartLog.Reason.CONFIRMED)))
+        } finally {
+            BumpService.watchHardware = null
+        }
     }
 
     @Test fun drivingDetectedWhileRecordingStartsNothingNew() {

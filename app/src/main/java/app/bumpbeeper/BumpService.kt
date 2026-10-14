@@ -29,9 +29,11 @@ import android.os.SystemClock
 import android.util.Log
 import app.bumpbeeper.auto.AutoDetect
 import app.bumpbeeper.auto.AutoStop
+import app.bumpbeeper.auto.DriveDetector
 import app.bumpbeeper.auto.DriveWatcher
 import app.bumpbeeper.auto.PendingTrip
 import app.bumpbeeper.auto.PowerPolicy
+import app.bumpbeeper.auto.StartLog
 import app.bumpbeeper.auto.TripCheck
 import app.bumpbeeper.auto.TripConfirm
 import app.bumpbeeper.auto.TripHold
@@ -93,6 +95,9 @@ class BumpService : Service(), SensorEventListener, LocationListener, EngineList
         private const val SNOOZE_AFTER_STOP_MS = 15 * 60_000L
         /** A speeding warning waits this long after a bump or pothole warning (those come first). */
         private const val HAZARD_FIRST_MS = 6_000L
+
+        /** Tests: the phone parts the drive watcher uses (null: the real ones). */
+        @Volatile internal var watchHardware: DriveWatcher.Hardware? = null
 
         /** Tests: how often the "trip started" chime played. */
         @Volatile internal var chimes = 0
@@ -427,7 +432,10 @@ class BumpService : Service(), SensorEventListener, LocationListener, EngineList
     /** Main thread. Between recordings: wait for the car to move (motion sensor, then a short GPS check). */
     private fun beginWatch(snoozeMs: Long = 0L) {
         if (watcher != null) return
-        watcher = DriveWatcher(this) { drivingDetected() }.also {
+        val hw = watchHardware
+        val w = if (hw == null) DriveWatcher(this) { drivingDetected() }
+            else DriveWatcher(hw, { drivingDetected() }, DriveDetector(log = { StartLog.add(this, it) }))
+        watcher = w.also {
             if (snoozeMs > 0) it.snooze(snoozeMs)
             it.start()
         }
@@ -448,6 +456,7 @@ class BumpService : Service(), SensorEventListener, LocationListener, EngineList
         }
         if (chime) {
             chimes++
+            StartLog.add(this, StartLog.Reason.CONFIRMED)
             beeper.tripStarted()
         }
         (getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager).notify(NOTIF_ID, buildNotification(getString(R.string.notif_recording)))
@@ -627,6 +636,11 @@ class BumpService : Service(), SensorEventListener, LocationListener, EngineList
         running = true
         pending = silent
         startSource = source
+        when (source) {
+            SOURCE_CAR -> StartLog.add(this, StartLog.Reason.STARTED_CAR)
+            SOURCE_VEHICLE -> StartLog.add(this, StartLog.Reason.STARTED_GOOGLE)
+            SOURCE_MOTION -> StartLog.add(this, StartLog.Reason.STARTED_MOTION)
+        }
         LiveState.resetTrip()
         LiveState.recording = !silent
         if (!silent) LiveState.lastEvent = "Recording started"
@@ -750,6 +764,7 @@ class BumpService : Service(), SensorEventListener, LocationListener, EngineList
         val database = db
         val startMs = tripStartMs
         val wasPending = pending   // never confirmed: ends as silently as it began
+        if (wasPending) StartLog.add(this, StartLog.Reason.DISCARDED)
         pending = false
         h?.removeCallbacks(parkedCheck)
         h?.removeCallbacks(pendingCheck)
