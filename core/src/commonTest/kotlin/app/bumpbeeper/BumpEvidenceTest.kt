@@ -61,11 +61,11 @@ class BumpEvidenceTest {
     }
 
     @Test fun aClearPairOverridesALaterHandling() {
-        // A real bump while braking (both axles, pitch up then down), and the phone picked up just after the rear axle,
+        // A real bump while braking (both axles, pitch up then down), and the phone picked up 0.25 s after the rear axle,
         // before the decision: the car's signature wins.
         val v = 15 / 3.6
         val store = MemoryStore()
-        val r = Simulator(9).drive(store, DriveSpec(bumpsAt = listOf(800.0), holdsAt = listOf(800.0 + 2.6 + 0.7 * v to 4.0), cruiseKmh = 40.0))
+        val r = Simulator(9).drive(store, DriveSpec(bumpsAt = listOf(800.0), holdsAt = listOf(800.0 + 2.6 + 0.25 * v to 4.0), cruiseKmh = 40.0))
         assertEquals(1, r.newBumps, "${r.rejected} ${notes(store, "rejected")}")
         assertTrue(notes(store, "new_bump").single().contains("axle=both") && notes(store, "new_bump").single().contains("over_handled"), "${notes(store, "new_bump")}")
         // Picked up a second before the front axle: the same pair stays the phone's.
