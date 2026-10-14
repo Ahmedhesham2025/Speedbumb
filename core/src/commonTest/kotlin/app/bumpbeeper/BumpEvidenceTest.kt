@@ -60,6 +60,20 @@ class BumpEvidenceTest {
         }
     }
 
+    @Test fun aHitStillRingingWhereTheRearWouldBeIsAnOrdinaryHit() {
+        // The axle check can't see a rear through a hit that is still ringing ("ringing", here forced by a zero decay
+        // limit): no evidence against it, so a lone knock at a steady 25 km/h is learned even in a pocket.
+        val ringing = EngineConfig().apply { axle.decayFraction = 0.0 }
+        val spec = DriveSpec(oneOffJoltsAt = listOf(600.0), cruiseKmh = 25.0, roadM = 900.0)
+        val store = MemoryStore()
+        val r = Simulator(3).drive(store, spec, ringing, drivingCfg = pocket)
+        assertEquals(1, r.newBumps, "${r.rejected} ${notes(store, "rejected")}")
+        assertTrue(notes(store, "new_bump").single().contains("ringing"), "${notes(store, "new_bump")}")
+        // With the axle check able to look, the same lone knock is no bump in a pocket.
+        val plain = Simulator(3).drive(MemoryStore(), spec, drivingCfg = pocket)
+        assertEquals(0, plain.newBumps, "${plain.rejected}")
+    }
+
     @Test fun handlingKnocksAWheelbaseApartAreNeverABump() {
         // Braking for a bump that isn't there, the phone picked up: its knocks come a wheelbase apart. Still the phone's.
         val v = 15 / 3.6

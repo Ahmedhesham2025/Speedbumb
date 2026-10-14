@@ -153,11 +153,12 @@ object AxleSignature {
         fun result(v: AxleVerdict, reason: String) =
             AxleResult(v, score, Double.NaN, exp, g0.peak, Double.NaN, false, bestPitch, brake, braked, reason)
         // From here on it is not a clean pair; "no axle" needs the rear to have been plainly missing, out to [slow].
-        if (tooStrong) return result(AxleVerdict.UNKNOWN, "second_stronger")
-        if (evidence > cfg.oneMaxEvidence) return result(AxleVerdict.UNKNOWN, "unclear")
+        // First: could the rear be past the data (a crawl, a slow lag-corrected speed)? Then nothing below can tell.
         val fwdOk = g0.t + (1 + tol) * slow + w / 2 <= ts[n - 1]
         val backOk = g0.t - (1 + tol) * slow - w / 2 >= spanFrom
         if (!fwdOk || !backOk) return result(AxleVerdict.UNKNOWN, "window")
+        if (tooStrong) return result(AxleVerdict.UNKNOWN, "second_stronger")
+        if (evidence > cfg.oneMaxEvidence) return result(AxleVerdict.UNKNOWN, "unclear")
         // The speed must be known and steady, and fast enough that GPS lag matters little, else the rear may be
         // anywhere; and the gap long enough for one hit's own ringing to die down in it.
         if (braked != false) return result(AxleVerdict.UNKNOWN, "braking")

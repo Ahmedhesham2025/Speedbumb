@@ -534,7 +534,8 @@ class BumpEngine(
         val drop = speedDropKmh(tMs)
         val slowed = drop >= cfg.speedEvidenceKmh
         val axleSeen = ax != null && ax.score >= cfg.axleEvidenceMin
-        // The axle check could not look (rear past the decision at a crawl, too fast, no data): that is no evidence
+        // The axle check could not look (rear past the decision at a crawl, too fast, no data, the hit still ringing
+        // where the rear would be): that is no evidence
         // against it, so the jolt is an ordinary hit (a steady crawl has no slowdown either).
         val blind = ax == null || ax.reason in AXLE_BLIND
         val note = "$axNote slow=${formatFixed(drop, 1)}" + if (overridden) " over_handled" else ""
@@ -1370,6 +1371,6 @@ class BumpEngine(
         private const val BUF = 1024
 
         /** [AxleResult.reason]s where the axle check could not look: no evidence either way. */
-        val AXLE_BLIND = setOf("window", "slow", "no_data", "fast")
+        val AXLE_BLIND = setOf("window", "slow", "no_data", "fast", "ringing")
     }
 }
