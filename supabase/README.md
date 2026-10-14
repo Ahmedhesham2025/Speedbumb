@@ -12,6 +12,7 @@ migrations/20261005000004_speed_limit_quota_settings.sql   speed-limits caps rea
 migrations/20261007000002_research.sql   research recordings: consent, ledger, erasure queue, private bucket + policy
 migrations/20261008000001_bump_severity.sql   v2 bumps: severity band + confidence, legacy potholes, spots_near_v2
 migrations/20261008000002_severity_average.sql   spot severity averaged like the app's (first 10 hits equally, then 1/10)
+migrations/20261014000001_confirm_hits.sql   a spot is confirmed only after confirm_hits (2) hits in total
 functions/speed-limits/              Edge Function: road speed limits from TomTom (lib.ts logic, lib_test.ts Deno tests)
 tools/research/                      owner tool (Deno): download, clear and erase research files, plus its smoke test
 seed.sql                             sample fleets/spots for local runs and CI only (desert coordinates)
@@ -66,7 +67,7 @@ config.toml                          local `supabase start` settings (anonymous 
 
 `aggregate_observations()` is server-only (not executable by clients). It matches each new observation to a spot within
 15 m and 45° of heading (or opens a candidate), updates contributors and counters, confirms a spot when
-`n_devices >= confirm_devices` (see below) and `hits / (hits + clears) >= 0.5`, marks a
+`n_hits >= confirm_hits` and `n_devices >= confirm_devices` (see below) and `hits / (hits + clears) >= 0.5`, marks a
 confirmed spot `stale` when that ratio falls, and deletes processed observations after a day (only the 24 h upload cap needs them).
 
 ### Severity and confidence (v2 bumps, `20261008000001_bump_severity.sql`)
@@ -91,7 +92,16 @@ update public.app_settings set value = '4.0' where key = 'severity_moderate_min'
 select public.backfill_bump_severity();  -- server only; safe to repeat
 ```
 
-### Confirmation threshold (`confirm_devices`)
+### Confirmation thresholds (`confirm_hits`, `confirm_devices`)
+
+**`confirm_hits`** (shipped as **2**, owner decision 2026-10-14; `20261014000001_confirm_hits.sql`): a spot is confirmed,
+and so shared, only after that many hits in total, from one phone or several. One jolt never shares a spot. A missing or
+non-numeric value means 2 (and anything below 1 means 1). It applies on top of `confirm_devices` and the pass ratio, from
+the next aggregation run; an already confirmed spot is re-checked when an observation next touches it:
+
+```sql
+update public.app_settings set value = '3' where key = 'confirm_hits';
+```
 
 How many distinct phones must hit a spot before it is shared is one setting, shipped as **2** for the pilot. There is no
 separate fleet-driver rule any more; the setting covers it. If the row is missing or not a number the aggregation uses
@@ -102,9 +112,9 @@ confirmed spot is re-checked against the new value (and may turn `stale`) the ne
 update public.app_settings set value = '3' where key = 'confirm_devices';
 ```
 
-**Raise it before a public v2 launch.** The hosted project runs with `1` (owner decision: share after one phone).
-Confidence counts total hits, so with `1` a single phone makes a spot confirmed **and** `full` by hitting it twice, or once
-with an axle hit on a strong bump. Keep the anonymous sign-in rate limit low as well (step 1 below).
+**Raise `confirm_devices` before a public v2 launch.** The hosted project runs with `1` (owner decision: share after one
+phone). Confidence counts total hits, so with `1` (and `confirm_hits` = 2) a single phone makes a spot confirmed **and**
+`full` by hitting it twice. Keep the anonymous sign-in rate limit low as well (step 1 below).
 
 ## Training samples ("Help improve detection")
 
@@ -282,7 +292,9 @@ follow `app_settings`, pruning),
 `08_training_samples.sql` (consent, pseudonym rotation, validation, caps, size guard, withdrawal, forget_me, RLS deny,
 retention), `09_bump_severity.sql` (band edges, backfill, 1.7 and v2 payloads, no new potholes, legacy cleared by a v2
 hit, axle + strong = full, total hits, the app's severity average, `spots_near` compatibility including a null kind,
-`spots_near_v2`, helpers closed to clients, training bands, moving the edges), `10_research.sql` (consent,
+`spots_near_v2`, helpers closed to clients, training bands, moving the edges), `11_confirm_hits.sql` (one hit stays a
+candidate, two hits from one or two phones confirm, the pass ratio and `confirm_devices` still apply, the setting's
+fallback, server-only grants), `10_research.sql` (consent,
 reservations and caps, the Storage policy against foreign folders, missing or oversized Content-Length, signed-URL and S3
 uploads, no client read/update/delete, clearing, forget_me queueing).
 The same job runs `deno test`, `deno check` and `deno lint` on `functions/`.
@@ -330,6 +342,11 @@ Agents never link or push to the hosted project. When the owner approves:
      legacy/soft, and after the next aggregation run `select count(*) from public.spots where kind = 'pothole' and not
      legacy_pothole;` is 0. If a `'pothole'` spot slipped in, run `select public.backfill_bump_severity();` (safe to
      repeat; it makes it a legacy spot) and check again.
+7. Confirm after two hits: apply `migrations/20261014000001_confirm_hits.sql` after step 6 (file order), between two
+   aggregation runs as in step 6. It adds `confirm_hits` = 2 and replaces `aggregate_observations` (same grants). No
+   spot changes at once: each is re-checked when an observation next touches it. Check:
+   `select value from public.app_settings where key = 'confirm_hits';` is `2`. Rollback: re-create
+   `aggregate_observations` from `20261008000002_severity_average.sql` and delete the `confirm_hits` row.
 
 Rollback (nothing depends on it yet): `drop schema public cascade` is too broad; instead drop the tables listed above,
 the eight functions and the `memberships_keep_last_owner` trigger, and `select cron.unschedule('aggregate-observations');`.
