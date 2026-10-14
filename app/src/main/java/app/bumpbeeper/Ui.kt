@@ -2,6 +2,7 @@ package app.bumpbeeper
 
 import android.content.Context
 import android.content.res.ColorStateList
+import android.content.res.Configuration
 import android.content.res.Resources
 import android.graphics.PorterDuff
 import android.graphics.Typeface
@@ -219,6 +220,30 @@ object Ui {
         contentDescription = label
         setOnClickListener { onClick(it) }
     }
+
+    /** [base] with Western digits when its language would otherwise use Arabic-Indic ones (see MainActivity). */
+    fun latinDigits(base: Context): Context {
+        val loc = base.resources.configuration.locales[0]
+        if (loc.language != "ar" || loc.getUnicodeLocaleType("nu") != null) return base
+        val conf = Configuration(base.resources.configuration)
+        conf.setLocale(Locale.Builder().setLocale(loc).setUnicodeLocaleKeyword("nu", "latn").build())
+        return base.createConfigurationContext(conf)
+    }
+
+    /** The app's language (with Western digits), for dates on screen; files and CSV keep Locale.US. */
+    fun locale(ctx: Context): Locale = ctx.resources.configuration.locales[0]
+
+    /** The grade words in the app's language ([DrivingStats.grade] is English, for CSV and sharing). */
+    fun grade(ctx: Context, score: Int): String = ctx.getString(when {
+        score < 0 -> R.string.grade_none
+        score >= 90 -> R.string.grade_excellent
+        score >= 75 -> R.string.grade_good
+        score >= 60 -> R.string.grade_fair
+        else -> R.string.grade_needs_work
+    })
+
+    /** Keeps "−9" or "+12 km/h" in that order inside Arabic text (a left-to-right isolate). */
+    fun ltr(s: String): String = "\u2066$s\u2069"
 
     /** A vector icon from res/drawable, tinted and sized (for chips and buttons). */
     fun icon(ctx: Context, res: Int, color: Int, sizeDp: Int = 20): Drawable? = ctx.getDrawable(res)?.mutate()?.apply {
