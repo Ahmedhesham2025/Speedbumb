@@ -2,15 +2,21 @@ package app.bumpbeeper
 
 import android.content.Context
 import android.content.res.ColorStateList
+import android.content.res.Configuration
 import android.content.res.Resources
 import android.graphics.Typeface
+import android.graphics.drawable.Drawable
 import android.graphics.drawable.GradientDrawable
+import android.graphics.drawable.InsetDrawable
+import android.graphics.drawable.LayerDrawable
+import android.graphics.drawable.StateListDrawable
 import android.graphics.drawable.RippleDrawable
 import android.text.TextUtils
 import android.util.TypedValue
 import android.view.Gravity
 import android.view.View
 import android.widget.CheckBox
+import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.SeekBar
 import android.widget.TextView
@@ -216,6 +222,147 @@ object Ui {
         setOnClickListener { onClick(it) }
     }
 
+    /** [base] with Western digits when its language would otherwise use Arabic-Indic ones (see MainActivity). */
+    fun latinDigits(base: Context): Context {
+        val loc = base.resources.configuration.locales[0]
+        if (loc.language != "ar" || loc.getUnicodeLocaleType("nu") != null) return base
+        val conf = Configuration(base.resources.configuration)
+        conf.setLocale(Locale.Builder().setLocale(loc).setUnicodeLocaleKeyword("nu", "latn").build())
+        return base.createConfigurationContext(conf)
+    }
+
+    /** The app's language (with Western digits), for dates on screen; files and CSV keep Locale.US. */
+    fun locale(ctx: Context): Locale = ctx.resources.configuration.locales[0]
+
+    /** The grade words in the app's language ([DrivingStats.grade] is English, for CSV and sharing). */
+    fun grade(ctx: Context, score: Int): String = ctx.getString(when {
+        score < 0 -> R.string.grade_none
+        score >= 90 -> R.string.grade_excellent
+        score >= 75 -> R.string.grade_good
+        score >= 60 -> R.string.grade_fair
+        else -> R.string.grade_needs_work
+    })
+
+    /** Keeps "−9" or "+12 km/h" in that order inside Arabic text (a left-to-right isolate). */
+    fun ltr(s: String): String = "\u2066$s\u2069"
+
+    /** A vector icon from res/drawable, tinted and sized (for chips and buttons). */
+    fun icon(ctx: Context, res: Int, color: Int, sizeDp: Int = 20): Drawable? = ctx.getDrawable(res)?.mutate()?.apply {
+        setTint(color)
+        setBounds(0, 0, dp(ctx, sizeDp), dp(ctx, sizeDp))
+    }
+
+    private fun dotDrawable(ctx: Context, color: Int): Drawable = GradientDrawable().apply {
+        shape = GradientDrawable.OVAL
+        setColor(color)
+        setBounds(0, 0, dp(ctx, 10), dp(ctx, 10))
+    }
+
+    /**
+     * A chip: [floating] on the map (surface, small shadow) or flat inside a card. A leading icon or a colour dot
+     * (severity, status), never both. The lead sits on the start side, so it mirrors in Arabic.
+     */
+    fun chip(ctx: Context, label: String, iconRes: Int = 0, dot: Int? = null, floating: Boolean = true): TextView = TextView(ctx).apply {
+        text = label
+        setTextSize(TypedValue.COMPLEX_UNIT_SP, Type.LABEL)
+        setTextColor(TEXT)
+        typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+        gravity = Gravity.CENTER_VERTICAL
+        minHeight = dp(ctx, 36)
+        maxLines = 1
+        ellipsize = TextUtils.TruncateAt.END
+        setPadding(dp(ctx, 12), 0, dp(ctx, 14), 0)
+        background = rounded(ctx, if (floating) SURFACE else SURFACE2, Shape.CHIP)
+        if (floating) elevation = dpf(ctx, 3f)
+        setChipLead(this, iconRes, dot)
+    }
+
+    /**
+     * A chip someone taps: the touch target grows to 48 dp while the chip still looks 36 dp (the background is inset).
+     */
+    fun tappable(chip: TextView, onClick: () -> Unit): TextView = chip.apply {
+        val ctx = context
+        val inset = dp(ctx, 6)
+        background = InsetDrawable(background, 0, inset, 0, inset)
+        minHeight = dp(ctx, 48)
+        isClickable = true
+        isFocusable = true
+        setOnClickListener { onClick() }
+    }
+
+    /** Changes a chip's leading icon or dot (status chips change colour as the state changes). */
+    fun setChipLead(chip: TextView, iconRes: Int = 0, dot: Int? = null) {
+        val ctx = chip.context
+        val lead = if (iconRes != 0) icon(ctx, iconRes, DIM, 16) else dot?.let { dotDrawable(ctx, it) }
+        chip.setCompoundDrawablesRelative(lead, null, null, null)
+        chip.compoundDrawablePadding = dp(ctx, 6)
+    }
+
+    /** A square floating button on the map (my location, sound): 48 dp, an icon only, described for TalkBack. */
+    fun fab(ctx: Context, iconRes: Int, desc: String, onClick: () -> Unit): ImageView = ImageView(ctx).apply {
+        setImageResource(iconRes)
+        imageTintList = ColorStateList.valueOf(TEXT)
+        scaleType = ImageView.ScaleType.CENTER
+        background = RippleDrawable(ColorStateList.valueOf(RIPPLE), rounded(ctx, SURFACE, Shape.FAB), rounded(ctx, 0xFFFFFFFF.toInt(), Shape.FAB))
+        elevation = dpf(ctx, 6f)
+        contentDescription = desc
+        isClickable = true
+        isFocusable = true
+        setOnClickListener { onClick() }
+    }
+
+    /** A bottom sheet over the map: rounded top, surface, with the small grab handle. */
+    fun sheet(ctx: Context): LinearLayout = LinearLayout(ctx).apply {
+        orientation = LinearLayout.VERTICAL
+        val r = dpf(ctx, Shape.SHEET.toFloat())
+        background = GradientDrawable().apply {
+            setColor(SURFACE)
+            cornerRadii = floatArrayOf(r, r, r, r, 0f, 0f, 0f, 0f)
+        }
+        elevation = dpf(ctx, 8f)
+        setPadding(dp(ctx, Space.GUTTER), dp(ctx, 10), dp(ctx, Space.GUTTER), dp(ctx, Space.GUTTER))
+        addView(View(ctx).apply { background = rounded(ctx, LINE, 2) }, LinearLayout.LayoutParams(dp(ctx, 32), dp(ctx, 4)).apply {
+            gravity = Gravity.CENTER_HORIZONTAL
+            bottomMargin = dp(ctx, 12)
+        })
+    }
+
+    /**
+     * The one primary action of a state (Start drive, Stop): a 64 dp pill with an icon, big enough to hit without
+     * looking twice.
+     */
+    fun bigPill(ctx: Context, label: String, iconRes: Int, bg: Int, fg: Int, onClick: () -> Unit): TextView = TextView(ctx).apply {
+        text = label
+        setTextColor(fg)
+        setTextSize(TypedValue.COMPLEX_UNIT_SP, 19f)
+        typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+        gravity = Gravity.CENTER
+        minHeight = dp(ctx, 64)
+        setPadding(dp(ctx, 24), dp(ctx, 10), dp(ctx, 24), dp(ctx, 10))
+        background = RippleDrawable(ColorStateList.valueOf(RIPPLE), rounded(ctx, bg, 32), rounded(ctx, 0xFFFFFFFF.toInt(), 32))
+        setCompoundDrawablesRelative(icon(ctx, iconRes, fg, 24), null, null, null)
+        compoundDrawablePadding = dp(ctx, 10)
+        isClickable = true
+        isFocusable = true
+        contentDescription = label
+        setOnClickListener { onClick() }
+    }
+
+    /** A round score badge: the number on its soft score colour ([setScore]). */
+    fun scoreBadge(ctx: Context, sizeDp: Int = 44): TextView = TextView(ctx).apply {
+        gravity = Gravity.CENTER
+        setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
+        typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+        minWidth = dp(ctx, sizeDp)
+        minHeight = dp(ctx, sizeDp)
+    }
+
+    fun setScore(badge: TextView, score: Int) {
+        badge.text = if (score >= 0) score.toString() else "–"
+        badge.setTextColor(scoreColor(score))
+        badge.background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(scoreContainer(score)) }
+    }
+
     /** Lays views side by side with equal width. */
     fun row(ctx: Context, vararg views: View, gapDp: Int = 8): LinearLayout = LinearLayout(ctx).apply {
         orientation = LinearLayout.HORIZONTAL
@@ -253,11 +400,17 @@ object Ui {
 
     /** A setting that is on or off, with an explanation under it. */
     fun toggle(ctx: Context, title: String, hint: String?, value: Boolean, onChange: (Boolean) -> Unit): View {
+        // Looks like a Material 3 switch at the end of the row, but stays a CheckBox (tests and callers rely on it):
+        // the box is hidden and a switch drawable sits at the end; its checked state comes from the CheckBox.
         val box = CheckBox(ctx).apply {
             text = title
             setTextColor(TEXT)
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
-            buttonTintList = ColorStateList.valueOf(ACCENT)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f)
+            minHeight = dp(ctx, Space.ROW)
+            buttonDrawable = null
+            setPadding(0, 0, 0, 0)
+            setCompoundDrawablesRelative(null, null, switchDrawable(ctx), null)
+            compoundDrawablePadding = dp(ctx, 16)
             isChecked = value
             setOnCheckedChangeListener { _, on -> onChange(on) }
         }
@@ -265,8 +418,103 @@ object Ui {
         return LinearLayout(ctx).apply {
             orientation = LinearLayout.VERTICAL
             addView(box)
-            addView(text(ctx, 13f, DIM, value = hint).apply { setPadding(dp(ctx, 32), 0, 0, dp(ctx, 6)) })
+            addView(text(ctx, 13f, DIM, value = hint).apply { setPadding(0, 0, dp(ctx, 64), dp(ctx, 8)) })
         }
+    }
+
+    /** A 52 x 32 dp switch: the track and the thumb, on (primary, thumb at the end) or off (surface, outlined). */
+    private fun switchDrawable(ctx: Context): Drawable {
+        fun layer(on: Boolean): Drawable {
+            val track = GradientDrawable().apply {
+                cornerRadius = dpf(ctx, 16f)
+                setColor(if (on) PRIMARY else SURFACE3)
+                if (!on) setStroke(dp(ctx, 2), FAINT)
+            }
+            val thumbSize = dp(ctx, if (on) 24 else 16)
+            val thumb = GradientDrawable().apply {
+                shape = GradientDrawable.OVAL
+                setColor(if (on) ON_PRIMARY else FAINT)
+                setSize(thumbSize, thumbSize)
+            }
+            return LayerDrawable(arrayOf(track, thumb)).apply {
+                val inset = (dp(ctx, 32) - thumbSize) / 2
+                setLayerGravity(1, (if (on) Gravity.END else Gravity.START) or Gravity.CENTER_VERTICAL)
+                setLayerInsetRelative(1, inset, 0, inset, 0)
+                setLayerSize(1, thumbSize, thumbSize)
+            }
+        }
+        return StateListDrawable().apply {
+            addState(intArrayOf(android.R.attr.state_checked), layer(true))
+            addState(intArrayOf(), layer(false))
+            setBounds(0, 0, dp(ctx, 52), dp(ctx, 32))
+        }
+    }
+
+    /**
+     * Material 3 segmented buttons: one choice of a few ([labels]), the chosen one on the primary container. Each
+     * segment is at least 48 dp tall. Returns the row; [onSelect] gets the index.
+     */
+    fun segmented(ctx: Context, labels: List<String>, selected: Int, onSelect: (Int) -> Unit): LinearLayout {
+        val row = LinearLayout(ctx).apply {
+            orientation = LinearLayout.HORIZONTAL
+            background = rounded(ctx, 0, 24, LINE)
+            setPadding(dp(ctx, 1), dp(ctx, 1), dp(ctx, 1), dp(ctx, 1))
+        }
+        val cells = labels.map { label ->
+            TextView(ctx).apply {
+                text = label
+                gravity = Gravity.CENTER
+                setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
+                typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+                minHeight = dp(ctx, 48)
+                maxLines = 2
+                setPadding(dp(ctx, 6), 0, dp(ctx, 6), 0)
+                isClickable = true
+                isFocusable = true
+            }
+        }
+        fun show(sel: Int) = cells.forEachIndexed { i, c ->
+            val on = i == sel
+            c.background = if (on) rounded(ctx, PRIMARY_CONT, 24) else null
+            c.setTextColor(if (on) ON_PRIMARY_CONT else TEXT)
+            c.isSelected = on
+        }
+        cells.forEachIndexed { i, c ->
+            c.setOnClickListener { show(i); onSelect(i) }
+            row.addView(c, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+        }
+        show(selected)
+        return row
+    }
+
+    /** A list row that opens a sub-page: icon, title, a line of status under it, chevron. 56 dp or more. */
+    fun navRow(ctx: Context, iconRes: Int, title: String, onClick: () -> Unit): Pair<LinearLayout, TextView> {
+        val sub = text(ctx, 13f, DIM)
+        val row = LinearLayout(ctx).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            minimumHeight = dp(ctx, Space.ROW)
+            setPadding(0, dp(ctx, 8), 0, dp(ctx, 8))
+            isClickable = true
+            isFocusable = true
+            background = RippleDrawable(ColorStateList.valueOf(RIPPLE), null, rounded(ctx, 0xFFFFFFFF.toInt(), 12))
+            setOnClickListener { onClick() }
+            addView(ImageView(ctx).apply {
+                setImageResource(iconRes)
+                imageTintList = ColorStateList.valueOf(DIM)
+            }, LinearLayout.LayoutParams(dp(ctx, 24), dp(ctx, 24)))
+            addView(LinearLayout(ctx).apply {
+                orientation = LinearLayout.VERTICAL
+                setPadding(dp(ctx, 16), 0, dp(ctx, 8), 0)
+                addView(text(ctx, 16f, TEXT, value = title))
+                addView(sub)
+            }, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+            addView(ImageView(ctx).apply {
+                setImageResource(R.drawable.ic_chevron)
+                imageTintList = ColorStateList.valueOf(DIM)
+            }, LinearLayout.LayoutParams(dp(ctx, 24), dp(ctx, 24)))
+        }
+        return row to sub
     }
 
     /** A slider with its current value spelled out above it. */
