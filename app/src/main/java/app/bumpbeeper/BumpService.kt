@@ -31,10 +31,9 @@ import app.bumpbeeper.auto.AutoDetect
 import app.bumpbeeper.auto.AutoStop
 import app.bumpbeeper.auto.DriveWatcher
 import app.bumpbeeper.auto.PowerPolicy
-import app.bumpbeeper.auto.ShortTrip
 import app.bumpbeeper.auto.TripCheck
+import app.bumpbeeper.auto.TripConfirm
 import app.bumpbeeper.auto.TripHold
-import app.bumpbeeper.auto.TripStart
 import app.bumpbeeper.crash.CrashLog
 import app.bumpbeeper.research.RateAverager
 import app.bumpbeeper.research.ResearchFiles
@@ -93,6 +92,9 @@ class BumpService : Service(), SensorEventListener, LocationListener, EngineList
         private const val SNOOZE_AFTER_STOP_MS = 15 * 60_000L
         /** A speeding warning waits this long after a bump or pothole warning (those come first). */
         private const val HAZARD_FIRST_MS = 6_000L
+
+        /** Tests: how often the "trip started" chime played. */
+        @Volatile internal var chimes = 0
 
         /** The running service, for [label]. Set in onCreate, cleared in onDestroy. */
         @Volatile private var instance: BumpService? = null
@@ -261,6 +263,10 @@ class BumpService : Service(), SensorEventListener, LocationListener, EngineList
     private var tripId = 0L
     /** Wall-clock start of the trip (backdated to the movement start when driving was detected). */
     private var tripStartMs = 0L
+    /** An automatic trip not confirmed yet (TripConfirm): recording, but nothing shown or played. */
+    @Volatile private var pending = false
+    private var startSource: String? = null
+    private var confirm: TripConfirm? = null            // only used on the engine thread
     private var sensorOffsetMs: Long? = null
     private var graphMax = 0.0
     private var graphLastPushMs = 0L
@@ -289,7 +295,7 @@ class BumpService : Service(), SensorEventListener, LocationListener, EngineList
                 autoStop = null
                 main.post {
                     if (running) {
-                        LiveState.lastEvent = "Parked: recording stopped"
+                        if (!pending) LiveState.lastEvent = "Parked: recording stopped"
                         stopRecording(manual = false)
                     }
                 }
@@ -300,7 +306,7 @@ class BumpService : Service(), SensorEventListener, LocationListener, EngineList
     }
 
     private val stopForCarGone = Runnable {
-        LiveState.lastEvent = "Car disconnected: stopped"
+        if (!pending) LiveState.lastEvent = "Car disconnected: stopped"
         stopRecording(manual = false)
     }
 
@@ -363,7 +369,7 @@ class BumpService : Service(), SensorEventListener, LocationListener, EngineList
                 main.postDelayed(stopForCarGone, CAR_GONE_GRACE_MS)
                 handler?.post { autoStop?.carConnected = false }
                 research?.carBluetooth(false)
-                LiveState.lastEvent = "Car disconnected: stopping in ${CAR_GONE_GRACE_MS / 1000} s"
+                if (!pending) LiveState.lastEvent = "Car disconnected: stopping in ${CAR_GONE_GRACE_MS / 1000} s"
             } else stopIfIdle()
             ACTION_WATCH -> startWatching()
             ACTION_UNWATCH -> stopWatching()
@@ -420,15 +426,35 @@ class BumpService : Service(), SensorEventListener, LocationListener, EngineList
     /** Main thread. Between recordings: wait for the car to move (motion sensor, then a short GPS check). */
     private fun beginWatch(snoozeMs: Long = 0L) {
         if (watcher != null) return
-        watcher = DriveWatcher(this) { since -> drivingDetected(since) }.also {
+        watcher = DriveWatcher(this) { drivingDetected() }.also {
             if (snoozeMs > 0) it.snooze(snoozeMs)
             it.start()
         }
     }
 
-    /** The watcher saw a drive that began at [movedSinceMs] (elapsedRealtime; -1 = now). Internal for tests. */
-    internal fun drivingDetected(movedSinceMs: Long = -1L) {
-        if (watching && !running) startRecording(SOURCE_MOTION, movedSinceMs)
+    /**
+     * Main thread: a silent automatic trip is confirmed (30 s of driving, or Start pressed). From now on it is shown
+     * and plays its warnings; [chime]: the "trip started" sound, once.
+     */
+    private fun showConfirmed(chime: Boolean) {
+        if (!pending) return
+        pending = false
+        LiveState.recording = true
+        LiveState.lastEvent = when (startSource) {
+            SOURCE_CAR -> "Car connected: recording"
+            SOURCE_VEHICLE, SOURCE_MOTION -> "Driving detected: recording"
+            else -> "Recording started"
+        }
+        if (chime) {
+            chimes++
+            beeper.tripStarted()
+        }
+        (getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager).notify(NOTIF_ID, buildNotification(getString(R.string.notif_recording)))
+    }
+
+    /** The watcher saw driving speed. Internal for tests. */
+    internal fun drivingDetected() {
+        if (watching && !running) startRecording(SOURCE_MOTION)
     }
 
     /** For tests: the watcher waiting for the next drive (null while recording or not watching). */
@@ -539,10 +565,15 @@ class BumpService : Service(), SensorEventListener, LocationListener, EngineList
     // ---------------------------------------------------------------- start / stop
 
     /** [source]: who started it ([SOURCE_CAR], [SOURCE_VEHICLE], [SOURCE_MOTION]); null = the user. */
-    private fun startRecording(source: String?, movedSinceMs: Long = -1L) {
+    private fun startRecording(source: String?) {
         if (running) {
+            if (source == null && pending) {
+                // Start pressed during a silent automatic trip: it is the user's now, shown at once, no chime.
+                handler?.post { confirm?.confirmNow() }
+                showConfirmed(chime = false)
+            }
             if (source == SOURCE_CAR) {
-                LiveState.lastEvent = "Car reconnected: still recording"
+                if (!pending) LiveState.lastEvent = "Car reconnected: still recording"
                 research?.carBluetooth(true)
                 handler?.post {
                     autoStop?.carConnected = true
@@ -558,14 +589,18 @@ class BumpService : Service(), SensorEventListener, LocationListener, EngineList
             return
         }
         createChannel()
+        // Every automatic start records at once but silently (TripConfirm): the quiet watching notification until
+        // the trip has had 30 s of driving.
+        val silent = source != null
+        val first = if (silent) buildWatchNotification() else buildNotification(getString(R.string.notif_starting))
         try {
-            startForeground(NOTIF_ID, buildNotification(getString(R.string.notif_starting)), ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION)
+            startForeground(NOTIF_ID, first, ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION)
         } catch (e: Exception) {
             if (watching) {
                 // Already in the foreground (watching): Android may refuse a second startForeground from the
                 // background, but the service stays in the foreground; only the notification has to change.
                 Log.w(TAG, "startForeground while watching refused; keeping the watching one", e)
-                (getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager).notify(NOTIF_ID, buildNotification(getString(R.string.notif_starting)))
+                (getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager).notify(NOTIF_ID, first)
             } else {
                 Log.e(TAG, "startForeground failed", e)
                 LiveState.recording = false
@@ -578,23 +613,18 @@ class BumpService : Service(), SensorEventListener, LocationListener, EngineList
         watcher?.stop()
         watcher = null
         running = true
+        pending = silent
+        startSource = source
         LiveState.resetTrip()
-        LiveState.recording = true
-        LiveState.lastEvent = when (source) {
-            SOURCE_CAR -> "Car connected: recording started"
-            SOURCE_VEHICLE, SOURCE_MOTION -> "Driving detected: recording started"
-            else -> "Recording started"
-        }
+        LiveState.recording = !silent
+        if (!silent) LiveState.lastEvent = "Recording started"
 
         db = BumpDb(this)
         beeper = Beeper(this)
         // No speech available → the two-tone strong-bump sound instead, and no group announcements (EngineConfig.groupWarnings).
         voice = Voice(this, { ok -> engine?.cfg?.groupWarnings = ok }) { beeper.strong() }
-        // Driving detected: the trip starts where the movement started, not 30 s later when it was confirmed.
-        tripStartMs = TripStart.wallMs(System.currentTimeMillis(), SystemClock.elapsedRealtime(), movedSinceMs)
+        tripStartMs = System.currentTimeMillis()
         tripId = db.startTrip(tripStartMs)
-        // Started by itself: say so with its own sound (a user who pressed Start knows).
-        if (source != null) beeper.tripStarted()
 
         val t = HandlerThread("bump-engine").also { it.start() }
         val h = Handler(t.looper)
@@ -616,6 +646,7 @@ class BumpService : Service(), SensorEventListener, LocationListener, EngineList
                 it.carConnected = source == SOURCE_CAR
                 if (guessed) it.autoStarted(SystemClock.elapsedRealtime())
             }
+            confirm = TripConfirm(automatic = silent)
             h.postDelayed(parkedCheck, PARKED_CHECK_MS)
             val store = TracingStore(db, null)
             tracingStore = store
@@ -702,6 +733,8 @@ class BumpService : Service(), SensorEventListener, LocationListener, EngineList
         val t = thread
         val database = db
         val startMs = tripStartMs
+        val wasPending = pending   // never confirmed: ends as silently as it began
+        pending = false
         h?.removeCallbacks(parkedCheck)
         h?.post {
             phoneFeed?.stop()
@@ -714,8 +747,11 @@ class BumpService : Service(), SensorEventListener, LocationListener, EngineList
             monitor?.finish()
             val endMs = System.currentTimeMillis()
             val distM = maxOf(engine?.trip?.distanceM ?: 0.0, monitor?.stats?.distanceM ?: 0.0)
-            // Under 30 s or 200 m: not a drive. The trip goes, with the spots only it found; nothing of it is sent.
-            val short = ShortTrip.discard(endMs - startMs, distM)
+            // Never confirmed (no 30 s of driving), or under 30 s or 200 m: not a drive. The trip goes, with the spots only
+            // it found; nothing of it is sent.
+            val tc = confirm
+            confirm = null
+            val short = tc == null || !tc.keep(endMs - startMs, distM)
             if (short) {
                 try {
                     database.deleteSpotsOnlyFrom(tripId)
@@ -725,7 +761,7 @@ class BumpService : Service(), SensorEventListener, LocationListener, EngineList
                 }
                 // Its research files are never uploaded (they stay local until tidied away).
                 researchStamp?.let { ResearchQueue.skipTrip(this, it, "short") }
-                LiveState.lastEvent = "Too short to keep (under 30 s or 200 m)"
+                if (!wasPending) LiveState.lastEvent = "Too short to keep (under 30 s or 200 m)"
             } else {
                 engine?.let { database.endTrip(tripId, endMs, it.trip, monitor?.stats) }
                 monitor?.stats?.let { LiveState.lastTripScore = it.score() }
@@ -785,7 +821,7 @@ class BumpService : Service(), SensorEventListener, LocationListener, EngineList
         LiveState.recording = false
         LiveState.labelMode = false
         ResearchFiles.tidyLater(this)   // research files' 14 days / 2 GB, whether research recording is on or off
-        if (!LiveState.lastEvent.startsWith("Car disconnected") && !LiveState.lastEvent.startsWith("Parked")) {
+        if (!wasPending && !LiveState.lastEvent.startsWith("Car disconnected") && !LiveState.lastEvent.startsWith("Parked")) {
             LiveState.lastEvent = "Stopped"
         }
         if (watching) {
@@ -888,6 +924,8 @@ class BumpService : Service(), SensorEventListener, LocationListener, EngineList
         LiveState.forwardKnown = eng.forwardKnown
         val kmh = fix.speedMps * 3.6
         autoStop?.onFix(fix.timeMs, kmh, fix.lat, fix.lon)
+        // A silent automatic trip: 30 s at driving speed confirm it (chime, shown as running).
+        if (confirm?.onFix(fix.timeMs, kmh) == true) main.post { if (running && pending) showConfirmed(chime = true) }
         if (power.onFix(fix.timeMs, kmh)) applyPower()
         publish(eng, force = false)
     }
@@ -928,7 +966,7 @@ class BumpService : Service(), SensorEventListener, LocationListener, EngineList
         val mayPlay = Prefs.limitSound(this) && (lastHazardWarnMs < 0 || now - lastHazardWarnMs > HAZARD_FIRST_MS)
         val limit = warner.onSpeed(now, fix.speedMps * 3.6, LiveState.speedLimitKmh, Prefs.limitMarginKmh(this), mayPlay)
         LiveState.overLimit = warner.overLimit
-        if (limit == null) return
+        if (limit == null || pending) return   // a trip not confirmed yet plays nothing
         beeper.speeding()
         val v = voice ?: return
         handler?.postDelayed({
@@ -949,7 +987,7 @@ class BumpService : Service(), SensorEventListener, LocationListener, EngineList
 
     /** First pass over a new spot: a soft tick (the engine rate-limits it). */
     override fun onNewSpotTick(b: Bump) {
-        if (Prefs.clickOnNew(this)) beeper.click()
+        if (!pending && Prefs.clickOnNew(this)) beeper.click()
     }
 
     override fun onKnownBumpHit(b: Bump) {
@@ -965,7 +1003,7 @@ class BumpService : Service(), SensorEventListener, LocationListener, EngineList
         // The group line couldn't be spoken: play this spot's sound and let the silenced ones warn on their own.
         val groupFallback = { plain(); engine?.ungroup(); Unit }
         val v = voice
-        when {
+        if (!pending) when {   // a trip not confirmed yet plays nothing
             // Several spots close together: say it once ("3 bumps ahead"); the ones after it stay silent. A group of
             // spots that are all only a "maybe" is not announced: each one plays its own soft beep instead.
             w.cluster != null && w.cluster!!.anyFull && v != null -> v.cluster(w.cluster!!, groupFallback)
@@ -1026,7 +1064,7 @@ class BumpService : Service(), SensorEventListener, LocationListener, EngineList
         }
 
         val now = SystemClock.elapsedRealtime()
-        if (force || now - lastNotifMs > 5000) {
+        if (!pending && (force || now - lastNotifMs > 5000)) {
             lastNotifMs = now
             val text = String.format(
                 Locale.US, getString(R.string.notif_recording_counts),

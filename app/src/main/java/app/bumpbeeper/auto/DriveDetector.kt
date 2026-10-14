@@ -18,9 +18,6 @@ class SpeedGate(
     /** A fast stretch has begun but is not long enough yet. */
     val pending: Boolean get() = sinceMs >= 0
 
-    /** When the current fast stretch began (fix time), or -1: where a trip it confirms really started. */
-    val since: Long get() = sinceMs
-
     fun reset() {
         sinceMs = -1L
         lastMs = -1L
@@ -43,7 +40,9 @@ class SpeedGate(
  * Pure Kotlin; [DriveWatcher] feeds it from the significant-motion sensor, passive fixes and its own short GPS check.
  *
  *  - Significant motion (the phone moved) starts a GPS check of [checkMs]; a fast stretch still running at the end
- *    may finish, so one check lasts at most [checkMs] + [SpeedGate.sustainMs] (3 min).
+ *    may finish, so one check lasts at most [checkMs] + [SpeedGate.sustainMs] (2.5 min).
+ *  - Driving speed ([SpeedGate.startKmh], two fixes in a row) is enough: [Action.DRIVING] starts a silent recording
+ *    at once, so no data is lost; BumpService confirms it only after 30 s of driving ([TripConfirm]).
  *  - A check that saw [SpeedGate.resetKmh] or more is in a vehicle (a slow car-park exit, a jam): no back-off, the
  *    check simply goes on, up to [maxFastRechecks] more windows (a bus crawling for 15 min shouldn't keep GPS on
  *    forever); after that a [firstCooldownMs] pause, which doesn't grow.
@@ -56,7 +55,7 @@ class SpeedGate(
  *  - [snooze] (after the user pressed Stop) ignores everything for a while.
  */
 class DriveDetector(
-    val gate: SpeedGate = SpeedGate(),
+    val gate: SpeedGate = SpeedGate(sustainMs = 0L),
     val checkMs: Long = 150_000L,
     val noFixMs: Long = 60_000L,
     val firstCooldownMs: Long = 3 * 60_000L,
@@ -68,9 +67,6 @@ class DriveDetector(
     enum class Action { NONE, START_CHECK, END_CHECK, DRIVING }
 
     var checking = false
-        private set
-    /** After [Action.DRIVING]: when that drive began (fix time, elapsedRealtime ms), so the trip starts there. */
-    var drivingSinceMs = -1L
         private set
     private var checkStartMs = -1L
     private var gotFix = false
@@ -103,7 +99,6 @@ class DriveDetector(
         gotFix = true
         if (kmh >= gate.resetKmh) sawVehicleSpeed = true
         if (!gate.add(tMs, kmh)) return Action.NONE
-        drivingSinceMs = gate.since
         checking = false
         fastRechecks = 0
         cooldownMs = firstCooldownMs
@@ -117,7 +112,7 @@ class DriveDetector(
         val over = (age >= checkMs && !gate.pending) || age >= checkMs + gate.sustainMs || (!gotFix && age >= noFixMs)
         if (!over) return Action.NONE
         if (sawVehicleSpeed && fastRechecks < maxFastRechecks) {
-            // In a vehicle but not 30 s at 20 km/h yet: check again at once, GPS stays on.
+            // In a vehicle but not at 20 km/h yet: check again at once, GPS stays on.
             fastRechecks++
             checkStartMs = nowMs
             sawVehicleSpeed = false

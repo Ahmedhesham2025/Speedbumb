@@ -5,6 +5,8 @@ import android.app.Application
 import android.app.Notification
 import android.app.Service
 import android.content.Intent
+import android.location.Location
+import android.location.LocationManager
 import android.os.Looper
 import app.bumpbeeper.BumpDb
 import app.bumpbeeper.BumpService
@@ -62,7 +64,9 @@ class BumpServiceWatchTest {
         assertEquals("Ready to detect driving", text(shadowOf(svc).lastForegroundNotification))
 
         svc.drivingDetected()
-        assertTrue(LiveState.recording)
+        assertFalse(LiveState.recording)     // recording, but silently until 30 s of driving
+        assertEquals("Ready to detect driving", text(shadowOf(svc).lastForegroundNotification))
+        assertEquals(1, tripCount())
         assertNull(svc.currentWatcher)       // no detection while recording, so nothing can start a second one
 
         // The car's Bluetooth wasn't involved: a disconnect message ends it after the grace, not as a manual Stop.
@@ -109,12 +113,71 @@ class BumpServiceWatchTest {
         assertEquals(0, n)
     }
 
+    private fun startAuto(source: String) {
+        svc.onStartCommand(Intent(app, BumpService::class.java).setAction("app.bumpbeeper.START").putExtra("source", source), 0, 1)
+    }
+
+    /** GPS fixes every 2 s at [kmh], fix times [fromS]..[toS] s, delivered to the recording on its engine thread. */
+    private fun gps(fromS: Int, toS: Int, kmh: Double) {
+        val lm = app.getSystemService(LocationManager::class.java)
+        for (s in fromS..toS step 2) {
+            val l = Location(LocationManager.GPS_PROVIDER).apply {
+                latitude = 30.0 + s * kmh / 3.6 / 111_320.0
+                longitude = 31.0
+                speed = (kmh / 3.6).toFloat()
+                accuracy = 5f
+                time = System.currentTimeMillis()
+                elapsedRealtimeNanos = s * 1_000_000_000L
+            }
+            shadowOf(lm).simulateLocation(l)
+        }
+    }
+
+    /** Waits for the engine thread, then runs what it posted to the main thread. */
+    private fun settle(until: () -> Boolean = { false }) {
+        for (i in 0 until 30) {
+            Thread.sleep(100)
+            shadowOf(Looper.getMainLooper()).idle()
+            if (until()) return
+        }
+    }
+
+    @Test fun googleStartWithTwentySecondsOfDrivingIsDiscardedSilently() {
+        BumpService.chimes = 0
+        startAuto(BumpService.SOURCE_VEHICLE)
+        assertFalse(LiveState.recording)     // recording at once, but nothing shown
+        assertEquals(1, tripCount())
+        gps(0, 20, 40.0)
+        settle()
+        assertEquals(0, BumpService.chimes)
+        assertFalse(LiveState.recording)
+        send("app.bumpbeeper.STOP")
+        settle { tripCount() == 0 }
+        assertEquals(0, tripCount())         // never 30 s of driving: nothing kept
+        assertEquals(0, BumpService.chimes)
+    }
+
+    @Test fun bluetoothStartWithThirtyFiveSecondsChimesOnceAndRecordsFromZero() {
+        BumpService.chimes = 0
+        startAuto(BumpService.SOURCE_CAR)
+        assertFalse(LiveState.recording)
+        assertEquals(1, tripCount())         // the trip (and its data) began with the connection, at 0 s
+        gps(0, 34, 40.0)
+        settle { BumpService.chimes > 0 }
+        assertEquals(1, BumpService.chimes)  // confirmed at 32 s
+        assertTrue(LiveState.recording)      // now shown as running
+        assertTrue(LiveState.tripKm > 0.2)   // the fixes from 0 s are in the trip, not only those after 30 s
+        gps(36, 60, 40.0)
+        settle()
+        assertEquals(1, BumpService.chimes)  // once per trip
+    }
+
     @Test fun drivingDetectedWhileRecordingStartsNothingNew() {
         send("app.bumpbeeper.WATCH")
         svc.drivingDetected()
         val started = LiveState.lastEvent
         svc.drivingDetected()
-        assertTrue(LiveState.recording)
+        assertEquals(1, tripCount())
         assertEquals(started, LiveState.lastEvent)
     }
 

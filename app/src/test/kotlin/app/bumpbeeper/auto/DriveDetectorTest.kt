@@ -20,7 +20,6 @@ class DriveDetectorTest {
         assertFalse(g.feed(0, 30, 25.0))      // fixes at 0..28 s
         assertFalse(g.add(30_000, 25.0))      // exactly 30 s: not yet
         assertTrue(g.add(31_000, 25.0))
-        assertEquals(0L, g.since)             // the drive began with the first fast fix
     }
 
     @Test fun cyclingAtEighteenNeverOpens() {
@@ -39,7 +38,6 @@ class DriveDetectorTest {
         g.feed(0, 26, 30.0)
         g.add(26_000, 10.0)
         assertFalse(g.feed(28, 30, 30.0))     // 28..56 s: only 28 s fast so far
-        assertEquals(28_000L, g.since)
         assertTrue(g.feed(58, 4, 30.0))
     }
 
@@ -74,7 +72,13 @@ class DriveDetectorTest {
         assertEquals(Action.NONE, d.run(0, 10, null))           // GPS warming up
         assertEquals(Action.DRIVING, d.run(10, 120, 35.0))
         assertFalse(d.checking)
-        assertEquals(10_000L, d.drivingSinceMs)                     // the trip starts with the first fast fix
+    }
+
+    @Test fun twoFixesAtDrivingSpeedStartRecordingAtOnce() {
+        val d = DriveDetector()
+        d.onMotion(0)
+        assertEquals(Action.NONE, d.onFix(2_000, 30.0))
+        assertEquals(Action.DRIVING, d.onFix(4_000, 30.0))    // silent; BumpService confirms after 30 s (TripConfirm)
     }
 
     @Test fun walkingEndsTheCheckAndBacksOff() {
