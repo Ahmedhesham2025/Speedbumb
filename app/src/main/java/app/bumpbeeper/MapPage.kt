@@ -21,6 +21,7 @@ import android.view.View
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
+import app.bumpbeeper.ui.SpotMap
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -33,7 +34,7 @@ class MapPage(private val a: MainActivity) : Page {
     private fun dp(v: Int) = Ui.dp(a, v)
     private val ui = Handler(Looper.getMainLooper())
 
-    private lateinit var map: BumpMapView
+    private lateinit var map: SpotMap
     private lateinit var count: TextView
     private lateinit var list: LinearLayout
     private lateinit var listBox: View
@@ -62,7 +63,7 @@ class MapPage(private val a: MainActivity) : Page {
 
     private fun build(): View {
         val o = Ui.Space.OVERLAY
-        map = BumpMapView(a).apply { onSelect = { showSpot(it) } }
+        map = SpotMap(a, interactive = true).apply { onSelect = { showSpot(it) } }
 
         // Top bar: "Your map · 128", import a file, share.
         count = Ui.text(a, 16f, Ui.DIM)
@@ -134,7 +135,12 @@ class MapPage(private val a: MainActivity) : Page {
         }
     }
 
+    override fun onHide() = map.pause()
+
+    override fun onDestroy() = map.destroy()
+
     override fun onShow() {
+        map.resume()
         cfg = Prefs.engineConfig(a)
         Thread {
             val db = BumpDb(a.applicationContext)
