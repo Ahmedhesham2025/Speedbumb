@@ -62,7 +62,7 @@ class TripSummaryPage(private val a: MainActivity, private val onBack: () -> Uni
     fun show(tr: BumpDb.TripRow, events: List<BumpEvent>, waiting: Boolean) {
         trip = tr
         val d = tr.drive
-        title.text = SimpleDateFormat("EEE d MMM · HH:mm", Locale.US).format(Date(tr.startTs))
+        title.text = SimpleDateFormat("EEE d MMM · HH:mm", Ui.locale(a)).format(Date(tr.startTs))
         body.removeAllViews()
 
         // Hero: ring, grade, then distance · time · average / top speed.
@@ -77,7 +77,7 @@ class TripSummaryPage(private val a: MainActivity, private val onBack: () -> Uni
                 orientation = LinearLayout.VERTICAL
                 setPadding(dp(18), 0, 0, 0)
                 addView(Ui.text(a, Ui.Type.HEADLINE, Ui.scoreColor(tr.score), bold = true,
-                    value = if (tr.score >= 0) DrivingStats.grade(tr.score) else a.getString(R.string.trips_no_score)))
+                    value = if (tr.score >= 0) Ui.grade(a, tr.score) else a.getString(R.string.trips_no_score)))
                 SpeedLimitText.tripLine(a, d, waiting)?.let { addView(Ui.text(a, 13f, Ui.DIM, value = it).apply { setPadding(0, dp(6), 0, 0) }) }
             }, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
         })
@@ -112,7 +112,7 @@ class TripSummaryPage(private val a: MainActivity, private val onBack: () -> Uni
         if (events.isNotEmpty()) {
             body.addView(Ui.section(a, a.getString(R.string.trips_section_happened)))
             val box = Ui.card(a)
-            val tf = SimpleDateFormat("HH:mm", Locale.US)
+            val tf = SimpleDateFormat("HH:mm", Ui.locale(a))
             for (e in events.take(30)) box.addView(Ui.text(a, 13f, Ui.TEXT,
                 value = "${tf.format(Date(e.wallTime))}  ${DriveText.event(a, e.type, e.note)}" +
                     if (!e.speedKmh.isNaN()) a.getString(R.string.trips_event_speed, e.speedKmh.roundToInt()) else "").apply {
@@ -169,7 +169,7 @@ class TripSummaryPage(private val a: MainActivity, private val onBack: () -> Uni
             if (item.points > 0) addView(bar(item.points, most), LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(6))
                 .apply { topMargin = dp(6) })
         }
-        val pts: View = if (item.points > 0) Ui.text(a, 15f, Ui.ERR, bold = true, value = "−${item.points}")
+        val pts: View = if (item.points > 0) Ui.text(a, 15f, Ui.ERR, bold = true, value = Ui.ltr("−${item.points}"))
             else ImageView(a).apply {
                 setImageResource(R.drawable.ic_check)
                 imageTintList = ColorStateList.valueOf(Ui.OK)
