@@ -497,13 +497,14 @@ class BumpEngine(
         val fix = fixes.minByOrNull { abs(it.timeMs - tMs) }
         val ax = if (fix != null && abs(tMs - fix.timeMs) <= cfg.maxFixAgeMs) axleOf(tMs, fix.speedMps) else null
         val axNote = ax?.let { " axle=${it.verdict.name.lowercase()} ${formatFixed(it.score, 2)} ${it.reason}" } ?: ""
-        handledReason(tMs)?.let {
+        val overridden = handledReason(tMs)?.let {
             if (!overridesHandling(tMs, ax, fix)) {
                 phoneJolt = phone.episodeStartMs <= tMs + cfg.phoneJoltLeadMs
                 reject(tMs, peak, it, fix, axNote.trim())
                 return
             }
-        }
+            true
+        } ?: false
         if (fix == null || abs(tMs - fix.timeMs) > cfg.maxFixAgeMs) { reject(tMs, peak, "no_gps", fix); return }
         if (fix.accuracyM > cfg.maxAccuracyM) { reject(tMs, peak, "weak_gps", fix); return }
         val speedKmh = fix.speedMps * 3.6
@@ -528,7 +529,7 @@ class BumpEngine(
         val drop = speedDropKmh(tMs)
         val slowed = drop >= cfg.speedEvidenceKmh
         val axleSeen = ax != null && ax.score >= cfg.axleEvidenceMin
-        val note = "$axNote slow=${formatFixed(drop, 1)}"
+        val note = "$axNote slow=${formatFixed(drop, 1)}" + if (overridden) " over_handled" else ""
         if (phone.pocketMode && ax?.verdict == AxleVerdict.ONE) { reject(tMs, peak, "no_axle", fix, note.trim(), shape); return }
         if (phone.pocketMode && !axleSeen && !slowed) { reject(tMs, peak, "no_evidence", fix, note.trim(), shape); return }
         val grade = when {

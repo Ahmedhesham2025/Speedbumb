@@ -300,7 +300,9 @@ object Scenarios {
 
         val t2 = sim.drive(store, spec, tripId = 2)
         describe("trip 2", t2)
-        check(t2.warnings.size == 3 && t2.warnings.all { it.sound == WarnSound.SOFT }, "trip 2: felt once, so 3 soft warnings: ${t2.warnings.map { it.sound }}")
+        // E2: the strong dip showed both axles, so its one hit confirmed it; the others are still a maybe.
+        val sounds = listOf(WarnSound.SOFT, WarnSound.STRONG, WarnSound.SOFT)
+        check(t2.warnings.map { it.sound } == sounds, "trip 2: felt once, the strong dip confirmed: ${t2.warnings.map { it.sound }}")
 
         val bands = listOf(400.0, 900.0, 1500.0).map { bandSound(nearest(store, sim, it), cfg) }
         val t3 = sim.drive(store, spec, tripId = 3)

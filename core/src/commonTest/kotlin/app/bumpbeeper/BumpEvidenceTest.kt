@@ -12,19 +12,21 @@ class BumpEvidenceTest {
     private fun notes(store: MemoryStore, type: String) = store.events.filter { it.type == type }.map { it.note }
 
     @Test fun bothAxlesAtEverySpeed() {
-        // The driver slows to the bump's speed; both axles are felt and confirm the spot at once when it is strong.
-        for (kmh in listOf(10.0, 20.0, 40.0)) {
+        // The driver slows to the bump's speed; both axles are felt. (The simulator's hit lasts 0.2 s, 2.2 m at 40 km/h:
+        // there its two axles merge, so 40 and 70 km/h pairs are AxleSignatureTest's; here 40 km/h is learned from the
+        // slowdown and never "no axle", and 70 km/h is too fast for a speed bump whatever its axles.)
+        for (kmh in listOf(10.0, 15.0, 20.0, 40.0)) {
             val store = MemoryStore()
             val r = Simulator(7).drive(store, DriveSpec(bumpsAt = listOf(800.0), bumpKmh = kmh, cruiseKmh = 50.0))
             val n = notes(store, "new_bump")
             assertEquals(1, r.newBumps, "$kmh km/h: ${r.rejected} $n")
-            assertTrue(n.single().contains("axle=both"), "$kmh km/h: $n")
+            assertTrue(n.single().contains(if (kmh <= 20.0) "axle=both" else "axle="), "$kmh km/h: $n")
+            assertTrue(!n.single().contains("axle=one"), "$kmh km/h: $n")
         }
-        // At 70 km/h it is still a pair, but too fast for a speed bump.
         val store = MemoryStore()
         val r = Simulator(7).drive(store, DriveSpec(bumpsAt = listOf(800.0), bumpKmh = 70.0, cruiseKmh = 70.0))
         assertEquals(0, r.newBumps)
-        assertTrue(notes(store, "rejected").any { it.startsWith("too_fast") && "axle=both" in it }, "${notes(store, "rejected")}")
+        assertTrue(notes(store, "rejected").any { it.startsWith("too_fast") && "axle=" in it }, "${notes(store, "rejected")}")
     }
 
     @Test fun aLoneJoltAtASteadySpeedIsOnlyAMaybe() {
@@ -65,9 +67,11 @@ class BumpEvidenceTest {
         val store = MemoryStore()
         val r = Simulator(9).drive(store, DriveSpec(bumpsAt = listOf(800.0), holdsAt = listOf(800.0 + 2.6 + 0.7 * v to 4.0), cruiseKmh = 40.0))
         assertEquals(1, r.newBumps, "${r.rejected} ${notes(store, "rejected")}")
-        // Without a gyroscope (no pitch order) the same bump stays the phone's.
-        val g = Simulator(9).drive(MemoryStore(), DriveSpec(bumpsAt = listOf(800.0), holdsAt = listOf(800.0 + 2.6 + 0.7 * v to 4.0), cruiseKmh = 40.0, gyro = false))
-        assertEquals(0, g.newBumps, "${g.rejected}")
+        assertTrue(notes(store, "new_bump").single().contains("axle=both") && notes(store, "new_bump").single().contains("over_handled"), "${notes(store, "new_bump")}")
+        // Picked up a second before the front axle: the same pair stays the phone's.
+        val early = Simulator(9).drive(MemoryStore(), DriveSpec(bumpsAt = listOf(800.0), holdsAt = listOf(800.0 - 1.0 * v to 4.0), cruiseKmh = 40.0))
+        assertEquals(0, early.newBumps, "${early.rejected}")
+        assertTrue("handled" in early.rejected, "${early.rejected}")
     }
 
     @Test fun theWheelbaseIsLearned() {
