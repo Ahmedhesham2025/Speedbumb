@@ -8,6 +8,7 @@ import app.bumpbeeper.BumpMapView
 import app.bumpbeeper.Confidence
 import app.bumpbeeper.EngineConfig
 import app.bumpbeeper.Severity
+import app.bumpbeeper.Ui
 import kotlin.math.cos
 import kotlin.math.ln
 import kotlin.math.max
