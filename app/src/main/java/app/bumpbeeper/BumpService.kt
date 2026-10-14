@@ -31,6 +31,7 @@ import app.bumpbeeper.auto.AutoDetect
 import app.bumpbeeper.auto.AutoStop
 import app.bumpbeeper.auto.DriveWatcher
 import app.bumpbeeper.auto.PowerPolicy
+import app.bumpbeeper.auto.ShortTrip
 import app.bumpbeeper.auto.TripCheck
 import app.bumpbeeper.auto.TripHold
 import app.bumpbeeper.crash.CrashLog
@@ -91,6 +92,8 @@ class BumpService : Service(), SensorEventListener, LocationListener, EngineList
         private const val SNOOZE_AFTER_STOP_MS = 15 * 60_000L
         /** A speeding warning waits this long after a bump or pothole warning (those come first). */
         private const val HAZARD_FIRST_MS = 6_000L
+        /** The trip start goes back at most this far (a detection never takes longer than its 3 min check). */
+        private const val MAX_BACKDATE_MS = 5 * 60_000L
 
         /** The running service, for [label]. Set in onCreate, cleared in onDestroy. */
         @Volatile private var instance: BumpService? = null
@@ -257,6 +260,8 @@ class BumpService : Service(), SensorEventListener, LocationListener, EngineList
     private var gyroAvg: RateAverager? = null
     private var wakeLock: PowerManager.WakeLock? = null
     private var tripId = 0L
+    /** Wall-clock start of the trip (backdated to the movement start when driving was detected). */
+    private var tripStartMs = 0L
     private var sensorOffsetMs: Long? = null
     private var graphMax = 0.0
     private var graphLastPushMs = 0L
@@ -416,15 +421,15 @@ class BumpService : Service(), SensorEventListener, LocationListener, EngineList
     /** Main thread. Between recordings: wait for the car to move (motion sensor, then a short GPS check). */
     private fun beginWatch(snoozeMs: Long = 0L) {
         if (watcher != null) return
-        watcher = DriveWatcher(this) { drivingDetected() }.also {
+        watcher = DriveWatcher(this) { since -> drivingDetected(since) }.also {
             if (snoozeMs > 0) it.snooze(snoozeMs)
             it.start()
         }
     }
 
-    /** The watcher saw a drive. Internal for tests. */
-    internal fun drivingDetected() {
-        if (watching && !running) startRecording(SOURCE_MOTION)
+    /** The watcher saw a drive that began at [movedSinceMs] (elapsedRealtime; -1 = now). Internal for tests. */
+    internal fun drivingDetected(movedSinceMs: Long = -1L) {
+        if (watching && !running) startRecording(SOURCE_MOTION, movedSinceMs)
     }
 
     /** For tests: the watcher waiting for the next drive (null while recording or not watching). */
@@ -535,7 +540,7 @@ class BumpService : Service(), SensorEventListener, LocationListener, EngineList
     // ---------------------------------------------------------------- start / stop
 
     /** [source]: who started it ([SOURCE_CAR], [SOURCE_VEHICLE], [SOURCE_MOTION]); null = the user. */
-    private fun startRecording(source: String?) {
+    private fun startRecording(source: String?, movedSinceMs: Long = -1L) {
         if (running) {
             if (source == SOURCE_CAR) {
                 LiveState.lastEvent = "Car reconnected: still recording"
@@ -586,7 +591,13 @@ class BumpService : Service(), SensorEventListener, LocationListener, EngineList
         beeper = Beeper(this)
         // No speech available → the two-tone strong-bump sound instead, and no group announcements (EngineConfig.groupWarnings).
         voice = Voice(this, { ok -> engine?.cfg?.groupWarnings = ok }) { beeper.strong() }
-        tripId = db.startTrip(System.currentTimeMillis())
+        // Driving detected: the trip starts where the movement started, not 30 s later when it was confirmed.
+        val now = System.currentTimeMillis()
+        val early = if (movedSinceMs >= 0) (SystemClock.elapsedRealtime() - movedSinceMs).coerceIn(0L, MAX_BACKDATE_MS) else 0L
+        tripStartMs = now - early
+        tripId = db.startTrip(tripStartMs)
+        // Started by itself: say so with its own sound (a user who pressed Start knows).
+        if (source != null) beeper.tripStarted()
 
         val t = HandlerThread("bump-engine").also { it.start() }
         val h = Handler(t.looper)
@@ -693,6 +704,7 @@ class BumpService : Service(), SensorEventListener, LocationListener, EngineList
         val h = handler
         val t = thread
         val database = db
+        val startMs = tripStartMs
         h?.removeCallbacks(parkedCheck)
         h?.post {
             phoneFeed?.stop()
@@ -703,16 +715,32 @@ class BumpService : Service(), SensorEventListener, LocationListener, EngineList
             // Again on this thread: a fix handled just before stopRecording may have re-requested GPS (applyPower).
             (getSystemService(Context.LOCATION_SERVICE) as LocationManager).removeUpdates(this)
             monitor?.finish()
-            engine?.let { database.endTrip(tripId, System.currentTimeMillis(), it.trip, monitor?.stats) }
-            monitor?.stats?.let { LiveState.lastTripScore = it.score() }
+            val endMs = System.currentTimeMillis()
+            val distM = maxOf(engine?.trip?.distanceM ?: 0.0, monitor?.stats?.distanceM ?: 0.0)
+            // Under 30 s or 200 m: not a drive. The trip goes, with the spots only it found; nothing of it is sent.
+            val short = ShortTrip.discard(endMs - startMs, distM)
+            if (short) {
+                try {
+                    database.deleteSpotsOnlyFrom(tripId)
+                    database.deleteTrip(tripId)
+                } catch (e: Exception) {
+                    Log.w(TAG, "short trip not deleted", e)
+                }
+                // Its research files are never uploaded (they stay local until tidied away).
+                researchStamp?.let { ResearchQueue.skipTrip(this, it, "short") }
+                LiveState.lastEvent = "Too short to keep (under 30 s or 200 m)"
+            } else {
+                engine?.let { database.endTrip(tripId, endMs, it.trip, monitor?.stats) }
+                monitor?.stats?.let { LiveState.lastTripScore = it.score() }
+            }
             // Started by itself and never confirmed: hold everything that would leave the phone (#49).
-            val ask = unconfirmed && engine != null
+            val ask = !short && unconfirmed && engine != null
             if (ask) TripHold.hold(this, tripId)
             // Only after the hold may the trip's research files be uploaded: the uploader then sees it held.
-            researchStamp?.let { ResearchQueue.tripEnded(this, it); ResearchUploader.scheduleNow(this) }
+            if (!short) researchStamp?.let { ResearchQueue.tripEnded(this, it); ResearchUploader.scheduleNow(this) }
             // Privacy zone filter, then into the outbox; the upload runs later in the background.
             try {
-                sink?.flush(Prefs.shareBumps(this), System.currentTimeMillis())
+                if (!short) sink?.flush(Prefs.shareBumps(this), System.currentTimeMillis())
             } catch (e: Exception) {
                 Log.w(TAG, "outbox not written", e)
             }
@@ -720,14 +748,14 @@ class BumpService : Service(), SensorEventListener, LocationListener, EngineList
             unconfirmed = false
             try {
                 // Also sets the training upload delay before Sync.afterTrip below, so the trip-end sync can't upload it.
-                training?.flush(this, tripId, System.currentTimeMillis(), engine?.trip, monitor?.stats, batteryPercent())
+                if (!short) training?.flush(this, tripId, System.currentTimeMillis(), engine?.trip, monitor?.stats, batteryPercent())
             } catch (e: Exception) {
                 Log.w(TAG, "training samples not queued: ${e.javaClass.simpleName}")
             }
             training = null
             // Speed-limit lookup (opt-in): the route waits on disk for a background job, then is deleted.
             try {
-                if (engine != null) route?.let { SpeedLimitSync.afterTrip(this, tripId, it) }
+                if (!short && engine != null) route?.let { SpeedLimitSync.afterTrip(this, tripId, it) }
             } catch (e: Exception) {
                 Log.w(TAG, "speed-limit lookup not queued: ${e.javaClass.simpleName}")
             }

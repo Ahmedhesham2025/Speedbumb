@@ -3,8 +3,8 @@ package app.bumpbeeper.auto
 /**
  * "Is this a drive?" from GPS speed, with hysteresis (#49). Pure Kotlin, so it is unit-tested.
  * True once fixes have stayed at or above [startKmh] for more than [sustainMs] (30 s of real driving). A fix below
- * [resetKmh] starts over (a cyclist or a jogger never gets there); fixes in between neither count nor reset (slowing for a turn). A gap of more than
- * [maxGapMs] between fixes also starts over, so two fast fixes far apart are not a drive.
+ * [resetKmh] starts over (a cyclist or a jogger never gets there); fixes in between neither count nor reset (slowing
+ * for a turn). A gap of more than [maxGapMs] between fixes also starts over, so two fast fixes far apart are not a drive.
  */
 class SpeedGate(
     val startKmh: Double = 20.0,

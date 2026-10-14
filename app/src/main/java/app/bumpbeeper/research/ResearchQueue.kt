@@ -45,6 +45,10 @@ object ResearchQueue {
     /** Trip end, after a trip that started by itself was held (TripHold.hold): from now on it may be uploaded. */
     fun tripEnded(ctx: Context, stamp: String) = quietly("trip end") { edit(ctx) { it.trip(stamp)?.put("ended", true) } }
 
+    /** Trip [stamp] was too short to keep (auto.ShortTrip): its files are never uploaded. */
+    fun skipTrip(ctx: Context, stamp: String, why: String) =
+        quietly("skip") { edit(ctx) { it.trip(stamp)?.put("ended", true); it.skip(stamp, why) } }
+
     /**
      * TripHold: "No", or no answer in time: trip [tripId] is never uploaded and its files are deleted here. Throws if
      * that failed, so TripHold keeps holding the trip (nothing of it is sent) and runs this again later.
