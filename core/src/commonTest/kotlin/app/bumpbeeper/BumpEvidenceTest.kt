@@ -75,8 +75,7 @@ class BumpEvidenceTest {
             Simulator(seed).drive(st2, DriveSpec(bumpsAt = listOf(800.0), bumpKmh = 20.0, cruiseKmh = 40.0))
             diag.add("$seed none: " + st2.events.filter { it.type == "new_bump" || it.type == "rejected" }.map { it.type + " " + it.note })
         }
-        println("DIAG " + diag.joinToString("
-DIAG "))
+        for (d in diag) println("DIAG $d")
         val store = MemoryStore()
         val r = Simulator(9).drive(store, spec(800.0 + 2.6 + 0.25 * v))
         val learned = notes(store, "new_bump")
