@@ -21,6 +21,9 @@ import java.io.FileOutputStream
  * Real screenshots of the app for the store listings and the owner, taken on the CI emulator
  * (.github/workflows/screenshots.yml). Not a behaviour test: it seeds demo data, opens every tab and saves
  * PNGs to <external files>/screenshots/<language>/. The workflow runs it once per language and pulls the folder.
+ * Every screen is reached through the app's own code (no test-only layouts): the redesign's states too (spots
+ * ahead, label mode, a trip's summary, Diagnostics, the research settings page), the street map with the network on,
+ * and the dark theme.
  *
  * It wipes the app's bumps, trips and settings first, so only run it on an emulator, never on a phone in use.
  */
@@ -48,16 +51,58 @@ class ScreenshotTest {
 
             // The rest are taken with recording stopped, as a parked phone would show them.
             LiveState.recording = false
-            LiveState.lastTripScore = 92
             listOf(
                 MainActivity.TAB_MAP to "02-map",
                 MainActivity.TAB_TRIPS to "03-trips",
                 MainActivity.TAB_SETTINGS to "04-settings",
-                MainActivity.TAB_DRIVE to "05-drive-parked",
+                MainActivity.TAB_DRIVE to "05-drive-parked",   // "Last trip" comes from the saved trips, as on a phone
             ).forEach { (tab, name) ->
                 scenario.onActivity { it.select(tab) }
                 settle(1500)   // map and trips load from the database on a background thread
                 shot(dir, name)
+            }
+
+            redesignStates(scenario, dir, "")
+
+            // The street map needs the internet: on for these shots only. The shared-map choice goes back to "not
+            // answered" first, so nothing is sent to our server (Sync stays offline until it is answered).
+            Prefs.sp(ctx).edit().putString(Prefs.SYNC_CHOICE, Prefs.SYNC_UNSET).commit()
+            network(true)
+            try {
+                for ((tab, name) in listOf(MainActivity.TAB_MAP to "13-map-streets", MainActivity.TAB_DRIVE to "14-drive-streets")) {
+                    scenario.onActivity { it.select(tab) }
+                    settle(8000)   // style and tiles from OpenFreeMap
+                    shot(dir, name)
+                }
+            } finally {
+                network(false)
+            }
+
+            // The same screens in the dark theme (the activity is recreated, as Android does on a theme change).
+            instr.uiAutomation.executeShellCommand("cmd uimode night yes").close()
+            try {
+                Prefs.sp(ctx).edit().putString(Prefs.SYNC_CHOICE, Prefs.SYNC_SHARE).commit()
+                scenario.recreate()
+                settle(2000)
+                liveDemo(recording = true)
+                settle(800)
+                shot(dir, "01-drive-dark")
+                LiveState.recording = false
+                listOf(
+                    MainActivity.TAB_MAP to "02-map-dark",
+                    MainActivity.TAB_TRIPS to "03-trips-dark",
+                    MainActivity.TAB_SETTINGS to "04-settings-dark",
+                    MainActivity.TAB_DRIVE to "05-drive-parked-dark",
+                ).forEach { (tab, name) ->
+                    scenario.onActivity { it.select(tab) }
+                    settle(1500)
+                    shot(dir, name)
+                }
+                redesignStates(scenario, dir, "-dark")
+            } finally {
+                instr.uiAutomation.executeShellCommand("cmd uimode night no").close()
+                scenario.recreate()
+                settle(1500)
             }
 
             // The first-run question: unanswered again, then a fresh resume asks it.
@@ -68,7 +113,71 @@ class ScreenshotTest {
             shot(dir, "06-sharing-question")
         }
         val files = dir.listFiles { f -> f.name.endsWith(".png") }.orEmpty()
-        assertTrue("expected 6 screenshots in $dir, got ${files.size}", files.size == 6)
+        assertTrue("expected 25 screenshots in $dir, got ${files.size}: ${files.map { it.name }.sorted()}", files.size == 25)
+    }
+
+    /**
+     * The redesign's states, each reached through the app's own code: the next-bump card from the engine's spots
+     * ahead (set as BumpService publishes them), label mode, a trip's summary page, Diagnostics and the research and
+     * recordings settings page. [suffix] "-dark" for the dark pass.
+     */
+    private fun redesignStates(scenario: ActivityScenario<MainActivity>, dir: File, suffix: String) {
+        val demo = BumpDb(ctx).let { db -> try { db.loadBumps().first() } finally { db.close() } }
+        scenario.onActivity { it.select(MainActivity.TAB_DRIVE) }
+        for ((ahead, name) in listOf(
+            listOf(SpotAhead(demo, 120.0, Severity.STRONG, Confidence.FULL, WarnSound.STRONG),
+                SpotAhead(demo, 640.0, Severity.MILD, Confidence.FULL, WarnSound.MILD)) to "07-drive-strong",
+            listOf(SpotAhead(demo, 280.0, Severity.MODERATE, Confidence.FULL, WarnSound.MODERATE),
+                SpotAhead(demo, 700.0, Severity.MILD, Confidence.SOFT, WarnSound.SOFT)) to "08-drive-next",
+        )) {
+            liveDemo(recording = true)
+            LiveState.spotsAhead = ahead
+            settle(1200)
+            shot(dir, name + suffix)
+        }
+        LiveState.labelMode = true
+        LiveState.lastLabel = Labels.BUMP
+        LiveState.labelCount = 7
+        settle(1200)
+        shot(dir, "11-label-mode$suffix")
+        LiveState.labelMode = false
+        LiveState.lastLabel = ""
+        LiveState.labelCount = 0
+        LiveState.spotsAhead = emptyList()
+        LiveState.recording = false
+
+        val trip = BumpDb(ctx).let { db -> try { db.trips().first { it.score in 0..89 } } finally { db.close() } }
+        scenario.onActivity { a ->
+            a.select(MainActivity.TAB_TRIPS)
+            (a.pages[MainActivity.TAB_TRIPS] as TripsPage).details(trip)
+        }
+        settle(1500)
+        shot(dir, "09-trip-summary$suffix")
+        scenario.onActivity { (it.pages[MainActivity.TAB_TRIPS] as TripsPage).back() }
+
+        scenario.onActivity { a ->
+            a.select(MainActivity.TAB_SETTINGS)
+            (a.pages[MainActivity.TAB_SETTINGS] as SettingsPage).openDiagnostics()
+        }
+        settle(1500)
+        shot(dir, "10-diagnostics$suffix")
+        instr.uiAutomation.performGlobalAction(android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_BACK)
+        settle(800)
+
+        scenario.onActivity { (it.pages[MainActivity.TAB_SETTINGS] as SettingsPage).openResearch() }
+        settle(1200)
+        shot(dir, "12-settings-research$suffix")
+        scenario.onActivity { (it.pages[MainActivity.TAB_SETTINGS] as SettingsPage).back() }
+        scenario.onActivity { it.select(MainActivity.TAB_DRIVE) }
+        settle(800)
+    }
+
+    /** Wi-Fi and mobile data on or off (the workflow starts with both off). */
+    private fun network(on: Boolean) {
+        val v = if (on) "enable" else "disable"
+        instr.uiAutomation.executeShellCommand("svc wifi $v").close()
+        instr.uiAutomation.executeShellCommand("svc data $v").close()
+        settle(if (on) 4000 else 1000)
     }
 
     // ---------------------------------------------------------------- setup
