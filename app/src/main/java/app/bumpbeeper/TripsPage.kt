@@ -184,9 +184,10 @@ class TripsPage(private val a: MainActivity) : Page, BackHandler {
         val scored = trips.filter { it.score >= 0 }.take(20)
         val km = scored.sumOf { it.drive.distanceM } / 1000
         val overall = if (scored.isEmpty()) -1 else (scored.sumOf { it.score * it.drive.distanceM } / scored.sumOf { it.drive.distanceM }).roundToInt()
-        overallNum.text = if (overall >= 0) SpannableString("$overall /100").apply {
-            setSpan(RelativeSizeSpan(0.4f), overall.toString().length, length, 0)
-            setSpan(ForegroundColorSpan(Ui.DIM), overall.toString().length, length, 0)
+        overallNum.text = if (overall >= 0) SpannableString(Ui.ltr("$overall /100")).apply {
+            // After the isolate mark and the number: " /100" smaller and dimmer.
+            setSpan(RelativeSizeSpan(0.4f), overall.toString().length + 1, length, 0)
+            setSpan(ForegroundColorSpan(Ui.DIM), overall.toString().length + 1, length, 0)
         } else "–"
         // The change: the last 5 scored trips against the 5 before them.
         val recent = scored.take(5).map { it.score }
@@ -194,11 +195,11 @@ class TripsPage(private val a: MainActivity) : Page, BackHandler {
         val change = if (recent.isEmpty() || before.isEmpty()) null else (recent.average() - before.average()).roundToInt()
         delta.visibility = if (change == null) View.GONE else View.VISIBLE
         if (change != null) {
-            delta.text = when { change > 0 -> "▲ $change"; change < 0 -> "▼ ${-change}"; else -> "= 0" }
+            delta.text = Ui.ltr(when { change > 0 -> "▲ $change"; change < 0 -> "▼ ${-change}"; else -> "= 0" })
             delta.setTextColor(if (change >= 0) Ui.OK else Ui.ERR)
             delta.background = Ui.rounded(a, if (change >= 0) Ui.OK_CONT else Ui.ERR_CONT, 12)
         }
-        grade.text = DrivingStats.grade(overall).let { if (overall < 0) a.getString(R.string.trips_no_score) else it }
+        grade.text = if (overall < 0) a.getString(R.string.trips_no_score) else Ui.grade(a, overall)
         grade.setTextColor(Ui.scoreColor(overall))
         basis.text = if (scored.isEmpty()) a.getString(R.string.trips_basis_none)
             else a.getString(if (scored.size > 1) R.string.trips_basis_many else R.string.trips_basis_one, scored.size, String.format(Locale.US, "%.0f", km))
@@ -207,7 +208,7 @@ class TripsPage(private val a: MainActivity) : Page, BackHandler {
         // Road limits count for the summary when they are known for most of these trips' distance.
         val sum = SpeedLimitText.combine(scored.map { it.drive })
         breakdown.removeAllViews()
-        for ((name, v) in sum.breakdown()) breakdown.addView(meterRow(name, if (scored.isEmpty()) -1 else v))
+        for ((name, v) in sum.breakdown()) breakdown.addView(meterRow(partName(name), if (scored.isEmpty()) -1 else v))
         val note = SpeedLimitText.summaryLine(a, sum)
         limitsNote.text = note ?: ""
         limitsNote.visibility = if (note == null) View.GONE else View.VISIBLE
@@ -227,12 +228,22 @@ class TripsPage(private val a: MainActivity) : Page, BackHandler {
         if (trips.isEmpty()) list.addView(Ui.text(a, 14f, Ui.DIM, value = a.getString(R.string.trips_none_yet)).apply {
             setPadding(dp(20), dp(16), dp(20), dp(16))
         })
-        val fmt = SimpleDateFormat("EEE d MMM · HH:mm", Locale.US)
+        val fmt = SimpleDateFormat("EEE d MMM · HH:mm", Ui.locale(a))
         for ((i, tr) in trips.take(50).withIndex()) {
             if (i > 0) list.addView(View(a).apply { setBackgroundColor(Ui.SURFACE3) },
                 LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(1)).apply { marginStart = dp(74) })
             list.addView(tripRow(tr, fmt))
         }
+    }
+
+    /** The overall breakdown's parts come from the engine in English; shown in the app's language. */
+    private fun partName(name: String): String = when (name) {
+        "Speed" -> a.getString(R.string.trips_part_speed)
+        "Braking & acceleration" -> a.getString(R.string.trips_part_braking)
+        "Steering & swerving" -> a.getString(R.string.trips_part_steering)
+        "Speed bumps" -> a.getString(R.string.trips_part_bumps)
+        "Phone use" -> a.getString(R.string.trips_part_phone)
+        else -> name
     }
 
     private fun meterRow(name: String, v: Int): View = LinearLayout(a).apply {

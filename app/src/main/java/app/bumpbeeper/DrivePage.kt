@@ -43,13 +43,7 @@ class DrivePage(private val a: MainActivity) : Page {
     private lateinit var tWarn: TextView
     private lateinit var tBumps: TextView
     private lateinit var tHoles: TextView
-    private lateinit var lastEvent: TextView
-    private lateinit var driveEvent: TextView
-    private lateinit var ignored: TextView
     private lateinit var muteBtn: View
-    private lateinit var meterCard: LinearLayout
-    private lateinit var meterToggle: TextView
-    private lateinit var graph: JoltGraphView
     private lateinit var updateCard: LinearLayout
     private lateinit var updateText: TextView
     private lateinit var labelCard: LinearLayout
@@ -366,7 +360,7 @@ class DrivePage(private val a: MainActivity) : Page {
         }
     }
 
-    /** Folded away by default: this trip's numbers, what just happened, and the jolt meter. */
+    /** Folded away by default: this trip's numbers (what just happened and the jolt meter are in Diagnostics). */
     private fun buildDetails(): LinearLayout {
         val col = LinearLayout(a).apply { orientation = LinearLayout.VERTICAL }
         val tiles = listOf(
@@ -377,26 +371,6 @@ class DrivePage(private val a: MainActivity) : Page {
         tWarn = tiles[3].second; tBumps = tiles[4].second; tHoles = tiles[5].second
         col.addView(Ui.grid(a, tiles.map { it.first }, 3), full(4))
 
-        val ev = Ui.card(a).apply { background = Ui.rounded(a, Ui.SURFACE2, Ui.Shape.TILE) }
-        lastEvent = Ui.text(a, 15f, Ui.TEXT, bold = true)
-        driveEvent = Ui.text(a, 14f, Ui.ORANGE)
-        ignored = Ui.text(a, 13f, Ui.DIM)
-        ev.addView(lastEvent)
-        ev.addView(driveEvent, full(4))
-        ev.addView(ignored, full(4))
-        col.addView(ev, full(8))
-
-        meterCard = Ui.card(a).apply { background = Ui.rounded(a, Ui.SURFACE2, Ui.Shape.TILE) }
-        meterToggle = Ui.text(a, 15f, Ui.TEXT, bold = true).apply {
-            isClickable = true
-            setOnClickListener { toggleMeter() }
-        }
-        graph = JoltGraphView(a)
-        meterCard.addView(meterToggle)
-        meterCard.addView(graph, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(120)).apply { topMargin = dp(10) })
-        meterCard.addView(Ui.text(a, 12f, Ui.DIM, value = a.getString(R.string.drive_meter_hint)))
-        col.addView(meterCard, full(8))
-        showMeter(Prefs.sp(a).getBoolean(KEY_METER, false))
         return col
     }
 
@@ -488,22 +462,32 @@ class DrivePage(private val a: MainActivity) : Page {
 
     /** Big buttons for the passenger who marks what the car just drove over (Settings → Road testing). */
     private fun buildLabelPanel(): View {
-        labelCard = Ui.card(a, 12).apply {
-            background = Ui.rounded(a, Ui.SURFACE, 18, Ui.LINE)
+        // Label mode: the passenger's panel inside the sheet. Child order matters to tick(): the header first, the
+        // "starts with the next recording" line last, everything between shown only while labels are accepted.
+        labelCard = LinearLayout(a).apply {
+            orientation = LinearLayout.VERTICAL
             visibility = View.GONE
         }
-        labelCard.addView(Ui.text(a, 12f, Ui.ACCENT, bold = true, value = a.getString(R.string.drive_label_header)).apply {
-            setPadding(dp(4), 0, 0, 0)
+        labelCard.addView(Ui.text(a, 13f, Ui.WARN, bold = true, value = a.getString(R.string.drive_label_header)).apply {
+            background = Ui.rounded(a, Ui.WARN_CONT, Ui.Shape.CHIP)
+            setPadding(dp(14), dp(10), dp(14), dp(10))
+            setCompoundDrawablesRelative(Ui.icon(a, R.drawable.ic_tag, Ui.WARN, 18), null, null, null)
+            compoundDrawablePadding = dp(10)
         })
-        labelCard.addView(Ui.text(a, 12f, Ui.DIM, value = a.getString(R.string.drive_label_driver_note)).apply {
-            setPadding(dp(4), dp(2), 0, dp(8))
+        labelCard.addView(Ui.text(a, 13f, Ui.DIM, value = a.getString(R.string.drive_label_driver_note)).apply {
+            setPadding(dp(4), dp(8), 0, dp(8))
         })
-        fun btn(kind: String, bg: Int, fg: Int) = Ui.bigButton(a, labelName(kind), bg, fg) { v -> tapLabel(v, kind) }
-        fun gap() = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
-            .apply { topMargin = dp(8) }
+        fun btn(kind: String, bg: Int, fg: Int, heightDp: Int) = Ui.bigButton(a, labelName(kind), bg, fg) { v -> tapLabel(v, kind) }.apply {
+            minHeight = dp(heightDp)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 20f)
+        }
         // No pothole buttons since v2: every spot is a bump (replay reads old pothole labels as bumps).
-        labelCard.addView(Ui.row(a, btn(Labels.BUMP, Ui.ACCENT, Ui.ON_ACCENT), btn(Labels.ROUGH, 0xFFB0BEC5.toInt(), 0xFF101418.toInt())))
-        labelCard.addView(btn(Labels.UNDO, 0xFF3A1F22.toInt(), Ui.RED), gap())
+        labelCard.addView(Ui.row(a,
+            btn(Labels.BUMP, Ui.SEV_MOD, Ui.SEV_MOD_INK, 88),
+            btn(Labels.ROUGH, Ui.SURFACE3, Ui.TEXT, 88),
+            gapDp = 10,
+        ))
+        labelCard.addView(btn(Labels.UNDO, Ui.ERR_CONT, Ui.ERR, Ui.Space.DRIVE_TARGET), full(10))
         labelStatus = Ui.text(a, 15f, Ui.TEXT, bold = true).apply { setPadding(dp(4), dp(10), 0, 0) }
         labelCard.addView(labelStatus)
         // Turned on mid-trip: the service only accepts labels from the next recording on.
@@ -534,17 +518,6 @@ class DrivePage(private val a: MainActivity) : Page {
         Labels.ROUGH -> a.getString(R.string.drive_label_rough)
         Labels.UNDO -> a.getString(R.string.drive_label_undo)
         else -> kind
-    }
-
-    private fun toggleMeter() {
-        val on = !Prefs.sp(a).getBoolean(KEY_METER, false)
-        Prefs.sp(a).edit().putBoolean(KEY_METER, on).apply()
-        showMeter(on)
-    }
-
-    private fun showMeter(on: Boolean) {
-        meterToggle.text = a.getString(if (on) R.string.drive_meter_open else R.string.drive_meter_closed)
-        for (i in 1 until meterCard.childCount) meterCard.getChildAt(i).visibility = if (on) View.VISIBLE else View.GONE
     }
 
     // ---------------------------------------------------------------- setup checklist
@@ -636,7 +609,7 @@ class DrivePage(private val a: MainActivity) : Page {
         lastTripRow.visibility = if (!rec && last >= 0) View.VISIBLE else View.GONE
         if (!rec && last >= 0) {
             Ui.setScore(lastTripBadge, last)
-            lastTripTitle.text = a.getString(R.string.drive_last_trip_title, DrivingStats.grade(last))
+            lastTripTitle.text = a.getString(R.string.drive_last_trip_title, Ui.grade(a, last))
         }
 
         tDist.text = if (rec) a.getString(R.string.drive_km, String.format(Locale.US, "%.1f", LiveState.tripKm)) else "–"
@@ -648,11 +621,6 @@ class DrivePage(private val a: MainActivity) : Page {
         tBumps.text = if (rec) LiveState.tripHits.toString() else "–"
         tHoles.text = if (rec) LiveState.tripPotholes.toString() else "–"   // strong bumps felt (the old field name)
 
-        lastEvent.text = LiveState.lastEvent.ifEmpty { a.getString(R.string.drive_nothing_yet) }
-        driveEvent.text = LiveState.lastDriveEvent
-        driveEvent.visibility = if (LiveState.lastDriveEvent.isEmpty()) View.GONE else View.VISIBLE
-        ignored.text = LiveState.lastIgnored
-        ignored.visibility = if (LiveState.lastIgnored.isEmpty()) View.GONE else View.VISIBLE
         muteBtn.visibility = if (rec) View.VISIBLE else View.GONE
 
         val labelsLive = rec && LiveState.labelMode
@@ -661,6 +629,10 @@ class DrivePage(private val a: MainActivity) : Page {
         for (i in 1 until labelCard.childCount - 1) labelCard.getChildAt(i).visibility = if (labelsLive) View.VISIBLE else View.GONE
         labelLater.visibility = if (labelsPending) View.VISIBLE else View.GONE
         if (labelsLive) updateLabelStatus()
+        // While a passenger labels, the trip details stay folded away: the buttons sit right above Stop.
+        detailsToggle.visibility = if (labelsLive) View.GONE else View.VISIBLE
+        if (labelsLive) details.visibility = View.GONE
+        else if (details.visibility == View.GONE && Prefs.sp(a).getBoolean(KEY_DETAILS, false)) details.visibility = View.VISIBLE
 
         // No distractions while driving: the banner waits until recording stops.
         val up = if (rec) null else a.pendingUpdate()
@@ -674,8 +646,6 @@ class DrivePage(private val a: MainActivity) : Page {
             updateCard.visibility = View.VISIBLE
         }
 
-        graph.threshold = Prefs.thresholdFor(Prefs.sensitivity(a)).toFloat()
-        if (graph.visibility == View.VISIBLE) graph.invalidate()
     }
 
     /** The live speed-limit sign and the speed's colour (orange over the limit, red over it by the chosen margin). */
@@ -699,7 +669,6 @@ class DrivePage(private val a: MainActivity) : Page {
     }
 
     companion object {
-        private const val KEY_METER = "ui_show_meter"
         private const val KEY_DETAILS = "ui_drive_details"
         private const val KEY_HIDE_AUTO = "ui_hide_auto_tip"
     }
