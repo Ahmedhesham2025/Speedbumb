@@ -46,6 +46,20 @@ class BumpEvidenceTest {
         assertTrue(p.rejected.last() in listOf("no_evidence", "no_axle"), "${p.rejected}")
     }
 
+    @Test fun aSteadyCrawlInAPocketIsABump() {
+        // 5-7 km/h all the way: the rear axle comes after the 1.6 s decision and there is no slowdown. The axle check
+        // could not look, which is no evidence against it: learned, and confirmed on the next pass.
+        for (kmh in listOf(5.0, 6.0, 7.0)) {
+            val store = MemoryStore()
+            val spec = DriveSpec(bumpsAt = listOf(300.0), bumpKmh = kmh, cruiseKmh = kmh, roadM = 500.0)
+            val t1 = Simulator(41).drive(store, spec, tripId = 1, drivingCfg = pocket)
+            assertEquals(1, t1.newBumps, "$kmh km/h: ${t1.rejected} ${notes(store, "rejected")}")
+            val t2 = Simulator(42).drive(store, spec, tripId = 2, drivingCfg = pocket)
+            assertEquals(1, t2.knownHits, "$kmh km/h: ${t2.rejected} ${notes(store, "hit_weak")}")
+            assertEquals(Confidence.FULL, store.saved.single().confidence(EngineConfig()), "$kmh km/h")
+        }
+    }
+
     @Test fun handlingKnocksAWheelbaseApartAreNeverABump() {
         // Braking for a bump that isn't there, the phone picked up: its knocks come a wheelbase apart. Still the phone's.
         val v = 15 / 3.6
@@ -78,6 +92,14 @@ class BumpEvidenceTest {
         val e = Simulator(9).drive(early, spec(1500.0 - 1.0 * v), cfg)
         assertEquals(0, e.newBumps, "${e.rejected}")
         assertTrue(notes(early, "rejected").any { it.startsWith("handled") }, "${notes(early, "rejected")}")
+        // Picked up between the two axles: the phone turned during the pair, never.
+        val between = MemoryStore()
+        Simulator(9).drive(between, spec(1500.0 + 1.3), cfg)
+        assertTrue(notes(between, "new_bump").none { "over_handled" in it }, "${notes(between, "new_bump")} ${notes(between, "rejected")}")
+        // Once the car has 3 axle hits, its wheelbase must agree: a car learned at 3.0 m refuses this 2.6 m pair.
+        val other = MemoryStore()
+        Simulator(9).drive(other, spec(1500.0 + 2.6 + 0.35 * v), cfg, vehicle = VehicleProfile().apply { restore(3.0, 3) })
+        assertTrue(notes(other, "new_bump").none { "over_handled" in it }, "${notes(other, "new_bump")} ${notes(other, "rejected")}")
         // No gyroscope: never.
         val g = MemoryStore()
         val n = Simulator(9).drive(g, spec(1500.0 + 2.6 + 0.35 * v).let {

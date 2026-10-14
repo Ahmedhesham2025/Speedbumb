@@ -158,7 +158,7 @@ class EngineConfig {
      *  - Confirmed on its own (counts in [Bump.axleHits]): both axles felt, or a jolt of [strongJoltMs2] or more with
      *    an axle score of at least [axleEvidenceMin] and a slowdown.
      *  - Some evidence (an axle score of at least [axleEvidenceMin], or a slowdown): an ordinary hit.
-     *  - Neither: rejected in a pocket ("no_evidence"); otherwise a new spot is only a maybe, and on a known spot the
+     *  - Neither, where the axle check could look ([AXLE_BLIND] it could not): rejected in a pocket ("no_evidence"); otherwise a new spot is only a maybe, and on a known spot the
      *    jolt counts the pass as felt but not as a hit ("hit_weak"), so it never confirms a spot.
      *  - "No axle" ([AxleVerdict.ONE]) is rejected in a pocket ("no_axle"); elsewhere it is no axle evidence.
      * A jolt while the phone is handled stays the phone's unless both axles show so clearly that it can only be the
@@ -534,12 +534,15 @@ class BumpEngine(
         val drop = speedDropKmh(tMs)
         val slowed = drop >= cfg.speedEvidenceKmh
         val axleSeen = ax != null && ax.score >= cfg.axleEvidenceMin
+        // The axle check could not look (rear past the decision at a crawl, too fast, no data): that is no evidence
+        // against it, so the jolt is an ordinary hit (a steady crawl has no slowdown either).
+        val blind = ax == null || ax.reason in AXLE_BLIND
         val note = "$axNote slow=${formatFixed(drop, 1)}" + if (overridden) " over_handled" else ""
         if (phone.pocketMode && ax?.verdict == AxleVerdict.ONE) { reject(tMs, peak, "no_axle", fix, note.trim(), shape); return }
-        if (phone.pocketMode && !axleSeen && !slowed) { reject(tMs, peak, "no_evidence", fix, note.trim(), shape); return }
+        if (phone.pocketMode && !axleSeen && !slowed && !blind) { reject(tMs, peak, "no_evidence", fix, note.trim(), shape); return }
         val grade = when {
             ax?.verdict == AxleVerdict.BOTH || (peak >= cfg.strongJoltMs2 && axleSeen && slowed) -> 2
-            axleSeen || slowed -> 1
+            axleSeen || slowed || blind -> 1
             else -> 0
         }
         if (ax?.verdict == AxleVerdict.BOTH) vehicle.learn(ax.dtMs, fix.speedMps)
@@ -1365,5 +1368,8 @@ class BumpEngine(
 
         /** Sample buffer size: ≥ 5 s even at 200 samples per second (the axle signature's span). */
         private const val BUF = 1024
+
+        /** [AxleResult.reason]s where the axle check could not look: no evidence either way. */
+        val AXLE_BLIND = setOf("window", "slow", "no_data", "fast")
     }
 }
