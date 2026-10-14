@@ -86,6 +86,7 @@ class MainActivity : Activity() {
         // the launch window; this one follows the setting, colours the dialogs and the system bars' icons.
         Ui.dark = (resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) != Configuration.UI_MODE_NIGHT_NO
         setTheme(R.style.Theme_BumpBeeper)
+        Ui.res = resources   // units ("min", "km") in the app's language
         super.onCreate(savedInstanceState)
         CrashLog.install(this)   // first, so a crash while building the screen is kept too
         Sync.onAppStart(this)    // no network until the user answered the shared-map question

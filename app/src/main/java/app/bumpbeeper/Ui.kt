@@ -2,6 +2,7 @@ package app.bumpbeeper
 
 import android.content.Context
 import android.content.res.ColorStateList
+import android.content.res.Resources
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.graphics.drawable.RippleDrawable
@@ -44,10 +45,10 @@ object Ui {
     /** Secondary text. */
     val DIM: Int get() = pick(0xFF5A6472, 0xFFA9B2BE)
     /** Tertiary text: captions, attributions. */
-    val FAINT: Int get() = pick(0xFF8A94A3, 0xFF7A8492)
-    val OK: Int get() = pick(0xFF1E8E3E, 0xFF5BD07A)
+    val FAINT: Int get() = pick(0xFF6B7584, 0xFF8C96A4)
+    val OK: Int get() = pick(0xFF137333, 0xFF5BD07A)
     val OK_CONT: Int get() = pick(0xFFE3F4E7, 0xFF173A22)
-    val WARN: Int get() = pick(0xFFB26A00, 0xFFFFB84D)
+    val WARN: Int get() = pick(0xFF8A5300, 0xFFFFB84D)
     val WARN_CONT: Int get() = pick(0xFFFFF1D6, 0xFF3D2C0C)
     val ERR: Int get() = pick(0xFFC62828, 0xFFFF7A70)
     val ERR_CONT: Int get() = pick(0xFFFDE3E1, 0xFF43191A)
@@ -69,7 +70,7 @@ object Ui {
     val SEV_MILD: Int get() = pick(0xFFF2B200, 0xFFFFC93C)
     val SEV_MILD_INK: Int get() = pick(0xFF3B2B00, 0xFF2E2200)
     val SEV_MOD: Int get() = pick(0xFFF27A00, 0xFFFF9A3D)
-    val SEV_MOD_INK: Int get() = pick(0xFFFFFFFF, 0xFF2A1400)
+    val SEV_MOD_INK: Int get() = pick(0xFF2A1400, 0xFF2A1400)
     val SEV_STRONG: Int get() = pick(0xFFD93025, 0xFFFF5A4E)
     val SEV_STRONG_INK: Int get() = pick(0xFFFFFFFF, 0xFF2A0503)
     /** A "maybe" spot: a dashed ring in this colour on a surface fill, never a solid pin. */
@@ -233,7 +234,8 @@ object Ui {
             background = rounded(ctx, SURFACE2, Shape.TILE)
             setPadding(dp(ctx, 12), dp(ctx, 10), dp(ctx, 12), dp(ctx, 10))
             addView(value)
-            addView(text(ctx, 12f, DIM, value = label).apply { maxLines = 1; ellipsize = TextUtils.TruncateAt.END })
+            // Two lines: Arabic labels are longer ("المطبّات اللي عدّيت عليها").
+            addView(text(ctx, 12f, DIM, value = label).apply { maxLines = 2; ellipsize = TextUtils.TruncateAt.END })
         }
         return box to value
     }
@@ -301,14 +303,29 @@ object Ui {
         }
     }
 
+    /**
+     * The app's resources in the language it runs in (MainActivity sets them), so "23 min" and "12.4 km" read
+     * "23 دقيقة" and "12.4 كم" in Arabic. Null in unit tests and services: then the English units.
+     */
+    @Volatile var res: Resources? = null
+
     fun duration(seconds: Long): String {
-        val h = seconds / 3600
-        val m = (seconds % 3600) / 60
-        return if (h > 0) "${h} h ${m} min" else "${m} min"
+        val h = (seconds / 3600).toInt()
+        val m = ((seconds % 3600) / 60).toInt()
+        val r = res
+        return when {
+            r != null && h > 0 -> r.getString(R.string.unit_h_min, h, m)
+            r != null -> r.getString(R.string.unit_min, m)
+            h > 0 -> "${h} h ${m} min"
+            else -> "${m} min"
+        }
     }
 
-    fun km(meters: Double): String = if (meters >= 10_000) String.format(Locale.US, "%.0f km", meters / 1000)
-        else String.format(Locale.US, "%.1f km", meters / 1000)
+    /** Digits always Western (Locale.US), as everywhere in the app; only the unit follows the language. */
+    fun km(meters: Double): String {
+        val n = if (meters >= 10_000) String.format(Locale.US, "%.0f", meters / 1000) else String.format(Locale.US, "%.1f", meters / 1000)
+        return res?.getString(R.string.unit_km, n) ?: "$n km"
+    }
 }
 
 /** Human words for driving events. */

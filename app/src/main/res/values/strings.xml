@@ -7,6 +7,9 @@
     <string name="common_delete">Delete</string>
     <string name="common_continue">Continue</string>
     <string name="common_later">Later</string>
+    <string name="unit_min">%1$d min</string>
+    <string name="unit_h_min">%1$d h %2$d min</string>
+    <string name="unit_km">%1$s km</string>
     <string name="drive_update_hint">Opens the release page on GitHub. Install it over this app; your map and trips stay.</string>
     <string name="drive_download">Download</string>
     <string name="drive_section_this_trip">This trip</string>
