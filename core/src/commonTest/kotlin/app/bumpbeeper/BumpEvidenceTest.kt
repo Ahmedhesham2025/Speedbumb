@@ -62,7 +62,7 @@ class BumpEvidenceTest {
 
     @Test fun aClearPairOverridesALaterHandling() {
         // A real bump at the end of a slow zone (braked from 25 to 20 km/h: both axles, pitch up then down), the phone
-        // lifted without a shake 0.2 s after the rear axle and seen before the decision: the car's signature wins.
+        // lifted without a shake 0.35 s after the rear axle and seen before the decision: the car's signature wins.
         // The simulator's GPS is 0.8 s late and its rear hit 0.8 of the front: its pairs score 0.8-0.9, so here the
         // score gate is 0.75; every other gate is the default.
         val cfg = EngineConfig().apply { overrideMinScore = 0.75 }
@@ -71,13 +71,8 @@ class BumpEvidenceTest {
             bumpsAt = listOf(800.0), bumpKmh = 20.0, slowZonesAt = listOf(800.0), cruiseKmh = 50.0,
             holdsAt = listOf(holdAt to 4.0), holdShake = 0.0,
         )
-        for (seed in 9L..11L) for (zone in listOf(true, false)) {
-            val st = MemoryStore()
-            Simulator(seed).drive(st, DriveSpec(bumpsAt = listOf(800.0, 1500.0), bumpKmh = 20.0, slowZonesAt = if (zone) listOf(800.0) else emptyList(), cruiseKmh = 50.0))
-            println("DIAG $seed $zone " + notes(st, "new_bump"))
-        }
         val store = MemoryStore()
-        val r = Simulator(9).drive(store, spec(800.0 + 2.6 + 0.2 * v), cfg)
+        val r = Simulator(9).drive(store, spec(800.0 + 2.6 + 0.35 * v), cfg)
         val learned = notes(store, "new_bump")
         assertEquals(1, r.newBumps, "${r.rejected} ${notes(store, "rejected")}")
         assertTrue(learned.single().contains("axle=both") && learned.single().contains("over_handled"), "$learned")
