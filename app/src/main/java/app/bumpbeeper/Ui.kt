@@ -3,6 +3,7 @@ package app.bumpbeeper
 import android.content.Context
 import android.content.res.ColorStateList
 import android.content.res.Resources
+import android.graphics.PorterDuff
 import android.graphics.Typeface
 import android.graphics.drawable.Drawable
 import android.graphics.drawable.GradientDrawable
@@ -12,7 +13,7 @@ import android.text.TextUtils
 import android.util.TypedValue
 import android.view.Gravity
 import android.view.View
-import android.widget.CheckBox
+import android.widget.Switch
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.SeekBar
@@ -373,11 +374,16 @@ object Ui {
 
     /** A setting that is on or off, with an explanation under it. */
     fun toggle(ctx: Context, title: String, hint: String?, value: Boolean, onChange: (Boolean) -> Unit): View {
-        val box = CheckBox(ctx).apply {
+        // A Material 3 style switch at the end of the row (it was a check box at the start).
+        val box = Switch(ctx).apply {
             text = title
             setTextColor(TEXT)
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
-            buttonTintList = ColorStateList.valueOf(ACCENT)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f)
+            minHeight = dp(ctx, Space.ROW)
+            val states = arrayOf(intArrayOf(android.R.attr.state_checked), intArrayOf())
+            thumbTintList = ColorStateList(states, intArrayOf(ON_PRIMARY, FAINT))
+            trackTintList = ColorStateList(states, intArrayOf(PRIMARY, SURFACE3))
+            trackTintMode = PorterDuff.Mode.SRC
             isChecked = value
             setOnCheckedChangeListener { _, on -> onChange(on) }
         }
@@ -385,8 +391,75 @@ object Ui {
         return LinearLayout(ctx).apply {
             orientation = LinearLayout.VERTICAL
             addView(box)
-            addView(text(ctx, 13f, DIM, value = hint).apply { setPadding(dp(ctx, 32), 0, 0, dp(ctx, 6)) })
+            addView(text(ctx, 13f, DIM, value = hint).apply { setPadding(0, 0, dp(ctx, 64), dp(ctx, 8)) })
         }
+    }
+
+    /**
+     * Material 3 segmented buttons: one choice of a few ([labels]), the chosen one on the primary container. Each
+     * segment is at least 48 dp tall. Returns the row; [onSelect] gets the index.
+     */
+    fun segmented(ctx: Context, labels: List<String>, selected: Int, onSelect: (Int) -> Unit): LinearLayout {
+        val row = LinearLayout(ctx).apply {
+            orientation = LinearLayout.HORIZONTAL
+            background = rounded(ctx, 0, 24, LINE)
+            setPadding(dp(ctx, 1), dp(ctx, 1), dp(ctx, 1), dp(ctx, 1))
+        }
+        val cells = labels.map { label ->
+            TextView(ctx).apply {
+                text = label
+                gravity = Gravity.CENTER
+                setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
+                typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+                minHeight = dp(ctx, 48)
+                maxLines = 2
+                setPadding(dp(ctx, 6), 0, dp(ctx, 6), 0)
+                isClickable = true
+                isFocusable = true
+            }
+        }
+        fun show(sel: Int) = cells.forEachIndexed { i, c ->
+            val on = i == sel
+            c.background = if (on) rounded(ctx, PRIMARY_CONT, 24) else null
+            c.setTextColor(if (on) ON_PRIMARY_CONT else TEXT)
+            c.isSelected = on
+        }
+        cells.forEachIndexed { i, c ->
+            c.setOnClickListener { show(i); onSelect(i) }
+            row.addView(c, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+        }
+        show(selected)
+        return row
+    }
+
+    /** A list row that opens a sub-page: icon, title, a line of status under it, chevron. 56 dp or more. */
+    fun navRow(ctx: Context, iconRes: Int, title: String, onClick: () -> Unit): Pair<LinearLayout, TextView> {
+        val sub = text(ctx, 13f, DIM)
+        val row = LinearLayout(ctx).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            minimumHeight = dp(ctx, Space.ROW)
+            setPadding(0, dp(ctx, 8), 0, dp(ctx, 8))
+            isClickable = true
+            isFocusable = true
+            background = RippleDrawable(ColorStateList.valueOf(RIPPLE), null, rounded(ctx, 0xFFFFFFFF.toInt(), 12))
+            setOnClickListener { onClick() }
+            addView(ImageView(ctx).apply {
+                setImageResource(iconRes)
+                imageTintList = ColorStateList.valueOf(DIM)
+            }, LinearLayout.LayoutParams(dp(ctx, 24), dp(ctx, 24)))
+            addView(LinearLayout(ctx).apply {
+                orientation = LinearLayout.VERTICAL
+                setPadding(dp(ctx, 16), 0, dp(ctx, 8), 0)
+                addView(text(ctx, 16f, TEXT, value = title))
+                addView(sub)
+            }, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+            addView(ImageView(ctx).apply {
+                setImageResource(R.drawable.ic_chevron)
+                imageTintList = ColorStateList.valueOf(DIM)
+            }, LinearLayout.LayoutParams(dp(ctx, 24), dp(ctx, 24)))
+        }
+        return row to sub
     }
 
     /** A slider with its current value spelled out above it. */

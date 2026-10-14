@@ -377,6 +377,9 @@
     <string name="drive_sync_on">الخريطة المتشاركة: شغّالة</string>
     <string name="drive_offline_banner">مفيش إنترنت — المطبات المتشاركة مش متحدّثة</string>
     <string name="settings_section_shared_map">الخريطة المتشاركة</string>
+    <string name="settings_section_privacy">الخريطة المتشاركة والخصوصية</string>
+    <string name="settings_research_page">البحث والتسجيلات</string>
+    <string name="settings_research_page_sub">ساعد في تحسين الكشف · تسجيلات البحث والتصحيح</string>
     <string name="settings_shared_map_hint">تحذيرات عن مطبّات لقاها سوّاقين تانيين. بيتشارك الأماكن بس، عمره ما بيتشارك طريقك.</string>
     <string name="settings_sync_delete">امسح بياناتي المتشاركة</string>
     <string name="settings_sync_delete_title">تمسح بياناتك المتشاركة؟</string>
