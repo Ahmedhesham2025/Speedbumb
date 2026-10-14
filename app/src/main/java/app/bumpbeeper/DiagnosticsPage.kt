@@ -16,6 +16,7 @@ import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
+import app.bumpbeeper.auto.StartLog
 import app.bumpbeeper.crash.CrashLog
 import app.bumpbeeper.research.ResearchUploader
 import app.bumpbeeper.sync.TrainingConsent
@@ -159,6 +160,9 @@ class DiagnosticsPage(private val a: MainActivity, private val onClose: () -> Un
             val (tInfo, tProblem) = AutoDetectText.training(ctx, st)
             out += ctx.getString(R.string.diag_training, yn(st.enabled), st.queued)
             out += listOf(tInfo, tProblem).filter { it.isNotEmpty() }
+            out += ""
+            out += ctx.getString(R.string.diag_start_log)
+            out += StartLog.lines(ctx).ifEmpty { listOf(ctx.getString(R.string.diag_none)) }.map { "  $it" }
             out += ""
             out += ctx.getString(R.string.diag_last_error, lastCrash.ifEmpty { ctx.getString(R.string.diag_none) })
             out += ctx.getString(R.string.diag_app, TraceWriter.appVersion(ctx), BuildConfig.VERSION_CODE, BuildConfig.FLAVOR, BuildConfig.BUILD_TYPE)
