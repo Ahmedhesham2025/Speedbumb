@@ -174,6 +174,8 @@ class ResearchRecorder private constructor(private val ctx: Context, private val
             line(ResearchFormat.SCREEN.code, if ((ctx.getSystemService(Context.POWER_SERVICE) as PowerManager).isInteractive) 1 else 0)
             if (source == BumpService.SOURCE_CAR) line(ResearchFormat.CAR_BT.code, 1)
             if (source == BumpService.SOURCE_VEHICLE) line(ResearchFormat.ACTIVITY.code, IN_VEHICLE)
+            // The lock and audio state at the start, even if the trip stops before the first tick (which then skips).
+            pollPhone()
         }
         h.post(tick)
         Log.i(TAG, "research recording started (${lines.count { it.startsWith("sensor.") && !it.endsWith("=absent") }} sensors)")
