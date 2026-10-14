@@ -34,7 +34,7 @@ class MapPage(private val a: MainActivity) : Page {
     private fun dp(v: Int) = Ui.dp(a, v)
     private val ui = Handler(Looper.getMainLooper())
 
-    private lateinit var map: SpotMap
+    internal lateinit var map: SpotMap   // internal: the screenshot test checks it
     private lateinit var count: TextView
     private lateinit var list: LinearLayout
     private lateinit var listBox: View

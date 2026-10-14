@@ -248,6 +248,16 @@ class StreetMap(private val ctx: Context, private val interactive: Boolean) {
     /** Where the camera is: lat, lon, zoom (null before the map is ready). */
     fun camera(): DoubleArray? = map?.cameraPosition?.let { c -> c.target?.let { doubleArrayOf(it.latitude, it.longitude, c.zoom) } }
 
+    /** What the street map has, for the screenshot test's check file: style, spots, you, camera, pins drawn. */
+    internal fun debug(): String {
+        val m = map
+        val drawn = try {
+            m?.queryRenderedFeatures(RectF(0f, 0f, view.width.toFloat(), view.height.toFloat()), L_SPOTS, L_CLUSTERS, L_ME)?.size
+        } catch (_: Exception) { null }
+        return "style=${style != null} failed=$failed spots=${features.size} me=${me?.toList()} " +
+            "camera=${camera()?.toList()} drawn=$drawn"
+    }
+
     /** Fewer frames when nothing moves saves battery. */
     fun setMaxFps(fps: Int) { mapView?.setMaximumFps(fps) }
 
