@@ -124,8 +124,10 @@ object Scenarios {
         fun drive(spec: DriveSpec) = Simulator(101).drive(MemoryStore(), spec, drivingCfg = pocket)
         val jostle = drive(DriveSpec(cruiseKmh = 40.0, jostlesAt = listOf(700.0), jostleHeldS = 0.3, oneOffJoltsAt = listOf(700.0 + 2.0 * v)))
         describe("jolt 1.2 s after a 0.8 s jostle", jostle)
-        check(jostle.newBumps == 1, "the jolt after the jostle is learned: ${jostle.rejected}")
-        check(jostle.rejected == listOf("phone_moving"), "only the jostle's own jolt is rejected: ${jostle.rejected}")
+        // The jolt after the jostle is judged on its own, not as the phone's; in a pocket, a lone jolt at a steady speed
+        // with no rear axle is no bump (E2).
+        check(jostle.newBumps == 0, "the jolt after the jostle is no bump: ${jostle.rejected}")
+        check(jostle.rejected == listOf("phone_moving", "no_evidence"), "only the jostle's own jolt is the phone's: ${jostle.rejected}")
         val after = drive(DriveSpec(cruiseKmh = 40.0, holdsAt = listOf(700.0 to 5.0), oneOffJoltsAt = listOf(700.0 + 6.8 * v)))
         describe("jolt 1.2 s after a 5 s hold", after)
         check(after.newBumps == 0 && after.rejected.last() == "handled", "rejected as handled: ${after.rejected}")
@@ -291,14 +293,16 @@ object Scenarios {
         // The shape is still measured (the gyroscope was used), as a diagnostic only.
         val notes = store.events.filter { it.type == "new_bump" }.map { it.note }
         log("  notes: $notes")
-        check(notes.all { it.startsWith("bump sev=") && "conf=soft" in it && "roll/pitch" in it }, "band, confidence and shape in every note: $notes")
+        check(notes.all { it.startsWith("bump sev=") && "conf=" in it && "roll/pitch" in it && "axle=" in it }, "band, confidence, shape and axle in every note: $notes")
         check(notes.none { "pothole" in it || "side=" in it || "looks=" in it }, "no type or side in the notes: $notes")
         val dip = nearest(store, sim, 900.0)
         check(dip.severity(cfg) == Severity.STRONG, "a 7 m/s² dip is strong, got ${dip.severity(cfg)} (${formatFixed(dip.sevIndex, 1)})")
 
         val t2 = sim.drive(store, spec, tripId = 2)
         describe("trip 2", t2)
-        check(t2.warnings.size == 3 && t2.warnings.all { it.sound == WarnSound.SOFT }, "trip 2: felt once, so 3 soft warnings: ${t2.warnings.map { it.sound }}")
+        // E2: the strong dip showed both axles, so its one hit confirmed it; the others are still a maybe.
+        val sounds = listOf(WarnSound.SOFT, WarnSound.STRONG, WarnSound.SOFT)
+        check(t2.warnings.map { it.sound } == sounds, "trip 2: felt once, the strong dip confirmed: ${t2.warnings.map { it.sound }}")
 
         val bands = listOf(400.0, 900.0, 1500.0).map { bandSound(nearest(store, sim, it), cfg) }
         val t3 = sim.drive(store, spec, tripId = 3)
@@ -326,7 +330,8 @@ object Scenarios {
         val s1 = t1.stats
         log("    bands mild=${s1.mild} moderate=${s1.moderate} strong=${s1.strong}, soft=${s1.soft} full=${s1.full}")
         store.events.filter { it.type == "new_bump" }.forEach { log("    new: ${it.note}") }
-        check(t1.newBumps == 4 && s1.soft == 4 && s1.full == 0, "trip 1: 4 new spots, all soft, got new=${t1.newBumps} soft=${s1.soft} full=${s1.full}")
+        // E2: the two strong dips show both axles, so one hit confirms them; the moderate ones stay a maybe.
+        check(t1.newBumps == 4 && s1.soft == 2 && s1.full == 2, "trip 1: 4 new spots, 2 soft, got new=${t1.newBumps} soft=${s1.soft} full=${s1.full}")
         check(s1.mild + s1.moderate + s1.strong == 4, "each felt spot is counted in one band")
         val dips = listOf(700.0, 1100.0).map { nearest(store, sim, it) }
         val small = nearest(store, sim, 1500.0)
@@ -337,7 +342,8 @@ object Scenarios {
         val t2 = sim.drive(store, spec, tripId = 2)
         describe("trip 2", t2)
         check(t2.newBumps == 0, "trip 2 must not record anything new (all spots are known), got ${t2.newBumps}")
-        check(t2.warnings.map { it.sound } == List(4) { WarnSound.SOFT }, "trip 2: each felt once so far, 4 soft warnings: ${t2.warnings.map { it.sound }}")
+        val firstSounds = listOf(WarnSound.SOFT, WarnSound.STRONG, WarnSound.STRONG, WarnSound.SOFT)
+        check(t2.warnings.map { it.sound } == firstSounds, "trip 2: the strong dips confirmed, the rest soft: ${t2.warnings.map { it.sound }}")
         check(t2.stats.full == 4 && t2.stats.soft == 0, "felt again: all full, got soft=${t2.stats.soft} full=${t2.stats.full}")
         check(t2.warnings.last().spot.id == small.id, "the last warning is the small dip")
 

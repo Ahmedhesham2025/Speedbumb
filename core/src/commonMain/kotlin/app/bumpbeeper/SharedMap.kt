@@ -39,11 +39,11 @@ data class RemoteSpot(
     val severity: Double,
     /** How many different phones confirmed it: two or more make it [Confidence.FULL], one leaves it soft. */
     val nDevices: Int,
-    /** Hits in total, one phone twice counts (`spots_near_v2`); [nDevices] where the server didn't say. Not read yet (E2). */
+    /** Hits in total, one phone twice counts (`spots_near_v2`); [nDevices] where the server didn't say. */
     val nHits: Int = nDevices,
-    /** The server's band of [severity] (plain edges, no hysteresis); null where it didn't say. Not read yet (E2). */
+    /** The server's band of [severity] (plain edges, no hysteresis): the band it keeps until its index is past an edge; null where it didn't say. */
     val band: Severity? = null,
-    /** The server's confidence (its rule is the engine's, over [nHits]); null where it didn't say. Not read yet (E2). */
+    /** The server's confidence (its rule is the engine's, over [nHits]); null where it didn't say (then [nHits] decides). */
     val confidence: Confidence? = null,
     /** An old pothole spot: soft until felt. Same as [kind] == [BumpKind.POTHOLE], which the engine still reads. */
     val legacy: Boolean = kind == BumpKind.POTHOLE,
@@ -81,9 +81,9 @@ data class Observation(
     /** Always 0 since v2 (bumps have no side); kept for the upload format. */
     val sideScore: Double,
     val wallTimeMs: Long,
-    /** The hit's severity index (0..100, what [Bump.sevIndex] averages); null when not known. Not filled yet (E2). */
+    /** The hit's vibration dose ([SeverityIndex], 0..100); null when not known. */
     val sevIndex: Double? = null,
-    /** The hit's axle score (0..1; ≥ 0.6 = both axles felt); null when not known. Not filled yet (E2). */
+    /** The hit's axle score ([AxleSignature], 0..1; ≥ 0.6 = both axles felt); null when not known. */
     val axle: Double? = null,
 )
 
