@@ -59,8 +59,9 @@ class Bump(
     /** Average jolt of its hits, m/s². */
     var peakAvg: Double = 0.0,
     /**
-     * What its [severity] is judged from: a running average over its hits. For now the same average of jolt peaks
-     * as [peakAvg] (m/s²); E2 feeds it a speed-normalised vibration index instead.
+     * What its [severity] is judged from: a running average over its hits of their speed-normalised vibration dose
+     * ([SeverityIndex], scaled to read like a jolt peak in m/s², as the shared map's), or of the peak where the dose
+     * is unknown. Spots learned before E2 hold peak averages, which the dose replaces hit by hit.
      */
     var sevIndex: Double = 0.0,
     /** Hits where both axles were felt (front wheels, then the rear ones a wheelbase later). 0 until E2 detects them. */

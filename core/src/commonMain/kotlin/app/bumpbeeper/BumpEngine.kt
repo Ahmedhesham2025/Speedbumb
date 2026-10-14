@@ -767,7 +767,7 @@ class BumpEngine(
             // First time here → record it. No beep: we are already on top of it.
             val b = Bump(0, lat, lon, heading, hits = 1, passes = 1, misses = 0, nPos = 1, firstSeen = now, lastSeen = now)
             b.addPeak(peak, 0)
-            b.addSeverity(peak, 0, cfg)   // E2: the vibration index instead of the peak
+            b.addSeverity(info.sevIndex ?: peak, 0, cfg)   // E2: the vibration dose (reads like a peak), else the peak
             if (grade >= 2) b.axleHits = 1
             b.id = store.insertBump(b)
             countSpot(b)
@@ -820,7 +820,7 @@ class BumpEngine(
         b.heading = Geo.blendAngle(b.heading, heading, w)
         b.nPos++
         b.addPeak(peak, b.hits)
-        b.addSeverity(peak, b.hits, cfg)
+        b.addSeverity(info.sevIndex ?: peak, b.hits, cfg)
         b.hits++
         if (grade >= 2) b.axleHits++
         b.legacy = false   // felt again: an old pothole spot is an ordinary bump from now on
