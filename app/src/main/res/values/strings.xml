@@ -190,6 +190,11 @@
     <string name="map_chip_bumps">Bumps</string>
     <string name="map_chip_old">Old</string>
     <string name="map_chip_harsh">Strong</string>
+    <string name="map_chip_maybe">Maybe</string>
+    <string name="map_spot_strong">Strong bump</string>
+    <string name="map_spot_mute">Mute</string>
+    <string name="map_spot_maps">Maps</string>
+    <string name="map_rings">rings every %1$s · N ↑</string>
     <string name="map_zoom_out">"−  Zoom out"</string>
     <string name="map_zoom_in">"+  Zoom in"</string>
     <string name="map_me">"◎  Me"</string>
