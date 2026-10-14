@@ -18,6 +18,7 @@ import android.widget.TextView
 import android.widget.Toast
 import app.bumpbeeper.ui.LiveLimitText
 import app.bumpbeeper.ui.NextBump
+import app.bumpbeeper.ui.SpotMap
 import app.bumpbeeper.ui.SpeedSignView
 import app.bumpbeeper.sync.OfflineBanner
 import app.bumpbeeper.ui.SyncChoice
@@ -55,7 +56,7 @@ class DrivePage(private val a: MainActivity) : Page {
     // Ready (not recording): the map with your bumps, a few chips, one setup row, the last trip, Start drive.
     private lateinit var readyView: View
     private lateinit var liveView: View
-    private lateinit var map: BumpMapView
+    private lateinit var map: SpotMap
     private lateinit var autoChip: TextView
     private lateinit var readyHint: TextView
     private lateinit var lastTripRow: LinearLayout
@@ -84,7 +85,7 @@ class DrivePage(private val a: MainActivity) : Page {
         .apply { topMargin = dp(top) }
 
     private fun buildReady(): View {
-        map = BumpMapView(a).apply { radiusM = 600.0 }
+        map = SpotMap(a, interactive = false).apply { radiusM = 600.0 }
         val o = Ui.Space.OVERLAY
 
         // Top: what starts the next drive, and the shared map (tap: Settings).
@@ -191,6 +192,9 @@ class DrivePage(private val a: MainActivity) : Page {
         val me = a.lastLocation() ?: return
         map.meLat = me.latitude
         map.meLon = me.longitude
+        // While driving the street map turns with the car (heading-up); parked it stays north-up.
+        map.heading = if (me.hasBearing() && me.speed > 1.5f) me.bearing.toDouble() else Double.NaN
+        map.headingUp = LiveState.recording
         if (centre || !mapCentred) {
             map.centerLat = me.latitude
             map.centerLon = me.longitude
@@ -525,7 +529,12 @@ class DrivePage(private val a: MainActivity) : Page {
 
     // ---------------------------------------------------------------- setup checklist
 
+    override fun onHide() = map.pause()
+
+    override fun onDestroy() = map.destroy()
+
     override fun onShow() {
+        map.resume()
         setupCard.removeAllViews()
         var rows = 0
         // One row at a time over the map: the first thing missing; the next shows once it is done.
