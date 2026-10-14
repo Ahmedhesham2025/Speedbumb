@@ -32,6 +32,7 @@ import org.maplibre.android.style.expressions.Expression.not
 import org.maplibre.android.style.expressions.Expression.step
 import org.maplibre.android.style.expressions.Expression.stop
 import org.maplibre.android.style.layers.CircleLayer
+import org.maplibre.android.style.layers.LineLayer
 import org.maplibre.android.style.layers.Property
 import org.maplibre.android.style.layers.PropertyFactory.circleColor
 import org.maplibre.android.style.layers.PropertyFactory.circleRadius
@@ -42,6 +43,10 @@ import org.maplibre.android.style.layers.PropertyFactory.iconIgnorePlacement
 import org.maplibre.android.style.layers.PropertyFactory.iconImage
 import org.maplibre.android.style.layers.PropertyFactory.iconRotate
 import org.maplibre.android.style.layers.PropertyFactory.iconRotationAlignment
+import org.maplibre.android.style.layers.PropertyFactory.lineCap
+import org.maplibre.android.style.layers.PropertyFactory.lineColor
+import org.maplibre.android.style.layers.PropertyFactory.lineOpacity
+import org.maplibre.android.style.layers.PropertyFactory.lineWidth
 import org.maplibre.android.style.layers.PropertyFactory.symbolSortKey
 import org.maplibre.android.style.layers.PropertyFactory.textAllowOverlap
 import org.maplibre.android.style.layers.PropertyFactory.textColor
@@ -54,6 +59,8 @@ import org.maplibre.android.style.sources.GeoJsonOptions
 import org.maplibre.android.style.sources.GeoJsonSource
 import org.maplibre.geojson.Feature
 import org.maplibre.geojson.FeatureCollection
+import org.maplibre.geojson.LineString
+import org.maplibre.geojson.MultiLineString
 import org.maplibre.geojson.Point
 
 /**
@@ -81,6 +88,10 @@ class StreetMap(private val ctx: Context, private val interactive: Boolean) {
     var onReady: () -> Unit = {}
     /** The style could not load (offline and not cached): show the offline map instead. */
     var onFailed: () -> Unit = {}
+    /** Someone moved the map with a finger (Drive: stop following until Recenter). */
+    var onUserMove: () -> Unit = {}
+    /** Space at the top of the map, px: the camera's centre (your puck) sits lower, so more road ahead shows. */
+    var topPaddingPx = 0.0
 
     private var mapView: MapView? = null
     private var map: MapLibreMap? = null
@@ -142,6 +153,9 @@ class StreetMap(private val ctx: Context, private val interactive: Boolean) {
         m.setMaxZoomPreference(19.0)
         pendingCamera?.let { m.cameraPosition = it; pendingCamera = null }
         if (interactive) m.addOnMapClickListener { tapped(m, it) }
+        m.addOnCameraMoveStartedListener { reason ->
+            if (reason == MapLibreMap.OnCameraMoveStartedListener.REASON_API_GESTURE) onUserMove()
+        }
         m.setStyle(Style.Builder().fromUri(styleUrl())) { styleReady(it) }
     }
 
@@ -158,6 +172,11 @@ class StreetMap(private val ctx: Context, private val interactive: Boolean) {
             .withClusterMaxZoom(SpotMarks.CLUSTER_MAX_ZOOM)
             .withClusterRadius(SpotMarks.CLUSTER_RADIUS_DP)))
         s.addSource(GeoJsonSource(SRC_ME))
+        // The road just before a strong bump, tinted (under the pins).
+        s.addSource(GeoJsonSource(SRC_AHEAD))
+        s.addLayer(LineLayer(L_AHEAD, SRC_AHEAD).withProperties(
+            lineColor(Ui.SEV_STRONG), lineWidth(9f), lineOpacity(0.55f), lineCap(Property.LINE_CAP_ROUND),
+        ))
         val z = SpotMarks.CLUSTER_SIZES
         s.addLayer(CircleLayer(L_CLUSTERS, SRC_SPOTS).withFilter(has("point_count")).withProperties(
             circleColor(Ui.PRIMARY), circleStrokeColor(Ui.SURFACE), circleStrokeWidth(3f),
@@ -176,6 +195,7 @@ class StreetMap(private val ctx: Context, private val interactive: Boolean) {
         ))
         pushSpots()
         pushMe()
+        pushAhead()
         onReady()
     }
 
@@ -200,6 +220,39 @@ class StreetMap(private val ctx: Context, private val interactive: Boolean) {
     fun setMe(lat: Double, lon: Double, bearing: Double = Double.NaN) {
         me = if (lat.isNaN()) null else doubleArrayOf(lat, lon, bearing)
         pushMe()
+    }
+
+    private var ahead: DoubleArray? = null   // from lat, lon, to lat, lon
+
+    /** Tints the road from you to a strong bump ahead; null clears it. */
+    fun setAhead(from: Pair<Double, Double>?, to: Pair<Double, Double>?) {
+        ahead = if (from == null || to == null) null else doubleArrayOf(from.first, from.second, to.first, to.second)
+        pushAhead()
+    }
+
+    private fun pushAhead() {
+        val src = style?.getSourceAs<GeoJsonSource>(SRC_AHEAD) ?: return
+        val a = ahead
+        src.setGeoJson(FeatureCollection.fromFeatures(if (a == null) emptyList() else listOf(Feature.fromGeometry(
+            LineString.fromLngLats(listOf(Point.fromLngLat(a[1], a[0]), Point.fromLngLat(a[3], a[2]))),
+        ))))
+    }
+
+    /**
+     * The name of the road under a point (your puck), read from the map tiles already on screen: no extra request,
+     * nothing sent anywhere. Arabic names in Arabic when the tiles have them. Null when there is none.
+     */
+    fun roadNameAt(lat: Double, lon: Double, arabic: Boolean): String? {
+        val m = map ?: return null
+        if (style == null) return null
+        val p = m.projection.toScreenLocation(LatLng(lat, lon))
+        val r = dp(24).toFloat()
+        val keys = if (arabic) listOf("name:ar", "name") else listOf("name:latin", "name:en", "name")
+        return try {
+            m.queryRenderedFeatures(RectF(p.x - r, p.y - r, p.x + r, p.y + r))
+                .filter { it.geometry() is LineString || it.geometry() is MultiLineString }
+                .firstNotNullOfOrNull { f -> keys.firstNotNullOfOrNull { k -> if (f.hasProperty(k)) f.getStringProperty(k)?.takeIf { it.isNotBlank() } else null } }
+        } catch (_: Exception) { null }
     }
 
     private fun pushSpots() {
@@ -236,7 +289,8 @@ class StreetMap(private val ctx: Context, private val interactive: Boolean) {
 
     /** Moves the camera; [bearing] turns the map (heading-up while driving), 0 is north up. */
     fun moveTo(lat: Double, lon: Double, zoom: Double, bearing: Double = 0.0, animateMs: Int = 0) {
-        val pos = CameraPosition.Builder().target(LatLng(lat, lon)).zoom(zoom).bearing(bearing).tilt(0.0).build()
+        val pos = CameraPosition.Builder().target(LatLng(lat, lon)).zoom(zoom).bearing(bearing).tilt(0.0)
+            .padding(0.0, topPaddingPx, 0.0, 0.0).build()
         val m = map
         when {
             m == null -> pendingCamera = pos
@@ -359,6 +413,8 @@ class StreetMap(private val ctx: Context, private val interactive: Boolean) {
         private const val L_COUNT = "bb-cluster-count"
         private const val L_SPOTS = "bb-spot-icons"
         private const val L_ME = "bb-me"
+        private const val SRC_AHEAD = "bb-ahead"
+        private const val L_AHEAD = "bb-ahead"
         private const val ME_ARROW = "bb-me-arrow"
         private const val ME_DOT = "bb-me-dot"
 
