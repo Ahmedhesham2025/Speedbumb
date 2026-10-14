@@ -190,6 +190,14 @@ enum class WarnSound(val beeps: Int, val voice: Boolean = false) {
     STRONG(3, voice = true),
 }
 
+/**
+ * A spot coming up on the road ahead, for the Drive card ([BumpEngine.spotsAhead]): how far, its band, whether it is
+ * confirmed or only a "maybe", and how many beeps its warning plays ([WarnSound.beeps]).
+ */
+class SpotAhead(val spot: Bump, val distanceM: Double, val severity: Severity, val confidence: Confidence, val sound: WarnSound) {
+    val beeps: Int get() = sound.beeps
+}
+
 /** Several known spots close together ahead: announced once by voice ("3 bumps ahead") instead of one sound each. */
 class HazardCluster(
     /** Spots in the group, the warned one included (at least 3). */

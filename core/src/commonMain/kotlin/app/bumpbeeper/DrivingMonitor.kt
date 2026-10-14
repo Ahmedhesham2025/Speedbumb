@@ -82,6 +82,8 @@ class DrivingStats {
     var speedingS = 0.0
     /** Sum of (speed − limit) × seconds while speeding, for the average excess. */
     var speedingExcess = 0.0
+    /** Most over the fixed threshold ([DrivingConfig.speedLimitKmh]) at any moment, km/h. */
+    var maxExcessKmh = 0.0
     var harshBrakes = 0
     var harshAccels = 0
     var harshCorners = 0
@@ -145,6 +147,31 @@ class DrivingStats {
         return s.coerceIn(0.0, 100.0).roundToInt()
     }
 
+    /** Points lost per category; they add up to 100 − [score]. Null if the trip is too short to score. */
+    fun scoreBreakdown(): ScoreBreakdown? {
+        val score = score()
+        if (score < 0) return null
+        val k = per10km
+        val raw = linkedMapOf(
+            ScoreCategory.SPEEDING to speedPenalty(),
+            ScoreCategory.HARSH_BRAKING to harshBrakes * 5.0 * k,
+            ScoreCategory.HARSH_ACCEL to harshAccels * 3.0 * k,
+            ScoreCategory.CORNERING to harshCorners * 4.0 * k,
+            ScoreCategory.SWERVES to swerves * 6.0 * k,
+            ScoreCategory.PHONE_USE to phoneUse * 6.0 * k,
+            ScoreCategory.BUMPS_FAST to bumpsFast * 4.0 * k,
+        )
+        val counts = mapOf(
+            ScoreCategory.SPEEDING to 0, ScoreCategory.HARSH_BRAKING to harshBrakes, ScoreCategory.HARSH_ACCEL to harshAccels,
+            ScoreCategory.CORNERING to harshCorners, ScoreCategory.SWERVES to swerves, ScoreCategory.PHONE_USE to phoneUse,
+            ScoreCategory.BUMPS_FAST to bumpsFast,
+        )
+        val points = ScoreBreakdown.share(raw.values.toList(), 100 - score)
+        val items = raw.keys.mapIndexed { i, c -> ScoreBreakdown.Item(c, counts.getValue(c), points[i], raw.getValue(c)) }
+        val pct = if (usesSpeedLimits) (if (limitKnownS > 0) overLimit10S / limitKnownS else 0.0) else speedingShare
+        return ScoreBreakdown(score, items, pct * 100.0, if (usesSpeedLimits) maxOverLimitKmh else maxExcessKmh, usesSpeedLimits)
+    }
+
     /** Each area on its own scale of 0–100 (100 = nothing to improve). */
     fun breakdown(): List<Pair<String, Int>> {
         fun sub(p: Double, worst: Double) = (100.0 * (1.0 - min(1.0, p / worst))).roundToInt()
@@ -159,7 +186,7 @@ class DrivingStats {
 
     fun copyFrom(o: DrivingStats) {
         movingS = o.movingS; distanceM = o.distanceM; maxSpeedKmh = o.maxSpeedKmh
-        speedingS = o.speedingS; speedingExcess = o.speedingExcess
+        speedingS = o.speedingS; speedingExcess = o.speedingExcess; maxExcessKmh = o.maxExcessKmh
         harshBrakes = o.harshBrakes; harshAccels = o.harshAccels; harshCorners = o.harshCorners
         swerves = o.swerves; bumpsFast = o.bumpsFast; phoneUse = o.phoneUse
         cornersIgnored = o.cornersIgnored; swervesIgnored = o.swervesIgnored; maxGpsLateralMs2 = o.maxGpsLateralMs2
@@ -176,6 +203,46 @@ class DrivingStats {
             score >= 75 -> "Good"
             score >= 60 -> "Fair"
             else -> "Needs work"
+        }
+    }
+}
+
+/** The areas of the driving score ([DrivingStats.scoreBreakdown]). */
+enum class ScoreCategory { SPEEDING, HARSH_BRAKING, HARSH_ACCEL, CORNERING, SWERVES, PHONE_USE, BUMPS_FAST }
+
+/**
+ * Where a trip's points went: [items] in [ScoreCategory] order, whole points that add up to 100 − [score]. Speeding
+ * also has the share of time over ([speedingPct]: over the fixed threshold, or over a road limit by more than 10 km/h
+ * when [usesSpeedLimits]) and the most over ([maxOverKmh]).
+ */
+class ScoreBreakdown(
+    val score: Int,
+    val items: List<Item>,
+    val speedingPct: Double,
+    val maxOverKmh: Double,
+    val usesSpeedLimits: Boolean,
+) {
+    /** One area: how many events ([count]; 0 for speeding), the whole [points] lost, and the exact [rawPoints]. */
+    class Item(val category: ScoreCategory, val count: Int, val points: Int, val rawPoints: Double)
+
+    operator fun get(c: ScoreCategory): Item = items.first { it.category == c }
+
+    companion object {
+        /**
+         * Splits [total] whole points in proportion to [raw] (largest remainder), so they add up to it exactly; all 0
+         * when nothing was lost.
+         */
+        fun share(raw: List<Double>, total: Int): List<Int> {
+            val sum = raw.sum()
+            if (total <= 0 || sum <= 0.0) return List(raw.size) { 0 }
+            val exact = raw.map { it / sum * total }
+            val out = exact.map { it.toInt() }.toMutableList()
+            var left = total - out.sum()
+            for (i in exact.indices.sortedByDescending { exact[it] - out[it] }) {
+                if (left <= 0) break
+                out[i]++; left--
+            }
+            return out
         }
     }
 }
@@ -324,6 +391,7 @@ class DrivingMonitor(
         if (kmh > cfg.speedLimitKmh) {
             stats.speedingS += dt
             stats.speedingExcess += (kmh - cfg.speedLimitKmh) * dt
+            stats.maxExcessKmh = max(stats.maxExcessKmh, kmh - cfg.speedLimitKmh)
             speedingRunS += dt
             speedingRunMaxKmh = max(speedingRunMaxKmh, kmh)
         } else {
