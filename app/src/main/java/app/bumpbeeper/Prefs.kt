@@ -3,6 +3,7 @@ package app.bumpbeeper
 import android.content.Context
 import android.content.SharedPreferences
 import app.bumpbeeper.research.ResearchFiles
+import app.bumpbeeper.sync.UpdateCheck
 
 /** User settings, stored on the phone. */
 object Prefs {
@@ -30,6 +31,13 @@ object Prefs {
     const val UPDATE_VERSION = "update_version"
     const val UPDATE_URL = "update_url"
     const val UPDATE_HTML_URL = "update_html_url"
+    /** The last version announced by a system notification (one per version, also across restarts). */
+    const val UPDATE_NOTIFIED = "update_notified"
+    /** "Beta updates": betas count as updates too. Unset = on for a beta install, off for a stable one. */
+    const val BETA_UPDATES = "beta_updates"
+    fun betaUpdates(ctx: Context): Boolean =
+        sp(ctx).getBoolean(BETA_UPDATES, UpdateCheck.isPreRelease(TraceWriter.appVersion(ctx)))
+    fun setBetaUpdates(ctx: Context, on: Boolean) = sp(ctx).edit().putBoolean(BETA_UPDATES, on).apply()
     /**
      * The online bump map, as answered on the first-run screen: [SYNC_UNSET] (not answered: no network at all),
      * [SYNC_RECEIVE] (download confirmed spots only) or [SYNC_SHARE] (also upload hazard points and crash reports).
