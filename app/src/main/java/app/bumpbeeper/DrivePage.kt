@@ -90,9 +90,8 @@ class DrivePage(private val a: MainActivity) : Page {
 
         // Top: what starts the next drive, and the shared map (tap: Settings).
         autoChip = Ui.chip(a, "", R.drawable.ic_bluetooth)
-        syncLine = Ui.chip(a, "", R.drawable.ic_people).apply {
-            isClickable = true
-            setOnClickListener { if (!LiveState.recording) a.select(MainActivity.TAB_SETTINGS) }
+        syncLine = Ui.tappable(Ui.chip(a, "", R.drawable.ic_people)) {
+            if (!LiveState.recording) a.select(MainActivity.TAB_SETTINGS)
         }
         val chips = LinearLayout(a).apply {
             orientation = LinearLayout.HORIZONTAL

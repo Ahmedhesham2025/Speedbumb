@@ -6,6 +6,7 @@ import android.content.res.Resources
 import android.graphics.Typeface
 import android.graphics.drawable.Drawable
 import android.graphics.drawable.GradientDrawable
+import android.graphics.drawable.InsetDrawable
 import android.graphics.drawable.RippleDrawable
 import android.text.TextUtils
 import android.util.TypedValue
@@ -247,6 +248,19 @@ object Ui {
         background = rounded(ctx, if (floating) SURFACE else SURFACE2, Shape.CHIP)
         if (floating) elevation = dpf(ctx, 3f)
         setChipLead(this, iconRes, dot)
+    }
+
+    /**
+     * A chip someone taps: the touch target grows to 48 dp while the chip still looks 36 dp (the background is inset).
+     */
+    fun tappable(chip: TextView, onClick: () -> Unit): TextView = chip.apply {
+        val ctx = context
+        val inset = dp(ctx, 6)
+        background = InsetDrawable(background, 0, inset, 0, inset)
+        minHeight = dp(ctx, 48)
+        isClickable = true
+        isFocusable = true
+        setOnClickListener { onClick() }
     }
 
     /** Changes a chip's leading icon or dot (status chips change colour as the state changes). */
