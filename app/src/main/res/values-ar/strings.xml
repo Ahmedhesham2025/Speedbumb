@@ -496,6 +496,8 @@
     <string name="start_skip_slow">اتلغى: سرعة مشي بس</string>
     <string name="start_skip_vehicle_slow">اتلغى: العربية موصلتش ٢٠ كم/س</string>
     <string name="start_skip_snoozed">اتلغى: متوقف بعد ما دوست إيقاف</string>
+    <string name="start_skip_still">اتلغى: الموبايل ثابت مكانه</string>
+    <string name="start_skip_backoff">اتلغى: راحة بعد كذا كشف من غير عربية</string>
     <string name="start_by_motion">اشتغل من الحركة</string>
     <string name="start_by_google">اشتغل من جوجل (في عربية)</string>
     <string name="start_by_car">اشتغل من بلوتوث العربية</string>

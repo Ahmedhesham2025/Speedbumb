@@ -35,9 +35,9 @@ class DriveWatcherTest {
         override fun acquireWake(timeoutMs: Long) { wakeHeld = true }
         override fun releaseWake() { wakeHeld = false }
         /** What the accelerometer would say about the next movement; how often it was asked. */
-        var walking = true
+        var signal = MotionSignals.walking
         var samples = 0
-        override fun sampleMotion(ms: Long, onDone: (Boolean) -> Unit) { samples++; onDone(walking) }
+        override fun sampleMotion(ms: Long, onDone: (MotionKind.Kind) -> Unit) { samples++; onDone(MotionKind.of(signal)) }
         override fun cancelSample() {}
 
         /** The one-shot trigger fires (and is used up, like the real sensor). */
@@ -97,7 +97,7 @@ class DriveWatcherTest {
         assertNotNull(hw.motion)
         hw.move()                         // within the 3 min pause: no new GPS check
         assertNull(hw.gps)
-        assertEquals(1, hw.samples)       // asked the accelerometer: walking
+        assertEquals(2, hw.samples)       // asked the accelerometer both times; now: walking
     }
 
     @Test fun movingInACarDuringAPauseChecksAgainWithinAMinute() {
@@ -105,7 +105,7 @@ class DriveWatcherTest {
         hw.move()
         gpsFor(160, 5.0)                  // walked to the car: a miss, 3 min pause
         assertNull(hw.gps)
-        hw.walking = false                // now riding
+        hw.signal = MotionSignals.car     // now riding: road vibration
         hw.move()                         // just after the check ended: retried 60 s after it
         assertNull(hw.gps)
         shadowOf(Looper.getMainLooper()).idleFor(Duration.ofSeconds(60))

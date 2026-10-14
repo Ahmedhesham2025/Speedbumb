@@ -216,7 +216,7 @@ class BumpServiceWatchTest {
         override fun stopGps() { gps = null }
         override fun acquireWake(timeoutMs: Long) {}
         override fun releaseWake() {}
-        override fun sampleMotion(ms: Long, onDone: (Boolean) -> Unit) = onDone(false)
+        override fun sampleMotion(ms: Long, onDone: (MotionKind.Kind) -> Unit) = onDone(MotionKind.of(MotionSignals.car))
         override fun cancelSample() {}
     }
 

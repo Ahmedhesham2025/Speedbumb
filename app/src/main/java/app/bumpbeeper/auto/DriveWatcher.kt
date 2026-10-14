@@ -22,8 +22,9 @@ import android.util.Log
  * Runs inside BumpService while it is in the foreground with the quiet "ready to detect driving" notification:
  *
  *  - The significant-motion sensor (a hardware trigger that costs next to nothing) wakes us when the phone moves.
- *  - In a pause after a miss (walking around), motion counts only if 4 s of accelerometer say it isn't walking:
- *    a phone in a moving car. It then runs a short check anyway, and retries a minute later while it keeps moving.
+ *  - Before any GPS check, 4 s of accelerometer: a phone lying still never checks. In a pause after a miss (walking
+ *    around), only vehicle-like vibration counts: a short check anyway, retried a minute later while it keeps moving.
+ *    Three checks in a row without a vehicle back off for 10, 20, then 30 min ([DriveDetector]).
  *  - Then a short GPS check (2 s fixes, at most 2.5 min per window, under a wake lock) asks [DriveDetector] whether
  *    it is a drive: 20 km/h or more (two fixes in a row). Recording then starts silently and BumpService
  *    confirms the trip after 30 s of driving ([TripConfirm]). Walking around ends the check and backs off.
@@ -51,8 +52,8 @@ class DriveWatcher(
         fun stopGps()
         fun acquireWake(timeoutMs: Long)
         fun releaseWake()
-        /** A few seconds of accelerometer (under its own short wake lock), then [onDone] (walking?) on the main thread. */
-        fun sampleMotion(ms: Long, onDone: (Boolean) -> Unit)
+        /** A few seconds of accelerometer (own short wake lock), then [onDone] with its kind, on the main thread. */
+        fun sampleMotion(ms: Long, onDone: (MotionKind.Kind) -> Unit)
         fun cancelSample()
     }
 
@@ -98,14 +99,15 @@ class DriveWatcher(
     private var sampling = false
     private val retry = Runnable { if (active) motion() }
 
-    /** Movement. In a pause it counts only if it isn't walking: a few seconds of accelerometer tell. */
+    /** Movement. A few seconds of accelerometer tell still, vehicle or walking before any GPS is spent on it. */
     private fun motion() {
-        if (!detector.wantsMotionKind(SystemClock.elapsedRealtime())) return act(detector.onMotion(SystemClock.elapsedRealtime(), walking = false))
+        val now = SystemClock.elapsedRealtime()
+        if (!detector.wantsMotionKind(now)) return act(detector.onMotion(now))
         if (sampling) return
         sampling = true
-        hw.sampleMotion(SAMPLE_MS) { walking ->
+        hw.sampleMotion(SAMPLE_MS) { kind ->
             sampling = false
-            if (active) act(detector.onMotion(SystemClock.elapsedRealtime(), walking))
+            if (active) act(detector.onMotion(SystemClock.elapsedRealtime(), kind))
         }
     }
 
@@ -206,13 +208,14 @@ class DriveWatcher(
         private var sampler: SensorEventListener? = null
         private var sampleWake: PowerManager.WakeLock? = null
 
-        override fun sampleMotion(ms: Long, onDone: (Boolean) -> Unit) {
+        override fun sampleMotion(ms: Long, onDone: (MotionKind.Kind) -> Unit) {
             cancelSample()
-            val s = accel ?: return onDone(false)
+            val s = accel ?: return onDone(MotionKind.Kind.VEHICLE)
             val mags = ArrayList<Double>()
             val l = object : SensorEventListener {
                 override fun onSensorChanged(e: SensorEvent) {
-                    mags.add(Math.sqrt((e.values[0] * e.values[0] + e.values[1] * e.values[1] + e.values[2] * e.values[2]).toDouble()))
+                    val (x, y, z) = e.values
+                    mags.add(Math.sqrt((x * x + y * y + z * z).toDouble()))
                 }
                 override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {}
             }
@@ -223,7 +226,7 @@ class DriveWatcher(
             sm.registerListener(l, s, 40_000, sampleEnd)   // 25 Hz for a few seconds
             sampleEnd.postDelayed({
                 cancelSample()
-                onDone(MotionKind.walking(mags))
+                onDone(MotionKind.of(mags))
             }, ms)
         }
 

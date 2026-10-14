@@ -483,6 +483,8 @@
     <string name="start_skip_slow">Skipped: walking speed only</string>
     <string name="start_skip_vehicle_slow">Skipped: vehicle never reached 20 km/h</string>
     <string name="start_skip_snoozed">Skipped: paused after Stop</string>
+    <string name="start_skip_still">Skipped: phone lying still</string>
+    <string name="start_skip_backoff">Skipped: resting after checks without a vehicle</string>
     <string name="start_by_motion">Started by motion</string>
     <string name="start_by_google">Started by Google (in a vehicle)</string>
     <string name="start_by_car">Started by car Bluetooth</string>

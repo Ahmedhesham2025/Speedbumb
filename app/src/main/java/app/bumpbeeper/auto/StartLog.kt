@@ -18,6 +18,8 @@ object StartLog {
         SKIP_SLOW(R.string.start_skip_slow),
         SKIP_VEHICLE_SLOW(R.string.start_skip_vehicle_slow),
         SKIP_SNOOZED(R.string.start_skip_snoozed),
+        SKIP_STILL(R.string.start_skip_still),
+        SKIP_BACKOFF(R.string.start_skip_backoff),
         STARTED_MOTION(R.string.start_by_motion),
         STARTED_GOOGLE(R.string.start_by_google),
         STARTED_CAR(R.string.start_by_car),
