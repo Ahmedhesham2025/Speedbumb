@@ -390,8 +390,9 @@ class DrivePage(private val a: MainActivity) : Page {
                 addView(map.creditView(), wrap().apply { topMargin = dp(2) })   // the map data credit, with TomTom's
             }, FrameLayout.LayoutParams(FrameLayout.LayoutParams.WRAP_CONTENT, FrameLayout.LayoutParams.WRAP_CONTENT,
                 Gravity.START or Gravity.BOTTOM))
+            // Above the credit lines (TomTom's and the map data's run along the bottom), so it never covers them.
             addView(roadPill, FrameLayout.LayoutParams(FrameLayout.LayoutParams.WRAP_CONTENT, FrameLayout.LayoutParams.WRAP_CONTENT,
-                Gravity.CENTER_HORIZONTAL or Gravity.BOTTOM))
+                Gravity.CENTER_HORIZONTAL or Gravity.BOTTOM).apply { bottomMargin = dp(48) })
         }
         val bottom = ScrollView(a).apply {
             isVerticalScrollBarEnabled = false
