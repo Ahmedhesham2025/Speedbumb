@@ -63,7 +63,7 @@ class MapPage(private val a: MainActivity) : Page {
 
     private fun build(): View {
         val o = Ui.Space.OVERLAY
-        map = SpotMap(a, interactive = true).apply { onSelect = { showSpot(it) } }
+        map = SpotMap(a, interactive = true).apply { onSelect = { showSpot(it) }; offlineChipTopDp = 140 }
 
         // Top bar: "Your map · 128", import a file, share.
         count = Ui.text(a, 16f, Ui.DIM)

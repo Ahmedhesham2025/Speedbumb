@@ -1,6 +1,7 @@
 package app.bumpbeeper.ui
 
 import android.content.Context
+import android.view.Gravity
 import android.view.View
 import android.widget.FrameLayout
 import app.bumpbeeper.Bump
@@ -8,6 +9,7 @@ import app.bumpbeeper.BumpMapView
 import app.bumpbeeper.Confidence
 import app.bumpbeeper.EngineConfig
 import app.bumpbeeper.Geo
+import app.bumpbeeper.R
 import app.bumpbeeper.Severity
 import app.bumpbeeper.Ui
 import kotlin.math.abs
@@ -87,7 +89,20 @@ class SpotMap(ctx: Context, interactive: Boolean) : FrameLayout(ctx) {
 
     /** The road you are on, from the tiles on screen (null: unknown, or the offline map is showing). */
     fun roadName(arabic: Boolean): String? =
-        if (streetsOn && !meLat.isNaN()) street.roadNameAt(meLat, meLon, arabic) else null
+        (if (streetsOn && !meLat.isNaN()) street.roadNameAt(meLat, meLon, arabic) else null) ?: roadNameForTest
+
+    /** The screenshot test's road name when the emulator's tiles give none at the puck (never set by the app). */
+    internal var roadNameForTest: String? = null
+
+    /** The street map has drawn everything (tiles, labels) and is not moving; false while the offline map shows. */
+    val idle: Boolean get() = streetsOn && street.idle
+
+    /** Where the "Offline map" chip sits under the page's own top bars, dp. */
+    var offlineChipTopDp = 12
+        set(v) { field = v; (offlineChip.layoutParams as LayoutParams).topMargin = Ui.dp(context, v); offlineChip.requestLayout() }
+
+    /** Says the map is the offline one on purpose (no network or no cached streets), so the plain grid looks meant. */
+    private val offlineChip = Ui.chip(ctx, ctx.getString(R.string.map_offline_chip), R.drawable.ic_cloud_off)
 
     /**
      * The road to a strong bump [distanceM] ahead, tinted red: from you along your heading (the engine says how far,
@@ -113,8 +128,16 @@ class SpotMap(ctx: Context, interactive: Boolean) : FrameLayout(ctx) {
         if (street.available) {
             street.view.visibility = View.INVISIBLE   // until the style has loaded
             addView(street.view, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
-            street.onReady = { streetsOn = true; street.view.visibility = View.VISIBLE; pushPins(); pushMe(); camera() }
-            street.onFailed = { streetsOn = false; street.view.visibility = View.INVISIBLE }
+            street.onReady = {
+                streetsOn = true; street.view.visibility = View.VISIBLE; offlineChip.visibility = View.GONE
+                pushPins(); pushMe(); camera()
+            }
+            street.onFailed = { streetsOn = false; street.view.visibility = View.INVISIBLE; offlineChip.visibility = View.VISIBLE }
+        }
+        addView(offlineChip, LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT, Gravity.TOP or Gravity.CENTER_HORIZONTAL)
+            .apply { topMargin = Ui.dp(ctx, offlineChipTopDp) })
+        offlineChip.visibility = if (street.available) View.GONE else View.VISIBLE
+        if (street.available) {
             street.onSpot = { key -> bumps.firstOrNull { "m${it.id}" == key }?.let { selectedId = it.id; onSelect(it) } }
             street.onUserMove = { if (headingUp && following) { following = false; onPanned() } }
         }
@@ -161,7 +184,7 @@ class SpotMap(ctx: Context, interactive: Boolean) : FrameLayout(ctx) {
 
     /** For the screenshot test's check file. */
     internal fun debug(): String = "streets=$streetsOn available=${street.available} bumps=${bumps.size} " +
-        "centre=$centerLat,$centerLon radius=$radiusM ${if (street.available) street.debug() else ""}"
+        "centre=$centerLat,$centerLon radius=$radiusM road=${roadName(false)} ${if (street.available) street.debug() else ""}"
 
     /** The street map's zoom that shows about [radiusM] from the centre to the top edge (512 px tiles, in dp). */
     private fun zoomFor(radiusM: Double, lat: Double): Double {
