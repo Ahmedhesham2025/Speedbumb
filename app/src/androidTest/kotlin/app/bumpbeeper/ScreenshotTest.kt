@@ -75,6 +75,20 @@ class ScreenshotTest {
                     shot(dir, name)
                     mapCheck(scenario, tab, File(dir, "$name.txt"))
                 }
+                // Driving on the street map with a strong bump close ahead (the screen the owner asked for).
+                val demo = BumpDb(ctx).let { db -> try { db.loadBumps().first() } finally { db.close() } }
+                liveDemo(recording = true)
+                LiveState.spotsAhead = listOf(SpotAhead(demo, 120.0, Severity.STRONG, Confidence.FULL, WarnSound.STRONG),
+                    SpotAhead(demo, 640.0, Severity.MILD, Confidence.FULL, WarnSound.MILD))
+                settle(6000)
+                liveDemo(recording = true)
+                LiveState.spotsAhead = listOf(SpotAhead(demo, 120.0, Severity.STRONG, Confidence.FULL, WarnSound.STRONG),
+                    SpotAhead(demo, 640.0, Severity.MILD, Confidence.FULL, WarnSound.MILD))
+                settle(1200)
+                shot(dir, "15-drive-streets-strong")
+                mapCheck(scenario, MainActivity.TAB_DRIVE, File(dir, "15-drive-streets-strong.txt"))
+                LiveState.spotsAhead = emptyList()
+                LiveState.recording = false
             } finally {
                 network(false)
             }
@@ -114,7 +128,7 @@ class ScreenshotTest {
             shot(dir, "06-sharing-question")
         }
         val files = dir.listFiles { f -> f.name.endsWith(".png") }.orEmpty()
-        assertTrue("expected 25 screenshots in $dir, got ${files.size}: ${files.map { it.name }.sorted()}", files.size == 25)
+        assertTrue("expected 26 screenshots in $dir, got ${files.size}: ${files.map { it.name }.sorted()}", files.size == 26)
     }
 
     /**
