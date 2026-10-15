@@ -104,6 +104,10 @@ class SettingsPage(private val a: MainActivity) : Page, BackHandler {
         page.visibility = View.VISIBLE
     }
 
+    /** The research and recordings sub-page, or the shared map one (also used by the screenshot test). */
+    internal fun openResearch() = openSub(researchPage)
+    internal fun openSharedMap() = openSub(sharedPage)
+
     override fun back(): Boolean {
         if (mainView.visibility == View.VISIBLE) return false
         sharedPage.visibility = View.GONE
@@ -538,7 +542,7 @@ class SettingsPage(private val a: MainActivity) : Page, BackHandler {
     }
 
     /** Settings → Diagnostics, full screen (DiagnosticsPage). */
-    private fun openDiagnostics() {
+    internal fun openDiagnostics() {
         diagDialog?.dismiss()
         diagDialog = DiagnosticsPage.open(a).also { d -> d.setOnCancelListener { diagDialog = null } }
     }
