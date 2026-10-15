@@ -283,7 +283,10 @@ object Ui {
     fun tappable(chip: TextView, onClick: () -> Unit): TextView = chip.apply {
         val ctx = context
         val inset = dp(ctx, 6)
+        // Setting an inset background would take its padding (0 at the sides): keep the chip's own.
+        val l = paddingStart; val t = paddingTop; val r = paddingEnd; val b = paddingBottom
         background = InsetDrawable(background, 0, inset, 0, inset)
+        setPaddingRelative(l, t, r, b)
         minHeight = dp(ctx, 48)
         isClickable = true
         isFocusable = true

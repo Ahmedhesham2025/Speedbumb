@@ -82,12 +82,14 @@ class BumpMapView(ctx: Context) : View(ctx) {
         val h = height.toFloat()
         canvas.drawRoundRect(0f, 0f, w, h, 10f * density, 10f * density, bg)
 
-        // Rings every "nice" distance, around the centre.
-        val step = niceStep(radiusM / 2)
-        var r = step
-        while (r <= radiusM * 1.5) {
-            canvas.drawCircle(w / 2, h / 2, (r * pxPerM()).toFloat(), grid)
-            r += step
+        // A quiet grid every "nice" distance (north up), like map paper: the offline map without streets.
+        val step = niceStep(radiusM / 3)
+        val px = (step * pxPerM()).toFloat()
+        if (px > 8 * density) {
+            var x = (w / 2) % px
+            while (x < w) { canvas.drawLine(x, 0f, x, h, grid); x += px }
+            var y = (h / 2) % px
+            while (y < h) { canvas.drawLine(0f, y, w, y, grid); y += px }
         }
         canvas.drawText(
             String.format(Locale.US, rings, if (step >= 1000) "${(step / 1000).toInt()} km" else "${step.toInt()} m"),
@@ -135,8 +137,11 @@ class BumpMapView(ctx: Context) : View(ctx) {
 
         if (!meLat.isNaN()) {
             val x = toX(meLon); val y = toY(meLat)
+            // A soft halo, then the puck.
+            fill.color = (Ui.PRIMARY and 0x00FFFFFF) or 0x2E000000
+            canvas.drawCircle(x, y, dot * 3f, fill)
             fill.color = Ui.PRIMARY
-            canvas.drawCircle(x, y, dot * 1.1f, fill)
+            canvas.drawCircle(x, y, dot * 1.3f, fill)
             ring.color = Ui.SURFACE
             canvas.drawCircle(x, y, dot * 1.1f, ring)
         }

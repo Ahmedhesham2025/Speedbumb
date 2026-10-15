@@ -78,6 +78,15 @@
         <item quantity="other">%1$d beeps</item>
     </plurals>
     <string name="drive_slow_to">Slow to %1$d km/h</string>
+    <string name="drive_no_bumps_ahead">No bumps ahead</string>
+    <string name="drive_sound">Sound</string>
+    <string name="drive_report">Mark a bump here</string>
+    <string name="drive_report_saved">Marked: a bump here</string>
+    <string name="drive_report_label_off">Marks are saved in label mode (Settings, Road testing)</string>
+    <string name="drive_recenter">Back to my position</string>
+    <string name="drive_kmh_unit">km/h</string>
+    <string name="drive_details">Trip details</string>
+    <string name="drive_km_score">%1$s · score %2$s</string>
     <string name="settings_title">Settings</string>
     <string name="settings_section_warnings">Warnings</string>
     <string name="settings_warn_before">Warn %1$d seconds before a bump</string>
@@ -196,6 +205,7 @@
     <string name="map_spot_maps">Maps</string>
     <string name="map_attribution" translatable="false">© OpenStreetMap contributors, OpenFreeMap, © OpenMapTiles</string>
     <string name="map_rings">rings every %1$s · N ↑</string>
+    <string name="map_offline_chip">Offline map</string>
     <string name="map_zoom_out">"−  Zoom out"</string>
     <string name="map_zoom_in">"+  Zoom in"</string>
     <string name="map_me">"◎  Me"</string>
