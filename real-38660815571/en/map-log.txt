@@ -1,0 +1,114 @@
+10-15 00:38:01.819  1753  2715 I NetworkRecognitionRnr: Using pair HTTP connection
+10-15 00:38:01.828  1753  2710 I NetworkRecognitionRnr: Using pair HTTP connection
+10-15 00:38:02.071  1455  4621 I FontLog : Package app.bumpbeeper.dev has no metadata [CONTEXT service_id=132 ]
+10-15 00:38:02.161  1455  4624 I FontLog : Package app.bumpbeeper.dev.test has no metadata [CONTEXT service_id=132 ]
+10-15 00:38:03.010   520  2283 I AppsFilter: interaction: PackageSetting{f911faf app.bumpbeeper.dev/10192} -> PackageSetting{5ec9257 com.android.theme.font.notoserifsource/10066} BLOCKED
+10-15 00:38:03.091   520   967 I AppsFilter: interaction: PackageSetting{f911faf app.bumpbeeper.dev/10192} -> PackageSetting{5ec9257 com.android.theme.font.notoserifsource/10066} BLOCKED
+10-15 00:38:03.094   520   967 I AppsFilter: interaction: PackageSetting{f911faf app.bumpbeeper.dev/10192} -> PackageSetting{5ec9257 com.android.theme.font.notoserifsource/10066} BLOCKED
+10-15 00:38:03.150   520  1125 I AppsFilter: interaction: PackageSetting{f911faf app.bumpbeeper.dev/10192} -> PackageSetting{5ec9257 com.android.theme.font.notoserifsource/10066} BLOCKED
+10-15 00:38:03.241  4799  4799 D nativeloader: Configuring clns-6 for other apk /system/framework/org.apache.http.legacy.jar. target_sdk_version=34, uses_libraries=ALL, library_path=/product/priv-app/PrebuiltBugle/lib/x86_64:/product/priv-app/PrebuiltBugle/PrebuiltBugle.apk!/lib/x86_64, permitted_path=/data:/mnt/expand:/data/user/0/com.google.android.apps.messaging
+10-15 00:38:03.889  1680  2380 I AiAiTextClassifier: Syncing webref with url: https://gstatic.com/webref-ondevice/aiai/19071200_pir/2/en-us/superpacks_manifest.zip, version 19071200
+10-15 00:38:03.889  1680  2380 I SP.Model.AiAi: Setting manifest to https://gstatic.com/webref-ondevice/aiai/19071200_pir/2/en-us/superpacks_manifest.zip.19071200 and syncing
+10-15 00:38:03.977  1680  2261 I SP.AiAi : Registering webref-2-en-us.19071200, url: https://gstatic.com/webref-ondevice/aiai/19071200_pir/2/en-us/superpacks_manifest.zip, constraints: m:b:u:l, flags: *, requested: 19071200, current: -1
+10-15 00:38:04.865  4775  4775 W .bumpbeeper.dev: Accessing hidden field Landroid/graphics/Typeface;->sSystemFontMap:Ljava/util/Map; (unsupported, reflection, allowed)
+10-15 00:38:05.000  4775  4968 W .bumpbeeper.dev: Verification of void org.maplibre.android.maps.renderer.surfaceview.MapLibreGLSurfaceView$EglHelper.destroySurfaceImp() took 113.432ms (440.79 bytecodes/s) (2504B approximate peak alloc)
+10-15 00:38:05.073  4775  4775 V Mbgl-ConnectivityReceiver: connected - false
+10-15 00:38:05.243  4775  4968 I Mbgl-EGLConfigChooser: In emulator: false
+10-15 00:38:06.439  4775  4985 I Mbgl    : {RenderThread 65}[General]: GPU Identifier: Android Emulator OpenGL ES Translator (Google SwiftShader)
+10-15 00:38:08.817  4995  4995 D nativeloader: Configuring clns-6 for other apk /system/framework/org.apache.http.legacy.jar. target_sdk_version=31, uses_libraries=ALL, library_path=/product/priv-app/Velvet/lib/x86_64:/product/priv-app/Velvet/Velvet.apk!/lib/x86_64, permitted_path=/data:/mnt/expand:/data/user/0/com.google.android.googlequicksearchbox
+10-15 00:38:09.318  1753  2367 E HotwordModelPopulator: Failed to add hotword file group for 'hotword_model_en-US_okg' from location: https://www.gstatic.com/android-search/hotword/x_google/975058821313279e27b2c3f04de0beef/hotword.data
+10-15 00:38:09.335  1753  2367 E HotwordModelPopulator: Failed to add hotword file group for 'hotword_model_en-US_okhey' from location: https://www.gstatic.com/android-search/hotword/x_google/975058821313279e27b2c3f04de0beef/hotword.data
+10-15 00:38:09.351  1753  2384 E HotwordModelPopulator: Failed to add hotword file group for 'hotword_model_en-US_okhey' from location: https://www.gstatic.com/android-search/hotword/x_google/975058821313279e27b2c3f04de0beef/hotword.data
+10-15 00:38:09.437  1753  2654 D t       : Request didn't meet connectivity requirement before download, queueing. URL: https://www.gstatic.com/android-search/hotword/x_google/975058821313279e27b2c3f04de0beef/hotword.data
+10-15 00:38:10.379  4775  5070 I Mbgl-EGLConfigChooser: In emulator: false
+10-15 00:38:17.596  4775  5196 I Mbgl-EGLConfigChooser: In emulator: false
+10-15 00:38:17.608  4775  4775 V Mbgl-ConnectivityReceiver: connected - false
+10-15 00:38:30.873  4775  5225 I Mbgl-EGLConfigChooser: In emulator: false
+10-15 00:38:30.918  4775  4775 V Mbgl-ConnectivityReceiver: connected - false
+10-15 00:38:31.972  1018  5242 D NetworkMonitor/102: checkAndRenewResourceConfig: update captive portal https urls to [https://www.google.com/generate_204]
+10-15 00:38:31.972  1018  5242 D NetworkMonitor/102: checkAndRenewResourceConfig: update captive portal http urls to [http://connectivitycheck.gstatic.com/generate_204]
+10-15 00:38:31.974  1018  5242 D NetworkMonitor/102: checkAndRenewResourceConfig: update captive portal fallback urls to[http://www.google.com/gen_204, http://play.googleapis.com/generate_204]
+10-15 00:38:31.974  1018  5242 D NetworkMonitor: Starting on network 102 with capport HTTPS URL [https://www.google.com/generate_204] and HTTP URL [http://connectivitycheck.gstatic.com/generate_204]
+10-15 00:38:32.127  4775  4775 V Mbgl-ConnectivityReceiver: connected - true
+10-15 00:38:32.170  1018  5246 D NetworkMonitor/102: PROBE_HTTPS https://www.google.com/generate_204 time=94ms ret=204 request={Connection=[close], User-Agent=[Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/60.0.3112.32 Safari/537.36]} headers={null=[HTTP/1.1 204 No Content], Alt-Svc=[h3=":443"; ma=2592000,h3-29=":443"; ma=2592000], Connection=[close], Content-Length=[0], Cross-Origin-Resource-Policy=[cross-origin], Date=[Thu, 15 Oct 2026 00:38:32 GMT], X-Android-Received-Millis=[1792024712169], X-Android-Response-Source=[NETWORK 204], X-Android-Selected-Protocol=[http/1.1], X-Android-Sent-Millis=[1792024712114]}
+10-15 00:38:32.206  1018  5247 D NetworkMonitor/102: PROBE_HTTP http://connectivitycheck.gstatic.com/generate_204 time=99ms ret=204 request={Connection=[close], User-Agent=[Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/60.0.3112.32 Safari/537.36]} headers={null=[HTTP/1.1 204 No Content], Connection=[close], Content-Length=[0], Cross-Origin-Resource-Policy=[cross-origin], Date=[Thu, 15 Oct 2026 00:38:32 GMT], X-Android-Received-Millis=[1792024712206], X-Android-Response-Source=[NETWORK 204], X-Android-Selected-Protocol=[http/1.1], X-Android-Sent-Millis=[1792024712173]}
+10-15 00:38:32.253  1753  2336 I NetworkRecognitionRnr: Using pair HTTP connection
+10-15 00:38:32.281  1753  4906 I NetworkRecognitionRnr: Using pair HTTP connection
+10-15 00:38:32.311  1680  2372 I SP.AiAi : Requesting download of URL https://gstatic.com/webref-ondevice/aiai/19071200_pir/2/en-us/superpacks_manifest.zip to webref-2-en-us-19071200.zip.fetched (constraints: m:b:u:l)
+10-15 00:38:32.314  2453  2743 I HttpGrpcBindableService: Downloading requested for URL 'https://gstatic.com/webref-ondevice/aiai/19071200_pir/2/en-us/superpacks_manifest.zip'
+10-15 00:38:32.500  2453  2743 I HttpGrpcBindableService: Responding with header information for URL 'https://gstatic.com/webref-ondevice/aiai/19071200_pir/2/en-us/superpacks_manifest.zip'
+10-15 00:38:32.501  2453  3230 I HttpGrpcBindableService: [pfd-write] DOWNLOAD COMPLETE: Downloaded 1626 bytes from URL [https://gstatic.com/webref-ondevice/aiai/19071200_pir/2/en-us/superpacks_manifest.zip].
+10-15 00:38:32.502  1680  2730 I AstreaHttpConnection: Started download from url='https://gstatic.com/webref-ondevice/aiai/19071200_pir/2/en-us/superpacks_manifest.zip'
+10-15 00:38:32.502  1680  2973 E kuk     : Non-success http response code 404 for: https://gstatic.com/webref-ondevice/aiai/19071200_pir/2/en-us/superpacks_manifest.zip
+10-15 00:38:32.503  1680  2372 W SP.AiAi : koy: HTTP_ERROR 404, url: https://gstatic.com/webref-ondevice/aiai/19071200_pir/2/en-us/superpacks_manifest.zip
+10-15 00:38:32.504  1680  2730 I AstreaHttpConnection: Download completed for url [https://gstatic.com/webref-ondevice/aiai/19071200_pir/2/en-us/superpacks_manifest.zip].
+10-15 00:38:32.583  1680  2372 W AiAiTextClassifier: Caused by: koy: HTTP_ERROR 404, url: https://gstatic.com/webref-ondevice/aiai/19071200_pir/2/en-us/superpacks_manifest.zip
+10-15 00:38:32.598  1680  2372 W AiAiTextClassifier: Caused by: koy: HTTP_ERROR 404, url: https://gstatic.com/webref-ondevice/aiai/19071200_pir/2/en-us/superpacks_manifest.zip
+10-15 00:38:32.635  4775  5257 V Mbgl-HttpRequest: [HTTP] Request was successful (code = 200).
+10-15 00:38:32.641  4775  4955 D Mbgl-HttpRequest: [HTTP] This request was cancelled (https://tiles.openfreemap.org/styles/positron). This is expected for tiles that were being prefetched but are no longer needed for the map to render.
+10-15 00:38:32.646  4775  5256 V Mbgl-HttpRequest: [HTTP] Request was successful (code = 200).
+10-15 00:38:32.647  4775  4955 D Mbgl-HttpRequest: [HTTP] This request was cancelled (https://tiles.openfreemap.org/styles/positron). This is expected for tiles that were being prefetched but are no longer needed for the map to render.
+10-15 00:38:32.648  1753  2336 D t       : Starting download: https://www.gstatic.com/android-search/hotword/x_google/975058821313279e27b2c3f04de0beef/hotword.data
+10-15 00:38:32.648  1753  2336 V t       : Is http uri, downloading (uri: https://www.gstatic.com/android-search/hotword/x_google/975058821313279e27b2c3f04de0beef/hotword.data)
+10-15 00:38:33.059  4775  5257 V Mbgl-HttpRequest: [HTTP] Request was successful (code = 200).
+10-15 00:38:33.241  4775  4955 D Mbgl-HttpRequest: [HTTP] This request was cancelled (https://tiles.openfreemap.org/sprites/ofm_f384/ofm@2x.json). This is expected for tiles that were being prefetched but are no longer needed for the map to render.
+10-15 00:38:33.245  4775  5256 V Mbgl-HttpRequest: [HTTP] Request was successful (code = 200).
+10-15 00:38:33.246  4775  4955 D Mbgl-HttpRequest: [HTTP] This request was cancelled (https://tiles.openfreemap.org/planet). This is expected for tiles that were being prefetched but are no longer needed for the map to render.
+10-15 00:38:33.314  4775  5311 V Mbgl-HttpRequest: [HTTP] Request was successful (code = 200).
+10-15 00:38:33.316  4775  4955 D Mbgl-HttpRequest: [HTTP] This request was cancelled (https://tiles.openfreemap.org/planet). This is expected for tiles that were being prefetched but are no longer needed for the map to render.
+10-15 00:38:33.361  4775  5310 V Mbgl-HttpRequest: [HTTP] Request was successful (code = 200).
+10-15 00:38:33.374  4775  5313 V Mbgl-HttpRequest: [HTTP] Request was successful (code = 200).
+10-15 00:38:33.378  4775  5257 V Mbgl-HttpRequest: [HTTP] Request was successful (code = 200).
+10-15 00:38:33.410  4775  5314 V Mbgl-HttpRequest: [HTTP] Request was successful (code = 200).
+10-15 00:38:33.417  4775  4955 D Mbgl-HttpRequest: [HTTP] This request was cancelled (https://tiles.openfreemap.org/sprites/ofm_f384/ofm@2x.png). This is expected for tiles that were being prefetched but are no longer needed for the map to render.
+10-15 00:38:33.417  4775  4955 D Mbgl-HttpRequest: [HTTP] This request was cancelled (https://tiles.openfreemap.org/sprites/ofm_f384/ofm@2x.json). This is expected for tiles that were being prefetched but are no longer needed for the map to render.
+10-15 00:38:33.417  4775  4955 D Mbgl-HttpRequest: [HTTP] This request was cancelled (https://tiles.openfreemap.org/fonts/Noto%20Sans%20Regular/0-255.pbf). This is expected for tiles that were being prefetched but are no longer needed for the map to render.
+10-15 00:38:33.417  4775  4955 D Mbgl-HttpRequest: [HTTP] This request was cancelled (https://tiles.openfreemap.org/sprites/ofm_f384/ofm@2x.png). This is expected for tiles that were being prefetched but are no longer needed for the map to render.
+10-15 00:38:33.653  1753  2367 I MicroDataManager: Location for model with model type: 2 and locale: en-US, is : https://www.gstatic.com/android-search/hotword/x_google/975058821313279e27b2c3f04de0beef/hotword.data
+10-15 00:38:33.681  1753  2579 I MicroDataManager: MicroDataManager InitializationTask. googleHotwordData is null: true, hotwordModel is null: false , sourceLocationOfCurrentHotwordModel https://www.gstatic.com/android-search/hotword/x_google/975058821313279e27b2c3f04de0beef/hotword.data
+10-15 00:38:34.746  4775  5313 V Mbgl-HttpRequest: [HTTP] Request was successful (code = 200).
+10-15 00:38:34.769  4775  4955 D Mbgl-HttpRequest: [HTTP] This request was cancelled (https://tiles.openfreemap.org/planet/20261011_080001_pt/11/1201/844.pbf). This is expected for tiles that were being prefetched but are no longer needed for the map to render.
+10-15 00:38:35.078  4775  5313 V Mbgl-HttpRequest: [HTTP] Request was successful (code = 200).
+10-15 00:38:35.255  4775  5256 W .bumpbeeper.dev: Long monitor contention with owner OkHttp https://tiles.openfreemap.org/... (5310) at void okhttp3.internal.http2.Http2Writer.flush()(Http2Writer.kt:121) waiters=1 in okhttp3.internal.http2.Http2Stream okhttp3.internal.http2.Http2Connection.newStream(int, java.util.List, boolean) for 116ms
+10-15 00:38:35.263  4775  5310 V Mbgl-HttpRequest: [HTTP] Request was successful (code = 200).
+10-15 00:38:35.271  4775  4955 D Mbgl-HttpRequest: [HTTP] This request was cancelled (https://tiles.openfreemap.org/fonts/Noto%20Sans%20Bold/0-255.pbf). This is expected for tiles that were being prefetched but are no longer needed for the map to render.
+10-15 00:38:35.294  4775  5256 V Mbgl-HttpRequest: [HTTP] Request was successful (code = 200).
+10-15 00:38:35.302  4775  4955 D Mbgl-HttpRequest: [HTTP] This request was cancelled (https://tiles.openfreemap.org/planet/20261011_080001_pt/14/9613/6757.pbf). This is expected for tiles that were being prefetched but are no longer needed for the map to render.
+10-15 00:38:35.334  4775  4955 D Mbgl-HttpRequest: [HTTP] This request was cancelled (https://tiles.openfreemap.org/fonts/Noto%20Sans%20Italic/1536-1791.pbf). This is expected for tiles that were being prefetched but are no longer needed for the map to render.
+10-15 00:38:35.338  4775  5328 V Mbgl-HttpRequest: [HTTP] Request was successful (code = 200).
+10-15 00:38:35.354  4775  4955 D Mbgl-HttpRequest: [HTTP] This request was cancelled (https://tiles.openfreemap.org/fonts/Noto%20Sans%20Italic/0-255.pbf). This is expected for tiles that were being prefetched but are no longer needed for the map to render.
+10-15 00:38:35.475  4775  5331 V Mbgl-HttpRequest: [HTTP] Request was successful (code = 200).
+10-15 00:38:35.516  4775  4955 D Mbgl-HttpRequest: [HTTP] This request was cancelled (https://tiles.openfreemap.org/fonts/Noto%20Sans%20Regular/256-511.pbf). This is expected for tiles that were being prefetched but are no longer needed for the map to render.
+10-15 00:38:35.517  4775  5311 V Mbgl-HttpRequest: [HTTP] Request was successful (code = 200).
+10-15 00:38:35.526  4775  5330 V Mbgl-HttpRequest: [HTTP] Request was successful (code = 200).
+10-15 00:38:35.577  4775  4955 D Mbgl-HttpRequest: [HTTP] This request was cancelled (https://tiles.openfreemap.org/fonts/Noto%20Sans%20Italic/65024-65279.pbf). This is expected for tiles that were being prefetched but are no longer needed for the map to render.
+10-15 00:38:35.588  4775  5329 V Mbgl-HttpRequest: [HTTP] Request was successful (code = 200).
+10-15 00:38:35.602  4775  4955 D Mbgl-HttpRequest: [HTTP] This request was cancelled (https://tiles.openfreemap.org/fonts/Noto%20Sans%20Regular/1536-1791.pbf). This is expected for tiles that were being prefetched but are no longer needed for the map to render.
+10-15 00:38:35.605  4775  4955 D Mbgl-HttpRequest: [HTTP] This request was cancelled (https://tiles.openfreemap.org/fonts/Noto%20Sans%20Regular/65024-65279.pbf). This is expected for tiles that were being prefetched but are no longer needed for the map to render.
+10-15 00:38:35.611  4775  5314 V Mbgl-HttpRequest: [HTTP] Request was successful (code = 200).
+10-15 00:38:35.627  4775  5257 V Mbgl-HttpRequest: [HTTP] Request was successful (code = 200).
+10-15 00:38:35.662  4775  4955 D Mbgl-HttpRequest: [HTTP] This request was cancelled (https://tiles.openfreemap.org/fonts/Noto%20Sans%20Bold/65024-65279.pbf). This is expected for tiles that were being prefetched but are no longer needed for the map to render.
+10-15 00:38:35.810  4775  4955 D Mbgl-HttpRequest: [HTTP] This request was cancelled (https://tiles.openfreemap.org/planet/20261011_080001_pt/14/9613/6756.pbf). This is expected for tiles that were being prefetched but are no longer needed for the map to render.
+10-15 00:38:36.640  4775  5334 I Mbgl-EGLConfigChooser: In emulator: false
+10-15 00:38:36.718  4775  4775 V Mbgl-ConnectivityReceiver: connected - true
+10-15 00:38:36.940  1018  5336 D NetworkMonitor/103: checkAndRenewResourceConfig: update captive portal https urls to [https://www.google.com/generate_204]
+10-15 00:38:36.940  1018  5336 D NetworkMonitor/103: checkAndRenewResourceConfig: update captive portal http urls to [http://connectivitycheck.gstatic.com/generate_204]
+10-15 00:38:36.940  1018  5336 D NetworkMonitor/103: checkAndRenewResourceConfig: update captive portal fallback urls to[http://www.google.com/gen_204, http://play.googleapis.com/generate_204]
+10-15 00:38:36.940  1018  5336 D NetworkMonitor: Starting on network 103 with capport HTTPS URL [https://www.google.com/generate_204] and HTTP URL [http://connectivitycheck.gstatic.com/generate_204]
+10-15 00:38:37.489  4775  5314 V Mbgl-HttpRequest: [HTTP] Request was successful (code = 200).
+10-15 00:38:37.521  1018  5345 D NetworkMonitor/103: PROBE_HTTP http://connectivitycheck.gstatic.com/generate_204 time=35ms ret=204 request={Connection=[close], User-Agent=[Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/60.0.3112.32 Safari/537.36]} headers={null=[HTTP/1.1 204 No Content], Connection=[close], Content-Length=[0], Cross-Origin-Resource-Policy=[cross-origin], Date=[Thu, 15 Oct 2026 00:38:37 GMT], X-Android-Received-Millis=[1792024717521], X-Android-Response-Source=[NETWORK 204], X-Android-Selected-Protocol=[http/1.1], X-Android-Sent-Millis=[1792024717508]}
+10-15 00:38:37.608  4775  4955 D Mbgl-HttpRequest: [HTTP] This request was cancelled (https://tiles.openfreemap.org/planet/20261011_080001_pt/10/600/422.pbf). This is expected for tiles that were being prefetched but are no longer needed for the map to render.
+10-15 00:38:38.038  1018  5344 D NetworkMonitor/103: PROBE_HTTPS https://www.google.com/generate_204 time=536ms ret=204 request={Connection=[close], User-Agent=[Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/60.0.3112.32 Safari/537.36]} headers={null=[HTTP/1.1 204 No Content], Alt-Svc=[h3=":443"; ma=2592000,h3-29=":443"; ma=2592000], Connection=[close], Content-Length=[0], Cross-Origin-Resource-Policy=[cross-origin], Date=[Thu, 15 Oct 2026 00:38:38 GMT], X-Android-Received-Millis=[1792024718038], X-Android-Response-Source=[NETWORK 204], X-Android-Selected-Protocol=[http/1.1], X-Android-Sent-Millis=[1792024718022]}
+10-15 00:38:38.130  4775  4775 V Mbgl-ConnectivityReceiver: connected - true
+10-15 00:38:38.137  4775  4775 V Mbgl-ConnectivityReceiver: connected - true
+10-15 00:38:41.672  4775  5382 I Mbgl-EGLConfigChooser: In emulator: false
+10-15 00:38:41.704  4775  4775 V Mbgl-ConnectivityReceiver: connected - true
+10-15 00:38:52.702  1753  2352 I HotwordModelPopulator: Updated file group for locale 'hotword_model_en-US_okhey' from location: https://www.gstatic.com/android-search/hotword/x_google/975058821313279e27b2c3f04de0beef/hotword.data. Download already finished.
+10-15 00:38:52.702  1753  2352 I HotwordModelPopulator: Updated file group for locale 'hotword_model_en-US_okhey' from location: https://www.gstatic.com/android-search/hotword/x_google/975058821313279e27b2c3f04de0beef/hotword.data. Download already finished.
+10-15 00:38:52.703  1753  2352 I HotwordModelPopulator: Updated file group for locale 'hotword_model_en-US_okhey' from location: https://www.gstatic.com/android-search/hotword/x_google/975058821313279e27b2c3f04de0beef/hotword.data. Download already finished.
+10-15 00:38:52.703  1753  2352 I HotwordModelPopulator: Updated file group for locale 'hotword_model_en-US_okhey' from location: https://www.gstatic.com/android-search/hotword/x_google/975058821313279e27b2c3f04de0beef/hotword.data. Download already finished.
+10-15 00:38:52.704  1753  2384 I HotwordModelPopulator: Updated file group for locale 'hotword_model_en-US_okhey' from location: https://www.gstatic.com/android-search/hotword/x_google/975058821313279e27b2c3f04de0beef/hotword.data. Download already finished.
+10-15 00:38:52.704  1753  2352 I HotwordModelPopulator: Updated file group for locale 'hotword_model_en-US_okhey' from location: https://www.gstatic.com/android-search/hotword/x_google/975058821313279e27b2c3f04de0beef/hotword.data. Download already finished.
+10-15 00:38:52.729  1753  2384 I HotwordModelPopulator: Updated file group for locale 'hotword_model_en-US_okhey' from location: https://www.gstatic.com/android-search/hotword/x_google/975058821313279e27b2c3f04de0beef/hotword.data. Download already finished.
+10-15 00:38:52.729  1753  2367 I HotwordModelPopulator: Updated file group for locale 'hotword_model_en-US_okhey' from location: https://www.gstatic.com/android-search/hotword/x_google/975058821313279e27b2c3f04de0beef/hotword.data. Download already finished.
+10-15 00:38:52.732  1753  2384 I HotwordModelPopulator: Updated file group for locale 'hotword_model_en-US_okhey' from location: https://www.gstatic.com/android-search/hotword/x_google/975058821313279e27b2c3f04de0beef/hotword.data. Download already finished.
