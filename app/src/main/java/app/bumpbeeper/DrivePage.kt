@@ -247,6 +247,9 @@ class DrivePage(private val a: MainActivity) : Page {
             orientation = LinearLayout.HORIZONTAL
             repeat(3) { i -> addView(View(a), LinearLayout.LayoutParams(dp(8), dp(8)).apply { if (i > 0) marginStart = dp(4) }) }
         }
+        thenChip = Ui.text(a, 13f, 0xFFB8C0CC.toInt()).apply { visibility = View.GONE; setPadding(0, dp(2), 0, 0) }
+        // Recording: a small dot at the banner's end (green recording, amber waiting for GPS); the words are for TalkBack.
+        status = Ui.text(a, 14f, Ui.GREEN, bold = true, value = "●")
         banner = LinearLayout(a).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
@@ -258,11 +261,16 @@ class DrivePage(private val a: MainActivity) : Page {
                 setPadding(dp(14), 0, dp(8), 0)
                 addView(nextDist)
                 addView(nextWhat)
+                addView(thenChip)
             }, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
-            addView(nextBeeps, LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT))
+            addView(LinearLayout(a).apply {
+                orientation = LinearLayout.VERTICAL
+                gravity = Gravity.END
+                addView(status)
+                addView(nextBeeps, LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT)
+                    .apply { topMargin = dp(8) })
+            }, LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT))
         }
-        thenChip = Ui.chip(a, "").apply { setTextColor(Ui.DIM); visibility = View.GONE }
-        status = Ui.chip(a, "")
         offline = Ui.chip(a, a.getString(R.string.drive_offline_banner), R.drawable.ic_cloud_off).apply {
             background = Ui.rounded(a, Ui.WARN_CONT, Ui.Shape.CHIP)
             setTextColor(Ui.WARN)
@@ -274,14 +282,12 @@ class DrivePage(private val a: MainActivity) : Page {
         val chips = LinearLayout(a).apply {
             orientation = LinearLayout.HORIZONTAL
             setPadding(dp(o), dp(8), dp(o), 0)
-            addView(status, wrap())
-            addView(offline, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { marginStart = dp(8) })
+            addView(offline, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
         }
         val top = LinearLayout(a).apply {
             orientation = LinearLayout.VERTICAL
             addView(banner, full())
             addView(chips, full())
-            addView(thenChip, wrap().apply { topMargin = dp(8); marginStart = dp(o) })
         }
 
         // End side: sound, mark a bump here, recenter (only after you moved the map).
@@ -445,6 +451,7 @@ class DrivePage(private val a: MainActivity) : Page {
         val then = ahead.getOrNull(1)
         thenChip.visibility = if (then == null) View.GONE else View.VISIBLE
         if (then != null) thenChip.text = a.getString(R.string.drive_next_then, sevName(then), distText(then.distanceM))
+        if (near) thenChip.setTextColor(0xE6FFFFFF.toInt()) else thenChip.setTextColor(0xFFB8C0CC.toInt())
         val near = n != null && NextBump.near(n)
         val strongAhead = n?.takeIf { it.severity == Severity.STRONG && !it.maybe }
         map.aheadStrong(strongAhead?.distanceM?.takeIf { it <= 400.0 })
@@ -666,13 +673,14 @@ class DrivePage(private val a: MainActivity) : Page {
             wasRecording = rec
             map.radiusM = if (rec) 400.0 else 600.0
             map.puckLow = rec   // driving: more road ahead
+            map.offlineChipTopDp = if (rec) 140 else 64
             if (rec) { map.recenter(); recenterBtn.visibility = View.GONE }
             readyView.visibility = if (rec) View.GONE else View.VISIBLE
             liveView.visibility = if (rec) View.VISIBLE else View.GONE
             if (!rec) loadMap()   // a trip just ended: its new bumps
         }
         val gpsOk = rec && LiveState.lastFixAtMs > 0 && SystemClock.elapsedRealtime() - LiveState.lastFixAtMs < 5000
-        status.text = when {
+        status.contentDescription = when {
             !rec -> a.getString(R.string.drive_status_stopped)
             gpsOk -> a.getString(R.string.drive_status_recording)
             else -> a.getString(R.string.drive_status_waiting_gps)
@@ -763,7 +771,8 @@ class DrivePage(private val a: MainActivity) : Page {
     private fun showSign(rec: Boolean, gpsOk: Boolean) {
         // With the shared map unanswered nothing is looked up, so a sign stuck at "– –" would only mislead.
         val on = Prefs.liveLimits(a) && Prefs.syncChoice(a) != Prefs.SYNC_UNSET
-        val show = LiveLimitText.showSign(rec, on, Prefs.liveLimitsConsentVersion(a))
+        val known = LiveLimitText.signText(LiveState.speedLimitKmh, LiveState.speedLimitAgeMs) != LiveLimitText.UNKNOWN
+        val show = rec && (known || LiveLimitText.showSign(rec, on, Prefs.liveLimitsConsentVersion(a)))
         signBox.visibility = if (show) View.VISIBLE else View.GONE
         speed.setTextColor(0xFFFFFFFF.toInt())   // white on the dark speedometer; it turns red itself (speedoAlarm)
         if (!show) return

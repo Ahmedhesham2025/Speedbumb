@@ -36,6 +36,7 @@ import org.maplibre.android.style.layers.CircleLayer
 import org.maplibre.android.style.layers.LineLayer
 import org.maplibre.android.style.layers.Property
 import org.maplibre.android.style.layers.PropertyFactory.circleColor
+import org.maplibre.android.style.layers.PropertyFactory.circleOpacity
 import org.maplibre.android.style.layers.PropertyFactory.circleRadius
 import org.maplibre.android.style.layers.PropertyFactory.circleStrokeColor
 import org.maplibre.android.style.layers.PropertyFactory.circleStrokeWidth
@@ -103,6 +104,9 @@ class StreetMap(private val ctx: Context, private val interactive: Boolean) {
     private var started = false
     private var resumed = false
     private var failed = false
+    /** The map has drawn everything it was asked for (tiles, labels) and is not moving. */
+    @Volatile var idle = false
+        private set
 
     /** False when the map engine can't start here (unit tests, a phone without OpenGL ES 3). */
     val available: Boolean get() = mapView != null
@@ -135,6 +139,8 @@ class StreetMap(private val ctx: Context, private val interactive: Boolean) {
         mv.addOnDidFailLoadingMapListener {
             if (style == null && !failed) { failed = true; onFailed() }
         }
+        mv.addOnDidBecomeIdleListener { idle = true }
+        mv.addOnCameraWillChangeListener { idle = false }
         mv.getMapAsync { m -> setUp(m) }
         return mv
     }
@@ -165,9 +171,6 @@ class StreetMap(private val ctx: Context, private val interactive: Boolean) {
     private fun styleReady(s: Style) {
         style = s
         failed = false
-        for (i in Icon.entries) s.addImage(i.id, pin(i))
-        s.addImage(ME_ARROW, meIcon(arrow = true))
-        s.addImage(ME_DOT, meIcon(arrow = false))
         s.addSource(GeoJsonSource(SRC_SPOTS, FeatureCollection.fromFeatures(emptyList<Feature>()), GeoJsonOptions()
             .withCluster(true)
             .withClusterMaxZoom(SpotMarks.CLUSTER_MAX_ZOOM)
@@ -196,9 +199,13 @@ class StreetMap(private val ctx: Context, private val interactive: Boolean) {
             textField(get("mark")), textFont(arrayOf(FONT)), textSize(13f), textColor(toColor(get("ink"))),
             textAllowOverlap(true), textIgnorePlacement(true),
         ))
-        s.addLayer(SymbolLayer(L_ME, SRC_ME).withProperties(
-            iconImage(get("icon")), iconRotate(get("bearing")),
-            iconRotationAlignment(Property.ICON_ROTATION_ALIGNMENT_MAP), iconAllowOverlap(true), iconIgnorePlacement(true),
+        // You: a blue puck with a white ring and a soft halo, drawn by the map engine (no images). Driving, the map
+        // itself turns heading-up, so the puck needs no arrow.
+        s.addLayer(CircleLayer(L_ME_HALO, SRC_ME).withProperties(
+            circleRadius(24f), circleColor(Ui.PRIMARY), circleOpacity(0.18f),
+        ))
+        s.addLayer(CircleLayer(L_ME, SRC_ME).withProperties(
+            circleRadius(10f), circleColor(Ui.PRIMARY), circleStrokeColor(0xFFFFFFFF.toInt()), circleStrokeWidth(3.5f),
         ))
         pushSpots()
         pushMe()
@@ -321,7 +328,7 @@ class StreetMap(private val ctx: Context, private val interactive: Boolean) {
         val drawn = try {
             m?.queryRenderedFeatures(RectF(0f, 0f, view.width.toFloat(), view.height.toFloat()), L_SPOTS, L_CLUSTERS, L_ME)?.size
         } catch (_: Exception) { null }
-        return "style=${style != null} failed=$failed spots=${features.size} me=${me?.toList()} " +
+        return "idle=$idle style=${style != null} failed=$failed spots=${features.size} me=${me?.toList()} " +
             "camera=${camera()?.toList()} drawn=$drawn"
     }
 
@@ -438,6 +445,7 @@ class StreetMap(private val ctx: Context, private val interactive: Boolean) {
         private const val L_SPOTS = "bb-spot-pins"
         private const val L_MARKS = "bb-spot-marks"
         private const val L_ME = "bb-me"
+        private const val L_ME_HALO = "bb-me-halo"
         private const val SRC_AHEAD = "bb-ahead"
         private const val L_AHEAD = "bb-ahead"
         private const val ME_ARROW = "bb-me-arrow"
