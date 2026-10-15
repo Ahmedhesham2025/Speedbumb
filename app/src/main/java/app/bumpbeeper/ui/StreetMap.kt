@@ -328,7 +328,11 @@ class StreetMap(private val ctx: Context, private val interactive: Boolean) {
         val drawn = try {
             m?.queryRenderedFeatures(RectF(0f, 0f, view.width.toFloat(), view.height.toFloat()), L_SPOTS, L_CLUSTERS, L_ME)?.size
         } catch (_: Exception) { null }
-        return "idle=$idle style=${style != null} failed=$failed spots=${features.size} me=${me?.toList()} " +
+        val labels = try {
+            val ids = style?.layers?.map { it.id }?.filter { it.contains("name") || it.contains("label") }?.toTypedArray() ?: emptyArray()
+            if (ids.isEmpty()) 0 else m?.queryRenderedFeatures(RectF(0f, 0f, view.width.toFloat(), view.height.toFloat()), *ids)?.size
+        } catch (_: Exception) { null }
+        return "labels=$labels idle=$idle style=${style != null} failed=$failed spots=${features.size} me=${me?.toList()} " +
             "camera=${camera()?.toList()} drawn=$drawn"
     }
 
