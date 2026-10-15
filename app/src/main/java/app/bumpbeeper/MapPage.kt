@@ -63,7 +63,7 @@ class MapPage(private val a: MainActivity) : Page {
 
     private fun build(): View {
         val o = Ui.Space.OVERLAY
-        map = SpotMap(a, interactive = true).apply { onSelect = { showSpot(it) }; offlineChipTopDp = 140 }
+        map = SpotMap(a, interactive = true).apply { onSelect = { showSpot(it) } }
 
         // Top bar: "Your map · 128", import a file, share.
         count = Ui.text(a, 16f, Ui.DIM)
@@ -125,7 +125,6 @@ class MapPage(private val a: MainActivity) : Page {
         val bottom = LinearLayout(a).apply {
             orientation = LinearLayout.VERTICAL
             addView(fabs, wrap().apply { gravity = Gravity.END; marginEnd = dp(o) })
-            addView(map.creditView(), wrap().apply { marginStart = dp(o); bottomMargin = dp(6) })   // the map data credit
             addView(sheet, full())
         }
         return FrameLayout(a).apply {
@@ -172,9 +171,7 @@ class MapPage(private val a: MainActivity) : Page {
     private fun show() {
         chips.forEachIndexed { i, c ->
             val on = i == filter
-            val l = c.paddingStart; val t = c.paddingTop; val r = c.paddingEnd; val b = c.paddingBottom
             c.background = InsetDrawable(Ui.rounded(a, if (on) Ui.PRIMARY_CONT else Ui.SURFACE, Ui.Shape.CHIP), 0, dp(6), 0, dp(6))
-            c.setPaddingRelative(l, t, r, b)   // the inset background would reset the sides to 0 (chips overlapped)
             c.setTextColor(if (on) Ui.ON_PRIMARY_CONT else Ui.TEXT)
         }
         count.text = a.getString(R.string.map_title) + " · " + all.size

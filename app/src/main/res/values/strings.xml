@@ -196,7 +196,6 @@
     <string name="map_spot_maps">Maps</string>
     <string name="map_attribution" translatable="false">© OpenStreetMap contributors, OpenFreeMap, © OpenMapTiles</string>
     <string name="map_rings">rings every %1$s · N ↑</string>
-    <string name="map_offline_chip">Offline map</string>
     <string name="map_zoom_out">"−  Zoom out"</string>
     <string name="map_zoom_in">"+  Zoom in"</string>
     <string name="map_me">"◎  Me"</string>

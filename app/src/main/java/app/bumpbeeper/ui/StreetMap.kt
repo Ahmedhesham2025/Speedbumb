@@ -33,10 +33,8 @@ import org.maplibre.android.style.expressions.Expression.step
 import org.maplibre.android.style.expressions.Expression.stop
 import org.maplibre.android.style.expressions.Expression.toColor
 import org.maplibre.android.style.layers.CircleLayer
-import org.maplibre.android.style.layers.LineLayer
 import org.maplibre.android.style.layers.Property
 import org.maplibre.android.style.layers.PropertyFactory.circleColor
-import org.maplibre.android.style.layers.PropertyFactory.circleOpacity
 import org.maplibre.android.style.layers.PropertyFactory.circleRadius
 import org.maplibre.android.style.layers.PropertyFactory.circleStrokeColor
 import org.maplibre.android.style.layers.PropertyFactory.circleStrokeWidth
@@ -45,10 +43,6 @@ import org.maplibre.android.style.layers.PropertyFactory.iconIgnorePlacement
 import org.maplibre.android.style.layers.PropertyFactory.iconImage
 import org.maplibre.android.style.layers.PropertyFactory.iconRotate
 import org.maplibre.android.style.layers.PropertyFactory.iconRotationAlignment
-import org.maplibre.android.style.layers.PropertyFactory.lineCap
-import org.maplibre.android.style.layers.PropertyFactory.lineColor
-import org.maplibre.android.style.layers.PropertyFactory.lineOpacity
-import org.maplibre.android.style.layers.PropertyFactory.lineWidth
 import org.maplibre.android.style.layers.PropertyFactory.symbolSortKey
 import org.maplibre.android.style.layers.PropertyFactory.textAllowOverlap
 import org.maplibre.android.style.layers.PropertyFactory.textColor
@@ -61,8 +55,6 @@ import org.maplibre.android.style.sources.GeoJsonOptions
 import org.maplibre.android.style.sources.GeoJsonSource
 import org.maplibre.geojson.Feature
 import org.maplibre.geojson.FeatureCollection
-import org.maplibre.geojson.LineString
-import org.maplibre.geojson.MultiLineString
 import org.maplibre.geojson.Point
 
 /**
@@ -90,10 +82,6 @@ class StreetMap(private val ctx: Context, private val interactive: Boolean) {
     var onReady: () -> Unit = {}
     /** The style could not load (offline and not cached): show the offline map instead. */
     var onFailed: () -> Unit = {}
-    /** Someone moved the map with a finger (Drive: stop following until Recenter). */
-    var onUserMove: () -> Unit = {}
-    /** Space at the top of the map, px: the camera's centre (your puck) sits lower, so more road ahead shows. */
-    var topPaddingPx = 0.0
 
     private var mapView: MapView? = null
     private var map: MapLibreMap? = null
@@ -104,9 +92,6 @@ class StreetMap(private val ctx: Context, private val interactive: Boolean) {
     private var started = false
     private var resumed = false
     private var failed = false
-    /** The map has drawn everything it was asked for (tiles, labels) and is not moving. */
-    @Volatile var idle = false
-        private set
 
     /** False when the map engine can't start here (unit tests, a phone without OpenGL ES 3). */
     val available: Boolean get() = mapView != null
@@ -114,8 +99,15 @@ class StreetMap(private val ctx: Context, private val interactive: Boolean) {
     init {
         mapView = try { create() } catch (t: Throwable) { null }
         mapView?.let { view.addView(it, FrameLayout.LayoutParams(-1, -1)) }
-        // The OpenStreetMap / OpenFreeMap / OpenMapTiles credit is drawn by the pages ([SpotMap.credit]) at the bottom,
-        // where their own bars don't cover it.
+        // OpenStreetMap (ODbL), OpenMapTiles and OpenFreeMap ask for this line on the map.
+        view.addView(Ui.text(ctx, 10f, Ui.DIM, value = ctx.getString(R.string.map_attribution)).apply {
+            setPadding(dp(6), dp(2), dp(6), dp(2))
+            background = Ui.rounded(ctx, (Ui.SURFACE and 0x00FFFFFF) or 0xCC000000.toInt(), 6)
+            isClickable = true
+            setOnClickListener {
+                try { ctx.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(COPYRIGHT_URL))) } catch (_: Exception) {}
+            }
+        }, FrameLayout.LayoutParams(-2, -2, Gravity.TOP or Gravity.END).apply { setMargins(dp(4), dp(4), dp(4), dp(4)) })
     }
 
     private fun create(): MapView? {
@@ -132,8 +124,6 @@ class StreetMap(private val ctx: Context, private val interactive: Boolean) {
         mv.addOnDidFailLoadingMapListener {
             if (style == null && !failed) { failed = true; onFailed() }
         }
-        mv.addOnDidBecomeIdleListener { idle = true }
-        mv.addOnCameraWillChangeListener { idle = false }
         mv.getMapAsync { m -> setUp(m) }
         return mv
     }
@@ -153,36 +143,22 @@ class StreetMap(private val ctx: Context, private val interactive: Boolean) {
         m.setMaxZoomPreference(19.0)
         pendingCamera?.let { m.cameraPosition = it; pendingCamera = null }
         if (interactive) m.addOnMapClickListener { tapped(m, it) }
-        m.addOnCameraMoveStartedListener { reason ->
-            if (reason == MapLibreMap.OnCameraMoveStartedListener.REASON_API_GESTURE) onUserMove()
-        }
         m.setStyle(Style.Builder().fromUri(styleUrl())) { styleReady(it) }
     }
 
     private fun styleUrl() = if (Ui.dark) STYLE_DARK else STYLE_LIGHT
 
-    private var loadedOffline = false
-
-    private fun online(): Boolean = try {
-        val cm = ctx.getSystemService(android.net.ConnectivityManager::class.java)
-        cm?.getNetworkCapabilities(cm.activeNetwork)
-            ?.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_INTERNET) == true
-    } catch (_: Exception) { false }
-
     private fun styleReady(s: Style) {
         style = s
         failed = false
-        loadedOffline = !online()
+        for (i in Icon.entries) s.addImage(i.id, pin(i))
+        s.addImage(ME_ARROW, meIcon(arrow = true))
+        s.addImage(ME_DOT, meIcon(arrow = false))
         s.addSource(GeoJsonSource(SRC_SPOTS, FeatureCollection.fromFeatures(emptyList<Feature>()), GeoJsonOptions()
             .withCluster(true)
             .withClusterMaxZoom(SpotMarks.CLUSTER_MAX_ZOOM)
             .withClusterRadius(SpotMarks.CLUSTER_RADIUS_DP)))
         s.addSource(GeoJsonSource(SRC_ME))
-        // The road just before a strong bump, tinted (under the pins).
-        s.addSource(GeoJsonSource(SRC_AHEAD))
-        s.addLayer(LineLayer(L_AHEAD, SRC_AHEAD).withProperties(
-            lineColor(Ui.SEV_STRONG), lineWidth(9f), lineOpacity(0.55f), lineCap(Property.LINE_CAP_ROUND),
-        ))
         val z = SpotMarks.CLUSTER_SIZES
         s.addLayer(CircleLayer(L_CLUSTERS, SRC_SPOTS).withFilter(has("point_count")).withProperties(
             circleColor(Ui.PRIMARY), circleStrokeColor(Ui.SURFACE), circleStrokeWidth(3f),
@@ -197,22 +173,16 @@ class StreetMap(private val ctx: Context, private val interactive: Boolean) {
         s.addLayer(CircleLayer(L_SPOTS, SRC_SPOTS).withFilter(not(has("point_count"))).withProperties(
             circleRadius(get("r")), circleColor(toColor(get("fill"))), circleStrokeColor(toColor(get("ring"))), circleStrokeWidth(2.5f),
         ))
-        s.addImage(MARK_STRONG, mark("!", Ui.SEV_STRONG_INK))
-        s.addImage(MARK_MAYBE, mark("?", Ui.SEV_MAYBE))
-        s.addLayer(SymbolLayer(L_MARKS, SRC_SPOTS).withFilter(has("markIcon")).withProperties(
-            iconImage(get("markIcon")), iconAllowOverlap(true), iconIgnorePlacement(true),
+        s.addLayer(SymbolLayer(L_MARKS, SRC_SPOTS).withFilter(not(has("point_count"))).withProperties(
+            textField(get("mark")), textFont(arrayOf(FONT)), textSize(13f), textColor(toColor(get("ink"))),
+            textAllowOverlap(true), textIgnorePlacement(true),
         ))
-        // You: a blue puck with a white ring and a soft halo, drawn by the map engine (no images). Driving, the map
-        // itself turns heading-up, so the puck needs no arrow.
-        s.addLayer(CircleLayer(L_ME_HALO, SRC_ME).withProperties(
-            circleRadius(24f), circleColor(Ui.PRIMARY), circleOpacity(0.18f),
-        ))
-        s.addLayer(CircleLayer(L_ME, SRC_ME).withProperties(
-            circleRadius(10f), circleColor(Ui.PRIMARY), circleStrokeColor(0xFFFFFFFF.toInt()), circleStrokeWidth(3.5f),
+        s.addLayer(SymbolLayer(L_ME, SRC_ME).withProperties(
+            iconImage(get("icon")), iconRotate(get("bearing")),
+            iconRotationAlignment(Property.ICON_ROTATION_ALIGNMENT_MAP), iconAllowOverlap(true), iconIgnorePlacement(true),
         ))
         pushSpots()
         pushMe()
-        pushAhead()
         onReady()
     }
 
@@ -230,11 +200,8 @@ class StreetMap(private val ctx: Context, private val interactive: Boolean) {
                 val (fill, ring) = colors(s.icon)
                 addStringProperty("fill", hex(fill))
                 addStringProperty("ring", hex(ring))
-                when (s.icon) {
-                    Icon.STRONG -> addStringProperty("markIcon", MARK_STRONG)
-                    Icon.MAYBE -> addStringProperty("markIcon", MARK_MAYBE)
-                    else -> {}
-                }
+                addStringProperty("ink", hex(if (s.icon == Icon.STRONG) Ui.SEV_STRONG_INK else Ui.SEV_MAYBE))
+                addStringProperty("mark", when (s.icon) { Icon.STRONG -> "!"; Icon.MAYBE -> "?"; else -> "" })
                 addNumberProperty("r", if (s.icon == Icon.STRONG) 11 else 9)
                 addNumberProperty("order", if (s.selected) 10 else s.icon.ordinal)
             }
@@ -246,39 +213,6 @@ class StreetMap(private val ctx: Context, private val interactive: Boolean) {
     fun setMe(lat: Double, lon: Double, bearing: Double = Double.NaN) {
         me = if (lat.isNaN()) null else doubleArrayOf(lat, lon, bearing)
         pushMe()
-    }
-
-    private var ahead: DoubleArray? = null   // from lat, lon, to lat, lon
-
-    /** Tints the road from you to a strong bump ahead; null clears it. */
-    fun setAhead(from: Pair<Double, Double>?, to: Pair<Double, Double>?) {
-        ahead = if (from == null || to == null) null else doubleArrayOf(from.first, from.second, to.first, to.second)
-        pushAhead()
-    }
-
-    private fun pushAhead() {
-        val src = style?.getSourceAs<GeoJsonSource>(SRC_AHEAD) ?: return
-        val a = ahead
-        src.setGeoJson(FeatureCollection.fromFeatures(if (a == null) emptyList() else listOf(Feature.fromGeometry(
-            LineString.fromLngLats(listOf(Point.fromLngLat(a[1], a[0]), Point.fromLngLat(a[3], a[2]))),
-        ))))
-    }
-
-    /**
-     * The name of the road under a point (your puck), read from the map tiles already on screen: no extra request,
-     * nothing sent anywhere. Arabic names in Arabic when the tiles have them. Null when there is none.
-     */
-    fun roadNameAt(lat: Double, lon: Double, arabic: Boolean): String? {
-        val m = map ?: return null
-        if (style == null) return null
-        val p = m.projection.toScreenLocation(LatLng(lat, lon))
-        val r = dp(24).toFloat()
-        val keys = if (arabic) listOf("name:ar", "name") else listOf("name:latin", "name:en", "name")
-        return try {
-            m.queryRenderedFeatures(RectF(p.x - r, p.y - r, p.x + r, p.y + r))
-                .filter { it.geometry() is LineString || it.geometry() is MultiLineString }
-                .firstNotNullOfOrNull { f -> keys.firstNotNullOfOrNull { k -> if (f.hasProperty(k)) f.getStringProperty(k)?.takeIf { it.isNotBlank() } else null } }
-        } catch (_: Exception) { null }
     }
 
     private fun pushSpots() {
@@ -315,8 +249,7 @@ class StreetMap(private val ctx: Context, private val interactive: Boolean) {
 
     /** Moves the camera; [bearing] turns the map (heading-up while driving), 0 is north up. */
     fun moveTo(lat: Double, lon: Double, zoom: Double, bearing: Double = 0.0, animateMs: Int = 0) {
-        val pos = CameraPosition.Builder().target(LatLng(lat, lon)).zoom(zoom).bearing(bearing).tilt(0.0)
-            .padding(0.0, topPaddingPx, 0.0, 0.0).build()
+        val pos = CameraPosition.Builder().target(LatLng(lat, lon)).zoom(zoom).bearing(bearing).tilt(0.0).build()
         val m = map
         when {
             m == null -> pendingCamera = pos
@@ -334,11 +267,7 @@ class StreetMap(private val ctx: Context, private val interactive: Boolean) {
         val drawn = try {
             m?.queryRenderedFeatures(RectF(0f, 0f, view.width.toFloat(), view.height.toFloat()), L_SPOTS, L_CLUSTERS, L_ME)?.size
         } catch (_: Exception) { null }
-        val labels = try {
-            val ids = style?.layers?.map { it.id }?.filter { it.contains("name") || it.contains("label") }?.toTypedArray() ?: emptyArray()
-            if (ids.isEmpty()) 0 else m?.queryRenderedFeatures(RectF(0f, 0f, view.width.toFloat(), view.height.toFloat()), *ids)?.size
-        } catch (_: Exception) { null }
-        return "labels=$labels idle=$idle style=${style != null} failed=$failed spots=${features.size} me=${me?.toList()} " +
+        return "style=${style != null} failed=$failed spots=${features.size} me=${me?.toList()} " +
             "camera=${camera()?.toList()} drawn=$drawn"
     }
 
@@ -353,12 +282,6 @@ class StreetMap(private val ctx: Context, private val interactive: Boolean) {
         if (!resumed) { mv.onResume(); resumed = true }
         // Last time there was no network: try the streets again.
         if (failed && style == null) { failed = false; map?.setStyle(Style.Builder().fromUri(styleUrl())) { styleReady(it) } }
-        // Loaded from the cache while offline, and online now: load again, so the tiles that were missing get fetched.
-        else if (style != null && loadedOffline && online()) {
-            loadedOffline = false
-            style = null
-            map?.setStyle(Style.Builder().fromUri(styleUrl())) { styleReady(it) }
-        }
     }
 
     fun pause() {
@@ -376,20 +299,6 @@ class StreetMap(private val ctx: Context, private val interactive: Boolean) {
     }
 
     // ---------------------------------------------------------------- pins
-
-    /** A pin's mark ("!" or "?") as a small bitmap, so it needs no font from the map server. */
-    private fun mark(text: String, color: Int): Bitmap {
-        val size = dp(18)
-        val bmp = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
-        val p = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            this.color = color
-            textSize = dp(14).toFloat()
-            typeface = Typeface.DEFAULT_BOLD
-            textAlign = Paint.Align.CENTER
-        }
-        Canvas(bmp).drawText(text, size / 2f, size / 2f - (p.descent() + p.ascent()) / 2, p)
-        return bmp
-    }
 
     /** Fill and ring of a pin: the band colour with a surface ring; "maybe" and muted the other way round. */
     private fun colors(i: Icon): Pair<Int, Int> = when (i) {
@@ -474,12 +383,7 @@ class StreetMap(private val ctx: Context, private val interactive: Boolean) {
         private const val L_COUNT = "bb-cluster-count"
         private const val L_SPOTS = "bb-spot-pins"
         private const val L_MARKS = "bb-spot-marks"
-        private const val MARK_STRONG = "bb-mark-strong"
-        private const val MARK_MAYBE = "bb-mark-maybe"
         private const val L_ME = "bb-me"
-        private const val L_ME_HALO = "bb-me-halo"
-        private const val SRC_AHEAD = "bb-ahead"
-        private const val L_AHEAD = "bb-ahead"
         private const val ME_ARROW = "bb-me-arrow"
         private const val ME_DOT = "bb-me-dot"
 
