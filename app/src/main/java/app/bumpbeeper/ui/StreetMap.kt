@@ -31,6 +31,7 @@ import org.maplibre.android.style.expressions.Expression.literal
 import org.maplibre.android.style.expressions.Expression.not
 import org.maplibre.android.style.expressions.Expression.step
 import org.maplibre.android.style.expressions.Expression.stop
+import org.maplibre.android.style.expressions.Expression.toColor
 import org.maplibre.android.style.layers.CircleLayer
 import org.maplibre.android.style.layers.Property
 import org.maplibre.android.style.layers.PropertyFactory.circleColor
@@ -167,8 +168,14 @@ class StreetMap(private val ctx: Context, private val interactive: Boolean) {
             textField(get("point_count_abbreviated")), textFont(arrayOf(FONT)), textSize(13f), textColor(Ui.ON_PRIMARY),
             textAllowOverlap(true), textIgnorePlacement(true),
         ))
-        s.addLayer(SymbolLayer(L_SPOTS, SRC_SPOTS).withFilter(not(has("point_count"))).withProperties(
-            iconImage(get("icon")), symbolSortKey(get("order")), iconAllowOverlap(true), iconIgnorePlacement(true),
+        // Pins as circles in the band colour (drawn by the map engine itself, no images), a ring for "maybe" and
+        // muted, and "!" / "?" on top.
+        s.addLayer(CircleLayer(L_SPOTS, SRC_SPOTS).withFilter(not(has("point_count"))).withProperties(
+            circleRadius(get("r")), circleColor(toColor(get("fill"))), circleStrokeColor(toColor(get("ring"))), circleStrokeWidth(2.5f),
+        ))
+        s.addLayer(SymbolLayer(L_MARKS, SRC_SPOTS).withFilter(not(has("point_count"))).withProperties(
+            textField(get("mark")), textFont(arrayOf(FONT)), textSize(13f), textColor(toColor(get("ink"))),
+            textAllowOverlap(true), textIgnorePlacement(true),
         ))
         s.addLayer(SymbolLayer(L_ME, SRC_ME).withProperties(
             iconImage(get("icon")), iconRotate(get("bearing")),
@@ -190,6 +197,12 @@ class StreetMap(private val ctx: Context, private val interactive: Boolean) {
             Feature.fromGeometry(Point.fromLngLat(s.lon, s.lat)).apply {
                 addStringProperty("key", s.key)
                 addStringProperty("icon", s.icon.id)
+                val (fill, ring) = colors(s.icon)
+                addStringProperty("fill", hex(fill))
+                addStringProperty("ring", hex(ring))
+                addStringProperty("ink", hex(if (s.icon == Icon.STRONG) Ui.SEV_STRONG_INK else Ui.SEV_MAYBE))
+                addStringProperty("mark", when (s.icon) { Icon.STRONG -> "!"; Icon.MAYBE -> "?"; else -> "" })
+                addNumberProperty("r", if (s.icon == Icon.STRONG) 11 else 9)
                 addNumberProperty("order", if (s.selected) 10 else s.icon.ordinal)
             }
         }
@@ -287,6 +300,17 @@ class StreetMap(private val ctx: Context, private val interactive: Boolean) {
 
     // ---------------------------------------------------------------- pins
 
+    /** Fill and ring of a pin: the band colour with a surface ring; "maybe" and muted the other way round. */
+    private fun colors(i: Icon): Pair<Int, Int> = when (i) {
+        Icon.MILD -> Ui.SEV_MILD to Ui.SURFACE
+        Icon.MODERATE -> Ui.SEV_MOD to Ui.SURFACE
+        Icon.STRONG -> Ui.SEV_STRONG to Ui.SURFACE
+        Icon.MAYBE -> Ui.SURFACE to Ui.SEV_MAYBE
+        Icon.MUTED -> Ui.SURFACE to Ui.SEV_MUTED
+    }
+
+    private fun hex(c: Int): String = String.format(java.util.Locale.US, "#%06X", c and 0xFFFFFF)
+
     /** The same pins as the offline map: severity fill with a surface ring, "!" on strong, a dashed "maybe". */
     private fun pin(i: Icon): Bitmap {
         val size = dp(if (i == Icon.STRONG) 30 else 24)
@@ -357,7 +381,8 @@ class StreetMap(private val ctx: Context, private val interactive: Boolean) {
         private const val SRC_ME = "bb-me"
         private const val L_CLUSTERS = "bb-clusters"
         private const val L_COUNT = "bb-cluster-count"
-        private const val L_SPOTS = "bb-spot-icons"
+        private const val L_SPOTS = "bb-spot-pins"
+        private const val L_MARKS = "bb-spot-marks"
         private const val L_ME = "bb-me"
         private const val ME_ARROW = "bb-me-arrow"
         private const val ME_DOT = "bb-me-dot"
