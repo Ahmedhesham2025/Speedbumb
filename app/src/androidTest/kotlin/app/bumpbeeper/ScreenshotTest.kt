@@ -36,6 +36,7 @@ class ScreenshotTest {
     @Test
     fun takeScreenshots() {
         grantPermissions()
+        fakeFix(true)   // a position near the demo bumps, driving north-east: the puck, heading-up, the red road
         resetSettings(Prefs.SYNC_SHARE)
         seedDemoData()
         liveDemo(recording = true)
@@ -71,7 +72,7 @@ class ScreenshotTest {
             try {
                 for ((tab, name) in listOf(MainActivity.TAB_MAP to "13-map-streets", MainActivity.TAB_DRIVE to "14-drive-streets")) {
                     scenario.onActivity { it.select(tab) }
-                    settle(8000)   // style and tiles from OpenFreeMap
+                    waitForMap(scenario, tab)   // style, tiles and the label fonts from OpenFreeMap
                     shot(dir, name)
                     mapCheck(scenario, tab, File(dir, "$name.txt"))
                 }
@@ -80,11 +81,14 @@ class ScreenshotTest {
                 liveDemo(recording = true)
                 LiveState.spotsAhead = listOf(SpotAhead(demo, 120.0, Severity.STRONG, Confidence.FULL, WarnSound.STRONG),
                     SpotAhead(demo, 640.0, Severity.MILD, Confidence.FULL, WarnSound.MILD))
-                settle(6000)
+                seedRoadName(scenario, "Qasr El Nil St")   // only used when the emulator's tiles name no road at the puck
+                waitForMap(scenario, MainActivity.TAB_DRIVE)
                 liveDemo(recording = true)
+                LiveState.setSpeedLimit(50, SystemClock.elapsedRealtime())
                 LiveState.spotsAhead = listOf(SpotAhead(demo, 120.0, Severity.STRONG, Confidence.FULL, WarnSound.STRONG),
                     SpotAhead(demo, 640.0, Severity.MILD, Confidence.FULL, WarnSound.MILD))
-                settle(1200)
+                settle(1500)
+                waitForMap(scenario, MainActivity.TAB_DRIVE)
                 shot(dir, "15-drive-streets-strong")
                 mapCheck(scenario, MainActivity.TAB_DRIVE, File(dir, "15-drive-streets-strong.txt"))
                 LiveState.spotsAhead = emptyList()
@@ -127,6 +131,7 @@ class ScreenshotTest {
             settle(1500)
             shot(dir, "06-sharing-question")
         }
+        fakeFix(false)
         val files = dir.listFiles { f -> f.name.endsWith(".png") }.orEmpty()
         assertTrue("expected 26 screenshots in $dir, got ${files.size}: ${files.map { it.name }.sorted()}", files.size == 26)
     }
@@ -146,6 +151,7 @@ class ScreenshotTest {
                 SpotAhead(demo, 700.0, Severity.MILD, Confidence.SOFT, WarnSound.SOFT)) to "08-drive-next",
         )) {
             liveDemo(recording = true)
+            LiveState.setSpeedLimit(50, SystemClock.elapsedRealtime())
             LiveState.spotsAhead = ahead
             settle(1200)
             shot(dir, name + suffix)
@@ -201,6 +207,56 @@ class ScreenshotTest {
             } catch (e: Exception) { "no map check: $e" }
         }
         out.writeText(line + System.lineSeparator())
+    }
+
+    /** Waits (up to 25 s) until the street map has drawn everything, labels included, and stopped moving. */
+    private fun waitForMap(scenario: ActivityScenario<MainActivity>, tab: Int) {
+        val tmp = File(ctx.cacheDir, "map-check.txt")
+        val until = SystemClock.elapsedRealtime() + 25_000
+        settle(3000)
+        while (SystemClock.elapsedRealtime() < until) {
+            mapCheck(scenario, tab, tmp)
+            if (tmp.readText().contains("idle=true")) break
+            SystemClock.sleep(500)
+        }
+        settle(1000)
+    }
+
+    /** The road name the Drive screen shows when the tiles give none at the puck (the map's test-only fallback). */
+    private fun seedRoadName(scenario: ActivityScenario<MainActivity>, name: String) {
+        scenario.onActivity { a ->
+            try {
+                val page = a.pages[MainActivity.TAB_DRIVE]!!
+                val map = page.javaClass.getDeclaredField("map").apply { isAccessible = true }.get(page)!!
+                map.javaClass.methods.first { it.name.startsWith("setRoadNameForTest") }.invoke(map, name)
+            } catch (_: Exception) {}
+        }
+    }
+
+    /**
+     * A fake GPS position (the app reads the newest one Android has), through Android's mock-location provider:
+     * near the demo bumps in Cairo, heading north-east at 47 km/h. [on] false removes it.
+     */
+    @Suppress("DEPRECATION")
+    private fun fakeFix(on: Boolean) {
+        val lm = ctx.getSystemService(Context.LOCATION_SERVICE) as android.location.LocationManager
+        val providers = listOf(android.location.LocationManager.GPS_PROVIDER, android.location.LocationManager.NETWORK_PROVIDER)
+        try {
+            if (!on) { providers.forEach { try { lm.removeTestProvider(it) } catch (_: Exception) {} }; return }
+            instr.uiAutomation.executeShellCommand("appops set ${ctx.packageName} android:mock_location allow").close()
+            SystemClock.sleep(500)
+            for (p in providers) {
+                try { lm.removeTestProvider(p) } catch (_: Exception) {}
+                lm.addTestProvider(p, false, false, false, false, true, true, true, 1, 1)
+                lm.setTestProviderEnabled(p, true)
+                lm.setTestProviderLocation(p, android.location.Location(p).apply {
+                    latitude = 30.0490; longitude = 31.2360; bearing = 40f; speed = 13f; accuracy = 4f
+                    time = System.currentTimeMillis(); elapsedRealtimeNanos = SystemClock.elapsedRealtimeNanos()
+                })
+            }
+        } catch (e: Exception) {
+            android.util.Log.w("ScreenshotTest", "no fake position", e)
+        }
     }
 
     /** Wi-Fi and mobile data on or off (the workflow starts with both off). */
