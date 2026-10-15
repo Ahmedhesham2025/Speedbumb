@@ -94,6 +94,34 @@ class SpotMap(ctx: Context, interactive: Boolean) : FrameLayout(ctx) {
     /** The screenshot test's road name when the emulator's tiles give none at the puck (never set by the app). */
     internal var roadNameForTest: String? = null
 
+    /** The map data credit to show with the map (OSM / OpenFreeMap / OpenMapTiles), or null when no streets show. */
+    val credit: String? get() = if (streetsOn) context.getString(R.string.map_attribution) else null
+
+    /** The streets appeared or went. */
+    var onStreetsChanged: () -> Unit = {}
+
+    private val credits = ArrayList<View>()
+
+    /**
+     * The map data credit (OpenStreetMap / OpenFreeMap / OpenMapTiles, their licences ask for it) for a page to put
+     * at the bottom where nothing covers it: tap for the OSM copyright page. Shown only while the streets show.
+     */
+    fun creditView(): android.widget.TextView = Ui.text(context, 10f, Ui.DIM, value = context.getString(R.string.map_attribution)).apply {
+        setPadding(Ui.dp(context, 6), Ui.dp(context, 2), Ui.dp(context, 6), Ui.dp(context, 2))
+        background = Ui.rounded(context, (Ui.SURFACE and 0x00FFFFFF) or 0xCC000000.toInt(), 6)
+        isClickable = true
+        setOnClickListener {
+            try {
+                context.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW,
+                    android.net.Uri.parse(StreetMap.COPYRIGHT_URL)))
+            } catch (_: Exception) {}
+        }
+        visibility = if (streetsOn) View.VISIBLE else View.GONE
+        credits.add(this)
+    }
+
+    private fun showCredits() = credits.forEach { it.visibility = if (streetsOn) View.VISIBLE else View.GONE }
+
     /** The street map has drawn everything (tiles, labels) and is not moving; false while the offline map shows. */
     val idle: Boolean get() = streetsOn && street.idle
 
@@ -130,9 +158,13 @@ class SpotMap(ctx: Context, interactive: Boolean) : FrameLayout(ctx) {
             addView(street.view, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
             street.onReady = {
                 streetsOn = true; street.view.visibility = View.VISIBLE; offlineChip.visibility = View.GONE
+                showCredits(); onStreetsChanged()
                 pushPins(); pushMe(); camera()
             }
-            street.onFailed = { streetsOn = false; street.view.visibility = View.INVISIBLE; offlineChip.visibility = View.VISIBLE }
+            street.onFailed = {
+                streetsOn = false; street.view.visibility = View.INVISIBLE; offlineChip.visibility = View.VISIBLE
+                showCredits(); onStreetsChanged()
+            }
         }
         addView(offlineChip, LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT, Gravity.TOP or Gravity.CENTER_HORIZONTAL)
             .apply { topMargin = Ui.dp(ctx, offlineChipTopDp) })

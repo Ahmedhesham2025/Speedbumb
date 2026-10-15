@@ -114,15 +114,8 @@ class StreetMap(private val ctx: Context, private val interactive: Boolean) {
     init {
         mapView = try { create() } catch (t: Throwable) { null }
         mapView?.let { view.addView(it, FrameLayout.LayoutParams(-1, -1)) }
-        // OpenStreetMap (ODbL), OpenMapTiles and OpenFreeMap ask for this line on the map.
-        view.addView(Ui.text(ctx, 10f, Ui.DIM, value = ctx.getString(R.string.map_attribution)).apply {
-            setPadding(dp(6), dp(2), dp(6), dp(2))
-            background = Ui.rounded(ctx, (Ui.SURFACE and 0x00FFFFFF) or 0xCC000000.toInt(), 6)
-            isClickable = true
-            setOnClickListener {
-                try { ctx.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(COPYRIGHT_URL))) } catch (_: Exception) {}
-            }
-        }, FrameLayout.LayoutParams(-2, -2, Gravity.TOP or Gravity.END).apply { setMargins(dp(4), dp(4), dp(4), dp(4)) })
+        // The OpenStreetMap / OpenFreeMap / OpenMapTiles credit is drawn by the pages ([SpotMap.credit]) at the bottom,
+        // where their own bars don't cover it.
     }
 
     private fun create(): MapView? {
@@ -168,9 +161,18 @@ class StreetMap(private val ctx: Context, private val interactive: Boolean) {
 
     private fun styleUrl() = if (Ui.dark) STYLE_DARK else STYLE_LIGHT
 
+    private var loadedOffline = false
+
+    private fun online(): Boolean = try {
+        val cm = ctx.getSystemService(android.net.ConnectivityManager::class.java)
+        cm?.getNetworkCapabilities(cm.activeNetwork)
+            ?.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_INTERNET) == true
+    } catch (_: Exception) { false }
+
     private fun styleReady(s: Style) {
         style = s
         failed = false
+        loadedOffline = !online()
         s.addSource(GeoJsonSource(SRC_SPOTS, FeatureCollection.fromFeatures(emptyList<Feature>()), GeoJsonOptions()
             .withCluster(true)
             .withClusterMaxZoom(SpotMarks.CLUSTER_MAX_ZOOM)
@@ -195,9 +197,10 @@ class StreetMap(private val ctx: Context, private val interactive: Boolean) {
         s.addLayer(CircleLayer(L_SPOTS, SRC_SPOTS).withFilter(not(has("point_count"))).withProperties(
             circleRadius(get("r")), circleColor(toColor(get("fill"))), circleStrokeColor(toColor(get("ring"))), circleStrokeWidth(2.5f),
         ))
-        s.addLayer(SymbolLayer(L_MARKS, SRC_SPOTS).withFilter(not(has("point_count"))).withProperties(
-            textField(get("mark")), textFont(arrayOf(FONT)), textSize(13f), textColor(toColor(get("ink"))),
-            textAllowOverlap(true), textIgnorePlacement(true),
+        s.addImage(MARK_STRONG, mark("!", Ui.SEV_STRONG_INK))
+        s.addImage(MARK_MAYBE, mark("?", Ui.SEV_MAYBE))
+        s.addLayer(SymbolLayer(L_MARKS, SRC_SPOTS).withFilter(has("markIcon")).withProperties(
+            iconImage(get("markIcon")), iconAllowOverlap(true), iconIgnorePlacement(true),
         ))
         // You: a blue puck with a white ring and a soft halo, drawn by the map engine (no images). Driving, the map
         // itself turns heading-up, so the puck needs no arrow.
@@ -227,8 +230,11 @@ class StreetMap(private val ctx: Context, private val interactive: Boolean) {
                 val (fill, ring) = colors(s.icon)
                 addStringProperty("fill", hex(fill))
                 addStringProperty("ring", hex(ring))
-                addStringProperty("ink", hex(if (s.icon == Icon.STRONG) Ui.SEV_STRONG_INK else Ui.SEV_MAYBE))
-                addStringProperty("mark", when (s.icon) { Icon.STRONG -> "!"; Icon.MAYBE -> "?"; else -> "" })
+                when (s.icon) {
+                    Icon.STRONG -> addStringProperty("markIcon", MARK_STRONG)
+                    Icon.MAYBE -> addStringProperty("markIcon", MARK_MAYBE)
+                    else -> {}
+                }
                 addNumberProperty("r", if (s.icon == Icon.STRONG) 11 else 9)
                 addNumberProperty("order", if (s.selected) 10 else s.icon.ordinal)
             }
@@ -347,6 +353,12 @@ class StreetMap(private val ctx: Context, private val interactive: Boolean) {
         if (!resumed) { mv.onResume(); resumed = true }
         // Last time there was no network: try the streets again.
         if (failed && style == null) { failed = false; map?.setStyle(Style.Builder().fromUri(styleUrl())) { styleReady(it) } }
+        // Loaded from the cache while offline, and online now: load again, so the tiles that were missing get fetched.
+        else if (style != null && loadedOffline && online()) {
+            loadedOffline = false
+            style = null
+            map?.setStyle(Style.Builder().fromUri(styleUrl())) { styleReady(it) }
+        }
     }
 
     fun pause() {
@@ -364,6 +376,20 @@ class StreetMap(private val ctx: Context, private val interactive: Boolean) {
     }
 
     // ---------------------------------------------------------------- pins
+
+    /** A pin's mark ("!" or "?") as a small bitmap, so it needs no font from the map server. */
+    private fun mark(text: String, color: Int): Bitmap {
+        val size = dp(18)
+        val bmp = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
+        val p = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            this.color = color
+            textSize = dp(14).toFloat()
+            typeface = Typeface.DEFAULT_BOLD
+            textAlign = Paint.Align.CENTER
+        }
+        Canvas(bmp).drawText(text, size / 2f, size / 2f - (p.descent() + p.ascent()) / 2, p)
+        return bmp
+    }
 
     /** Fill and ring of a pin: the band colour with a surface ring; "maybe" and muted the other way round. */
     private fun colors(i: Icon): Pair<Int, Int> = when (i) {
@@ -448,6 +474,8 @@ class StreetMap(private val ctx: Context, private val interactive: Boolean) {
         private const val L_COUNT = "bb-cluster-count"
         private const val L_SPOTS = "bb-spot-pins"
         private const val L_MARKS = "bb-spot-marks"
+        private const val MARK_STRONG = "bb-mark-strong"
+        private const val MARK_MAYBE = "bb-mark-maybe"
         private const val L_ME = "bb-me"
         private const val L_ME_HALO = "bb-me-halo"
         private const val SRC_AHEAD = "bb-ahead"
