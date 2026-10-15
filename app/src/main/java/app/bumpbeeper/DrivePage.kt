@@ -220,6 +220,7 @@ class DrivePage(private val a: MainActivity) : Page {
     private lateinit var recenterBtn: View
     private lateinit var speedo: FrameLayout
     private lateinit var roadPill: TextView
+    private lateinit var tomtom: TextView
     private lateinit var tripTime: TextView
     private lateinit var tripSub: TextView
     private lateinit var scoreRing: ScoreRingView
@@ -333,7 +334,7 @@ class DrivePage(private val a: MainActivity) : Page {
             elevation = Ui.dpf(a, 8f)
         }
         // The TomTom notice stays with the sign (their terms), small, under the speedometer.
-        val attribution = Ui.text(a, Ui.Type.CAPTION, Ui.DIM, value = SpeedLimitScoring.ATTRIBUTION)
+        tomtom = Ui.text(a, Ui.Type.CAPTION, Ui.DIM, value = SpeedLimitScoring.ATTRIBUTION).apply { visibility = View.GONE }
         roadPill = Ui.chip(a, "").apply { gravity = Gravity.CENTER; visibility = View.GONE; maxLines = 1 }
 
         // Sheet: Stop, the trip's time with distance and score, and the details button.
@@ -385,7 +386,8 @@ class DrivePage(private val a: MainActivity) : Page {
             addView(LinearLayout(a).apply {
                 orientation = LinearLayout.VERTICAL
                 addView(speedo, LinearLayout.LayoutParams(dp(104), dp(104)))
-                addView(attribution, wrap().apply { topMargin = dp(2) })
+                addView(tomtom, wrap().apply { topMargin = dp(2) })
+                addView(map.creditView(), wrap().apply { topMargin = dp(2) })   // the map data credit, with TomTom's
             }, FrameLayout.LayoutParams(FrameLayout.LayoutParams.WRAP_CONTENT, FrameLayout.LayoutParams.WRAP_CONTENT,
                 Gravity.START or Gravity.BOTTOM))
             addView(roadPill, FrameLayout.LayoutParams(FrameLayout.LayoutParams.WRAP_CONTENT, FrameLayout.LayoutParams.WRAP_CONTENT,
@@ -776,6 +778,7 @@ class DrivePage(private val a: MainActivity) : Page {
         val known = LiveLimitText.signText(LiveState.speedLimitKmh, LiveState.speedLimitAgeMs) != LiveLimitText.UNKNOWN
         val show = rec && (known || LiveLimitText.showSign(rec, on, Prefs.liveLimitsConsentVersion(a)))
         signBox.visibility = if (show) View.VISIBLE else View.GONE
+        tomtom.visibility = signBox.visibility   // TomTom's notice goes with their limit
         speed.setTextColor(0xFFFFFFFF.toInt())   // white on the dark speedometer; it turns red itself (speedoAlarm)
         if (!show) return
         val t = LiveLimitText.signText(LiveState.speedLimitKmh, LiveState.speedLimitAgeMs)
