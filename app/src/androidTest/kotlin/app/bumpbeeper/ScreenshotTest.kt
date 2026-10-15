@@ -87,10 +87,13 @@ class ScreenshotTest {
                 LiveState.setSpeedLimit(50, SystemClock.elapsedRealtime())
                 LiveState.spotsAhead = listOf(SpotAhead(demo, 120.0, Severity.STRONG, Confidence.FULL, WarnSound.STRONG),
                     SpotAhead(demo, 640.0, Severity.MILD, Confidence.FULL, WarnSound.MILD))
-                settle(1500)
-                waitForMap(scenario, MainActivity.TAB_DRIVE)
+                settle(1500)   // short: the GPS counts as live for 5 s after the demo's fix
                 shot(dir, "15-drive-streets-strong")
                 mapCheck(scenario, MainActivity.TAB_DRIVE, File(dir, "15-drive-streets-strong.txt"))
+                // The map engine's own log lines (requests for tiles and label fonts), to explain missing labels.
+                instr.uiAutomation.executeShellCommand("logcat -d -t 400 Mbgl:V Mbgl-HttpRequest:V Mbgl-FileSource:V *:S").use { fd ->
+                    android.os.ParcelFileDescriptor.AutoCloseInputStream(fd).use { File(dir, "map-log.txt").writeBytes(it.readBytes()) }
+                }
                 LiveState.spotsAhead = emptyList()
                 LiveState.recording = false
             } finally {
