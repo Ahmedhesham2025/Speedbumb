@@ -2,6 +2,9 @@ package app.bumpbeeper
 
 import android.graphics.drawable.GradientDrawable
 import android.content.res.ColorStateList
+import android.graphics.drawable.RippleDrawable
+import android.media.AudioManager
+import android.widget.HorizontalScrollView
 import android.os.Build
 import android.os.SystemClock
 import android.text.SpannableString
@@ -206,65 +209,74 @@ class DrivePage(private val a: MainActivity) : Page {
         if (a.lastLocation() == null) a.toast(a.getString(R.string.map_location_unknown)) else updateMe(centre = true)
     }
 
-    // Recording: the map follows you; the next bump on top; speed, limit and score in the sheet; Stop.
-    private lateinit var nextCard: LinearLayout
+    // Recording, the road view: the street map heading-up with your puck low, a dark banner on top with the next
+    // bump, round buttons on the end side, the speedometer at the start corner, the road's name, and a short sheet.
+    private lateinit var banner: LinearLayout
     private lateinit var nextGlyph: ImageView
     private lateinit var nextDist: TextView
     private lateinit var nextWhat: TextView
     private lateinit var nextBeeps: LinearLayout
-    private lateinit var nextSlow: TextView
     private lateinit var thenChip: TextView
-    private lateinit var edge: View
+    private lateinit var recenterBtn: View
+    private lateinit var speedo: FrameLayout
+    private lateinit var roadPill: TextView
+    private lateinit var tomtom: TextView
+    private lateinit var tripTime: TextView
+    private lateinit var tripSub: TextView
     private lateinit var scoreRing: ScoreRingView
     private lateinit var tripChip: TextView
     private lateinit var placeChip: TextView
-    private lateinit var detailsToggle: TextView
+    private lateinit var breakdownRow: LinearLayout
+    private lateinit var detailsToggle: View
     private lateinit var details: LinearLayout
     private var nearShown: Boolean? = null
+
+    /** The banner is dark in both themes (it sits on a light map by day). */
+    private val bannerBg = 0xFF1C2026.toInt()
+
+    /** A round floating button (48 dp, white surface, shadow) for the end-side column. */
+    private fun roundFab(res: Int, desc: String, onClick: () -> Unit): ImageView = Ui.fab(a, res, desc, onClick).apply {
+        background = RippleDrawable(ColorStateList.valueOf(Ui.RIPPLE), Ui.rounded(a, Ui.SURFACE, 24), Ui.rounded(a, 0xFFFFFFFF.toInt(), 24))
+    }
 
     private fun buildLive(): View {
         val o = Ui.Space.OVERLAY
 
-        // Top: the next bump (severity colour, distance, beeps), then the status chips.
-        nextGlyph = ImageView(a).apply {
-            scaleType = ImageView.ScaleType.CENTER
-            background = Ui.rounded(a, 0x38FFFFFF, 16)
-        }
-        nextDist = Ui.text(a, Ui.Type.NEXT, bold = true)
+        // Top: the banner, edge to edge, then the status chips and the bump after the next one.
+        nextGlyph = ImageView(a).apply { scaleType = ImageView.ScaleType.CENTER }
+        nextDist = Ui.text(a, Ui.Type.NEXT, 0xFFFFFFFF.toInt(), bold = true).apply { includeFontPadding = false }
         nextWhat = Ui.text(a, 15f, bold = true)
         nextBeeps = LinearLayout(a).apply {
             orientation = LinearLayout.HORIZONTAL
-            repeat(3) { i ->
-                addView(View(a), LinearLayout.LayoutParams(dp(8), dp(8)).apply { if (i > 0) marginStart = dp(4) })
-            }
+            repeat(3) { i -> addView(View(a), LinearLayout.LayoutParams(dp(8), dp(8)).apply { if (i > 0) marginStart = dp(4) }) }
         }
-        nextSlow = Ui.text(a, 16f, bold = true).apply { setPadding(0, dp(12), 0, 0) }
-        nextCard = LinearLayout(a).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(16), dp(14), dp(16), dp(14))
+        thenChip = Ui.text(a, 13f, 0xFFB8C0CC.toInt()).apply { visibility = View.GONE; setPadding(0, dp(2), 0, 0) }
+        // Recording: a small dot at the banner's end (green recording, amber waiting for GPS); the words are for TalkBack.
+        status = Ui.text(a, 14f, Ui.GREEN, bold = true, value = "●")
+        banner = LinearLayout(a).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setBackgroundColor(bannerBg)
             elevation = Ui.dpf(a, 6f)
-            visibility = View.GONE
+            addView(nextGlyph, LinearLayout.LayoutParams(dp(52), dp(52)))
             addView(LinearLayout(a).apply {
-                orientation = LinearLayout.HORIZONTAL
-                gravity = Gravity.CENTER_VERTICAL
-                addView(nextGlyph, LinearLayout.LayoutParams(dp(56), dp(56)))
-                addView(LinearLayout(a).apply {
-                    orientation = LinearLayout.VERTICAL
-                    setPadding(dp(14), 0, dp(8), 0)
-                    addView(nextDist)
-                    addView(nextWhat)
-                }, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+                orientation = LinearLayout.VERTICAL
+                setPadding(dp(14), 0, dp(8), 0)
+                addView(nextDist)
+                addView(nextWhat)
+                addView(thenChip)
+            }, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+            addView(LinearLayout(a).apply {
+                orientation = LinearLayout.VERTICAL
+                gravity = Gravity.END
+                addView(status)
                 addView(nextBeeps, LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT)
-                    .apply { gravity = Gravity.TOP; topMargin = dp(6) })
-            })
-            addView(nextSlow, full())
+                    .apply { topMargin = dp(8) })
+            }, LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT))
         }
-        thenChip = Ui.chip(a, "").apply { setTextColor(Ui.DIM); visibility = View.GONE }
-        status = Ui.chip(a, "")
         offline = Ui.chip(a, a.getString(R.string.drive_offline_banner), R.drawable.ic_cloud_off).apply {
             background = Ui.rounded(a, Ui.WARN_CONT, Ui.Shape.CHIP)
             setTextColor(Ui.WARN)
-            // The Arabic line is long: wrap to two lines rather than cut it.
             maxLines = 2
             ellipsize = null
             setPadding(paddingLeft, dp(6), paddingRight, dp(6))
@@ -272,111 +284,157 @@ class DrivePage(private val a: MainActivity) : Page {
         }
         val chips = LinearLayout(a).apply {
             orientation = LinearLayout.HORIZONTAL
-            addView(status, wrap())
-            addView(offline, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { marginStart = dp(8) })
+            setPadding(dp(o), dp(8), dp(o), 0)
+            addView(offline, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
         }
         val top = LinearLayout(a).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(o), dp(o), dp(o), 0)
-            addView(nextCard, full())
-            addView(thenChip, wrap().apply { topMargin = dp(8) })
-            addView(chips, full(8))
-        }
-        // A strong bump close by: a red edge around the whole screen, seen from the corner of the eye.
-        edge = View(a).apply {
-            background = GradientDrawable().apply { setColor(0); setStroke(dp(6), Ui.SEV_STRONG) }
-            visibility = View.GONE
+            addView(banner, full())
+            addView(chips, full())
         }
 
-        // Sheet: speed (+ the road's limit) and the score, chips, then False alarm and Stop.
-        speed = Ui.text(a, Ui.Type.SPEED, bold = true).apply { includeFontPadding = false }
+        // End side: sound, mark a bump here, recenter (only after you moved the map).
+        recenterBtn = roundFab(R.drawable.ic_navigation, a.getString(R.string.drive_recenter)) {
+            map.recenter()
+            recenterBtn.visibility = View.GONE
+        }.apply { visibility = View.GONE }
+        map.onPanned = { recenterBtn.visibility = View.VISIBLE }
+        val fabs = LinearLayout(a).apply {
+            orientation = LinearLayout.VERTICAL
+            for (v in listOf(
+                roundFab(R.drawable.ic_volume, a.getString(R.string.drive_sound)) { showVolume() },
+                roundFab(R.drawable.ic_report, a.getString(R.string.drive_report)) {}.apply {
+                    imageTintList = null   // the yellow triangle keeps its own colours
+                    setOnClickListener { reportBump(it) }
+                },
+                recenterBtn,
+            )) addView(v, LinearLayout.LayoutParams(dp(48), dp(48)).apply { bottomMargin = dp(12) })
+        }
+
+        // Start corner: the speedometer, the road's limit sign on its top end.
+        speed = Ui.text(a, 30f, 0xFFFFFFFF.toInt(), bold = true).apply { gravity = Gravity.CENTER; includeFontPadding = false }
         sign = SpeedSignView(a)
         signBox = LinearLayout(a).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER_HORIZONTAL
             visibility = View.GONE
-            addView(sign, LinearLayout.LayoutParams(dp(56), dp(56)))
-            addView(Ui.text(a, Ui.Type.CAPTION, Ui.DIM, value = SpeedLimitScoring.ATTRIBUTION).apply { gravity = Gravity.CENTER })
+            addView(sign, LinearLayout.LayoutParams(dp(40), dp(40)))
         }
-        scoreRing = ScoreRingView(a).apply { caption = a.getString(R.string.drive_score_short) }
-        val dash = LinearLayout(a).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            addView(speed, wrap())
-            addView(signBox, wrap().apply { marginStart = dp(14) })
-            addView(View(a), LinearLayout.LayoutParams(0, 1, 1f))
-            addView(scoreRing, LinearLayout.LayoutParams(dp(76), dp(76)))
+        speedo = FrameLayout(a).apply {
+            addView(LinearLayout(a).apply {
+                orientation = LinearLayout.VERTICAL
+                gravity = Gravity.CENTER
+                background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(bannerBg) }
+                elevation = Ui.dpf(a, 6f)
+                addView(speed)
+                addView(Ui.text(a, 11f, 0xFFB8C0CC.toInt(), value = a.getString(R.string.drive_kmh_unit)).apply { gravity = Gravity.CENTER })
+            }, FrameLayout.LayoutParams(dp(84), dp(84), Gravity.BOTTOM or Gravity.START))
+            addView(signBox, FrameLayout.LayoutParams(FrameLayout.LayoutParams.WRAP_CONTENT, FrameLayout.LayoutParams.WRAP_CONTENT,
+                Gravity.TOP or Gravity.END).apply { })
+            elevation = Ui.dpf(a, 8f)
         }
-        tripChip = Ui.chip(a, "", floating = false)
-        placeChip = Ui.chip(a, "", R.drawable.ic_phone, floating = false)
-        gps = Ui.chip(a, "", floating = false)
-        val meta = LinearLayout(a).apply {
-            orientation = LinearLayout.HORIZONTAL
-            addView(tripChip, wrap())
-            addView(placeChip, wrap().apply { marginStart = dp(6) })
-            addView(gps, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { marginStart = dp(6) })
-        }
-        muteBtn = Ui.button(a, a.getString(R.string.drive_false_alarm), Ui.Style.SECONDARY) { a.muteLast() }.apply {
-            minHeight = dp(Ui.Space.DRIVE_TARGET)
-            contentDescription = a.getString(R.string.drive_mute_last)
-        }
-        startBtn = Ui.bigPill(a, a.getString(R.string.drive_stop_short), R.drawable.ic_stop, Ui.ERR_CONT, Ui.ERR) { a.toggleRecording() }.apply {
-            contentDescription = a.getString(R.string.drive_stop_desc)
-        }
-        val actions = LinearLayout(a).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            addView(muteBtn, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 2f))
-            addView(startBtn, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 3f).apply { marginStart = dp(10) })
-        }
-        detailsToggle = Ui.text(a, 14f, Ui.PRIMARY, bold = true).apply {
+        // The TomTom notice stays with the sign (their terms), small, under the speedometer.
+        tomtom = Ui.text(a, Ui.Type.CAPTION, Ui.DIM, value = SpeedLimitScoring.ATTRIBUTION).apply { visibility = View.GONE }
+        roadPill = Ui.chip(a, "").apply { gravity = Gravity.CENTER; visibility = View.GONE; maxLines = 1 }
+
+        // Sheet: Stop, the trip's time with distance and score, and the details button.
+        tripTime = Ui.text(a, 28f, Ui.TEXT, bold = true).apply { gravity = Gravity.CENTER; includeFontPadding = false }
+        tripSub = Ui.text(a, 13f, Ui.DIM).apply { gravity = Gravity.CENTER }
+        startBtn = TextView(a).apply {
+            background = RippleDrawable(ColorStateList.valueOf(Ui.RIPPLE), Ui.rounded(a, Ui.ERR_CONT, 16), Ui.rounded(a, 0xFFFFFFFF.toInt(), 16))
+            setCompoundDrawablesRelative(Ui.icon(a, R.drawable.ic_stop, Ui.ERR, 26), null, null, null)
             gravity = Gravity.CENTER
-            minHeight = dp(44)
+            setPadding(dp(15), 0, 0, 0)
+            contentDescription = a.getString(R.string.drive_stop_desc)
+            isClickable = true
+            setOnClickListener { a.toggleRecording() }
+        }
+        detailsToggle = ImageView(a).apply {
+            setImageResource(R.drawable.ic_tune)
+            imageTintList = ColorStateList.valueOf(Ui.TEXT)
+            scaleType = ImageView.ScaleType.CENTER
+            background = RippleDrawable(ColorStateList.valueOf(Ui.RIPPLE), Ui.rounded(a, Ui.SURFACE2, 16), Ui.rounded(a, 0xFFFFFFFF.toInt(), 16))
+            contentDescription = a.getString(R.string.drive_details)
             isClickable = true
             setOnClickListener { toggleDetails() }
         }
+        val row = LinearLayout(a).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            addView(startBtn, LinearLayout.LayoutParams(dp(56), dp(56)))
+            addView(LinearLayout(a).apply {
+                orientation = LinearLayout.VERTICAL
+                gravity = Gravity.CENTER
+                addView(tripTime)
+                addView(tripSub)
+            }, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+            addView(detailsToggle, LinearLayout.LayoutParams(dp(56), dp(56)))
+        }
         details = buildDetails()
         val sheet = Ui.sheet(a).apply {
-            addView(dash, full())
-            addView(meta, full(10))
-            addView(buildLabelPanel(), full(10))
-            addView(actions, full(12))
-            addView(detailsToggle, full(4))
-            addView(details, full())
+            addView(buildLabelPanel(), full())
+            addView(row, full(4))
+            addView(details, full(12))
         }
         showDetails(Prefs.sp(a).getBoolean(KEY_DETAILS, false))
-        val me = Ui.fab(a, R.drawable.ic_my_location, a.getString(R.string.drive_me)) { centreOnMe() }
-        // The sheet scrolls when the trip details are open on a small screen; the map stays behind it.
+
+        // Bottom: speedometer (start) and the buttons (end) over the road's name, then the sheet.
+        val above = FrameLayout(a).apply {
+            setPadding(dp(o), 0, dp(o), dp(10))
+            addView(fabs, FrameLayout.LayoutParams(FrameLayout.LayoutParams.WRAP_CONTENT, FrameLayout.LayoutParams.WRAP_CONTENT,
+                Gravity.END or Gravity.BOTTOM).apply { bottomMargin = dp(36) })
+            addView(LinearLayout(a).apply {
+                orientation = LinearLayout.VERTICAL
+                addView(speedo, LinearLayout.LayoutParams(dp(104), dp(104)))
+                addView(tomtom, wrap().apply { topMargin = dp(2) })
+                addView(map.creditView(), wrap().apply { topMargin = dp(2) })   // the map data credit, with TomTom's
+            }, FrameLayout.LayoutParams(FrameLayout.LayoutParams.WRAP_CONTENT, FrameLayout.LayoutParams.WRAP_CONTENT,
+                Gravity.START or Gravity.BOTTOM))
+            // Above the credit lines (TomTom's and the map data's run along the bottom), so it never covers them.
+            addView(roadPill, FrameLayout.LayoutParams(FrameLayout.LayoutParams.WRAP_CONTENT, FrameLayout.LayoutParams.WRAP_CONTENT,
+                Gravity.CENTER_HORIZONTAL or Gravity.BOTTOM).apply { bottomMargin = dp(48) })
+        }
         val bottom = ScrollView(a).apply {
             isVerticalScrollBarEnabled = false
             addView(LinearLayout(a).apply {
                 orientation = LinearLayout.VERTICAL
-                addView(me, LinearLayout.LayoutParams(dp(48), dp(48)).apply {
-                    gravity = Gravity.END
-                    marginEnd = dp(o)
-                    bottomMargin = dp(o)
-                })
+                addView(above, full())
                 addView(sheet, full())
             })
         }
         return FrameLayout(a).apply {
-            addView(edge, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
             addView(top, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.WRAP_CONTENT, Gravity.TOP))
             addView(bottom, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.WRAP_CONTENT, Gravity.BOTTOM))
         }
     }
 
-    /** Folded away by default: this trip's numbers (what just happened and the jolt meter are in Diagnostics). */
+    /** Opened with the details button: where points went so far, False alarm, the trip's tiles. */
     private fun buildDetails(): LinearLayout {
         val col = LinearLayout(a).apply { orientation = LinearLayout.VERTICAL }
+        breakdownRow = LinearLayout(a).apply { orientation = LinearLayout.HORIZONTAL }
+        col.addView(HorizontalScrollView(a).apply { isHorizontalScrollBarEnabled = false; addView(breakdownRow) }, full())
+        muteBtn = Ui.button(a, a.getString(R.string.drive_false_alarm), Ui.Style.SECONDARY) { a.muteLast() }.apply {
+            minHeight = dp(Ui.Space.DRIVE_TARGET)
+            contentDescription = a.getString(R.string.drive_mute_last)
+            setCompoundDrawablesRelative(Ui.icon(a, R.drawable.ic_mute, Ui.TEXT), null, null, null)
+        }
+        col.addView(muteBtn, full(10))
+        scoreRing = ScoreRingView(a)   // kept for the score colour bands of the chips
+        tripChip = Ui.chip(a, "", floating = false)
+        placeChip = Ui.chip(a, "", R.drawable.ic_phone, floating = false)
+        gps = Ui.chip(a, "", floating = false)
+        col.addView(LinearLayout(a).apply {
+            orientation = LinearLayout.HORIZONTAL
+            addView(placeChip, wrap())
+            addView(gps, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { marginStart = dp(6) })
+        }, full(10))
         val tiles = listOf(
             R.string.drive_tile_distance, R.string.drive_tile_time, R.string.drive_tile_score,
             R.string.drive_tile_warnings, R.string.drive_tile_bumps, R.string.drive_tile_strong,
         ).map { Ui.tile(a, a.getString(it)) }
         tDist = tiles[0].second; tTime = tiles[1].second; tScore = tiles[2].second
         tWarn = tiles[3].second; tBumps = tiles[4].second; tHoles = tiles[5].second
-        col.addView(Ui.grid(a, tiles.map { it.first }, 3), full(4))
-
+        col.addView(Ui.grid(a, tiles.map { it.first }, 3), full(10))
         return col
     }
 
@@ -387,51 +445,105 @@ class DrivePage(private val a: MainActivity) : Page {
     }
 
     private fun showDetails(on: Boolean) {
-        detailsToggle.text = a.getString(if (on) R.string.drive_details_open else R.string.drive_details_closed)
         details.visibility = if (on) View.VISIBLE else View.GONE
+        detailsToggle.isSelected = on
     }
 
-    /** The next-bump card from the engine's spots ahead (copied numbers only), and the strong-bump state. */
+    /** The banner from the engine's spots ahead (copied numbers only), the strong state, and the red road. */
     private fun showNext(rec: Boolean) {
         val ahead = if (rec) NextBump.from(LiveState.spotsAhead) else emptyList()
         val n = ahead.firstOrNull()
-        nextCard.visibility = if (n == null) View.GONE else View.VISIBLE
         val then = ahead.getOrNull(1)
         thenChip.visibility = if (then == null) View.GONE else View.VISIBLE
         if (then != null) thenChip.text = a.getString(R.string.drive_next_then, sevName(then), distText(then.distanceM))
+        thenChip.setTextColor(if (n != null && NextBump.near(n)) 0xE6FFFFFF.toInt() else 0xFFB8C0CC.toInt())
         val near = n != null && NextBump.near(n)
-        edge.visibility = if (near) View.VISIBLE else View.GONE
-        if (n == null) return
-        val bg = if (n.maybe) Ui.SURFACE else Ui.sevColor(n.severity)
-        val ink = if (n.maybe) Ui.TEXT else Ui.sevInk(n.severity)
-        nextCard.background = GradientDrawable().apply {
-            setColor(bg)
-            cornerRadius = Ui.dpf(a, 22f)
+        val strongAhead = n?.takeIf { it.severity == Severity.STRONG && !it.maybe }
+        map.aheadStrong(strongAhead?.distanceM?.takeIf { it <= 400.0 })
+        if (n == null) {
+            // Slim: nothing ahead.
+            banner.setBackgroundColor(bannerBg)
+            banner.setPadding(dp(16), dp(10), dp(16), dp(10))
+            nextGlyph.visibility = View.GONE
+            nextDist.visibility = View.GONE
+            nextBeeps.visibility = View.GONE
+            nextWhat.text = a.getString(R.string.drive_no_bumps_ahead)
+            nextWhat.setTextColor(0xFFB8C0CC.toInt())
+            banner.contentDescription = nextWhat.text
+            nearShown = null
+            return
+        }
+        nextGlyph.visibility = View.VISIBLE
+        nextDist.visibility = View.VISIBLE
+        nextBeeps.visibility = View.VISIBLE
+        banner.setBackgroundColor(if (near) STRONG_BANNER else bannerBg)
+        val band = if (n.maybe) Ui.SEV_MAYBE else Ui.sevColor(n.severity)
+        val accent = if (near) 0xFFFFFFFF.toInt() else band
+        nextGlyph.setImageResource(if (near) R.drawable.ic_warning else R.drawable.ic_bump)
+        nextGlyph.imageTintList = ColorStateList.valueOf(if (near) Ui.SEV_STRONG else if (n.maybe) Ui.SEV_MAYBE else Ui.sevInk(n.severity))
+        nextGlyph.background = GradientDrawable().apply {
+            cornerRadius = Ui.dpf(a, 14f)
+            setColor(if (near) 0xFFFFFFFF.toInt() else if (n.maybe) bannerBg else band)
             if (n.maybe) setStroke(dp(2), Ui.SEV_MAYBE, Ui.dpf(a, 6f), Ui.dpf(a, 4f))
         }
-        nextGlyph.setImageResource(if (near) R.drawable.ic_warning else R.drawable.ic_bump)
-        nextGlyph.imageTintList = ColorStateList.valueOf(ink)
         nextDist.text = distText(n.distanceM)
-        nextDist.setTextColor(ink)
         nextDist.setTextSize(TypedValue.COMPLEX_UNIT_SP, if (near) Ui.Type.NEXT_NEAR else Ui.Type.NEXT)
-        nextWhat.text = sevName(n)
-        nextWhat.setTextColor(ink)
+        val road = map.roadName(Ui.locale(a).language == "ar")
+        nextWhat.text = if (near) a.getString(R.string.drive_slow_to, EngineConfig().approachFastKmh.toInt()) + " · " + sevName(n)
+            else if (road != null) sevName(n) + " · " + road else sevName(n)
+        nextWhat.setTextColor(accent)
         for (i in 0 until nextBeeps.childCount) {
             nextBeeps.getChildAt(i).background = GradientDrawable().apply {
                 shape = GradientDrawable.OVAL
-                setColor(if (i < n.beeps) ink else (ink and 0x00FFFFFF) or 0x4D000000)
+                setColor(if (i < n.beeps) accent else 0x4DFFFFFF)
             }
         }
         nextBeeps.contentDescription = a.resources.getQuantityString(R.plurals.drive_next_beeps, n.beeps, n.beeps)
-        nextCard.contentDescription = nextWhat.text.toString() + ", " + nextDist.text
-        nextSlow.visibility = if (near) View.VISIBLE else View.GONE
-        if (near) {
-            nextSlow.text = a.getString(R.string.drive_slow_to, EngineConfig().approachFastKmh.toInt())
-            nextSlow.setTextColor(ink)
-        }
+        banner.contentDescription = nextWhat.text.toString() + ", " + nextDist.text
         if (nearShown != near) {
             nearShown = near
-            nextCard.setPadding(dp(16), dp(if (near) 18 else 14), dp(16), dp(if (near) 18 else 14))
+            banner.setPadding(dp(16), dp(if (near) 16 else 12), dp(16), dp(if (near) 16 else 12))
+        }
+    }
+
+    /** Red when over the road's limit, or too fast for a strong bump close ahead. */
+    private fun speedoAlarm(): Boolean {
+        val n = NextBump.from(LiveState.spotsAhead).firstOrNull()
+        val tooFast = n != null && NextBump.near(n) && LiveState.speedKmh > EngineConfig().approachFastKmh
+        return LiveState.overLimit >= 1 || tooFast
+    }
+
+    /** The phone's volume panel for the warnings' sound (alarm volume with Loud beeps, else media). */
+    private fun showVolume() {
+        val am = a.getSystemService(android.content.Context.AUDIO_SERVICE) as AudioManager
+        am.adjustStreamVolume(if (Prefs.loud(a)) AudioManager.STREAM_ALARM else AudioManager.STREAM_MUSIC,
+            AudioManager.ADJUST_SAME, AudioManager.FLAG_SHOW_UI)
+    }
+
+    /** "Bump here": a manual label at this spot (label mode recordings keep it; otherwise it says where to turn it on). */
+    private fun reportBump(v: View) {
+        v.performHapticFeedback(if (Build.VERSION.SDK_INT >= 30) HapticFeedbackConstants.CONFIRM else HapticFeedbackConstants.LONG_PRESS)
+        val ok = BumpService.label(a, Labels.BUMP)
+        Toast.makeText(a, a.getString(if (ok) R.string.drive_report_saved else R.string.drive_report_label_off), Toast.LENGTH_SHORT).show()
+        if (ok) updateLabelStatus()
+    }
+
+    /** Points lost so far, as chips ("Speeding −6"); none while the trip is too short. */
+    private fun showBreakdown() {
+        breakdownRow.removeAllViews()
+        val bd = LiveState.scoreBreakdown ?: return
+        for (item in bd.items.filter { it.points > 0 }) {
+            val name = a.getString(when (item.category) {
+                ScoreCategory.SPEEDING -> R.string.event_speeding
+                ScoreCategory.HARSH_BRAKING -> R.string.trips_fact_braking
+                ScoreCategory.HARSH_ACCEL -> R.string.trips_fact_accel
+                ScoreCategory.CORNERING -> R.string.trips_fact_cornering
+                ScoreCategory.SWERVES -> R.string.trips_fact_swerves
+                ScoreCategory.PHONE_USE -> R.string.trips_fact_phone
+                ScoreCategory.BUMPS_FAST -> R.string.trips_fact_bumps_fast
+            })
+            breakdownRow.addView(Ui.chip(a, name + " " + Ui.ltr("−${item.points}"), dot = Ui.ERR, floating = false),
+                wrap().apply { marginEnd = dp(6) })
         }
     }
 
@@ -445,16 +557,6 @@ class DrivePage(private val a: MainActivity) : Page {
     private fun distText(m: Double): String {
         val (v, km) = NextBump.distanceText(m)
         return a.getString(if (km) R.string.map_dist_km else R.string.map_dist_m, v)
-    }
-
-    /** "47 km/h" with the unit smaller than the number, in either language. */
-    private fun speedText(kmh: String): CharSequence {
-        val full = a.getString(R.string.drive_speed_kmh, kmh)
-        val at = full.indexOf(kmh)
-        return SpannableString(full).apply {
-            if (at > 0) setSpan(RelativeSizeSpan(0.3f), 0, at, 0)
-            if (at >= 0 && at + kmh.length < full.length) setSpan(RelativeSizeSpan(0.3f), at + kmh.length, full.length, 0)
-        }
     }
 
     private fun placeName(): String = when (Prefs.placement(a)) {
@@ -575,12 +677,15 @@ class DrivePage(private val a: MainActivity) : Page {
         if (wasRecording != rec) {
             wasRecording = rec
             map.radiusM = if (rec) 400.0 else 600.0
+            map.puckLow = rec   // driving: more road ahead
+            map.offlineChipTopDp = if (rec) 140 else 64
+            if (rec) { map.recenter(); recenterBtn.visibility = View.GONE }
             readyView.visibility = if (rec) View.GONE else View.VISIBLE
             liveView.visibility = if (rec) View.VISIBLE else View.GONE
             if (!rec) loadMap()   // a trip just ended: its new bumps
         }
         val gpsOk = rec && LiveState.lastFixAtMs > 0 && SystemClock.elapsedRealtime() - LiveState.lastFixAtMs < 5000
-        status.text = when {
+        status.contentDescription = when {
             !rec -> a.getString(R.string.drive_status_stopped)
             gpsOk -> a.getString(R.string.drive_status_recording)
             else -> a.getString(R.string.drive_status_waiting_gps)
@@ -599,13 +704,23 @@ class DrivePage(private val a: MainActivity) : Page {
         ticks++
         if (!rec || ticks % 4 == 0) offline.visibility = if (rec && OfflineBanner.show(a)) View.VISIBLE else View.GONE
 
-        speed.text = if (gpsOk) speedText(String.format(Locale.US, "%.0f", LiveState.speedKmh))
-            else if (rec) speedText("–") else ""
+        speed.text = if (gpsOk) String.format(Locale.US, "%.0f", LiveState.speedKmh) else if (rec) "–" else ""
         showNext(rec)
+        (speed.parent as? View)?.background = GradientDrawable().apply {
+            shape = GradientDrawable.OVAL
+            setColor(if (rec && gpsOk && speedoAlarm()) Ui.SEV_STRONG else bannerBg)
+        }
         val sc = LiveState.liveScore
         if (scoreRing.score != sc) scoreRing.score = sc
-        tripChip.text = a.getString(R.string.drive_km, String.format(Locale.US, "%.1f", LiveState.tripKm)) + " · " +
-            Ui.duration(LiveState.tripMovingS.toLong())
+        val km = a.getString(R.string.drive_km, String.format(Locale.US, "%.1f", LiveState.tripKm))
+        tripTime.text = Ui.duration(LiveState.tripMovingS.toLong())
+        tripSub.text = a.getString(R.string.drive_km_score, km, if (sc >= 0) sc.toString() else "–")
+        if (ticks % 4 == 0) {
+            val road = if (rec) map.roadName(Ui.locale(a).language == "ar") else null
+            roadPill.text = road ?: ""
+            roadPill.visibility = if (road == null) View.GONE else View.VISIBLE
+            if (details.visibility == View.VISIBLE) showBreakdown()
+        }
         val place = placeName()
         if (placeChip.text.toString() != place) placeChip.text = place
         placeChip.visibility = if (place.isEmpty()) View.GONE else View.VISIBLE
@@ -641,9 +756,7 @@ class DrivePage(private val a: MainActivity) : Page {
         labelLater.visibility = if (labelsPending) View.VISIBLE else View.GONE
         if (labelsLive) updateLabelStatus()
         // While a passenger labels, the trip details stay folded away: the buttons sit right above Stop.
-        detailsToggle.visibility = if (labelsLive) View.GONE else View.VISIBLE
-        if (labelsLive) details.visibility = View.GONE
-        else if (details.visibility == View.GONE && Prefs.sp(a).getBoolean(KEY_DETAILS, false)) details.visibility = View.VISIBLE
+        if (labelsLive && details.visibility == View.VISIBLE) details.visibility = View.GONE
 
         // No distractions while driving: the banner waits until recording stops.
         val up = if (rec) null else a.pendingUpdate()
@@ -663,9 +776,11 @@ class DrivePage(private val a: MainActivity) : Page {
     private fun showSign(rec: Boolean, gpsOk: Boolean) {
         // With the shared map unanswered nothing is looked up, so a sign stuck at "– –" would only mislead.
         val on = Prefs.liveLimits(a) && Prefs.syncChoice(a) != Prefs.SYNC_UNSET
-        val show = LiveLimitText.showSign(rec, on, Prefs.liveLimitsConsentVersion(a))
+        val known = LiveLimitText.signText(LiveState.speedLimitKmh, LiveState.speedLimitAgeMs) != LiveLimitText.UNKNOWN
+        val show = rec && (known || LiveLimitText.showSign(rec, on, Prefs.liveLimitsConsentVersion(a)))
         signBox.visibility = if (show) View.VISIBLE else View.GONE
-        speed.setTextColor(if (show && gpsOk) LiveLimitText.speedColor(LiveState.overLimit) else Ui.TEXT)
+        tomtom.visibility = signBox.visibility   // TomTom's notice goes with their limit
+        speed.setTextColor(0xFFFFFFFF.toInt())   // white on the dark speedometer; it turns red itself (speedoAlarm)
         if (!show) return
         val t = LiveLimitText.signText(LiveState.speedLimitKmh, LiveState.speedLimitAgeMs)
         sign.value = t
@@ -681,6 +796,8 @@ class DrivePage(private val a: MainActivity) : Page {
 
     companion object {
         private const val KEY_DETAILS = "ui_drive_details"
+        /** The strong-bump banner: one deep red in both themes, so the white text stays readable (about 5.6:1). */
+        private const val STRONG_BANNER = 0xFFC62828.toInt()
         private const val KEY_HIDE_AUTO = "ui_hide_auto_tip"
     }
 }

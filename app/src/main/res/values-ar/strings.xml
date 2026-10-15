@@ -83,6 +83,15 @@
         <item quantity="other">%1$d صفارة</item>
     </plurals>
     <string name="drive_slow_to">هدّي لـ %1$d كم/س</string>
+    <string name="drive_no_bumps_ahead">مفيش مطبّات قدّام</string>
+    <string name="drive_sound">الصوت</string>
+    <string name="drive_report">علّم مطبّ هنا</string>
+    <string name="drive_report_saved">اتعلّم: مطبّ هنا</string>
+    <string name="drive_report_label_off">العلامات بتتسجّل في وضع التصنيف (الإعدادات، اختبار الطريق)</string>
+    <string name="drive_recenter">رجّع الخريطة لمكاني</string>
+    <string name="drive_kmh_unit">كم/س</string>
+    <string name="drive_details">تفاصيل الرحلة</string>
+    <string name="drive_km_score">%1$s · الدرجة %2$s</string>
     <string name="settings_title">الإعدادات</string>
     <string name="settings_section_warnings">التحذيرات</string>
     <string name="settings_warn_before">حذّرني قبل المطبّ بـ %1$d ثواني</string>
