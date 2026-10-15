@@ -159,6 +159,8 @@ class DrivePage(private val a: MainActivity) : Page {
                 marginEnd = dp(o)
                 bottomMargin = dp(o)
             })
+            addView(map.creditView(), LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT)
+                .apply { marginStart = dp(o); bottomMargin = dp(6) })   // the map data credit, above the sheet
             addView(sheet, full())
         }
 

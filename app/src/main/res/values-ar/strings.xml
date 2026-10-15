@@ -200,6 +200,7 @@
     <string name="map_spot_mute">اكتم</string>
     <string name="map_spot_maps">الخرائط</string>
     <string name="map_rings">دواير كل %1$s · الشمال ↑</string>
+    <string name="map_offline_chip">خريطة بدون إنترنت</string>
     <string name="map_zoom_out">"−  بعّد"</string>
     <string name="map_zoom_in">"+  قرّب"</string>
     <string name="map_me">"◎  أنا"</string>
