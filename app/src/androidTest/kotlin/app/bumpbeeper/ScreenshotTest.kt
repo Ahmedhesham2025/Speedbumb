@@ -91,8 +91,10 @@ class ScreenshotTest {
                 shot(dir, "15-drive-streets-strong")
                 mapCheck(scenario, MainActivity.TAB_DRIVE, File(dir, "15-drive-streets-strong.txt"))
                 // The map engine's own log lines (requests for tiles and label fonts), to explain missing labels.
-                instr.uiAutomation.executeShellCommand("logcat -d -t 400 Mbgl:V Mbgl-HttpRequest:V Mbgl-FileSource:V *:S").use { fd ->
-                    android.os.ParcelFileDescriptor.AutoCloseInputStream(fd).use { File(dir, "map-log.txt").writeBytes(it.readBytes()) }
+                instr.uiAutomation.executeShellCommand("logcat -d -t 5000").use { fd ->
+                    val all = android.os.ParcelFileDescriptor.AutoCloseInputStream(fd).use { String(it.readBytes()) }
+                    val keep = Regex("(?i)mbgl|maplibre|mln|glyph|font|openfreemap|http")
+                    File(dir, "map-log.txt").writeText(all.lineSequence().filter { keep.containsMatchIn(it) }.toList().takeLast(300).joinToString(System.lineSeparator()))
                 }
                 LiveState.spotsAhead = emptyList()
                 LiveState.recording = false
