@@ -1,0 +1,1 @@
+streets=true available=true bumps=13 centre=30.05080000000002,31.237761538461513 radius=400.0 style=true failed=false spots=13 me=null camera=[30.05080000000002, 31.23776153846154, 15.977552487809513] drawn=1
