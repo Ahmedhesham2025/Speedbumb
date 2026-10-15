@@ -454,7 +454,7 @@ class DrivePage(private val a: MainActivity) : Page {
         val then = ahead.getOrNull(1)
         thenChip.visibility = if (then == null) View.GONE else View.VISIBLE
         if (then != null) thenChip.text = a.getString(R.string.drive_next_then, sevName(then), distText(then.distanceM))
-        if (near) thenChip.setTextColor(0xE6FFFFFF.toInt()) else thenChip.setTextColor(0xFFB8C0CC.toInt())
+        thenChip.setTextColor(if (n != null && NextBump.near(n)) 0xE6FFFFFF.toInt() else 0xFFB8C0CC.toInt())
         val near = n != null && NextBump.near(n)
         val strongAhead = n?.takeIf { it.severity == Severity.STRONG && !it.maybe }
         map.aheadStrong(strongAhead?.distanceM?.takeIf { it <= 400.0 })
