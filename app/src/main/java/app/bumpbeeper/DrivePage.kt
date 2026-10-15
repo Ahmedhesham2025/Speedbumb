@@ -474,7 +474,7 @@ class DrivePage(private val a: MainActivity) : Page {
         nextGlyph.visibility = View.VISIBLE
         nextDist.visibility = View.VISIBLE
         nextBeeps.visibility = View.VISIBLE
-        banner.setBackgroundColor(if (near) Ui.SEV_STRONG else bannerBg)
+        banner.setBackgroundColor(if (near) STRONG_BANNER else bannerBg)
         val band = if (n.maybe) Ui.SEV_MAYBE else Ui.sevColor(n.severity)
         val accent = if (near) 0xFFFFFFFF.toInt() else band
         nextGlyph.setImageResource(if (near) R.drawable.ic_warning else R.drawable.ic_bump)
@@ -794,6 +794,8 @@ class DrivePage(private val a: MainActivity) : Page {
 
     companion object {
         private const val KEY_DETAILS = "ui_drive_details"
+        /** The strong-bump banner: one deep red in both themes, so the white text stays readable (about 5.6:1). */
+        private const val STRONG_BANNER = 0xFFC62828.toInt()
         private const val KEY_HIDE_AUTO = "ui_hide_auto_tip"
     }
 }
