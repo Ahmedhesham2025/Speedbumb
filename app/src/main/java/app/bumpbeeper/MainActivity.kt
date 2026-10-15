@@ -45,6 +45,10 @@ interface Page {
     fun onShow() {}
     /** Called 4 times a second while the tab is visible. */
     fun tick() {}
+    /** The tab was left or the app went to the background (the street map stops drawing). */
+    fun onHide() {}
+    /** The activity is going away (the street map frees its memory). */
+    fun onDestroy() {}
 }
 
 /**
@@ -147,6 +151,7 @@ class MainActivity : Activity() {
     }
 
     override fun onPause() {
+        pages.getOrNull(current)?.onHide()
         ui.removeCallbacks(ticker)
         super.onPause()
     }
@@ -159,6 +164,7 @@ class MainActivity : Activity() {
         trainingDialog?.dismiss()
         closeAutoDialog()
         (pages[TAB_SETTINGS] as? SettingsPage)?.release()
+        pages.forEach { it?.onDestroy() }
         super.onDestroy()
     }
 
@@ -216,6 +222,7 @@ class MainActivity : Activity() {
             else -> SettingsPage(this)
         }.also { pages[tab] = it }
         if (current != tab) {
+            pages.getOrNull(current)?.onHide()
             content.removeAllViews()
             content.addView(page.view)
             current = tab
