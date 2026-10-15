@@ -1,0 +1,300 @@
+10-15 07:57:16.219  4437  4532 D cevx    : Starting download: https://c.tenor.com/t_zIg_K72JgAAAAk/happy-smile.gif
+10-15 07:57:16.219  4437  4532 V cevx    : Is http uri, downloading (uri: https://c.tenor.com/t_zIg_K72JgAAAAk/happy-smile.gif)
+10-15 07:57:16.241  4437  4558 D cevx    : Starting download: https://c.tenor.com/ZG6-t5u8DDgAAAAk/hey-hello.gif
+10-15 07:57:16.241  4437  4558 V cevx    : Is http uri, downloading (uri: https://c.tenor.com/ZG6-t5u8DDgAAAAk/hey-hello.gif)
+10-15 07:57:16.245  4437  4888 D cevx    : Starting download: https://c.tenor.com/Zz5yHlMacSAAAAAk/hey-hello.gif
+10-15 07:57:16.245  4437  4888 V cevx    : Is http uri, downloading (uri: https://c.tenor.com/Zz5yHlMacSAAAAAk/hey-hello.gif)
+10-15 07:57:16.267  4437  4532 D cevx    : Starting download: https://c.tenor.com/3jT6INWMG9IAAAAk/sweet-dreams-goodnight.gif
+10-15 07:57:16.267  4437  4532 V cevx    : Is http uri, downloading (uri: https://c.tenor.com/3jT6INWMG9IAAAAk/sweet-dreams-goodnight.gif)
+10-15 07:57:16.273  4437  4558 D cevx    : Starting download: https://c.tenor.com/4_JoGgHyajMAAAAk/sweet-dreams-goodnight.gif
+10-15 07:57:16.273  4437  4558 V cevx    : Is http uri, downloading (uri: https://c.tenor.com/4_JoGgHyajMAAAAk/sweet-dreams-goodnight.gif)
+10-15 07:57:16.284  4437  4888 D cevx    : Starting download: https://c.tenor.com/uP5K0bDKVmQAAAAk/night-night-goodnight.gif
+10-15 07:57:16.284  4437  4888 V cevx    : Is http uri, downloading (uri: https://c.tenor.com/uP5K0bDKVmQAAAAk/night-night-goodnight.gif)
+10-15 07:57:16.289  4437  4532 D cevx    : Starting download: https://c.tenor.com/TNJpGq2142QAAAAk/snow-globe-travel.gif
+10-15 07:57:16.289  4437  4532 V cevx    : Is http uri, downloading (uri: https://c.tenor.com/TNJpGq2142QAAAAk/snow-globe-travel.gif)
+10-15 07:57:16.299  4437  4558 D cevx    : Starting download: https://c.tenor.com/_rP7fvDOV2AAAAAk/the-sims-the-sims4.gif
+10-15 07:57:16.299  4437  4558 V cevx    : Is http uri, downloading (uri: https://c.tenor.com/_rP7fvDOV2AAAAAk/the-sims-the-sims4.gif)
+10-15 07:57:16.303  4437  4888 D cevx    : Starting download: https://c.tenor.com/OLs6cg5675cAAAAk/im-thankful-for-happy-thanksgiving.gif
+10-15 07:57:16.303  4437  4888 V cevx    : Is http uri, downloading (uri: https://c.tenor.com/OLs6cg5675cAAAAk/im-thankful-for-happy-thanksgiving.gif)
+10-15 07:57:16.326  4437  4532 D cevx    : Starting download: https://c.tenor.com/QPjF0-82sgQAAAAk/happy-hanukkah-menorah.gif
+10-15 07:57:16.326  4437  4532 V cevx    : Is http uri, downloading (uri: https://c.tenor.com/QPjF0-82sgQAAAAk/happy-hanukkah-menorah.gif)
+10-15 07:57:16.328  4437  4558 D cevx    : Starting download: https://c.tenor.com/o8Fg8s-74XUAAAAk/cheers-merry-christmas-eve.gif
+10-15 07:57:16.328  4437  4558 V cevx    : Is http uri, downloading (uri: https://c.tenor.com/o8Fg8s-74XUAAAAk/cheers-merry-christmas-eve.gif)
+10-15 07:57:16.359  4437  4888 D cevx    : Starting download: https://c.tenor.com/pLKpB7goR7wAAAAk/merry-christmas-dancing.gif
+10-15 07:57:16.359  4437  4888 V cevx    : Is http uri, downloading (uri: https://c.tenor.com/pLKpB7goR7wAAAAk/merry-christmas-dancing.gif)
+10-15 07:57:16.361  4437  4558 D cevx    : Starting download: https://c.tenor.com/Z_ddd7u8q0cAAAAk/merry-christmas-dancing.gif
+10-15 07:57:16.361  4437  4558 V cevx    : Is http uri, downloading (uri: https://c.tenor.com/Z_ddd7u8q0cAAAAk/merry-christmas-dancing.gif)
+10-15 07:57:16.379  4437  4532 D cevx    : Starting download: https://c.tenor.com/t784Fy203h4AAAAk/merry-christmas-snow.gif
+10-15 07:57:16.379  4437  4532 V cevx    : Is http uri, downloading (uri: https://c.tenor.com/t784Fy203h4AAAAk/merry-christmas-snow.gif)
+10-15 07:57:16.392  4437  4558 D cevx    : Starting download: https://c.tenor.com/BqjGdBESSY0AAAAk/happy-thanksgiving-thanksgiving.gif
+10-15 07:57:16.392  4437  4558 V cevx    : Is http uri, downloading (uri: https://c.tenor.com/BqjGdBESSY0AAAAk/happy-thanksgiving-thanksgiving.gif)
+10-15 07:57:16.396  4437  4888 D cevx    : Starting download: https://c.tenor.com/1Kqhr0EyU2cAAAAk/thanksgiving-happy-thanksgiving.gif
+10-15 07:57:16.396  4437  4888 V cevx    : Is http uri, downloading (uri: https://c.tenor.com/1Kqhr0EyU2cAAAAk/thanksgiving-happy-thanksgiving.gif)
+10-15 07:57:16.411  4437  4532 D cevx    : Starting download: https://c.tenor.com/2cqZUvCW_HIAAAAk/happy-thankgiving-thanksgiving-dinner.gif
+10-15 07:57:16.411  4437  4532 V cevx    : Is http uri, downloading (uri: https://c.tenor.com/2cqZUvCW_HIAAAAk/happy-thankgiving-thanksgiving-dinner.gif)
+10-15 07:57:16.422  4437  4558 D cevx    : Starting download: https://c.tenor.com/dX8a-NhL_48AAAAk/food-coma-youtube.gif
+10-15 07:57:16.422  4437  4558 V cevx    : Is http uri, downloading (uri: https://c.tenor.com/dX8a-NhL_48AAAAk/food-coma-youtube.gif)
+10-15 07:57:16.430  4437  4888 D cevx    : Starting download: https://c.tenor.com/-cyCXLhWsLMAAAAk/dance-dancing.gif
+10-15 07:57:16.430  4437  4888 V cevx    : Is http uri, downloading (uri: https://c.tenor.com/-cyCXLhWsLMAAAAk/dance-dancing.gif)
+10-15 07:57:16.442  4437  4532 D cevx    : Starting download: https://c.tenor.com/uO7brRaIL1sAAAAk/happy-holidays-ho-ho-ho.gif
+10-15 07:57:16.442  4437  4532 V cevx    : Is http uri, downloading (uri: https://c.tenor.com/uO7brRaIL1sAAAAk/happy-holidays-ho-ho-ho.gif)
+10-15 07:57:16.443  4437  4558 D cevx    : Starting download: https://c.tenor.com/-bogOnQa-HgAAAAk/hanukkah-happy-hanukkah.gif
+10-15 07:57:16.443  4437  4558 V cevx    : Is http uri, downloading (uri: https://c.tenor.com/-bogOnQa-HgAAAAk/hanukkah-happy-hanukkah.gif)
+10-15 07:57:16.460  4437  4888 D cevx    : Starting download: https://c.tenor.com/onl8zh2_RVQAAAAk/hanukkah-happy-hanukkah.gif
+10-15 07:57:16.460  4437  4888 V cevx    : Is http uri, downloading (uri: https://c.tenor.com/onl8zh2_RVQAAAAk/hanukkah-happy-hanukkah.gif)
+10-15 07:57:16.461  4437  4558 D cevx    : Starting download: https://c.tenor.com/LlGR2YC8B58AAAAk/happy-holidays-ho-ho-ho.gif
+10-15 07:57:16.461  4437  4558 V cevx    : Is http uri, downloading (uri: https://c.tenor.com/LlGR2YC8B58AAAAk/happy-holidays-ho-ho-ho.gif)
+10-15 07:57:16.489  4437  4532 D cevx    : Starting download: https://c.tenor.com/qBBLYAzWTEoAAAAk/hanukkah-chanukah.gif
+10-15 07:57:16.489  4437  4532 V cevx    : Is http uri, downloading (uri: https://c.tenor.com/qBBLYAzWTEoAAAAk/hanukkah-chanukah.gif)
+10-15 07:57:16.489  4437  4888 D cevx    : Starting download: https://c.tenor.com/pw9VD9_S748AAAAk/hanukkah-chanukah.gif
+10-15 07:57:16.489  4437  4888 V cevx    : Is http uri, downloading (uri: https://c.tenor.com/pw9VD9_S748AAAAk/hanukkah-chanukah.gif)
+10-15 07:57:16.508  4437  4558 D cevx    : Starting download: https://c.tenor.com/LFQAwoWiLJ8AAAAk/merry-xmas-xmas.gif
+10-15 07:57:16.508  4437  4558 V cevx    : Is http uri, downloading (uri: https://c.tenor.com/LFQAwoWiLJ8AAAAk/merry-xmas-xmas.gif)
+10-15 07:57:16.511  4437  4532 D cevx    : Starting download: https://c.tenor.com/T1c0HuuixLYAAAAk/hohoho-santa.gif
+10-15 07:57:16.511  4437  4532 V cevx    : Is http uri, downloading (uri: https://c.tenor.com/T1c0HuuixLYAAAAk/hohoho-santa.gif)
+10-15 07:57:16.529  4437  4888 D cevx    : Starting download: https://c.tenor.com/p_Fc6sCPEn4AAAAk/waving-molang.gif
+10-15 07:57:16.529  4437  4888 V cevx    : Is http uri, downloading (uri: https://c.tenor.com/p_Fc6sCPEn4AAAAk/waving-molang.gif)
+10-15 07:57:16.547  4437  4558 D cevx    : Starting download: https://c.tenor.com/TvBQajdvdtoAAAAk/animals-decorating-molang.gif
+10-15 07:57:16.547  4437  4558 V cevx    : Is http uri, downloading (uri: https://c.tenor.com/TvBQajdvdtoAAAAk/animals-decorating-molang.gif)
+10-15 07:57:16.565  4437  4532 D cevx    : Starting download: https://c.tenor.com/8-GZs9c2eNoAAAAk/merry-christmas-molang.gif
+10-15 07:57:16.565  4437  4532 V cevx    : Is http uri, downloading (uri: https://c.tenor.com/8-GZs9c2eNoAAAAk/merry-christmas-molang.gif)
+10-15 07:57:16.596  4437  4888 D cevx    : Starting download: https://c.tenor.com/fwRmoC3PbKgAAAAk/angkukuehgirl-angkukuehgirlandfriends.gif
+10-15 07:57:16.596  4437  4888 V cevx    : Is http uri, downloading (uri: https://c.tenor.com/fwRmoC3PbKgAAAAk/angkukuehgirl-angkukuehgirlandfriends.gif)
+10-15 07:57:16.597  4437  4532 D cevx    : Starting download: https://c.tenor.com/bhXlfP1FsGcAAAAk/new-years-eve-happy-new-year.gif
+10-15 07:57:16.597  4437  4532 V cevx    : Is http uri, downloading (uri: https://c.tenor.com/bhXlfP1FsGcAAAAk/new-years-eve-happy-new-year.gif)
+10-15 07:57:16.631  4437  4558 D cevx    : Starting download: https://c.tenor.com/X2Gu15rbDjQAAAAk/minidino-hotchocolate.gif
+10-15 07:57:16.631  4437  4558 V cevx    : Is http uri, downloading (uri: https://c.tenor.com/X2Gu15rbDjQAAAAk/minidino-hotchocolate.gif)
+10-15 07:57:16.635  4437  4532 D cevx    : Starting download: https://c.tenor.com/fRjOETVKCfEAAAAk/bento-box-savoring-food.gif
+10-15 07:57:16.635  4437  4532 V cevx    : Is http uri, downloading (uri: https://c.tenor.com/fRjOETVKCfEAAAAk/bento-box-savoring-food.gif)
+10-15 07:57:16.658  4437  4888 D cevx    : Starting download: https://c.tenor.com/kRtFzkoU9R4AAAAk/snowboarder-snowboard-lovers.gif
+10-15 07:57:16.658  4437  4888 V cevx    : Is http uri, downloading (uri: https://c.tenor.com/kRtFzkoU9R4AAAAk/snowboarder-snowboard-lovers.gif)
+10-15 07:57:16.664  4437  4532 D cevx    : Starting download: https://c.tenor.com/JhTc0KeSZ5QAAAAk/snowboards-snowboard-lovers.gif
+10-15 07:57:16.664  4437  4532 V cevx    : Is http uri, downloading (uri: https://c.tenor.com/JhTc0KeSZ5QAAAAk/snowboards-snowboard-lovers.gif)
+10-15 07:57:16.685  4437  4558 D cevx    : Starting download: https://c.tenor.com/PUFHgVq1fjcAAAAk/im-cold-yellow-shivering-line-effects-around-im-cold-in-blue-letters.gif
+10-15 07:57:16.685  4437  4558 V cevx    : Is http uri, downloading (uri: https://c.tenor.com/PUFHgVq1fjcAAAAk/im-cold-yellow-shivering-line-effects-around-im-cold-in-blue-letters.gif)
+10-15 07:57:16.689  4437  4532 D cevx    : Starting download: https://c.tenor.com/21JuXCU7lacAAAAk/christmas-stockings-christmas.gif
+10-15 07:57:16.689  4437  4532 V cevx    : Is http uri, downloading (uri: https://c.tenor.com/21JuXCU7lacAAAAk/christmas-stockings-christmas.gif)
+10-15 07:57:16.703  4437  4888 D cevx    : Starting download: https://c.tenor.com/ukjNMGQXpZQAAAAk/full-ate-too-much.gif
+10-15 07:57:16.703  4437  4888 V cevx    : Is http uri, downloading (uri: https://c.tenor.com/ukjNMGQXpZQAAAAk/full-ate-too-much.gif)
+10-15 07:57:16.717  4437  4558 D cevx    : Starting download: https://c.tenor.com/wnwBAWc3AeEAAAAk/rolling-snow-snoopy.gif
+10-15 07:57:16.717  4437  4558 V cevx    : Is http uri, downloading (uri: https://c.tenor.com/wnwBAWc3AeEAAAAk/rolling-snow-snoopy.gif)
+10-15 07:57:16.717  4437  4532 D cevx    : Starting download: https://c.tenor.com/eU6_2iB4wpIAAAAk/thanksgiving-canada.gif
+10-15 07:57:16.717  4437  4532 V cevx    : Is http uri, downloading (uri: https://c.tenor.com/eU6_2iB4wpIAAAAk/thanksgiving-canada.gif)
+10-15 07:57:16.733  4437  4888 D cevx    : Starting download: https://c.tenor.com/j9Nm0LhcZwEAAAAk/thanksgiving-canada.gif
+10-15 07:57:16.733  4437  4888 V cevx    : Is http uri, downloading (uri: https://c.tenor.com/j9Nm0LhcZwEAAAAk/thanksgiving-canada.gif)
+10-15 07:57:16.740  4437  4558 D cevx    : Starting download: https://media.tenor.com/8yuNf9wYjdwAAAAk/brunch-cartoon.gif
+10-15 07:57:16.740  4437  4558 V cevx    : Is http uri, downloading (uri: https://media.tenor.com/8yuNf9wYjdwAAAAk/brunch-cartoon.gif)
+10-15 07:57:16.758  4437  4532 D cevx    : Starting download: https://media.tenor.com/eKF_xIa1bUcAAAAk/dessert-eat.gif
+10-15 07:57:16.758  4437  4532 V cevx    : Is http uri, downloading (uri: https://media.tenor.com/eKF_xIa1bUcAAAAk/dessert-eat.gif)
+10-15 07:57:17.441  4437  4888 D cevx    : Starting download: https://media.tenor.com/H1dJQhNZtI8AAAAk/feed-me-om-nom.gif
+10-15 07:57:17.441  4437  4888 V cevx    : Is http uri, downloading (uri: https://media.tenor.com/H1dJQhNZtI8AAAAk/feed-me-om-nom.gif)
+10-15 07:57:17.442  4437  4532 D cevx    : Starting download: https://media.tenor.com/wqOj61NglK4AAAAk/%E3%81%8A%E8%85%B9%E7%A9%BA%E3%81%84%E3%81%9F-%E6%97%A9%E3%81%8F.gif
+10-15 07:57:17.442  4437  4532 V cevx    : Is http uri, downloading (uri: https://media.tenor.com/wqOj61NglK4AAAAk/%E3%81%8A%E8%85%B9%E7%A9%BA%E3%81%84%E3%81%9F-%E6%97%A9%E3%81%8F.gif)
+10-15 07:57:17.470  4437  4558 D cevx    : Starting download: https://media.tenor.com/F75I2eQRtsgAAAAk/hungry-mmm.gif
+10-15 07:57:17.470  4437  4558 V cevx    : Is http uri, downloading (uri: https://media.tenor.com/F75I2eQRtsgAAAAk/hungry-mmm.gif)
+10-15 07:57:17.475  4437  4532 D cevx    : Starting download: https://media.tenor.com/NyS3bV41OIsAAAAk/danger-hangry-peach-life.gif
+10-15 07:57:17.475  4437  4532 V cevx    : Is http uri, downloading (uri: https://media.tenor.com/NyS3bV41OIsAAAAk/danger-hangry-peach-life.gif)
+10-15 07:57:17.502  4437  4888 D cevx    : Starting download: https://media.tenor.com/vXPFFhsy-D4AAAAk/kstr-kochstrasse.gif
+10-15 07:57:17.502  4437  4888 V cevx    : Is http uri, downloading (uri: https://media.tenor.com/vXPFFhsy-D4AAAAk/kstr-kochstrasse.gif)
+10-15 07:57:17.517  4437  4532 D cevx    : Starting download: https://media.tenor.com/6h-mSv5CbPEAAAAk/tonton-tonton-friends.gif
+10-15 07:57:17.517  4437  4532 V cevx    : Is http uri, downloading (uri: https://media.tenor.com/6h-mSv5CbPEAAAAk/tonton-tonton-friends.gif)
+10-15 07:57:17.526  4437  4558 D cevx    : Starting download: https://media.tenor.com/fMBMEN6dHt0AAAAk/yum-yummers.gif
+10-15 07:57:17.526  4437  4558 V cevx    : Is http uri, downloading (uri: https://media.tenor.com/fMBMEN6dHt0AAAAk/yum-yummers.gif)
+10-15 07:57:17.541  4437  4888 D cevx    : Starting download: https://media.tenor.com/g6Qs3CZC7gkAAAAk/eat-the-pet-collective.gif
+10-15 07:57:17.542  4437  4888 V cevx    : Is http uri, downloading (uri: https://media.tenor.com/g6Qs3CZC7gkAAAAk/eat-the-pet-collective.gif)
+10-15 07:57:17.560  4437  4532 D cevx    : Starting download: https://media.tenor.com/EQ2_Y8LKgKEAAAAk/pancake-joypixels.gif
+10-15 07:57:17.560  4437  4532 V cevx    : Is http uri, downloading (uri: https://media.tenor.com/EQ2_Y8LKgKEAAAAk/pancake-joypixels.gif)
+10-15 07:57:17.590  4437  4558 D cevx    : Starting download: https://media.tenor.com/YZXxTDUIH9AAAAAk/decorating-cake-kimjoy.gif
+10-15 07:57:17.590  4437  4558 V cevx    : Is http uri, downloading (uri: https://media.tenor.com/YZXxTDUIH9AAAAAk/decorating-cake-kimjoy.gif)
+10-15 07:57:17.612  4437  4888 D cevx    : Starting download: https://media.tenor.com/WoXYIyTOceYAAAAk/piffle-cat.gif
+10-15 07:57:17.612  4437  4888 V cevx    : Is http uri, downloading (uri: https://media.tenor.com/WoXYIyTOceYAAAAk/piffle-cat.gif)
+10-15 07:57:17.643  4437  4532 D cevx    : Starting download: https://media.tenor.com/di1fAyCBPeMAAAAk/pizza-pizza-time.gif
+10-15 07:57:17.643  4437  4532 V cevx    : Is http uri, downloading (uri: https://media.tenor.com/di1fAyCBPeMAAAAk/pizza-pizza-time.gif)
+10-15 07:57:17.650  4437  4558 D cevx    : Starting download: https://media.tenor.com/k11wXOCj6HkAAAAk/%E3%82%AA%E3%83%A0%E3%83%A9%E3%82%A4%E3%82%B9-%E3%81%84%E3%81%9F%E3%81%A0%E3%81%8D%E3%81%BE%E3%81%99.gif
+10-15 07:57:17.650  4437  4558 V cevx    : Is http uri, downloading (uri: https://media.tenor.com/k11wXOCj6HkAAAAk/%E3%82%AA%E3%83%A0%E3%83%A9%E3%82%A4%E3%82%B9-%E3%81%84%E3%81%9F%E3%81%A0%E3%81%8D%E3%81%BE%E3%81%99.gif)
+10-15 07:57:17.666  4437  4888 D cevx    : Starting download: https://media.tenor.com/HALGiFUMzT8AAAAk/dinner-is-served-om-nom.gif
+10-15 07:57:17.666  4437  4888 V cevx    : Is http uri, downloading (uri: https://media.tenor.com/HALGiFUMzT8AAAAk/dinner-is-served-om-nom.gif)
+10-15 07:57:17.669  4437  4532 D cevx    : Starting download: https://media.tenor.com/sqBO7Yvu4SkAAAAk/siamese-cat.gif
+10-15 07:57:17.669  4437  4532 V cevx    : Is http uri, downloading (uri: https://media.tenor.com/sqBO7Yvu4SkAAAAk/siamese-cat.gif)
+10-15 07:57:17.682  4437  4558 D cevx    : Starting download: https://media.tenor.com/6a_4Q6DHoWcAAAAk/chef-cooking.gif
+10-15 07:57:17.682  4437  4558 V cevx    : Is http uri, downloading (uri: https://media.tenor.com/6a_4Q6DHoWcAAAAk/chef-cooking.gif)
+10-15 07:57:17.684  4437  4532 D cevx    : Starting download: https://media.tenor.com/-0nrZ8IubicAAAAk/raf-rafs.gif
+10-15 07:57:17.684  4437  4532 V cevx    : Is http uri, downloading (uri: https://media.tenor.com/-0nrZ8IubicAAAAk/raf-rafs.gif)
+10-15 07:57:17.694  4437  4888 D cevx    : Starting download: https://media.tenor.com/ViBJL3aU4uoAAAAk/cooking-molang.gif
+10-15 07:57:17.694  4437  4888 V cevx    : Is http uri, downloading (uri: https://media.tenor.com/ViBJL3aU4uoAAAAk/cooking-molang.gif)
+10-15 07:57:17.697  4437  4532 D cevx    : Starting download: https://media.tenor.com/G32yCkHMUSQAAAAk/%E3%83%91%E3%83%B3-%E3%81%8A%E3%82%84%E3%81%99%E3%81%BF.gif
+10-15 07:57:17.697  4437  4532 V cevx    : Is http uri, downloading (uri: https://media.tenor.com/G32yCkHMUSQAAAAk/%E3%83%91%E3%83%B3-%E3%81%8A%E3%82%84%E3%81%99%E3%81%BF.gif)
+10-15 07:57:17.711  4437  4558 D cevx    : Starting download: https://media.tenor.com/uxnyAewyRoQAAAAk/shourimajo-bubble-kittea.gif
+10-15 07:57:17.711  4437  4558 V cevx    : Is http uri, downloading (uri: https://media.tenor.com/uxnyAewyRoQAAAAk/shourimajo-bubble-kittea.gif)
+10-15 07:57:17.719  4437  4888 D cevx    : Starting download: https://media.tenor.com/b0hb7xUg4aMAAAAk/pumpkin-pumpkin-spice.gif
+10-15 07:57:17.719  4437  4888 V cevx    : Is http uri, downloading (uri: https://media.tenor.com/b0hb7xUg4aMAAAAk/pumpkin-pumpkin-spice.gif)
+10-15 07:57:17.726  4437  4532 D cevx    : Starting download: https://media.tenor.com/gkh0rTd7dGMAAAAk/smile-kopi.gif
+10-15 07:57:17.726  4437  4532 V cevx    : Is http uri, downloading (uri: https://media.tenor.com/gkh0rTd7dGMAAAAk/smile-kopi.gif)
+10-15 07:57:17.767  4437  4558 D cevx    : Starting download: https://media.tenor.com/rLsTS3eQiyoAAAAk/tonton-friends-tobi.gif
+10-15 07:57:17.767  4437  4558 V cevx    : Is http uri, downloading (uri: https://media.tenor.com/rLsTS3eQiyoAAAAk/tonton-friends-tobi.gif)
+10-15 07:57:17.782  4437  4532 D cevx    : Starting download: https://media.tenor.com/fw1tSaC3MvUAAAAk/danser-encourager.gif
+10-15 07:57:17.782  4437  4532 V cevx    : Is http uri, downloading (uri: https://media.tenor.com/fw1tSaC3MvUAAAAk/danser-encourager.gif)
+10-15 07:57:17.792  4437  4888 D cevx    : Starting download: https://media.tenor.com/PeVTYLl4H0UAAAAk/cheering-encouraging.gif
+10-15 07:57:17.792  4437  4888 V cevx    : Is http uri, downloading (uri: https://media.tenor.com/PeVTYLl4H0UAAAAk/cheering-encouraging.gif)
+10-15 07:57:17.807  4437  4532 D cevx    : Starting download: https://media.tenor.com/yz6NdVlFMnwAAAAk/graduation-grad.gif
+10-15 07:57:17.807  4437  4532 V cevx    : Is http uri, downloading (uri: https://media.tenor.com/yz6NdVlFMnwAAAAk/graduation-grad.gif)
+10-15 07:57:17.808  4437  4888 D cevx    : Starting download: https://media.tenor.com/WHKPJhsQ69AAAAAk/heytvm-tvm.gif
+10-15 07:57:17.808  4437  4888 V cevx    : Is http uri, downloading (uri: https://media.tenor.com/WHKPJhsQ69AAAAAk/heytvm-tvm.gif)
+10-15 07:57:17.828  4437  4558 D cevx    : Starting download: https://media.tenor.com/Oy_rYG15YzgAAAAk/raf-rafs.gif
+10-15 07:57:17.828  4437  4558 V cevx    : Is http uri, downloading (uri: https://media.tenor.com/Oy_rYG15YzgAAAAk/raf-rafs.gif)
+10-15 07:57:17.843  4437  4888 D cevx    : Starting download: https://media.tenor.com/I_YaFQsuN84AAAAk/going-to-school-nibble-nom.gif
+10-15 07:57:17.843  4437  4888 V cevx    : Is http uri, downloading (uri: https://media.tenor.com/I_YaFQsuN84AAAAk/going-to-school-nibble-nom.gif)
+10-15 07:57:17.863  4437  4532 D cevx    : Starting download: https://media.tenor.com/XUC7T_bcbcYAAAAk/raf-rafs.gif
+10-15 07:57:17.863  4437  4532 V cevx    : Is http uri, downloading (uri: https://media.tenor.com/XUC7T_bcbcYAAAAk/raf-rafs.gif)
+10-15 07:57:17.885  4437  4558 D cevx    : Starting download: https://media.tenor.com/qidX4V9FxCcAAAAk/reading-nibble-nom.gif
+10-15 07:57:17.885  4437  4558 V cevx    : Is http uri, downloading (uri: https://media.tenor.com/qidX4V9FxCcAAAAk/reading-nibble-nom.gif)
+10-15 07:57:17.891  4437  4532 D cevx    : Starting download: https://media.tenor.com/hBr38cG4IzcAAAAk/homework-research.gif
+10-15 07:57:17.891  4437  4532 V cevx    : Is http uri, downloading (uri: https://media.tenor.com/hBr38cG4IzcAAAAk/homework-research.gif)
+10-15 07:57:17.911  4437  4888 D cevx    : Starting download: https://media.tenor.com/tXffFYxygbQAAAAk/raf-rafs.gif
+10-15 07:57:17.911  4437  4888 V cevx    : Is http uri, downloading (uri: https://media.tenor.com/tXffFYxygbQAAAAk/raf-rafs.gif)
+10-15 07:57:17.921  4437  4532 D cevx    : Starting download: https://media.tenor.com/8FzDBsdoLcwAAAAk/animated-cute.gif
+10-15 07:57:17.921  4437  4532 V cevx    : Is http uri, downloading (uri: https://media.tenor.com/8FzDBsdoLcwAAAAk/animated-cute.gif)
+10-15 07:57:17.923  4437  4558 D cevx    : Starting download: https://media.tenor.com/5muD2FopQK0AAAAk/reading-om-nelle.gif
+10-15 07:57:17.923  4437  4558 V cevx    : Is http uri, downloading (uri: https://media.tenor.com/5muD2FopQK0AAAAk/reading-om-nelle.gif)
+10-15 07:57:17.953  4437  4888 D cevx    : Starting download: https://www.gstatic.com/messages/smarts/smarts_expressive_content_scoped_v1/smart_tenor_stickers_pack_scoped_v2.pb_1734978962204
+10-15 07:57:17.953  4437  4888 V cevx    : Is http uri, downloading (uri: https://www.gstatic.com/messages/smarts/smarts_expressive_content_scoped_v1/smart_tenor_stickers_pack_scoped_v2.pb_1734978962204)
+10-15 07:57:17.956  4437  4532 D cevx    : Starting download: https://www.gstatic.com/messages/smarts/multitask_experiment/multi_lite_9head_20200301_model.tflite_1584573658696
+10-15 07:57:17.956  4437  4532 V cevx    : Is http uri, downloading (uri: https://www.gstatic.com/messages/smarts/multitask_experiment/multi_lite_9head_20200301_model.tflite_1584573658696)
+10-15 07:57:17.980  4437  4558 D cevx    : Starting download: https://www.gstatic.com/icing/idd/smart_actions_ml_models/multi_sr_phn_loc_wea_res_mov_spam_20190324_1554245216.pb
+10-15 07:57:17.980  4437  4558 V cevx    : Is http uri, downloading (uri: https://www.gstatic.com/icing/idd/smart_actions_ml_models/multi_sr_phn_loc_wea_res_mov_spam_20190324_1554245216.pb)
+10-15 07:57:18.490  4437  4888 D cevx    : Starting download: https://www.gstatic.com/messages/smarts/multitask_experiment/smartreply_only_20200301_control_tfmobile.pb_1591622697782
+10-15 07:57:18.490  4437  4888 V cevx    : Is http uri, downloading (uri: https://www.gstatic.com/messages/smarts/multitask_experiment/smartreply_only_20200301_control_tfmobile.pb_1591622697782)
+10-15 07:57:18.533  4437  4532 D cevx    : Starting download: https://www.gstatic.com/messages/smarts/multitask_experiment/smartreply_only_20200301_con0038_div025_emp_neg035.pb_1591622697782
+10-15 07:57:18.533  4437  4532 V cevx    : Is http uri, downloading (uri: https://www.gstatic.com/messages/smarts/multitask_experiment/smartreply_only_20200301_con0038_div025_emp_neg035.pb_1591622697782)
+10-15 07:57:18.584  4437  4888 D cevx    : Starting download: https://www.gstatic.com/messages/smarts/multitask_experiment/photo_intent_suggest_20201118_th060.pb_1605907326457
+10-15 07:57:18.584  4437  4888 V cevx    : Is http uri, downloading (uri: https://www.gstatic.com/messages/smarts/multitask_experiment/photo_intent_suggest_20201118_th060.pb_1605907326457)
+10-15 07:57:18.587  4437  4532 D cevx    : Starting download: https://www.gstatic.com/messages/smarts/multitask_experiment/multi_lite_9heads_plus_photo_suggest_20201118.tflite_1605907326457
+10-15 07:57:18.587  4437  4532 V cevx    : Is http uri, downloading (uri: https://www.gstatic.com/messages/smarts/multitask_experiment/multi_lite_9heads_plus_photo_suggest_20201118.tflite_1605907326457)
+10-15 07:57:18.609  4437  4558 D cevx    : Starting download: https://www.gstatic.com/messages/smarts/multitask_experiment/photo_intent_suggest_20201118_th040.pb_1605907326457
+10-15 07:57:18.609  4437  4558 V cevx    : Is http uri, downloading (uri: https://www.gstatic.com/messages/smarts/multitask_experiment/photo_intent_suggest_20201118_th040.pb_1605907326457)
+10-15 07:57:18.640  4437  4888 D cevx    : Starting download: https://www.gstatic.com/messages/smarts/multitask_experiment/photo_suggest_model_fa_templates.pb_1607108012639
+10-15 07:57:18.640  4437  4888 V cevx    : Is http uri, downloading (uri: https://www.gstatic.com/messages/smarts/multitask_experiment/photo_suggest_model_fa_templates.pb_1607108012639)
+10-15 07:57:18.674  4437  4558 D cevx    : Starting download: https://www.gstatic.com/messages/smarts/smart_actions_grammars/FindRestaurants_android.far_1565913559556
+10-15 07:57:18.674  4437  4558 V cevx    : Is http uri, downloading (uri: https://www.gstatic.com/messages/smarts/smart_actions_grammars/FindRestaurants_android.far_1565913559556)
+10-15 07:57:18.704  4437  4888 D cevx    : Starting download: https://www.gstatic.com/messages/smarts/smart_actions_grammars/pumpkin_model_config_no_about_movie_grammar_2019060600.pb_1565913559556
+10-15 07:57:18.704  4437  4888 V cevx    : Is http uri, downloading (uri: https://www.gstatic.com/messages/smarts/smart_actions_grammars/pumpkin_model_config_no_about_movie_grammar_2019060600.pb_1565913559556)
+10-15 07:57:18.735  4437  4558 D cevx    : Starting download: https://www.gstatic.com/messages/smarts/smart_actions_grammars/model_based_provider_configs_pumpkin_model_config_no_about_movie_or_location_share_grammar_2019060600.pb_1565913559556
+10-15 07:57:18.735  4437  4558 V cevx    : Is http uri, downloading (uri: https://www.gstatic.com/messages/smarts/smart_actions_grammars/model_based_provider_configs_pumpkin_model_config_no_about_movie_or_location_share_grammar_2019060600.pb_1565913559556)
+10-15 07:57:18.762  4437  4888 D cevx    : Starting download: https://www.gstatic.com/messages/smarts/smart_actions_grammars/AboutEntity_android.far_1565913559556
+10-15 07:57:18.762  4437  4888 V cevx    : Is http uri, downloading (uri: https://www.gstatic.com/messages/smarts/smart_actions_grammars/AboutEntity_android.far_1565913559556)
+10-15 07:57:18.790  4437  4558 D cevx    : Starting download: https://www.gstatic.com/messages/smarts/smart_actions_grammars/Weather_android.far_1565913559556
+10-15 07:57:18.790  4437  4558 V cevx    : Is http uri, downloading (uri: https://www.gstatic.com/messages/smarts/smart_actions_grammars/Weather_android.far_1565913559556)
+10-15 07:57:18.829  4437  4888 D cevx    : Starting download: https://www.gstatic.com/messages/smarts/smart_actions_grammars/model_based_provider_configs_pumpkin_model_config_with_scripted_reply_2019071500.pb_1565913559556
+10-15 07:57:18.829  4437  4888 V cevx    : Is http uri, downloading (uri: https://www.gstatic.com/messages/smarts/smart_actions_grammars/model_based_provider_configs_pumpkin_model_config_with_scripted_reply_2019071500.pb_1565913559556)
+10-15 07:57:18.855  4437  4558 D cevx    : Starting download: https://www.gstatic.com/messages/smarts/smart_actions_grammars/SpamClassification_android.far_1565913559556
+10-15 07:57:18.855  4437  4558 V cevx    : Is http uri, downloading (uri: https://www.gstatic.com/messages/smarts/smart_actions_grammars/SpamClassification_android.far_1565913559556)
+10-15 07:57:18.882  4437  4888 D cevx    : Starting download: https://www.gstatic.com/messages/smarts/smart_actions_grammars/MovieName_android.far_1565913559556
+10-15 07:57:18.882  4437  4888 V cevx    : Is http uri, downloading (uri: https://www.gstatic.com/messages/smarts/smart_actions_grammars/MovieName_android.far_1565913559556)
+10-15 07:57:18.929  4437  4558 D cevx    : Starting download: https://www.gstatic.com/messages/smarts/smart_actions_grammars/pumpkin_model_config_no_about_movie_or_location_share_grammar_2019060600.pb_1565913559556
+10-15 07:57:18.929  4437  4558 V cevx    : Is http uri, downloading (uri: https://www.gstatic.com/messages/smarts/smart_actions_grammars/pumpkin_model_config_no_about_movie_or_location_share_grammar_2019060600.pb_1565913559556)
+10-15 07:57:18.931  4437  4532 D cevx    : Starting download: https://www.gstatic.com/messages/smarts/smart_actions_grammars/pumpkin_model_config_with_scripted_reply_2019071500.pb_1565913559556
+10-15 07:57:18.931  4437  4532 V cevx    : Is http uri, downloading (uri: https://www.gstatic.com/messages/smarts/smart_actions_grammars/pumpkin_model_config_with_scripted_reply_2019071500.pb_1565913559556)
+10-15 07:57:18.954  4437  4888 D cevx    : Starting download: https://www.gstatic.com/messages/smarts/smart_actions_grammars/SharePhoneNumber_android.far_1565913559556
+10-15 07:57:18.954  4437  4888 V cevx    : Is http uri, downloading (uri: https://www.gstatic.com/messages/smarts/smart_actions_grammars/SharePhoneNumber_android.far_1565913559556)
+10-15 07:57:18.973  4437  4558 D cevx    : Starting download: https://www.gstatic.com/messages/smarts/smart_actions_grammars/SendPaymentRequest_android.far_1565913559556
+10-15 07:57:18.973  4437  4558 V cevx    : Is http uri, downloading (uri: https://www.gstatic.com/messages/smarts/smart_actions_grammars/SendPaymentRequest_android.far_1565913559556)
+10-15 07:57:18.984  4437  4532 D cevx    : Starting download: https://www.gstatic.com/messages/smarts/smart_actions_grammars/DuoCall_android.far_1565913559556
+10-15 07:57:18.984  4437  4532 V cevx    : Is http uri, downloading (uri: https://www.gstatic.com/messages/smarts/smart_actions_grammars/DuoCall_android.far_1565913559556)
+10-15 07:57:19.006  4437  4888 D cevx    : Starting download: https://www.gstatic.com/messages/smarts/smart_actions_grammars/ReminderClassification_android.far_1565913559556
+10-15 07:57:19.006  4437  4888 V cevx    : Is http uri, downloading (uri: https://www.gstatic.com/messages/smarts/smart_actions_grammars/ReminderClassification_android.far_1565913559556)
+10-15 07:57:19.070  4437  4532 D cevx    : Starting download: https://www.gstatic.com/messages/smarts/smart_actions_grammars/model_based_provider_configs_pumpkin.pb_1565913559556
+10-15 07:57:19.070  4437  4532 V cevx    : Is http uri, downloading (uri: https://www.gstatic.com/messages/smarts/smart_actions_grammars/model_based_provider_configs_pumpkin.pb_1565913559556)
+10-15 07:57:19.073  4437  4888 D cevx    : Starting download: https://www.gstatic.com/messages/smarts/smart_actions_grammars/FindMovies_android.far_1565913559556
+10-15 07:57:19.073  4437  4888 V cevx    : Is http uri, downloading (uri: https://www.gstatic.com/messages/smarts/smart_actions_grammars/FindMovies_android.far_1565913559556)
+10-15 07:57:19.104  4437  4558 D cevx    : Starting download: https://www.gstatic.com/messages/smarts/smart_actions_grammars/ScriptedReply_android.far_1565913559556
+10-15 07:57:19.104  4437  4558 V cevx    : Is http uri, downloading (uri: https://www.gstatic.com/messages/smarts/smart_actions_grammars/ScriptedReply_android.far_1565913559556)
+10-15 07:57:19.119  4437  4532 D cevx    : Starting download: https://www.gstatic.com/messages/smarts/smart_actions_grammars/assistant_templates.pb_1565913559556
+10-15 07:57:19.119  4437  4532 V cevx    : Is http uri, downloading (uri: https://www.gstatic.com/messages/smarts/smart_actions_grammars/assistant_templates.pb_1565913559556)
+10-15 07:57:19.127  4437  4888 D cevx    : Starting download: https://www.gstatic.com/messages/smarts/smart_actions_grammars/AboutRestaurant_android.far_1565913559556
+10-15 07:57:19.127  4437  4888 V cevx    : Is http uri, downloading (uri: https://www.gstatic.com/messages/smarts/smart_actions_grammars/AboutRestaurant_android.far_1565913559556)
+10-15 07:57:19.147  4437  4558 D cevx    : Starting download: https://www.gstatic.com/messages/smarts/smart_actions_grammars/model_based_provider_configs_pumpkin_model_config_no_about_movie_grammar_2019060600.pb_1565913559556
+10-15 07:57:19.147  4437  4558 V cevx    : Is http uri, downloading (uri: https://www.gstatic.com/messages/smarts/smart_actions_grammars/model_based_provider_configs_pumpkin_model_config_no_about_movie_grammar_2019060600.pb_1565913559556)
+10-15 07:57:19.161  4437  4888 D cevx    : Starting download: https://www.gstatic.com/messages/smarts/smart_actions_grammars/Gif_android.far_1660064605222
+10-15 07:57:19.162  4437  4888 V cevx    : Is http uri, downloading (uri: https://www.gstatic.com/messages/smarts/smart_actions_grammars/Gif_android.far_1660064605222)
+10-15 07:57:19.166  4437  4532 D cevx    : Starting download: https://www.gstatic.com/messages/smarts/smart_actions_grammars/AboutMovie_android.far_1565913559556
+10-15 07:57:19.166  4437  4532 V cevx    : Is http uri, downloading (uri: https://www.gstatic.com/messages/smarts/smart_actions_grammars/AboutMovie_android.far_1565913559556)
+10-15 07:57:19.195  4437  4558 D cevx    : Starting download: https://www.gstatic.com/messages/smarts/smart_actions_grammars/UpdateContact_android.far_1565913559556
+10-15 07:57:19.195  4437  4558 V cevx    : Is http uri, downloading (uri: https://www.gstatic.com/messages/smarts/smart_actions_grammars/UpdateContact_android.far_1565913559556)
+10-15 07:57:19.217  4437  4532 D cevx    : Starting download: https://www.gstatic.com/messages/smarts/smart_actions_grammars/suggestion_templates_delivery_dining_no_movies_20200317.pb_1584744512700
+10-15 07:57:19.218  4437  4532 V cevx    : Is http uri, downloading (uri: https://www.gstatic.com/messages/smarts/smart_actions_grammars/suggestion_templates_delivery_dining_no_movies_20200317.pb_1584744512700)
+10-15 07:57:19.260  4437  4888 D cevx    : Starting download: https://www.gstatic.com/messages/smarts/smart_actions_grammars/suggestion_templates_wolfgang_20220601.pb_1654197847332
+10-15 07:57:19.260  4437  4888 V cevx    : Is http uri, downloading (uri: https://www.gstatic.com/messages/smarts/smart_actions_grammars/suggestion_templates_wolfgang_20220601.pb_1654197847332)
+10-15 07:57:19.262  4437  4558 D cevx    : Starting download: https://www.gstatic.com/messages/smarts/smart_actions_grammars/suggestion_templates.pb_1629397752516
+10-15 07:57:19.262  4437  4558 V cevx    : Is http uri, downloading (uri: https://www.gstatic.com/messages/smarts/smart_actions_grammars/suggestion_templates.pb_1629397752516)
+10-15 07:57:19.290  4437  4532 D cevx    : Starting download: https://www.gstatic.com/messages/smarts/smart_actions_grammars/suggestion_templates_no_dining_movies_20200317.pb_1629482891038
+10-15 07:57:19.290  4437  4532 V cevx    : Is http uri, downloading (uri: https://www.gstatic.com/messages/smarts/smart_actions_grammars/suggestion_templates_no_dining_movies_20200317.pb_1629482891038)
+10-15 07:57:19.303  4437  4888 D cevx    : Starting download: https://www.gstatic.com/messages/smarts/smart_actions_grammars/ShareLocationContinuation_android.far_1635555498975
+10-15 07:57:19.303  4437  4888 V cevx    : Is http uri, downloading (uri: https://www.gstatic.com/messages/smarts/smart_actions_grammars/ShareLocationContinuation_android.far_1635555498975)
+10-15 07:57:19.317  4437  4558 D cevx    : Starting download: https://www.gstatic.com/messages/smarts/smart_actions_grammars/pumpkin_model_config_location_sharing_20210810_experiment.pb_1629397752516
+10-15 07:57:19.317  4437  4558 V cevx    : Is http uri, downloading (uri: https://www.gstatic.com/messages/smarts/smart_actions_grammars/pumpkin_model_config_location_sharing_20210810_experiment.pb_1629397752516)
+10-15 07:57:19.342  4437  4532 D cevx    : Starting download: https://www.gstatic.com/messages/smarts/smart_actions_grammars/ShareLocationReply_android.far_1635555498975
+10-15 07:57:19.342  4437  4532 V cevx    : Is http uri, downloading (uri: https://www.gstatic.com/messages/smarts/smart_actions_grammars/ShareLocationReply_android.far_1635555498975)
+10-15 07:57:19.348  4437  4558 D cevx    : Starting download: https://www.gstatic.com/android/text_classifier/s/v903/en.fb
+10-15 07:57:19.348  4437  4558 V cevx    : Is http uri, downloading (uri: https://www.gstatic.com/android/text_classifier/s/v903/en.fb)
+10-15 07:57:19.368  4437  4888 D cevx    : Starting download: https://www.gstatic.com/messages/smarts/calendar_appointment_grammar/combined_pumpkin_config_appointment.pb_1605913769468
+10-15 07:57:19.368  4437  4888 V cevx    : Is http uri, downloading (uri: https://www.gstatic.com/messages/smarts/calendar_appointment_grammar/combined_pumpkin_config_appointment.pb_1605913769468)
+10-15 07:57:19.389  4437  4532 D cevx    : Starting download: https://www.gstatic.com/messages/smarts/calendar_appointment_grammar/calendar_appointment_templates.pb_1605913769468
+10-15 07:57:19.389  4437  4532 V cevx    : Is http uri, downloading (uri: https://www.gstatic.com/messages/smarts/calendar_appointment_grammar/calendar_appointment_templates.pb_1605913769468)
+10-15 07:57:19.412  4437  4888 D cevx    : Starting download: https://www.gstatic.com/messages/smarts/calendar_appointment_grammar/Appointment_android.far_1605913769468
+10-15 07:57:19.412  4437  4888 V cevx    : Is http uri, downloading (uri: https://www.gstatic.com/messages/smarts/calendar_appointment_grammar/Appointment_android.far_1605913769468)
+10-15 07:57:19.438  4437  4532 D cevx    : Starting download: https://www.gstatic.com/messages/smarts/birthday_grammars/SaveBirthday_android.far_1651275803119
+10-15 07:57:19.438  4437  4532 V cevx    : Is http uri, downloading (uri: https://www.gstatic.com/messages/smarts/birthday_grammars/SaveBirthday_android.far_1651275803119)
+10-15 07:57:19.462  4437  4888 D cevx    : Starting download: https://www.gstatic.com/messages/smarts/birthday_grammars/save_birthday_template.pb_1651275803119
+10-15 07:57:19.462  4437  4888 V cevx    : Is http uri, downloading (uri: https://www.gstatic.com/messages/smarts/birthday_grammars/save_birthday_template.pb_1651275803119)
+10-15 07:57:19.493  4437  4532 D cevx    : Starting download: https://www.gstatic.com/messages/smarts/birthday_grammars/pumpkin_model_config_save_birthday.pb_1644528477274
+10-15 07:57:19.493  4437  4532 V cevx    : Is http uri, downloading (uri: https://www.gstatic.com/messages/smarts/birthday_grammars/pumpkin_model_config_save_birthday.pb_1644528477274)
+10-15 07:57:19.527  4437  4888 D cevx    : Starting download: https://www.gstatic.com/messages/smarts/birthday_grammars/save_birthday_model_config.pb_1644528477274
+10-15 07:57:19.527  4437  4888 V cevx    : Is http uri, downloading (uri: https://www.gstatic.com/messages/smarts/birthday_grammars/save_birthday_model_config.pb_1644528477274)
+10-15 07:57:19.593  4437  4532 D cevx    : Starting download: https://www.gstatic.com/messages/spam/spam_verdict_enforcement_policy_config/spam_policy_config_2026083100.pb
+10-15 07:57:19.593  4437  4532 V cevx    : Is http uri, downloading (uri: https://www.gstatic.com/messages/spam/spam_verdict_enforcement_policy_config/spam_policy_config_2026083100.pb)
+10-15 07:57:19.623  4437  4888 D cevx    : Starting download: https://www.gstatic.com/messages/smarts/nudge/nudge_question_classifier_v2.tflite_1639164115205
+10-15 07:57:19.623  4437  4888 V cevx    : Is http uri, downloading (uri: https://www.gstatic.com/messages/smarts/nudge/nudge_question_classifier_v2.tflite_1639164115205)
+10-15 07:57:19.929  4437  4532 D cevx    : Starting download: https://www.gstatic.com/messages/smarts/nudge/templater_configs_lingua_nudge.pb_1629476577421
+10-15 07:57:19.929  4437  4532 V cevx    : Is http uri, downloading (uri: https://www.gstatic.com/messages/smarts/nudge/templater_configs_lingua_nudge.pb_1629476577421)
+10-15 07:57:19.974  4437  4558 D cevx    : Starting download: https://www.gstatic.com/messages/smarts/nudge/nudge_model_based_provider_config_09_threshold.pb_1646328111753
+10-15 07:57:19.974  4437  4558 V cevx    : Is http uri, downloading (uri: https://www.gstatic.com/messages/smarts/nudge/nudge_model_based_provider_config_09_threshold.pb_1646328111753)
+10-15 07:57:20.021  4437  4532 D cevx    : Starting download: https://www.gstatic.com/messages/smarts/nudge/nudge_model_based_provider_config_12_threshold.pb_1646327751669
+10-15 07:57:20.021  4437  4532 V cevx    : Is http uri, downloading (uri: https://www.gstatic.com/messages/smarts/nudge/nudge_model_based_provider_config_12_threshold.pb_1646327751669)
+10-15 07:57:20.114  4437  4558 D cevx    : Starting download: https://www.gstatic.com/messages/smarts/nudge/nudge_model_based_provider_config_15_threshold.pb_1646327339502
+10-15 07:57:20.114  4437  4558 V cevx    : Is http uri, downloading (uri: https://www.gstatic.com/messages/smarts/nudge/nudge_model_based_provider_config_15_threshold.pb_1646327339502)
+10-15 07:57:20.130  4437  4532 D cevx    : Starting download: https://www.gstatic.com/messages/smarts/smart_actions_ml_models/loc_spam_no_assistant_04162019_lt_065.pb_1568226528414
+10-15 07:57:20.130  4437  4532 V cevx    : Is http uri, downloading (uri: https://www.gstatic.com/messages/smarts/smart_actions_ml_models/loc_spam_no_assistant_04162019_lt_065.pb_1568226528414)
+10-15 07:57:20.153  4437  4888 D cevx    : Starting download: https://www.gstatic.com/messages/smarts/smart_actions_ml_models/loc_spam_and_assistant_04162019.pb_1568226528414
+10-15 07:57:20.153  4437  4888 V cevx    : Is http uri, downloading (uri: https://www.gstatic.com/messages/smarts/smart_actions_ml_models/loc_spam_and_assistant_04162019.pb_1568226528414)
+10-15 07:57:20.154  4437  4558 D cevx    : Starting download: https://www.gstatic.com/messages/smarts/smart_actions_ml_models/multi_task_model_based_providers_config.pb_1568226528414
+10-15 07:57:20.154  4437  4558 V cevx    : Is http uri, downloading (uri: https://www.gstatic.com/messages/smarts/smart_actions_ml_models/multi_task_model_based_providers_config.pb_1568226528414)
+10-15 07:57:20.177  4437  4532 D cevx    : Starting download: https://www.gstatic.com/messages/smarts/smart_actions_ml_models/loc_spam_no_assistant_04162019_lt_055.pb_1568226528414
+10-15 07:57:20.177  4437  4532 V cevx    : Is http uri, downloading (uri: https://www.gstatic.com/messages/smarts/smart_actions_ml_models/loc_spam_no_assistant_04162019_lt_055.pb_1568226528414)
+10-15 07:57:20.239  4437  4888 D cevx    : Starting download: https://www.gstatic.com/messages/smarts/smart_actions_ml_models/loc_spam_no_assistant_04162019_lt_085.pb_1568226528414
+10-15 07:57:20.239  4437  4888 V cevx    : Is http uri, downloading (uri: https://www.gstatic.com/messages/smarts/smart_actions_ml_models/loc_spam_no_assistant_04162019_lt_085.pb_1568226528414)
+10-15 07:57:20.247  4437  4532 D cevx    : Starting download: https://www.gstatic.com/messages/smarts/smart_actions_ml_models/loc_spam_no_assistant_04162019_lt_075.pb_1568226528414
+10-15 07:57:20.247  4437  4532 V cevx    : Is http uri, downloading (uri: https://www.gstatic.com/messages/smarts/smart_actions_ml_models/loc_spam_no_assistant_04162019_lt_075.pb_1568226528414)
+10-15 07:57:20.306  4437  4558 D cevx    : Starting download: https://www.gstatic.com/messages/smarts/smart_actions_ml_models/loc_spam_no_assistant_04162019_lt_030.pb_1568226528414
+10-15 07:57:20.306  4437  4558 V cevx    : Is http uri, downloading (uri: https://www.gstatic.com/messages/smarts/smart_actions_ml_models/loc_spam_no_assistant_04162019_lt_030.pb_1568226528414)
+10-15 07:57:20.310  4437  4532 D cevx    : Starting download: https://www.gstatic.com/messages/smarts/smart_actions_ml_models/loc_spam_no_assistant_04162019_lt_020.pb_1568226528414
+10-15 07:57:20.310  4437  4532 V cevx    : Is http uri, downloading (uri: https://www.gstatic.com/messages/smarts/smart_actions_ml_models/loc_spam_no_assistant_04162019_lt_020.pb_1568226528414)
+10-15 07:57:20.335  4437  4888 D cevx    : Starting download: https://www.gstatic.com/messages/smarts/smart_actions_ml_models/loc_spam_no_assistant_04162019_lt_035.pb_1568226528414
+10-15 07:57:20.335  4437  4888 V cevx    : Is http uri, downloading (uri: https://www.gstatic.com/messages/smarts/smart_actions_ml_models/loc_spam_no_assistant_04162019_lt_035.pb_1568226528414)
+10-15 07:57:20.360  4437  4558 D cevx    : Starting download: https://www.gstatic.com/messages/smarts/smart_actions_ml_models/loc_spam_no_assistant_04162019_lt_040.pb_1568226528414
+10-15 07:57:20.360  4437  4558 V cevx    : Is http uri, downloading (uri: https://www.gstatic.com/messages/smarts/smart_actions_ml_models/loc_spam_no_assistant_04162019_lt_040.pb_1568226528414)
+10-15 07:57:20.371  4437  4532 D cevx    : Starting download: https://www.gstatic.com/messages/smarts/smart_actions_ml_models/loc_spam_no_assistant_04162019_lt_050.pb_1568226528414
+10-15 07:57:20.371  4437  4532 V cevx    : Is http uri, downloading (uri: https://www.gstatic.com/messages/smarts/smart_actions_ml_models/loc_spam_no_assistant_04162019_lt_050.pb_1568226528414)
+10-15 07:57:20.412  4437  4888 D cevx    : Starting download: https://www.gstatic.com/messages/smarts/smart_actions_ml_models/loc_spam_no_assistant_04162019_lt_095.pb_1568226528414
+10-15 07:57:20.412  4437  4888 V cevx    : Is http uri, downloading (uri: https://www.gstatic.com/messages/smarts/smart_actions_ml_models/loc_spam_no_assistant_04162019_lt_095.pb_1568226528414)
+10-15 07:57:20.413  4437  4558 D cevx    : Starting download: https://www.gstatic.com/messages/smarts/smart_actions_ml_models/sr_loc_spam_and_no_assistant_04162019.pb_1568226528414
+10-15 07:57:20.413  4437  4558 V cevx    : Is http uri, downloading (uri: https://www.gstatic.com/messages/smarts/smart_actions_ml_models/sr_loc_spam_and_no_assistant_04162019.pb_1568226528414)
+10-15 07:57:20.432  4437  4532 D cevx    : Starting download: https://www.gstatic.com/messages/smarts/smart_actions_ml_models/loc_spam_no_assistant_04162019_lt_025.pb_1568226528414
+10-15 07:57:20.432  4437  4532 V cevx    : Is http uri, downloading (uri: https://www.gstatic.com/messages/smarts/smart_actions_ml_models/loc_spam_no_assistant_04162019_lt_025.pb_1568226528414)
+10-15 07:57:20.452  4437  4888 D cevx    : Starting download: https://www.gstatic.com//messages/smarts/smart_actions_sensitive_classifier_models/sgnn_w31c31_20200517_1596523090.tflite
+10-15 07:57:20.452  4437  4888 V cevx    : Is http uri, downloading (uri: https://www.gstatic.com//messages/smarts/smart_actions_sensitive_classifier_models/sgnn_w31c31_20200517_1596523090.tflite)
+10-15 07:57:20.459  4437  4532 D cevx    : Starting download: https://www.gstatic.com/messages/smarts/smart_actions_sensitive_classifier_models/binary3.sgnn.w31c31.20201129.tflite
+10-15 07:57:20.459  4437  4532 V cevx    : Is http uri, downloading (uri: https://www.gstatic.com/messages/smarts/smart_actions_sensitive_classifier_models/binary3.sgnn.w31c31.20201129.tflite)
+10-15 07:57:20.553  4437  4558 D cevx    : Starting download: https://www.gstatic.com/messages/smarts/smart_actions_sensitive_classifier_models/multi3.sgnn.w31c31.20201129.tflite
+10-15 07:57:20.553  4437  4558 V cevx    : Is http uri, downloading (uri: https://www.gstatic.com/messages/smarts/smart_actions_sensitive_classifier_models/multi3.sgnn.w31c31.20201129.tflite)
+10-15 07:57:20.557  4437  4888 D cevx    : Starting download: https://www.gstatic.com/messages/smarts/smart_actions_sensitive_classifier_models/sgnn.w31c31.tflite_20211012
+10-15 07:57:20.557  4437  4888 V cevx    : Is http uri, downloading (uri: https://www.gstatic.com/messages/smarts/smart_actions_sensitive_classifier_models/sgnn.w31c31.tflite_20211012)

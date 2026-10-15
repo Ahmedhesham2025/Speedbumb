@@ -1,0 +1,300 @@
+10-15 07:58:43.034  4437  4546 D cevx    : Starting download: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f494/lottie.json
+10-15 07:58:43.034  4437  4546 V cevx    : Is http uri, downloading (uri: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f494/lottie.json)
+10-15 07:58:43.037  4437  6699 D cevx    : Starting download: https://fonts.gstatic.com/s/e/notoemoji/16.0/2764_fe0f_200d_1f525/lottie.json
+10-15 07:58:43.037  4437  6699 V cevx    : Is http uri, downloading (uri: https://fonts.gstatic.com/s/e/notoemoji/16.0/2764_fe0f_200d_1f525/lottie.json)
+10-15 07:58:43.066  4437  6614 D cevx    : Starting download: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f48b/lottie.json
+10-15 07:58:43.066  4437  6614 V cevx    : Is http uri, downloading (uri: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f48b/lottie.json)
+10-15 07:58:43.078  4437  4546 D cevx    : Starting download: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f463/lottie.json
+10-15 07:58:43.078  4437  4546 V cevx    : Is http uri, downloading (uri: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f463/lottie.json)
+10-15 07:58:43.084  4437  6699 D cevx    : Starting download: https://fonts.gstatic.com/s/e/notoemoji/16.0/1fac0/lottie.json
+10-15 07:58:43.084  4437  6699 V cevx    : Is http uri, downloading (uri: https://fonts.gstatic.com/s/e/notoemoji/16.0/1fac0/lottie.json)
+10-15 07:58:43.094  4437  6614 D cevx    : Starting download: https://fonts.gstatic.com/s/e/notoemoji/16.0/1fa78/lottie.json
+10-15 07:58:43.094  4437  6614 V cevx    : Is http uri, downloading (uri: https://fonts.gstatic.com/s/e/notoemoji/16.0/1fa78/lottie.json)
+10-15 07:58:43.116  4437  4546 D cevx    : Starting download: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f9a0/lottie.json
+10-15 07:58:43.116  4437  4546 V cevx    : Is http uri, downloading (uri: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f9a0/lottie.json)
+10-15 07:58:43.128  4437  6614 D cevx    : Starting download: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f440/lottie.json
+10-15 07:58:43.128  4437  6614 V cevx    : Is http uri, downloading (uri: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f440/lottie.json)
+10-15 07:58:43.149  4437  6699 D cevx    : Starting download: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f441_fe0f/lottie.json
+10-15 07:58:43.149  4437  6699 V cevx    : Is http uri, downloading (uri: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f441_fe0f/lottie.json)
+10-15 07:58:43.150  4437  6614 D cevx    : Starting download: https://fonts.gstatic.com/s/e/notoemoji/16.0/1fae6/lottie.json
+10-15 07:58:43.150  4437  6614 V cevx    : Is http uri, downloading (uri: https://fonts.gstatic.com/s/e/notoemoji/16.0/1fae6/lottie.json)
+10-15 07:58:43.180  4437  4546 D cevx    : Starting download: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f9bf/lottie.json
+10-15 07:58:43.180  4437  4546 V cevx    : Is http uri, downloading (uri: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f9bf/lottie.json)
+10-15 07:58:43.183  4437  6614 D cevx    : Starting download: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f9be/lottie.json
+10-15 07:58:43.183  4437  6614 V cevx    : Is http uri, downloading (uri: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f9be/lottie.json)
+10-15 07:58:43.196  4437  6699 D cevx    : Starting download: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f4aa/lottie.json
+10-15 07:58:43.196  4437  6699 V cevx    : Is http uri, downloading (uri: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f4aa/lottie.json)
+10-15 07:58:43.201  4437  4546 D cevx    : Starting download: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f4aa_1f3fb/lottie.json
+10-15 07:58:43.201  4437  4546 V cevx    : Is http uri, downloading (uri: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f4aa_1f3fb/lottie.json)
+10-15 07:58:43.235  4437  6614 D cevx    : Starting download: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f4aa_1f3fc/lottie.json
+10-15 07:58:43.235  4437  6614 V cevx    : Is http uri, downloading (uri: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f4aa_1f3fc/lottie.json)
+10-15 07:58:43.237  4437  6699 D cevx    : Starting download: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f4aa_1f3fd/lottie.json
+10-15 07:58:43.238  4437  6699 V cevx    : Is http uri, downloading (uri: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f4aa_1f3fd/lottie.json)
+10-15 07:58:43.267  4437  4546 D cevx    : Starting download: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f4aa_1f3fe/lottie.json
+10-15 07:58:43.267  4437  4546 V cevx    : Is http uri, downloading (uri: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f4aa_1f3fe/lottie.json)
+10-15 07:58:43.269  4437  6614 D cevx    : Starting download: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f4aa_1f3ff/lottie.json
+10-15 07:58:43.269  4437  6614 V cevx    : Is http uri, downloading (uri: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f4aa_1f3ff/lottie.json)
+10-15 07:58:43.286  4437  6699 D cevx    : Starting download: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f44f/lottie.json
+10-15 07:58:43.286  4437  6699 V cevx    : Is http uri, downloading (uri: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f44f/lottie.json)
+10-15 07:58:43.296  4437  4546 D cevx    : Starting download: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f44f_1f3fb/lottie.json
+10-15 07:58:43.296  4437  4546 V cevx    : Is http uri, downloading (uri: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f44f_1f3fb/lottie.json)
+10-15 07:58:43.306  4437  6614 D cevx    : Starting download: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f44f_1f3fc/lottie.json
+10-15 07:58:43.306  4437  6614 V cevx    : Is http uri, downloading (uri: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f44f_1f3fc/lottie.json)
+10-15 07:58:43.329  4437  6699 D cevx    : Starting download: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f44f_1f3fd/lottie.json
+10-15 07:58:43.329  4437  6699 V cevx    : Is http uri, downloading (uri: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f44f_1f3fd/lottie.json)
+10-15 07:58:43.334  4437  4546 D cevx    : Starting download: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f44f_1f3fe/lottie.json
+10-15 07:58:43.334  4437  4546 V cevx    : Is http uri, downloading (uri: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f44f_1f3fe/lottie.json)
+10-15 07:58:43.358  4437  6614 D cevx    : Starting download: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f44f_1f3ff/lottie.json
+10-15 07:58:43.358  4437  6614 V cevx    : Is http uri, downloading (uri: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f44f_1f3ff/lottie.json)
+10-15 07:58:43.363  4437  6699 D cevx    : Starting download: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f44d/lottie.json
+10-15 07:58:43.363  4437  6699 V cevx    : Is http uri, downloading (uri: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f44d/lottie.json)
+10-15 07:58:43.382  4437  4546 D cevx    : Starting download: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f44d_1f3fb/lottie.json
+10-15 07:58:43.382  4437  4546 V cevx    : Is http uri, downloading (uri: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f44d_1f3fb/lottie.json)
+10-15 07:58:43.383  4437  6699 D cevx    : Starting download: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f44d_1f3fc/lottie.json
+10-15 07:58:43.383  4437  6699 V cevx    : Is http uri, downloading (uri: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f44d_1f3fc/lottie.json)
+10-15 07:58:43.400  4437  6614 D cevx    : Starting download: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f44d_1f3fd/lottie.json
+10-15 07:58:43.400  4437  6614 V cevx    : Is http uri, downloading (uri: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f44d_1f3fd/lottie.json)
+10-15 07:58:43.403  4437  4546 D cevx    : Starting download: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f44d_1f3fe/lottie.json
+10-15 07:58:43.403  4437  4546 V cevx    : Is http uri, downloading (uri: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f44d_1f3fe/lottie.json)
+10-15 07:58:43.427  4437  6699 D cevx    : Starting download: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f44d_1f3ff/lottie.json
+10-15 07:58:43.427  4437  6699 V cevx    : Is http uri, downloading (uri: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f44d_1f3ff/lottie.json)
+10-15 07:58:43.429  4437  6614 D cevx    : Starting download: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f44e/lottie.json
+10-15 07:58:43.429  4437  6614 V cevx    : Is http uri, downloading (uri: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f44e/lottie.json)
+10-15 07:58:43.455  4437  4546 D cevx    : Starting download: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f44e_1f3fb/lottie.json
+10-15 07:58:43.455  4437  4546 V cevx    : Is http uri, downloading (uri: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f44e_1f3fb/lottie.json)
+10-15 07:58:43.469  4437  6699 D cevx    : Starting download: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f44e_1f3fc/lottie.json
+10-15 07:58:43.469  4437  6699 V cevx    : Is http uri, downloading (uri: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f44e_1f3fc/lottie.json)
+10-15 07:58:43.492  4437  6614 D cevx    : Starting download: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f44e_1f3fd/lottie.json
+10-15 07:58:43.492  4437  6614 V cevx    : Is http uri, downloading (uri: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f44e_1f3fd/lottie.json)
+10-15 07:58:43.498  4437  4546 D cevx    : Starting download: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f44e_1f3fe/lottie.json
+10-15 07:58:43.498  4437  4546 V cevx    : Is http uri, downloading (uri: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f44e_1f3fe/lottie.json)
+10-15 07:58:43.510  4437  6699 D cevx    : Starting download: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f44e_1f3ff/lottie.json
+10-15 07:58:43.510  4437  6699 V cevx    : Is http uri, downloading (uri: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f44e_1f3ff/lottie.json)
+10-15 07:58:43.520  4437  6614 D cevx    : Starting download: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f64c/lottie.json
+10-15 07:58:43.520  4437  6614 V cevx    : Is http uri, downloading (uri: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f64c/lottie.json)
+10-15 07:58:43.535  4437  4546 D cevx    : Starting download: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f64c_1f3fb/lottie.json
+10-15 07:58:43.535  4437  4546 V cevx    : Is http uri, downloading (uri: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f64c_1f3fb/lottie.json)
+10-15 07:58:43.546  4437  6699 D cevx    : Starting download: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f64c_1f3fc/lottie.json
+10-15 07:58:43.547  4437  6699 V cevx    : Is http uri, downloading (uri: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f64c_1f3fc/lottie.json)
+10-15 07:58:43.570  4437  6614 D cevx    : Starting download: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f64c_1f3fd/lottie.json
+10-15 07:58:43.570  4437  6614 V cevx    : Is http uri, downloading (uri: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f64c_1f3fd/lottie.json)
+10-15 07:58:43.575  4437  4546 D cevx    : Starting download: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f64c_1f3fe/lottie.json
+10-15 07:58:43.575  4437  4546 V cevx    : Is http uri, downloading (uri: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f64c_1f3fe/lottie.json)
+10-15 07:58:43.595  4437  6699 D cevx    : Starting download: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f64c_1f3ff/lottie.json
+10-15 07:58:43.595  4437  6699 V cevx    : Is http uri, downloading (uri: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f64c_1f3ff/lottie.json)
+10-15 07:58:43.598  4437  6614 D cevx    : Starting download: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f44b/lottie.json
+10-15 07:58:43.598  4437  6614 V cevx    : Is http uri, downloading (uri: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f44b/lottie.json)
+10-15 07:58:43.618  4437  6699 D cevx    : Starting download: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f44b_1f3fc/lottie.json
+10-15 07:58:43.619  4437  6699 V cevx    : Is http uri, downloading (uri: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f44b_1f3fc/lottie.json)
+10-15 07:58:43.626  4437  4546 D cevx    : Starting download: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f44b_1f3fb/lottie.json
+10-15 07:58:43.626  4437  4546 V cevx    : Is http uri, downloading (uri: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f44b_1f3fb/lottie.json)
+10-15 07:58:43.640  4437  6614 D cevx    : Starting download: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f44b_1f3fd/lottie.json
+10-15 07:58:43.640  4437  6614 V cevx    : Is http uri, downloading (uri: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f44b_1f3fd/lottie.json)
+10-15 07:58:43.647  4437  6699 D cevx    : Starting download: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f44b_1f3fe/lottie.json
+10-15 07:58:43.647  4437  6699 V cevx    : Is http uri, downloading (uri: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f44b_1f3fe/lottie.json)
+10-15 07:58:43.666  4437  4546 D cevx    : Starting download: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f44b_1f3ff/lottie.json
+10-15 07:58:43.667  4437  4546 V cevx    : Is http uri, downloading (uri: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f44b_1f3ff/lottie.json)
+10-15 07:58:43.672  4437  6614 D cevx    : Starting download: https://fonts.gstatic.com/s/e/notoemoji/16.0/270c_fe0f/lottie.json
+10-15 07:58:43.672  4437  6614 V cevx    : Is http uri, downloading (uri: https://fonts.gstatic.com/s/e/notoemoji/16.0/270c_fe0f/lottie.json)
+10-15 07:58:43.684  4437  6699 D cevx    : Starting download: https://fonts.gstatic.com/s/e/notoemoji/16.0/270c_1f3fb/lottie.json
+10-15 07:58:43.684  4437  6699 V cevx    : Is http uri, downloading (uri: https://fonts.gstatic.com/s/e/notoemoji/16.0/270c_1f3fb/lottie.json)
+10-15 07:58:43.689  4437  4546 D cevx    : Starting download: https://fonts.gstatic.com/s/e/notoemoji/16.0/270c_1f3fc/lottie.json
+10-15 07:58:43.689  4437  4546 V cevx    : Is http uri, downloading (uri: https://fonts.gstatic.com/s/e/notoemoji/16.0/270c_1f3fc/lottie.json)
+10-15 07:58:43.700  4437  6614 D cevx    : Starting download: https://fonts.gstatic.com/s/e/notoemoji/16.0/270c_1f3fd/lottie.json
+10-15 07:58:43.700  4437  6614 V cevx    : Is http uri, downloading (uri: https://fonts.gstatic.com/s/e/notoemoji/16.0/270c_1f3fd/lottie.json)
+10-15 07:58:43.711  4437  6699 D cevx    : Starting download: https://fonts.gstatic.com/s/e/notoemoji/16.0/270c_1f3fe/lottie.json
+10-15 07:58:43.711  4437  6699 V cevx    : Is http uri, downloading (uri: https://fonts.gstatic.com/s/e/notoemoji/16.0/270c_1f3fe/lottie.json)
+10-15 07:58:43.724  4437  4546 D cevx    : Starting download: https://fonts.gstatic.com/s/e/notoemoji/16.0/270c_1f3ff/lottie.json
+10-15 07:58:43.724  4437  4546 V cevx    : Is http uri, downloading (uri: https://fonts.gstatic.com/s/e/notoemoji/16.0/270c_1f3ff/lottie.json)
+10-15 07:58:43.743  4437  6614 D cevx    : Starting download: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f91e/lottie.json
+10-15 07:58:43.743  4437  6614 V cevx    : Is http uri, downloading (uri: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f91e/lottie.json)
+10-15 07:58:43.765  4437  6699 D cevx    : Starting download: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f91e_1f3fb/lottie.json
+10-15 07:58:43.765  4437  6699 V cevx    : Is http uri, downloading (uri: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f91e_1f3fb/lottie.json)
+10-15 07:58:43.770  4437  4546 D cevx    : Starting download: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f91e_1f3fc/lottie.json
+10-15 07:58:43.770  4437  4546 V cevx    : Is http uri, downloading (uri: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f91e_1f3fc/lottie.json)
+10-15 07:58:43.785  4437  6614 D cevx    : Starting download: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f91e_1f3fd/lottie.json
+10-15 07:58:43.785  4437  6614 V cevx    : Is http uri, downloading (uri: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f91e_1f3fd/lottie.json)
+10-15 07:58:43.797  4437  6699 D cevx    : Starting download: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f91e_1f3fe/lottie.json
+10-15 07:58:43.797  4437  6699 V cevx    : Is http uri, downloading (uri: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f91e_1f3fe/lottie.json)
+10-15 07:58:43.804  4437  4546 D cevx    : Starting download: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f91e_1f3ff/lottie.json
+10-15 07:58:43.805  4437  4546 V cevx    : Is http uri, downloading (uri: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f91e_1f3ff/lottie.json)
+10-15 07:58:43.819  4437  6614 D cevx    : Starting download: https://fonts.gstatic.com/s/e/notoemoji/16.0/261d_fe0f/lottie.json
+10-15 07:58:43.819  4437  6614 V cevx    : Is http uri, downloading (uri: https://fonts.gstatic.com/s/e/notoemoji/16.0/261d_fe0f/lottie.json)
+10-15 07:58:43.824  4437  6699 D cevx    : Starting download: https://fonts.gstatic.com/s/e/notoemoji/16.0/261d_1f3fb/lottie.json
+10-15 07:58:43.824  4437  6699 V cevx    : Is http uri, downloading (uri: https://fonts.gstatic.com/s/e/notoemoji/16.0/261d_1f3fb/lottie.json)
+10-15 07:58:43.839  4437  4546 D cevx    : Starting download: https://fonts.gstatic.com/s/e/notoemoji/16.0/261d_1f3fc/lottie.json
+10-15 07:58:43.839  4437  4546 V cevx    : Is http uri, downloading (uri: https://fonts.gstatic.com/s/e/notoemoji/16.0/261d_1f3fc/lottie.json)
+10-15 07:58:43.841  4437  6614 D cevx    : Starting download: https://fonts.gstatic.com/s/e/notoemoji/16.0/261d_1f3fd/lottie.json
+10-15 07:58:43.841  4437  6614 V cevx    : Is http uri, downloading (uri: https://fonts.gstatic.com/s/e/notoemoji/16.0/261d_1f3fd/lottie.json)
+10-15 07:58:43.868  4437  6699 D cevx    : Starting download: https://fonts.gstatic.com/s/e/notoemoji/16.0/261d_1f3fe/lottie.json
+10-15 07:58:43.868  4437  6699 V cevx    : Is http uri, downloading (uri: https://fonts.gstatic.com/s/e/notoemoji/16.0/261d_1f3fe/lottie.json)
+10-15 07:58:43.871  4437  6614 D cevx    : Starting download: https://fonts.gstatic.com/s/e/notoemoji/16.0/261d_1f3ff/lottie.json
+10-15 07:58:43.871  4437  6614 V cevx    : Is http uri, downloading (uri: https://fonts.gstatic.com/s/e/notoemoji/16.0/261d_1f3ff/lottie.json)
+10-15 07:58:43.888  4437  4546 D cevx    : Starting download: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f64f/lottie.json
+10-15 07:58:43.888  4437  4546 V cevx    : Is http uri, downloading (uri: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f64f/lottie.json)
+10-15 07:58:43.897  4437  6699 D cevx    : Starting download: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f64f_1f3fb/lottie.json
+10-15 07:58:43.897  4437  6699 V cevx    : Is http uri, downloading (uri: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f64f_1f3fb/lottie.json)
+10-15 07:58:43.918  4437  6614 D cevx    : Starting download: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f64f_1f3fc/lottie.json
+10-15 07:58:43.918  4437  6614 V cevx    : Is http uri, downloading (uri: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f64f_1f3fc/lottie.json)
+10-15 07:58:43.921  4437  4546 D cevx    : Starting download: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f64f_1f3fd/lottie.json
+10-15 07:58:43.922  4437  4546 V cevx    : Is http uri, downloading (uri: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f64f_1f3fd/lottie.json)
+10-15 07:58:43.938  4437  6699 D cevx    : Starting download: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f64f_1f3fe/lottie.json
+10-15 07:58:43.938  4437  6699 V cevx    : Is http uri, downloading (uri: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f64f_1f3fe/lottie.json)
+10-15 07:58:43.963  4437  6614 D cevx    : Starting download: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f483/lottie.json
+10-15 07:58:43.963  4437  6614 V cevx    : Is http uri, downloading (uri: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f483/lottie.json)
+10-15 07:58:43.964  4437  4546 D cevx    : Starting download: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f64f_1f3ff/lottie.json
+10-15 07:58:43.964  4437  4546 V cevx    : Is http uri, downloading (uri: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f64f_1f3ff/lottie.json)
+10-15 07:58:43.994  4437  6699 D cevx    : Starting download: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f483_1f3fb/lottie.json
+10-15 07:58:43.994  4437  6699 V cevx    : Is http uri, downloading (uri: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f483_1f3fb/lottie.json)
+10-15 07:58:44.006  4437  4546 D cevx    : Starting download: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f483_1f3fc/lottie.json
+10-15 07:58:44.006  4437  4546 V cevx    : Is http uri, downloading (uri: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f483_1f3fc/lottie.json)
+10-15 07:58:44.033  4437  6614 D cevx    : Starting download: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f483_1f3fd/lottie.json
+10-15 07:58:44.033  4437  6614 V cevx    : Is http uri, downloading (uri: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f483_1f3fd/lottie.json)
+10-15 07:58:44.073  4437  6699 D cevx    : Starting download: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f483_1f3fe/lottie.json
+10-15 07:58:44.073  4437  6699 V cevx    : Is http uri, downloading (uri: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f483_1f3fe/lottie.json)
+10-15 07:58:44.101  4437  4546 D cevx    : Starting download: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f483_1f3ff/lottie.json
+10-15 07:58:44.101  4437  4546 V cevx    : Is http uri, downloading (uri: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f483_1f3ff/lottie.json)
+10-15 07:58:44.117  4437  6699 D cevx    : Starting download: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f339/lottie.json
+10-15 07:58:44.117  4437  6699 V cevx    : Is http uri, downloading (uri: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f339/lottie.json)
+10-15 07:58:44.150  4437  6614 D cevx    : Starting download: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f940/lottie.json
+10-15 07:58:44.150  4437  6614 V cevx    : Is http uri, downloading (uri: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f940/lottie.json)
+10-15 07:58:44.155  4437  4546 D cevx    : Starting download: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f342/lottie.json
+10-15 07:58:44.155  4437  4546 V cevx    : Is http uri, downloading (uri: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f342/lottie.json)
+10-15 07:58:44.233  4437  6699 D cevx    : Starting download: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f331/lottie.json
+10-15 07:58:44.233  4437  6699 V cevx    : Is http uri, downloading (uri: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f331/lottie.json)
+10-15 07:58:44.238  4437  4546 D cevx    : Starting download: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f343/lottie.json
+10-15 07:58:44.238  4437  4546 V cevx    : Is http uri, downloading (uri: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f343/lottie.json)
+10-15 07:58:44.257  4437  6614 D cevx    : Starting download: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f340/lottie.json
+10-15 07:58:44.257  4437  6614 V cevx    : Is http uri, downloading (uri: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f340/lottie.json)
+10-15 07:58:44.259  4437  6699 D cevx    : Starting download: https://fonts.gstatic.com/s/e/notoemoji/16.0/2744_fe0f/lottie.json
+10-15 07:58:44.259  4437  6699 V cevx    : Is http uri, downloading (uri: https://fonts.gstatic.com/s/e/notoemoji/16.0/2744_fe0f/lottie.json)
+10-15 07:58:44.310  4437  4546 D cevx    : Starting download: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f30b/lottie.json
+10-15 07:58:44.310  4437  4546 V cevx    : Is http uri, downloading (uri: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f30b/lottie.json)
+10-15 07:58:44.319  4437  6699 D cevx    : Starting download: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f305/lottie.json
+10-15 07:58:44.319  4437  6699 V cevx    : Is http uri, downloading (uri: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f305/lottie.json)
+10-15 07:58:44.340  4437  6614 D cevx    : Starting download: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f304/lottie.json
+10-15 07:58:44.340  4437  6614 V cevx    : Is http uri, downloading (uri: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f304/lottie.json)
+10-15 07:58:44.343  4437  4546 D cevx    : Starting download: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f308/lottie.json
+10-15 07:58:44.343  4437  4546 V cevx    : Is http uri, downloading (uri: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f308/lottie.json)
+10-15 07:58:44.359  4437  6699 D cevx    : Starting download: https://fonts.gstatic.com/s/e/notoemoji/16.0/1fae7/lottie.json
+10-15 07:58:44.359  4437  6699 V cevx    : Is http uri, downloading (uri: https://fonts.gstatic.com/s/e/notoemoji/16.0/1fae7/lottie.json)
+10-15 07:58:44.364  4437  6614 D cevx    : Starting download: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f30a/lottie.json
+10-15 07:58:44.364  4437  6614 V cevx    : Is http uri, downloading (uri: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f30a/lottie.json)
+10-15 07:58:44.377  4437  4546 D cevx    : Starting download: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f32c_fe0f/lottie.json
+10-15 07:58:44.377  4437  4546 V cevx    : Is http uri, downloading (uri: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f32c_fe0f/lottie.json)
+10-15 07:58:44.384  4437  6699 D cevx    : Starting download: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f32a_fe0f/lottie.json
+10-15 07:58:44.384  4437  6699 V cevx    : Is http uri, downloading (uri: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f32a_fe0f/lottie.json)
+10-15 07:58:44.424  4437  6614 D cevx    : Starting download: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f4a7/lottie.json
+10-15 07:58:44.424  4437  6614 V cevx    : Is http uri, downloading (uri: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f4a7/lottie.json)
+10-15 07:58:44.434  4437  4546 D cevx    : Starting download: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f327_fe0f/lottie.json
+10-15 07:58:44.434  4437  4546 V cevx    : Is http uri, downloading (uri: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f327_fe0f/lottie.json)
+10-15 07:58:44.447  4437  6699 D cevx    : Starting download: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f329_fe0f/lottie.json
+10-15 07:58:44.447  4437  6699 V cevx    : Is http uri, downloading (uri: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f329_fe0f/lottie.json)
+10-15 07:58:44.455  4437  6614 D cevx    : Starting download: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f30d/lottie.json
+10-15 07:58:44.456  4437  6614 V cevx    : Is http uri, downloading (uri: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f30d/lottie.json)
+10-15 07:58:44.505  4437  4546 D cevx    : Starting download: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f30e/lottie.json
+10-15 07:58:44.505  4437  4546 V cevx    : Is http uri, downloading (uri: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f30e/lottie.json)
+10-15 07:58:44.511  4437  6699 D cevx    : Starting download: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f30f/lottie.json
+10-15 07:58:44.511  4437  6699 V cevx    : Is http uri, downloading (uri: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f30f/lottie.json)
+10-15 07:58:44.533  4437  6614 D cevx    : Starting download: https://fonts.gstatic.com/s/e/notoemoji/16.0/2604_fe0f/lottie.json
+10-15 07:58:44.533  4437  6614 V cevx    : Is http uri, downloading (uri: https://fonts.gstatic.com/s/e/notoemoji/16.0/2604_fe0f/lottie.json)
+10-15 07:58:44.537  4437  4546 D cevx    : Starting download: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f42e/lottie.json
+10-15 07:58:44.537  4437  4546 V cevx    : Is http uri, downloading (uri: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f42e/lottie.json)
+10-15 07:58:44.552  4437  6699 D cevx    : Starting download: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f984/lottie.json
+10-15 07:58:44.552  4437  6699 V cevx    : Is http uri, downloading (uri: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f984/lottie.json)
+10-15 07:58:44.559  4437  6614 D cevx    : Starting download: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f98e/lottie.json
+10-15 07:58:44.559  4437  6614 V cevx    : Is http uri, downloading (uri: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f98e/lottie.json)
+10-15 07:58:44.591  4437  4546 D cevx    : Starting download: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f409/lottie.json
+10-15 07:58:44.592  4437  4546 V cevx    : Is http uri, downloading (uri: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f409/lottie.json)
+10-15 07:58:44.597  4437  6699 D cevx    : Starting download: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f996/lottie.json
+10-15 07:58:44.597  4437  6699 V cevx    : Is http uri, downloading (uri: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f996/lottie.json)
+10-15 07:58:44.651  4437  4546 D cevx    : Starting download: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f422/lottie.json
+10-15 07:58:44.651  4437  4546 V cevx    : Is http uri, downloading (uri: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f422/lottie.json)
+10-15 07:58:44.654  4437  6614 D cevx    : Starting download: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f995/lottie.json
+10-15 07:58:44.654  4437  6614 V cevx    : Is http uri, downloading (uri: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f995/lottie.json)
+10-15 07:58:44.687  4437  6699 D cevx    : Starting download: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f40a/lottie.json
+10-15 07:58:44.687  4437  6699 V cevx    : Is http uri, downloading (uri: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f40a/lottie.json)
+10-15 07:58:44.693  4437  4546 D cevx    : Starting download: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f40d/lottie.json
+10-15 07:58:44.693  4437  4546 V cevx    : Is http uri, downloading (uri: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f40d/lottie.json)
+10-15 07:58:44.709  4437  6614 D cevx    : Starting download: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f438/lottie.json
+10-15 07:58:44.709  4437  6614 V cevx    : Is http uri, downloading (uri: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f438/lottie.json)
+10-15 07:58:44.720  4437  4546 D cevx    : Starting download: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f407/lottie.json
+10-15 07:58:44.720  4437  4546 V cevx    : Is http uri, downloading (uri: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f407/lottie.json)
+10-15 07:58:44.725  4437  6699 D cevx    : Starting download: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f400/lottie.json
+10-15 07:58:44.725  4437  6699 V cevx    : Is http uri, downloading (uri: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f400/lottie.json)
+10-15 07:58:44.736  4437  6614 D cevx    : Starting download: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f429/lottie.json
+10-15 07:58:44.736  4437  6614 V cevx    : Is http uri, downloading (uri: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f429/lottie.json)
+10-15 07:58:44.750  4437  4546 D cevx    : Starting download: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f415/lottie.json
+10-15 07:58:44.750  4437  4546 V cevx    : Is http uri, downloading (uri: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f415/lottie.json)
+10-15 07:58:44.757  4437  6699 D cevx    : Starting download: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f9ae/lottie.json
+10-15 07:58:44.757  4437  6699 V cevx    : Is http uri, downloading (uri: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f9ae/lottie.json)
+10-15 07:58:44.778  4437  6614 D cevx    : Starting download: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f415_200d_1f9ba/lottie.json
+10-15 07:58:44.778  4437  6614 V cevx    : Is http uri, downloading (uri: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f415_200d_1f9ba/lottie.json)
+10-15 07:58:44.779  4437  4546 D cevx    : Starting download: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f416/lottie.json
+10-15 07:58:44.779  4437  4546 V cevx    : Is http uri, downloading (uri: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f416/lottie.json)
+10-15 07:58:44.852  4437  6699 D cevx    : Starting download: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f40e/lottie.json
+10-15 07:58:44.852  4437  6699 V cevx    : Is http uri, downloading (uri: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f40e/lottie.json)
+10-15 07:58:44.873  4437  4546 D cevx    : Starting download: https://fonts.gstatic.com/s/e/notoemoji/16.0/1facf/lottie.json
+10-15 07:58:44.873  4437  4546 V cevx    : Is http uri, downloading (uri: https://fonts.gstatic.com/s/e/notoemoji/16.0/1facf/lottie.json)
+10-15 07:58:44.874  4437  6614 D cevx    : Starting download: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f402/lottie.json
+10-15 07:58:44.874  4437  6614 V cevx    : Is http uri, downloading (uri: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f402/lottie.json)
+10-15 07:58:44.891  4437  6699 D cevx    : Starting download: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f410/lottie.json
+10-15 07:58:44.891  4437  6699 V cevx    : Is http uri, downloading (uri: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f410/lottie.json)
+10-15 07:58:44.910  4437  6614 D cevx    : Starting download: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f998/lottie.json
+10-15 07:58:44.910  4437  6614 V cevx    : Is http uri, downloading (uri: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f998/lottie.json)
+10-15 07:58:44.918  4437  4546 D cevx    : Starting download: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f405/lottie.json
+10-15 07:58:44.918  4437  4546 V cevx    : Is http uri, downloading (uri: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f405/lottie.json)
+10-15 07:58:44.939  4437  6699 D cevx    : Starting download: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f412/lottie.json
+10-15 07:58:44.939  4437  6699 V cevx    : Is http uri, downloading (uri: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f412/lottie.json)
+10-15 07:58:44.967  4437  6614 D cevx    : Starting download: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f98d/lottie.json
+10-15 07:58:44.967  4437  6614 V cevx    : Is http uri, downloading (uri: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f98d/lottie.json)
+10-15 07:58:44.971  4437  4546 D cevx    : Starting download: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f9a7/lottie.json
+10-15 07:58:44.971  4437  4546 V cevx    : Is http uri, downloading (uri: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f9a7/lottie.json)
+10-15 07:58:44.993  4437  6699 D cevx    : Starting download: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f43f_fe0f/lottie.json
+10-15 07:58:44.993  4437  6699 V cevx    : Is http uri, downloading (uri: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f43f_fe0f/lottie.json)
+10-15 07:58:45.000  4437  4546 D cevx    : Starting download: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f9a6/lottie.json
+10-15 07:58:45.000  4437  4546 V cevx    : Is http uri, downloading (uri: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f9a6/lottie.json)
+10-15 07:58:45.010  4437  6614 D cevx    : Starting download: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f987/lottie.json
+10-15 07:58:45.010  4437  6614 V cevx    : Is http uri, downloading (uri: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f987/lottie.json)
+10-15 07:58:45.022  4437  6699 D cevx    : Starting download: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f426/lottie.json
+10-15 07:58:45.022  4437  6699 V cevx    : Is http uri, downloading (uri: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f426/lottie.json)
+10-15 07:58:45.025  4437  4546 D cevx    : Starting download: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f426_200d_2b1b/lottie.json
+10-15 07:58:45.025  4437  4546 V cevx    : Is http uri, downloading (uri: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f426_200d_2b1b/lottie.json)
+10-15 07:58:45.042  4437  6614 D cevx    : Starting download: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f413/lottie.json
+10-15 07:58:45.042  4437  6614 V cevx    : Is http uri, downloading (uri: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f413/lottie.json)
+10-15 07:58:45.049  4437  6699 D cevx    : Starting download: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f423/lottie.json
+10-15 07:58:45.049  4437  6699 V cevx    : Is http uri, downloading (uri: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f423/lottie.json)
+10-15 07:58:45.059  4437  4546 D cevx    : Starting download: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f424/lottie.json
+10-15 07:58:45.059  4437  4546 V cevx    : Is http uri, downloading (uri: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f424/lottie.json)
+10-15 07:58:45.082  4437  6614 D cevx    : Starting download: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f425/lottie.json
+10-15 07:58:45.082  4437  6614 V cevx    : Is http uri, downloading (uri: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f425/lottie.json)
+10-15 07:58:45.083  4437  6699 D cevx    : Starting download: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f985/lottie.json
+10-15 07:58:45.083  4437  6699 V cevx    : Is http uri, downloading (uri: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f985/lottie.json)
+10-15 07:58:45.098  4437  4546 D cevx    : Starting download: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f54a_fe0f/lottie.json
+10-15 07:58:45.098  4437  4546 V cevx    : Is http uri, downloading (uri: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f54a_fe0f/lottie.json)
+10-15 07:58:45.101  4437  6614 D cevx    : Starting download: https://fonts.gstatic.com/s/e/notoemoji/16.0/1fabf/lottie.json
+10-15 07:58:45.101  4437  6614 V cevx    : Is http uri, downloading (uri: https://fonts.gstatic.com/s/e/notoemoji/16.0/1fabf/lottie.json)
+10-15 07:58:45.129  4437  6699 D cevx    : Starting download: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f99a/lottie.json
+10-15 07:58:45.129  4437  6699 V cevx    : Is http uri, downloading (uri: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f99a/lottie.json)
+10-15 07:58:45.143  4437  4546 D cevx    : Starting download: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f9ad/lottie.json
+10-15 07:58:45.143  4437  4546 V cevx    : Is http uri, downloading (uri: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f9ad/lottie.json)
+10-15 07:58:45.162  4437  6614 D cevx    : Starting download: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f988/lottie.json
+10-15 07:58:45.162  4437  6614 V cevx    : Is http uri, downloading (uri: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f988/lottie.json)
+10-15 07:58:45.178  4437  6699 D cevx    : Starting download: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f42c/lottie.json
+10-15 07:58:45.178  4437  6699 V cevx    : Is http uri, downloading (uri: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f42c/lottie.json)
+10-15 07:58:45.204  4437  4546 D cevx    : Starting download: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f433/lottie.json
+10-15 07:58:45.204  4437  4546 V cevx    : Is http uri, downloading (uri: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f433/lottie.json)
+10-15 07:58:45.206  4437  6614 D cevx    : Starting download: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f421/lottie.json
+10-15 07:58:45.206  4437  6614 V cevx    : Is http uri, downloading (uri: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f421/lottie.json)
+10-15 07:58:45.221  4437  6699 D cevx    : Starting download: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f980/lottie.json
+10-15 07:58:45.221  4437  6699 V cevx    : Is http uri, downloading (uri: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f980/lottie.json)
+10-15 07:58:45.230  4437  4546 D cevx    : Starting download: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f419/lottie.json
+10-15 07:58:45.230  4437  4546 V cevx    : Is http uri, downloading (uri: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f419/lottie.json)
+10-15 07:58:45.239  4437  6614 D cevx    : Starting download: https://fonts.gstatic.com/s/e/notoemoji/16.0/1fabc/lottie.json
+10-15 07:58:45.239  4437  6614 V cevx    : Is http uri, downloading (uri: https://fonts.gstatic.com/s/e/notoemoji/16.0/1fabc/lottie.json)
+10-15 07:58:45.264  4437  6699 D cevx    : Starting download: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f577_fe0f/lottie.json
+10-15 07:58:45.264  4437  6699 V cevx    : Is http uri, downloading (uri: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f577_fe0f/lottie.json)
+10-15 07:58:45.283  4437  4546 D cevx    : Starting download: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f40c/lottie.json
+10-15 07:58:45.283  4437  4546 V cevx    : Is http uri, downloading (uri: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f40c/lottie.json)
+10-15 07:58:45.285  4437  6614 D cevx    : Starting download: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f41c/lottie.json
+10-15 07:58:45.285  4437  6614 V cevx    : Is http uri, downloading (uri: https://fonts.gstatic.com/s/e/notoemoji/16.0/1f41c/lottie.json)

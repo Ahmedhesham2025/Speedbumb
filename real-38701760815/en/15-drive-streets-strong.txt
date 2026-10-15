@@ -1,0 +1,1 @@
+streets=true available=true bumps=13 centre=30.049,31.236 radius=400.0 road=Qasr El Nil St labels=6 idle=true style=true failed=false spots=13 me=[30.049, 31.236, 40.0] camera=[30.049000000000003, 31.23600000000002, 15.977578708060417] drawn=3

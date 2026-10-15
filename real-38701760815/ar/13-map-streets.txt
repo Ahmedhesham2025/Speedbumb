@@ -1,0 +1,1 @@
+streets=true available=true bumps=13 centre=30.049,31.236 radius=961.7849776622153 road=null labels=9 idle=true style=true failed=false spots=13 me=[30.049, 31.236, NaN] camera=[30.049000000000003, 31.23599999999999, 14.711864315451999] drawn=6
