@@ -160,6 +160,12 @@ Practice ideas:
 
 ---
 
+## Credits and licences
+The app is GPL-3.0. It ships these third-party parts under their own licences:
+- **MapLibre Native** (BSD-2-Clause): the street map engine, with the helpers it pulls in (Apache-2.0).
+- **Map data © OpenStreetMap contributors** (ODbL), tiles from **OpenFreeMap** with the **OpenMapTiles** schema. They are credited on the map itself.
+- **Roboto Flex** font, © The Roboto Flex Project Authors, under the **SIL Open Font License 1.1**. It is bundled as `app/src/main/assets/fonts/RobotoFlex-Variable.ttf`, with the licence next to it (`RobotoFlex-OFL.txt`). The OFL allows bundling the font with software under any licence, as long as the font keeps its own licence.
+
 ## Known limits
 - Tested in simulation, not yet on a real road. The thresholds are sensible starting points; use the jolt meter and the export to tune them for your car and phone.
 - Bump/pothole detection is also tested only in simulation. Speed bumps crossed at an angle, or potholes that span the whole lane, can look like the other kind; a spot gets surer with every pass, and you can correct it by hand.

@@ -66,6 +66,8 @@ class DrivePage(private val a: MainActivity) : Page {
     private lateinit var lastTripBadge: TextView
     private lateinit var lastTripTitle: TextView
     private var mapCentred = false
+    /** Score of the newest saved trip (-1 = none or too short), read with the map in [loadMap]. */
+    private var savedLastScore = -1
 
     override val view: View = build()
 
@@ -177,8 +179,9 @@ class DrivePage(private val a: MainActivity) : Page {
     private fun loadMap() {
         Thread {
             val db = BumpDb(a.applicationContext)
-            val loaded = try { db.loadBumps() } finally { db.close() }
+            val (loaded, newest) = try { db.loadBumps() to db.trips(1).firstOrNull() } finally { db.close() }
             a.runOnUiThread {
+                savedLastScore = newest?.score ?: -1
                 map.bumps = loaded
                 if (!mapCentred && loaded.isNotEmpty() && map.meLat.isNaN()) {
                     map.centerLat = loaded.map { it.lat }.average()
@@ -731,7 +734,8 @@ class DrivePage(private val a: MainActivity) : Page {
             else -> a.getString(R.string.drive_gps_looking)
         }
 
-        val last = LiveState.lastTripScore
+        // The trip that just ended (in memory), else the newest saved one: after a restart the row still shows.
+        val last = if (LiveState.lastTripScore >= 0) LiveState.lastTripScore else savedLastScore
         lastTripRow.visibility = if (!rec && last >= 0) View.VISIBLE else View.GONE
         if (!rec && last >= 0) {
             Ui.setScore(lastTripBadge, last)

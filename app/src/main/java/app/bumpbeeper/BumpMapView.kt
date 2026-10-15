@@ -4,7 +4,6 @@ import android.content.Context
 import android.graphics.Canvas
 import android.graphics.DashPathEffect
 import android.graphics.Paint
-import android.graphics.Typeface
 import android.util.TypedValue
 import android.view.MotionEvent
 import android.view.View
@@ -67,7 +66,7 @@ class BumpMapView(ctx: Context) : View(ctx) {
     }
     private val bang = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         textAlign = Paint.Align.CENTER
-        typeface = Typeface.DEFAULT_BOLD
+        typeface = Ui.font(ctx, 700)
         textSize = 12f * density
     }
     private val rings = context.getString(R.string.map_rings)
