@@ -1,0 +1,300 @@
+10-15 08:07:05.203  4289  4923 D cevx    : Starting download: https://c.tenor.com/O3M7eh2ZLX0AAAAk/lobster-studio-winter.gif
+10-15 08:07:05.203  4289  4923 V cevx    : Is http uri, downloading (uri: https://c.tenor.com/O3M7eh2ZLX0AAAAk/lobster-studio-winter.gif)
+10-15 08:07:05.206  4289  4421 D cevx    : Starting download: https://c.tenor.com/xw-0keKZc8sAAAAk/heart-in-love.gif
+10-15 08:07:05.206  4289  4421 V cevx    : Is http uri, downloading (uri: https://c.tenor.com/xw-0keKZc8sAAAAk/heart-in-love.gif)
+10-15 08:07:05.240  4289  4934 D cevx    : Starting download: https://c.tenor.com/ja6y9r51cHAAAAAk/tegan-teganiversen.gif
+10-15 08:07:05.240  4289  4934 V cevx    : Is http uri, downloading (uri: https://c.tenor.com/ja6y9r51cHAAAAAk/tegan-teganiversen.gif)
+10-15 08:07:05.248  4289  4421 D cevx    : Starting download: https://c.tenor.com/3h6aJe0ZgcEAAAAk/full-big-stomach.gif
+10-15 08:07:05.248  4289  4421 V cevx    : Is http uri, downloading (uri: https://c.tenor.com/3h6aJe0ZgcEAAAAk/full-big-stomach.gif)
+10-15 08:07:05.309  4289  4923 D cevx    : Starting download: https://c.tenor.com/7Vzmnv2UZWcAAAAk/love-lovely.gif
+10-15 08:07:05.309  4289  4923 V cevx    : Is http uri, downloading (uri: https://c.tenor.com/7Vzmnv2UZWcAAAAk/love-lovely.gif)
+10-15 08:07:05.314  4289  4421 D cevx    : Starting download: https://c.tenor.com/JcOoy6xtsxwAAAAk/puglie-puglie-pug.gif
+10-15 08:07:05.314  4289  4421 V cevx    : Is http uri, downloading (uri: https://c.tenor.com/JcOoy6xtsxwAAAAk/puglie-puglie-pug.gif)
+10-15 08:07:05.377  4289  4934 D cevx    : Starting download: https://c.tenor.com/bQbtTfHAbkoAAAAk/kstr-kochstrasse.gif
+10-15 08:07:05.377  4289  4934 V cevx    : Is http uri, downloading (uri: https://c.tenor.com/bQbtTfHAbkoAAAAk/kstr-kochstrasse.gif)
+10-15 08:07:05.378  4289  4923 D cevx    : Starting download: https://c.tenor.com/AFf0sKHqXmoAAAAk/tasty-yummy.gif
+10-15 08:07:05.378  4289  4923 V cevx    : Is http uri, downloading (uri: https://c.tenor.com/AFf0sKHqXmoAAAAk/tasty-yummy.gif)
+10-15 08:07:05.405  4289  4421 D cevx    : Starting download: https://c.tenor.com/ognz8SNu__QAAAAk/piffle-pumpkin-pie.gif
+10-15 08:07:05.405  4289  4421 V cevx    : Is http uri, downloading (uri: https://c.tenor.com/ognz8SNu__QAAAAk/piffle-pumpkin-pie.gif)
+10-15 08:07:05.412  4289  4923 D cevx    : Starting download: https://c.tenor.com/Muy5iqWr9lYAAAAk/santa-claus-santa.gif
+10-15 08:07:05.412  4289  4923 V cevx    : Is http uri, downloading (uri: https://c.tenor.com/Muy5iqWr9lYAAAAk/santa-claus-santa.gif)
+10-15 08:07:05.439  4289  4934 D cevx    : Starting download: https://c.tenor.com/a1VADuLpJLQAAAAk/%E3%81%8A%E3%82%81%E3%81%A7%E3%81%A8%E3%81%86-%E3%81%8A%E7%A5%9D%E3%81%84.gif
+10-15 08:07:05.439  4289  4934 V cevx    : Is http uri, downloading (uri: https://c.tenor.com/a1VADuLpJLQAAAAk/%E3%81%8A%E3%82%81%E3%81%A7%E3%81%A8%E3%81%86-%E3%81%8A%E7%A5%9D%E3%81%84.gif)
+10-15 08:07:05.444  4289  4421 D cevx    : Starting download: https://c.tenor.com/bSS9RT1taOoAAAAk/pies-pie-time.gif
+10-15 08:07:05.444  4289  4421 V cevx    : Is http uri, downloading (uri: https://c.tenor.com/bSS9RT1taOoAAAAk/pies-pie-time.gif)
+10-15 08:07:05.469  4289  4923 D cevx    : Starting download: https://c.tenor.com/01dmrbKZwnoAAAAk/angkukuehgirl-angkukueh-girl-and-friends.gif
+10-15 08:07:05.469  4289  4923 V cevx    : Is http uri, downloading (uri: https://c.tenor.com/01dmrbKZwnoAAAAk/angkukuehgirl-angkukueh-girl-and-friends.gif)
+10-15 08:07:05.476  4289  4934 D cevx    : Starting download: https://c.tenor.com/6CuZBvb9jV8AAAAk/happy-cocoa-day-hot-cocoa.gif
+10-15 08:07:05.476  4289  4934 V cevx    : Is http uri, downloading (uri: https://c.tenor.com/6CuZBvb9jV8AAAAk/happy-cocoa-day-hot-cocoa.gif)
+10-15 08:07:05.498  4289  4421 D cevx    : Starting download: https://c.tenor.com/WNp649LKQOcAAAAk/xmas-christmas.gif
+10-15 08:07:05.498  4289  4421 V cevx    : Is http uri, downloading (uri: https://c.tenor.com/WNp649LKQOcAAAAk/xmas-christmas.gif)
+10-15 08:07:05.503  4289  4923 D cevx    : Starting download: https://c.tenor.com/MuTg3bOCAk8AAAAk/rafsdesign-rafs84.gif
+10-15 08:07:05.503  4289  4923 V cevx    : Is http uri, downloading (uri: https://c.tenor.com/MuTg3bOCAk8AAAAk/rafsdesign-rafs84.gif)
+10-15 08:07:05.538  4289  4934 D cevx    : Starting download: https://c.tenor.com/Qg7wcK_PJqIAAAAk/puglie-puglie-pug.gif
+10-15 08:07:05.538  4289  4934 V cevx    : Is http uri, downloading (uri: https://c.tenor.com/Qg7wcK_PJqIAAAAk/puglie-puglie-pug.gif)
+10-15 08:07:05.545  4289  4923 D cevx    : Starting download: https://c.tenor.com/bj5T0D2ctVwAAAAk/animation-cat.gif
+10-15 08:07:05.545  4289  4923 V cevx    : Is http uri, downloading (uri: https://c.tenor.com/bj5T0D2ctVwAAAAk/animation-cat.gif)
+10-15 08:07:05.566  4289  4421 D cevx    : Starting download: https://c.tenor.com/xJeX4JTwKc0AAAAk/christmas-snow.gif
+10-15 08:07:05.566  4289  4421 V cevx    : Is http uri, downloading (uri: https://c.tenor.com/xJeX4JTwKc0AAAAk/christmas-snow.gif)
+10-15 08:07:05.581  4289  4934 D cevx    : Starting download: https://c.tenor.com/dLjU23NeMnkAAAAk/coffee-dancing-mug.gif
+10-15 08:07:05.581  4289  4934 V cevx    : Is http uri, downloading (uri: https://c.tenor.com/dLjU23NeMnkAAAAk/coffee-dancing-mug.gif)
+10-15 08:07:05.615  4289  4923 D cevx    : Starting download: https://c.tenor.com/pzciJVwhnJkAAAAk/funny-happy.gif
+10-15 08:07:05.615  4289  4923 V cevx    : Is http uri, downloading (uri: https://c.tenor.com/pzciJVwhnJkAAAAk/funny-happy.gif)
+10-15 08:07:05.620  4289  4421 D cevx    : Starting download: https://c.tenor.com/_UiJbxHvSikAAAAk/love-amor.gif
+10-15 08:07:05.620  4289  4421 V cevx    : Is http uri, downloading (uri: https://c.tenor.com/_UiJbxHvSikAAAAk/love-amor.gif)
+10-15 08:07:05.663  4289  4934 D cevx    : Starting download: https://c.tenor.com/-Jw-bc85bggAAAAk/world-sleep-day-sleeping.gif
+10-15 08:07:05.663  4289  4934 V cevx    : Is http uri, downloading (uri: https://c.tenor.com/-Jw-bc85bggAAAAk/world-sleep-day-sleeping.gif)
+10-15 08:07:05.669  4289  4421 D cevx    : Starting download: https://c.tenor.com/DUrT6vaLHuYAAAAk/sad-crying.gif
+10-15 08:07:05.669  4289  4421 V cevx    : Is http uri, downloading (uri: https://c.tenor.com/DUrT6vaLHuYAAAAk/sad-crying.gif)
+10-15 08:07:05.722  4289  4923 D cevx    : Starting download: https://c.tenor.com/j51eWQxcvYgAAAAk/kiss-muah.gif
+10-15 08:07:05.722  4289  4923 V cevx    : Is http uri, downloading (uri: https://c.tenor.com/j51eWQxcvYgAAAAk/kiss-muah.gif)
+10-15 08:07:05.726  4289  4421 D cevx    : Starting download: https://c.tenor.com/wmCNSigPu0oAAAAk/crying-sobbing.gif
+10-15 08:07:05.726  4289  4421 V cevx    : Is http uri, downloading (uri: https://c.tenor.com/wmCNSigPu0oAAAAk/crying-sobbing.gif)
+10-15 08:07:05.752  4289  4934 D cevx    : Starting download: https://c.tenor.com/aV6WH87Q80AAAAAk/grim-sad.gif
+10-15 08:07:05.752  4289  4934 V cevx    : Is http uri, downloading (uri: https://c.tenor.com/aV6WH87Q80AAAAAk/grim-sad.gif)
+10-15 08:07:05.756  4289  4923 D cevx    : Starting download: https://c.tenor.com/9bXcn-vZ28UAAAAk/happy-party.gif
+10-15 08:07:05.756  4289  4923 V cevx    : Is http uri, downloading (uri: https://c.tenor.com/9bXcn-vZ28UAAAAk/happy-party.gif)
+10-15 08:07:05.787  4289  4421 D cevx    : Starting download: https://c.tenor.com/NMeS27y8gQIAAAAk/lauilustra-cuchi.gif
+10-15 08:07:05.787  4289  4421 V cevx    : Is http uri, downloading (uri: https://c.tenor.com/NMeS27y8gQIAAAAk/lauilustra-cuchi.gif)
+10-15 08:07:05.788  4289  4923 D cevx    : Starting download: https://c.tenor.com/gwSzzjV-lkYAAAAk/%E0%A4%B8%E0%A5%8B%E0%A4%AF%E0%A4%BE%E0%A4%B9%E0%A5%81%E0%A4%86-%E0%A4%B8%E0%A5%8B%E0%A4%A8%E0%A5%87%E0%A4%95%E0%A4%BE%E0%A4%B8%E0%A4%AE%E0%A4%AF.gif
+10-15 08:07:05.788  4289  4923 V cevx    : Is http uri, downloading (uri: https://c.tenor.com/gwSzzjV-lkYAAAAk/%E0%A4%B8%E0%A5%8B%E0%A4%AF%E0%A4%BE%E0%A4%B9%E0%A5%81%E0%A4%86-%E0%A4%B8%E0%A5%8B%E0%A4%A8%E0%A5%87%E0%A4%95%E0%A4%BE%E0%A4%B8%E0%A4%AE%E0%A4%AF.gif)
+10-15 08:07:05.813  4289  4934 D cevx    : Starting download: https://c.tenor.com/zS4jcQ90picAAAAk/roses-heart-heart.gif
+10-15 08:07:05.813  4289  4934 V cevx    : Is http uri, downloading (uri: https://c.tenor.com/zS4jcQ90picAAAAk/roses-heart-heart.gif)
+10-15 08:07:05.818  4289  4421 D cevx    : Starting download: https://c.tenor.com/j1bSL89nmtQAAAAk/heart-outline-heart.gif
+10-15 08:07:05.818  4289  4421 V cevx    : Is http uri, downloading (uri: https://c.tenor.com/j1bSL89nmtQAAAAk/heart-outline-heart.gif)
+10-15 08:07:05.844  4289  4923 D cevx    : Starting download: https://c.tenor.com/6PGRP_LBimEAAAAk/heart-made-of-hearts-heart.gif
+10-15 08:07:05.844  4289  4923 V cevx    : Is http uri, downloading (uri: https://c.tenor.com/6PGRP_LBimEAAAAk/heart-made-of-hearts-heart.gif)
+10-15 08:07:05.846  4289  4934 D cevx    : Starting download: https://c.tenor.com/40JrkApuxQcAAAAk/sad-moneky-monkey.gif
+10-15 08:07:05.846  4289  4934 V cevx    : Is http uri, downloading (uri: https://c.tenor.com/40JrkApuxQcAAAAk/sad-moneky-monkey.gif)
+10-15 08:07:05.873  4289  4421 D cevx    : Starting download: https://c.tenor.com/WZJgc1yrDv0AAAAk/zzzz-smiley-guy.gif
+10-15 08:07:05.873  4289  4421 V cevx    : Is http uri, downloading (uri: https://c.tenor.com/WZJgc1yrDv0AAAAk/zzzz-smiley-guy.gif)
+10-15 08:07:05.873  4289  4923 D cevx    : Starting download: https://c.tenor.com/kL--4XNSQboAAAAk/good-morning-smiley-guy.gif
+10-15 08:07:05.873  4289  4923 V cevx    : Is http uri, downloading (uri: https://c.tenor.com/kL--4XNSQboAAAAk/good-morning-smiley-guy.gif)
+10-15 08:07:05.924  4289  4934 D cevx    : Starting download: https://c.tenor.com/We-LJKpRRuQAAAAk/sweet-dream-sweet-n-sassy.gif
+10-15 08:07:05.924  4289  4934 V cevx    : Is http uri, downloading (uri: https://c.tenor.com/We-LJKpRRuQAAAAk/sweet-dream-sweet-n-sassy.gif)
+10-15 08:07:05.928  4289  4923 D cevx    : Starting download: https://c.tenor.com/zF0I0F08nL0AAAAk/miss-you-unicorn-life.gif
+10-15 08:07:05.928  4289  4923 V cevx    : Is http uri, downloading (uri: https://c.tenor.com/zF0I0F08nL0AAAAk/miss-you-unicorn-life.gif)
+10-15 08:07:05.963  4289  4421 D cevx    : Starting download: https://c.tenor.com/S5d_GAEzYf4AAAAk/need-coffee-unicorn-life.gif
+10-15 08:07:05.963  4289  4421 V cevx    : Is http uri, downloading (uri: https://c.tenor.com/S5d_GAEzYf4AAAAk/need-coffee-unicorn-life.gif)
+10-15 08:07:05.975  4289  4923 D cevx    : Starting download: https://c.tenor.com/6ur0xxTwWhQAAAAk/winter-joy-joypixels.gif
+10-15 08:07:05.975  4289  4923 V cevx    : Is http uri, downloading (uri: https://c.tenor.com/6ur0xxTwWhQAAAAk/winter-joy-joypixels.gif)
+10-15 08:07:06.008  4289  4934 D cevx    : Starting download: https://c.tenor.com/W4NDYUEF33YAAAAk/so-cold-winter-joy.gif
+10-15 08:07:06.008  4289  4934 V cevx    : Is http uri, downloading (uri: https://c.tenor.com/W4NDYUEF33YAAAAk/so-cold-winter-joy.gif)
+10-15 08:07:06.014  4289  4923 D cevx    : Starting download: https://c.tenor.com/BU6Id0dkth0AAAAk/plate-of-cookies-winter-joy.gif
+10-15 08:07:06.014  4289  4923 V cevx    : Is http uri, downloading (uri: https://c.tenor.com/BU6Id0dkth0AAAAk/plate-of-cookies-winter-joy.gif)
+10-15 08:07:06.045  4289  4421 D cevx    : Starting download: https://c.tenor.com/swimboPmdCwAAAAk/pine-tree-winter-joy.gif
+10-15 08:07:06.045  4289  4421 V cevx    : Is http uri, downloading (uri: https://c.tenor.com/swimboPmdCwAAAAk/pine-tree-winter-joy.gif)
+10-15 08:07:06.050  4289  4934 D cevx    : Starting download: https://c.tenor.com/yDVW5CG7J4wAAAAk/snowflakes-winter-joy.gif
+10-15 08:07:06.050  4289  4934 V cevx    : Is http uri, downloading (uri: https://c.tenor.com/yDVW5CG7J4wAAAAk/snowflakes-winter-joy.gif)
+10-15 08:07:06.081  4289  4923 D cevx    : Starting download: https://c.tenor.com/WQE-dtf0wYMAAAAk/snowman-winter-joy.gif
+10-15 08:07:06.081  4289  4923 V cevx    : Is http uri, downloading (uri: https://c.tenor.com/WQE-dtf0wYMAAAAk/snowman-winter-joy.gif)
+10-15 08:07:06.084  4289  4934 D cevx    : Starting download: https://c.tenor.com/z31du6dLEKAAAAAk/happy-holidays-winter-joy.gif
+10-15 08:07:06.084  4289  4934 V cevx    : Is http uri, downloading (uri: https://c.tenor.com/z31du6dLEKAAAAAk/happy-holidays-winter-joy.gif)
+10-15 08:07:06.102  4289  4421 D cevx    : Starting download: https://c.tenor.com/ejNjGg6pPOUAAAAk/hit-the-slopes-winter-joy.gif
+10-15 08:07:06.102  4289  4421 V cevx    : Is http uri, downloading (uri: https://c.tenor.com/ejNjGg6pPOUAAAAk/hit-the-slopes-winter-joy.gif)
+10-15 08:07:06.118  4289  4923 D cevx    : Starting download: https://c.tenor.com/w4uWwZ9iX2wAAAAk/gift-winter-joy.gif
+10-15 08:07:06.118  4289  4923 V cevx    : Is http uri, downloading (uri: https://c.tenor.com/w4uWwZ9iX2wAAAAk/gift-winter-joy.gif)
+10-15 08:07:06.124  4289  4934 D cevx    : Starting download: https://c.tenor.com/m22-T3y9dfAAAAAk/happy-new-year-winter-joy.gif
+10-15 08:07:06.124  4289  4934 V cevx    : Is http uri, downloading (uri: https://c.tenor.com/m22-T3y9dfAAAAAk/happy-new-year-winter-joy.gif)
+10-15 08:07:06.146  4289  4421 D cevx    : Starting download: https://c.tenor.com/OS4Huujkfe4AAAAk/skiing-activity.gif
+10-15 08:07:06.146  4289  4421 V cevx    : Is http uri, downloading (uri: https://c.tenor.com/OS4Huujkfe4AAAAk/skiing-activity.gif)
+10-15 08:07:06.147  4289  4923 D cevx    : Starting download: https://c.tenor.com/nxVJkH5xu50AAAAk/snowman-mattjoyceillustrator.gif
+10-15 08:07:06.147  4289  4923 V cevx    : Is http uri, downloading (uri: https://c.tenor.com/nxVJkH5xu50AAAAk/snowman-mattjoyceillustrator.gif)
+10-15 08:07:06.174  4289  4934 D cevx    : Starting download: https://c.tenor.com/DVE1UIx6yCsAAAAk/snowboarder-joypixels.gif
+10-15 08:07:06.174  4289  4934 V cevx    : Is http uri, downloading (uri: https://c.tenor.com/DVE1UIx6yCsAAAAk/snowboarder-joypixels.gif)
+10-15 08:07:06.191  4289  4421 D cevx    : Starting download: https://c.tenor.com/W79Cr0btM78AAAAk/poultry-leg-food.gif
+10-15 08:07:06.191  4289  4421 V cevx    : Is http uri, downloading (uri: https://c.tenor.com/W79Cr0btM78AAAAk/poultry-leg-food.gif)
+10-15 08:07:06.206  4289  4923 D cevx    : Starting download: https://c.tenor.com/yOLHzyXqVJEAAAAk/pie-food.gif
+10-15 08:07:06.206  4289  4923 V cevx    : Is http uri, downloading (uri: https://c.tenor.com/yOLHzyXqVJEAAAAk/pie-food.gif)
+10-15 08:07:06.224  4289  4934 D cevx    : Starting download: https://c.tenor.com/DxCC30FfRJsAAAAk/turkey-nature.gif
+10-15 08:07:06.224  4289  4934 V cevx    : Is http uri, downloading (uri: https://c.tenor.com/DxCC30FfRJsAAAAk/turkey-nature.gif)
+10-15 08:07:06.236  4289  4421 D cevx    : Starting download: https://c.tenor.com/EY4ovS3SJ44AAAAk/crying-face-people.gif
+10-15 08:07:06.236  4289  4421 V cevx    : Is http uri, downloading (uri: https://c.tenor.com/EY4ovS3SJ44AAAAk/crying-face-people.gif)
+10-15 08:07:06.249  4289  4923 D cevx    : Starting download: https://c.tenor.com/R5zMKrraD7sAAAAk/sleeping-face-people.gif
+10-15 08:07:06.249  4289  4923 V cevx    : Is http uri, downloading (uri: https://c.tenor.com/R5zMKrraD7sAAAAk/sleeping-face-people.gif)
+10-15 08:07:06.274  4289  4934 D cevx    : Starting download: https://c.tenor.com/GX5FqVE4-YQAAAAk/miss-you-i-miss-you-so-much.gif
+10-15 08:07:06.274  4289  4934 V cevx    : Is http uri, downloading (uri: https://c.tenor.com/GX5FqVE4-YQAAAAk/miss-you-i-miss-you-so-much.gif)
+10-15 08:07:06.279  4289  4421 D cevx    : Starting download: https://c.tenor.com/3ZzzUmZFXxkAAAAk/cold-face-joypixels.gif
+10-15 08:07:06.279  4289  4421 V cevx    : Is http uri, downloading (uri: https://c.tenor.com/3ZzzUmZFXxkAAAAk/cold-face-joypixels.gif)
+10-15 08:07:06.314  4289  4923 D cevx    : Starting download: https://c.tenor.com/K4Z_wFK-R9cAAAAk/christmas-tree-joypixels.gif
+10-15 08:07:06.315  4289  4923 V cevx    : Is http uri, downloading (uri: https://c.tenor.com/K4Z_wFK-R9cAAAAk/christmas-tree-joypixels.gif)
+10-15 08:07:06.342  4289  4934 D cevx    : Starting download: https://c.tenor.com/VgCDirag6VcAAAAk/party-popper-joypixels.gif
+10-15 08:07:06.342  4289  4934 V cevx    : Is http uri, downloading (uri: https://c.tenor.com/VgCDirag6VcAAAAk/party-popper-joypixels.gif)
+10-15 08:07:06.344  4289  4923 D cevx    : Starting download: https://c.tenor.com/E5IKLPPHqG8AAAAk/partying-face-joypixels.gif
+10-15 08:07:06.344  4289  4923 V cevx    : Is http uri, downloading (uri: https://c.tenor.com/E5IKLPPHqG8AAAAk/partying-face-joypixels.gif)
+10-15 08:07:06.376  4289  4421 D cevx    : Starting download: https://c.tenor.com/KUV-lrktMvcAAAAk/snowman-joypixels.gif
+10-15 08:07:06.376  4289  4421 V cevx    : Is http uri, downloading (uri: https://c.tenor.com/KUV-lrktMvcAAAAk/snowman-joypixels.gif)
+10-15 08:07:06.384  4289  4934 D cevx    : Starting download: https://c.tenor.com/Xi3spI3b5JYAAAAk/good-night.gif
+10-15 08:07:06.384  4289  4934 V cevx    : Is http uri, downloading (uri: https://c.tenor.com/Xi3spI3b5JYAAAAk/good-night.gif)
+10-15 08:07:06.430  4289  4923 D cevx    : Starting download: https://c.tenor.com/sZqx1Zp7zr0AAAAk/good-night.gif
+10-15 08:07:06.430  4289  4923 V cevx    : Is http uri, downloading (uri: https://c.tenor.com/sZqx1Zp7zr0AAAAk/good-night.gif)
+10-15 08:07:06.444  4289  4934 D cevx    : Starting download: https://c.tenor.com/NTOANzmVRsMAAAAk/hello-hi.gif
+10-15 08:07:06.444  4289  4934 V cevx    : Is http uri, downloading (uri: https://c.tenor.com/NTOANzmVRsMAAAAk/hello-hi.gif)
+10-15 08:07:06.461  4289  4421 D cevx    : Starting download: https://c.tenor.com/MJRm596V0iYAAAAk/hello-hi.gif
+10-15 08:07:06.461  4289  4421 V cevx    : Is http uri, downloading (uri: https://c.tenor.com/MJRm596V0iYAAAAk/hello-hi.gif)
+10-15 08:07:06.472  4289  4923 D cevx    : Starting download: https://c.tenor.com/6lqu7MQzVsUAAAAk/hello-hi.gif
+10-15 08:07:06.472  4289  4923 V cevx    : Is http uri, downloading (uri: https://c.tenor.com/6lqu7MQzVsUAAAAk/hello-hi.gif)
+10-15 08:07:06.551  4289  4934 D cevx    : Starting download: https://c.tenor.com/t_zIg_K72JgAAAAk/happy-smile.gif
+10-15 08:07:06.551  4289  4934 V cevx    : Is http uri, downloading (uri: https://c.tenor.com/t_zIg_K72JgAAAAk/happy-smile.gif)
+10-15 08:07:06.552  4289  4421 D cevx    : Starting download: https://c.tenor.com/ZG6-t5u8DDgAAAAk/hey-hello.gif
+10-15 08:07:06.552  4289  4421 V cevx    : Is http uri, downloading (uri: https://c.tenor.com/ZG6-t5u8DDgAAAAk/hey-hello.gif)
+10-15 08:07:06.588  4289  4923 D cevx    : Starting download: https://c.tenor.com/Zz5yHlMacSAAAAAk/hey-hello.gif
+10-15 08:07:06.588  4289  4923 V cevx    : Is http uri, downloading (uri: https://c.tenor.com/Zz5yHlMacSAAAAAk/hey-hello.gif)
+10-15 08:07:06.590  4289  4421 D cevx    : Starting download: https://c.tenor.com/3jT6INWMG9IAAAAk/sweet-dreams-goodnight.gif
+10-15 08:07:06.590  4289  4421 V cevx    : Is http uri, downloading (uri: https://c.tenor.com/3jT6INWMG9IAAAAk/sweet-dreams-goodnight.gif)
+10-15 08:07:06.613  4289  4934 D cevx    : Starting download: https://c.tenor.com/4_JoGgHyajMAAAAk/sweet-dreams-goodnight.gif
+10-15 08:07:06.613  4289  4934 V cevx    : Is http uri, downloading (uri: https://c.tenor.com/4_JoGgHyajMAAAAk/sweet-dreams-goodnight.gif)
+10-15 08:07:06.613  4289  4421 D cevx    : Starting download: https://c.tenor.com/uP5K0bDKVmQAAAAk/night-night-goodnight.gif
+10-15 08:07:06.613  4289  4421 V cevx    : Is http uri, downloading (uri: https://c.tenor.com/uP5K0bDKVmQAAAAk/night-night-goodnight.gif)
+10-15 08:07:06.645  4289  4923 D cevx    : Starting download: https://c.tenor.com/TNJpGq2142QAAAAk/snow-globe-travel.gif
+10-15 08:07:06.645  4289  4923 V cevx    : Is http uri, downloading (uri: https://c.tenor.com/TNJpGq2142QAAAAk/snow-globe-travel.gif)
+10-15 08:07:06.677  4289  4934 D cevx    : Starting download: https://c.tenor.com/_rP7fvDOV2AAAAAk/the-sims-the-sims4.gif
+10-15 08:07:06.678  4289  4934 V cevx    : Is http uri, downloading (uri: https://c.tenor.com/_rP7fvDOV2AAAAAk/the-sims-the-sims4.gif)
+10-15 08:07:06.682  4289  4923 D cevx    : Starting download: https://c.tenor.com/OLs6cg5675cAAAAk/im-thankful-for-happy-thanksgiving.gif
+10-15 08:07:06.682  4289  4923 V cevx    : Is http uri, downloading (uri: https://c.tenor.com/OLs6cg5675cAAAAk/im-thankful-for-happy-thanksgiving.gif)
+10-15 08:07:06.716  4289  4421 D cevx    : Starting download: https://c.tenor.com/QPjF0-82sgQAAAAk/happy-hanukkah-menorah.gif
+10-15 08:07:06.716  4289  4421 V cevx    : Is http uri, downloading (uri: https://c.tenor.com/QPjF0-82sgQAAAAk/happy-hanukkah-menorah.gif)
+10-15 08:07:06.720  4289  4923 D cevx    : Starting download: https://c.tenor.com/o8Fg8s-74XUAAAAk/cheers-merry-christmas-eve.gif
+10-15 08:07:06.720  4289  4923 V cevx    : Is http uri, downloading (uri: https://c.tenor.com/o8Fg8s-74XUAAAAk/cheers-merry-christmas-eve.gif)
+10-15 08:07:06.744  4289  4934 D cevx    : Starting download: https://c.tenor.com/pLKpB7goR7wAAAAk/merry-christmas-dancing.gif
+10-15 08:07:06.744  4289  4934 V cevx    : Is http uri, downloading (uri: https://c.tenor.com/pLKpB7goR7wAAAAk/merry-christmas-dancing.gif)
+10-15 08:07:06.752  4289  4421 D cevx    : Starting download: https://c.tenor.com/Z_ddd7u8q0cAAAAk/merry-christmas-dancing.gif
+10-15 08:07:06.752  4289  4421 V cevx    : Is http uri, downloading (uri: https://c.tenor.com/Z_ddd7u8q0cAAAAk/merry-christmas-dancing.gif)
+10-15 08:07:06.784  4289  4923 D cevx    : Starting download: https://c.tenor.com/t784Fy203h4AAAAk/merry-christmas-snow.gif
+10-15 08:07:06.784  4289  4923 V cevx    : Is http uri, downloading (uri: https://c.tenor.com/t784Fy203h4AAAAk/merry-christmas-snow.gif)
+10-15 08:07:06.801  4289  4421 D cevx    : Starting download: https://c.tenor.com/BqjGdBESSY0AAAAk/happy-thanksgiving-thanksgiving.gif
+10-15 08:07:06.801  4289  4421 V cevx    : Is http uri, downloading (uri: https://c.tenor.com/BqjGdBESSY0AAAAk/happy-thanksgiving-thanksgiving.gif)
+10-15 08:07:06.831  4289  4934 D cevx    : Starting download: https://c.tenor.com/1Kqhr0EyU2cAAAAk/thanksgiving-happy-thanksgiving.gif
+10-15 08:07:06.831  4289  4934 V cevx    : Is http uri, downloading (uri: https://c.tenor.com/1Kqhr0EyU2cAAAAk/thanksgiving-happy-thanksgiving.gif)
+10-15 08:07:06.864  4289  4923 D cevx    : Starting download: https://c.tenor.com/2cqZUvCW_HIAAAAk/happy-thankgiving-thanksgiving-dinner.gif
+10-15 08:07:06.864  4289  4923 V cevx    : Is http uri, downloading (uri: https://c.tenor.com/2cqZUvCW_HIAAAAk/happy-thankgiving-thanksgiving-dinner.gif)
+10-15 08:07:06.917  4289  4421 D cevx    : Starting download: https://c.tenor.com/dX8a-NhL_48AAAAk/food-coma-youtube.gif
+10-15 08:07:06.917  4289  4421 V cevx    : Is http uri, downloading (uri: https://c.tenor.com/dX8a-NhL_48AAAAk/food-coma-youtube.gif)
+10-15 08:07:06.943  4289  4923 D cevx    : Starting download: https://c.tenor.com/-cyCXLhWsLMAAAAk/dance-dancing.gif
+10-15 08:07:06.943  4289  4923 V cevx    : Is http uri, downloading (uri: https://c.tenor.com/-cyCXLhWsLMAAAAk/dance-dancing.gif)
+10-15 08:07:06.962  4289  4934 D cevx    : Starting download: https://c.tenor.com/uO7brRaIL1sAAAAk/happy-holidays-ho-ho-ho.gif
+10-15 08:07:06.962  4289  4934 V cevx    : Is http uri, downloading (uri: https://c.tenor.com/uO7brRaIL1sAAAAk/happy-holidays-ho-ho-ho.gif)
+10-15 08:07:06.977  4289  4421 D cevx    : Starting download: https://c.tenor.com/-bogOnQa-HgAAAAk/hanukkah-happy-hanukkah.gif
+10-15 08:07:06.977  4289  4421 V cevx    : Is http uri, downloading (uri: https://c.tenor.com/-bogOnQa-HgAAAAk/hanukkah-happy-hanukkah.gif)
+10-15 08:07:06.991  4289  4923 D cevx    : Starting download: https://c.tenor.com/onl8zh2_RVQAAAAk/hanukkah-happy-hanukkah.gif
+10-15 08:07:06.991  4289  4923 V cevx    : Is http uri, downloading (uri: https://c.tenor.com/onl8zh2_RVQAAAAk/hanukkah-happy-hanukkah.gif)
+10-15 08:07:07.001  4289  4934 D cevx    : Starting download: https://c.tenor.com/LlGR2YC8B58AAAAk/happy-holidays-ho-ho-ho.gif
+10-15 08:07:07.001  4289  4934 V cevx    : Is http uri, downloading (uri: https://c.tenor.com/LlGR2YC8B58AAAAk/happy-holidays-ho-ho-ho.gif)
+10-15 08:07:07.025  4289  4421 D cevx    : Starting download: https://c.tenor.com/qBBLYAzWTEoAAAAk/hanukkah-chanukah.gif
+10-15 08:07:07.025  4289  4421 V cevx    : Is http uri, downloading (uri: https://c.tenor.com/qBBLYAzWTEoAAAAk/hanukkah-chanukah.gif)
+10-15 08:07:07.030  4289  4934 D cevx    : Starting download: https://c.tenor.com/pw9VD9_S748AAAAk/hanukkah-chanukah.gif
+10-15 08:07:07.030  4289  4934 V cevx    : Is http uri, downloading (uri: https://c.tenor.com/pw9VD9_S748AAAAk/hanukkah-chanukah.gif)
+10-15 08:07:07.056  4289  4923 D cevx    : Starting download: https://c.tenor.com/LFQAwoWiLJ8AAAAk/merry-xmas-xmas.gif
+10-15 08:07:07.056  4289  4923 V cevx    : Is http uri, downloading (uri: https://c.tenor.com/LFQAwoWiLJ8AAAAk/merry-xmas-xmas.gif)
+10-15 08:07:07.073  4289  4421 D cevx    : Starting download: https://c.tenor.com/T1c0HuuixLYAAAAk/hohoho-santa.gif
+10-15 08:07:07.073  4289  4421 V cevx    : Is http uri, downloading (uri: https://c.tenor.com/T1c0HuuixLYAAAAk/hohoho-santa.gif)
+10-15 08:07:07.087  4289  4934 D cevx    : Starting download: https://c.tenor.com/p_Fc6sCPEn4AAAAk/waving-molang.gif
+10-15 08:07:07.087  4289  4934 V cevx    : Is http uri, downloading (uri: https://c.tenor.com/p_Fc6sCPEn4AAAAk/waving-molang.gif)
+10-15 08:07:07.118  4289  4923 D cevx    : Starting download: https://c.tenor.com/TvBQajdvdtoAAAAk/animals-decorating-molang.gif
+10-15 08:07:07.118  4289  4923 V cevx    : Is http uri, downloading (uri: https://c.tenor.com/TvBQajdvdtoAAAAk/animals-decorating-molang.gif)
+10-15 08:07:07.157  4289  4421 D cevx    : Starting download: https://c.tenor.com/8-GZs9c2eNoAAAAk/merry-christmas-molang.gif
+10-15 08:07:07.157  4289  4421 V cevx    : Is http uri, downloading (uri: https://c.tenor.com/8-GZs9c2eNoAAAAk/merry-christmas-molang.gif)
+10-15 08:07:07.180  4289  4923 D cevx    : Starting download: https://c.tenor.com/fwRmoC3PbKgAAAAk/angkukuehgirl-angkukuehgirlandfriends.gif
+10-15 08:07:07.180  4289  4923 V cevx    : Is http uri, downloading (uri: https://c.tenor.com/fwRmoC3PbKgAAAAk/angkukuehgirl-angkukuehgirlandfriends.gif)
+10-15 08:07:07.183  4289  4934 D cevx    : Starting download: https://c.tenor.com/bhXlfP1FsGcAAAAk/new-years-eve-happy-new-year.gif
+10-15 08:07:07.183  4289  4934 V cevx    : Is http uri, downloading (uri: https://c.tenor.com/bhXlfP1FsGcAAAAk/new-years-eve-happy-new-year.gif)
+10-15 08:07:07.298  4289  4421 D cevx    : Starting download: https://c.tenor.com/X2Gu15rbDjQAAAAk/minidino-hotchocolate.gif
+10-15 08:07:07.298  4289  4421 V cevx    : Is http uri, downloading (uri: https://c.tenor.com/X2Gu15rbDjQAAAAk/minidino-hotchocolate.gif)
+10-15 08:07:07.305  4289  4923 D cevx    : Starting download: https://c.tenor.com/fRjOETVKCfEAAAAk/bento-box-savoring-food.gif
+10-15 08:07:07.305  4289  4923 V cevx    : Is http uri, downloading (uri: https://c.tenor.com/fRjOETVKCfEAAAAk/bento-box-savoring-food.gif)
+10-15 08:07:07.325  4289  4934 D cevx    : Starting download: https://c.tenor.com/kRtFzkoU9R4AAAAk/snowboarder-snowboard-lovers.gif
+10-15 08:07:07.325  4289  4934 V cevx    : Is http uri, downloading (uri: https://c.tenor.com/kRtFzkoU9R4AAAAk/snowboarder-snowboard-lovers.gif)
+10-15 08:07:07.345  4289  4421 D cevx    : Starting download: https://c.tenor.com/JhTc0KeSZ5QAAAAk/snowboards-snowboard-lovers.gif
+10-15 08:07:07.345  4289  4421 V cevx    : Is http uri, downloading (uri: https://c.tenor.com/JhTc0KeSZ5QAAAAk/snowboards-snowboard-lovers.gif)
+10-15 08:07:07.354  4289  4923 D cevx    : Starting download: https://c.tenor.com/PUFHgVq1fjcAAAAk/im-cold-yellow-shivering-line-effects-around-im-cold-in-blue-letters.gif
+10-15 08:07:07.354  4289  4923 V cevx    : Is http uri, downloading (uri: https://c.tenor.com/PUFHgVq1fjcAAAAk/im-cold-yellow-shivering-line-effects-around-im-cold-in-blue-letters.gif)
+10-15 08:07:07.398  4289  4934 D cevx    : Starting download: https://c.tenor.com/21JuXCU7lacAAAAk/christmas-stockings-christmas.gif
+10-15 08:07:07.398  4289  4934 V cevx    : Is http uri, downloading (uri: https://c.tenor.com/21JuXCU7lacAAAAk/christmas-stockings-christmas.gif)
+10-15 08:07:07.400  4289  4923 D cevx    : Starting download: https://c.tenor.com/ukjNMGQXpZQAAAAk/full-ate-too-much.gif
+10-15 08:07:07.400  4289  4923 V cevx    : Is http uri, downloading (uri: https://c.tenor.com/ukjNMGQXpZQAAAAk/full-ate-too-much.gif)
+10-15 08:07:07.429  4289  4421 D cevx    : Starting download: https://c.tenor.com/wnwBAWc3AeEAAAAk/rolling-snow-snoopy.gif
+10-15 08:07:07.429  4289  4421 V cevx    : Is http uri, downloading (uri: https://c.tenor.com/wnwBAWc3AeEAAAAk/rolling-snow-snoopy.gif)
+10-15 08:07:07.432  4289  4923 D cevx    : Starting download: https://c.tenor.com/eU6_2iB4wpIAAAAk/thanksgiving-canada.gif
+10-15 08:07:07.432  4289  4923 V cevx    : Is http uri, downloading (uri: https://c.tenor.com/eU6_2iB4wpIAAAAk/thanksgiving-canada.gif)
+10-15 08:07:07.472  4289  4934 D cevx    : Starting download: https://c.tenor.com/j9Nm0LhcZwEAAAAk/thanksgiving-canada.gif
+10-15 08:07:07.472  4289  4934 V cevx    : Is http uri, downloading (uri: https://c.tenor.com/j9Nm0LhcZwEAAAAk/thanksgiving-canada.gif)
+10-15 08:07:07.473  4289  4421 D cevx    : Starting download: https://media.tenor.com/8yuNf9wYjdwAAAAk/brunch-cartoon.gif
+10-15 08:07:07.473  4289  4421 V cevx    : Is http uri, downloading (uri: https://media.tenor.com/8yuNf9wYjdwAAAAk/brunch-cartoon.gif)
+10-15 08:07:07.521  4289  4923 D cevx    : Starting download: https://media.tenor.com/eKF_xIa1bUcAAAAk/dessert-eat.gif
+10-15 08:07:07.521  4289  4923 V cevx    : Is http uri, downloading (uri: https://media.tenor.com/eKF_xIa1bUcAAAAk/dessert-eat.gif)
+10-15 08:07:07.669  4289  4934 D cevx    : Starting download: https://media.tenor.com/H1dJQhNZtI8AAAAk/feed-me-om-nom.gif
+10-15 08:07:07.669  4289  4934 V cevx    : Is http uri, downloading (uri: https://media.tenor.com/H1dJQhNZtI8AAAAk/feed-me-om-nom.gif)
+10-15 08:07:07.686  4289  4421 D cevx    : Starting download: https://media.tenor.com/wqOj61NglK4AAAAk/%E3%81%8A%E8%85%B9%E7%A9%BA%E3%81%84%E3%81%9F-%E6%97%A9%E3%81%8F.gif
+10-15 08:07:07.686  4289  4421 V cevx    : Is http uri, downloading (uri: https://media.tenor.com/wqOj61NglK4AAAAk/%E3%81%8A%E8%85%B9%E7%A9%BA%E3%81%84%E3%81%9F-%E6%97%A9%E3%81%8F.gif)
+10-15 08:07:07.705  4289  4923 D cevx    : Starting download: https://media.tenor.com/F75I2eQRtsgAAAAk/hungry-mmm.gif
+10-15 08:07:07.705  4289  4923 V cevx    : Is http uri, downloading (uri: https://media.tenor.com/F75I2eQRtsgAAAAk/hungry-mmm.gif)
+10-15 08:07:07.715  4289  4934 D cevx    : Starting download: https://media.tenor.com/NyS3bV41OIsAAAAk/danger-hangry-peach-life.gif
+10-15 08:07:07.715  4289  4934 V cevx    : Is http uri, downloading (uri: https://media.tenor.com/NyS3bV41OIsAAAAk/danger-hangry-peach-life.gif)
+10-15 08:07:07.725  4289  4421 D cevx    : Starting download: https://media.tenor.com/vXPFFhsy-D4AAAAk/kstr-kochstrasse.gif
+10-15 08:07:07.725  4289  4421 V cevx    : Is http uri, downloading (uri: https://media.tenor.com/vXPFFhsy-D4AAAAk/kstr-kochstrasse.gif)
+10-15 08:07:07.733  4289  4923 D cevx    : Starting download: https://media.tenor.com/6h-mSv5CbPEAAAAk/tonton-tonton-friends.gif
+10-15 08:07:07.733  4289  4923 V cevx    : Is http uri, downloading (uri: https://media.tenor.com/6h-mSv5CbPEAAAAk/tonton-tonton-friends.gif)
+10-15 08:07:07.771  4289  4934 D cevx    : Starting download: https://media.tenor.com/fMBMEN6dHt0AAAAk/yum-yummers.gif
+10-15 08:07:07.771  4289  4934 V cevx    : Is http uri, downloading (uri: https://media.tenor.com/fMBMEN6dHt0AAAAk/yum-yummers.gif)
+10-15 08:07:07.786  4289  4421 D cevx    : Starting download: https://media.tenor.com/g6Qs3CZC7gkAAAAk/eat-the-pet-collective.gif
+10-15 08:07:07.786  4289  4421 V cevx    : Is http uri, downloading (uri: https://media.tenor.com/g6Qs3CZC7gkAAAAk/eat-the-pet-collective.gif)
+10-15 08:07:07.821  4289  4923 D cevx    : Starting download: https://media.tenor.com/EQ2_Y8LKgKEAAAAk/pancake-joypixels.gif
+10-15 08:07:07.821  4289  4923 V cevx    : Is http uri, downloading (uri: https://media.tenor.com/EQ2_Y8LKgKEAAAAk/pancake-joypixels.gif)
+10-15 08:07:07.825  4289  4934 D cevx    : Starting download: https://media.tenor.com/YZXxTDUIH9AAAAAk/decorating-cake-kimjoy.gif
+10-15 08:07:07.825  4289  4934 V cevx    : Is http uri, downloading (uri: https://media.tenor.com/YZXxTDUIH9AAAAAk/decorating-cake-kimjoy.gif)
+10-15 08:07:07.848  4289  4421 D cevx    : Starting download: https://media.tenor.com/WoXYIyTOceYAAAAk/piffle-cat.gif
+10-15 08:07:07.848  4289  4421 V cevx    : Is http uri, downloading (uri: https://media.tenor.com/WoXYIyTOceYAAAAk/piffle-cat.gif)
+10-15 08:07:07.863  4289  4923 D cevx    : Starting download: https://media.tenor.com/di1fAyCBPeMAAAAk/pizza-pizza-time.gif
+10-15 08:07:07.863  4289  4923 V cevx    : Is http uri, downloading (uri: https://media.tenor.com/di1fAyCBPeMAAAAk/pizza-pizza-time.gif)
+10-15 08:07:07.864  4289  4934 D cevx    : Starting download: https://media.tenor.com/k11wXOCj6HkAAAAk/%E3%82%AA%E3%83%A0%E3%83%A9%E3%82%A4%E3%82%B9-%E3%81%84%E3%81%9F%E3%81%A0%E3%81%8D%E3%81%BE%E3%81%99.gif
+10-15 08:07:07.864  4289  4934 V cevx    : Is http uri, downloading (uri: https://media.tenor.com/k11wXOCj6HkAAAAk/%E3%82%AA%E3%83%A0%E3%83%A9%E3%82%A4%E3%82%B9-%E3%81%84%E3%81%9F%E3%81%A0%E3%81%8D%E3%81%BE%E3%81%99.gif)
+10-15 08:07:07.885  4289  4421 D cevx    : Starting download: https://media.tenor.com/HALGiFUMzT8AAAAk/dinner-is-served-om-nom.gif
+10-15 08:07:07.885  4289  4421 V cevx    : Is http uri, downloading (uri: https://media.tenor.com/HALGiFUMzT8AAAAk/dinner-is-served-om-nom.gif)
+10-15 08:07:07.898  4289  4934 D cevx    : Starting download: https://media.tenor.com/sqBO7Yvu4SkAAAAk/siamese-cat.gif
+10-15 08:07:07.898  4289  4934 V cevx    : Is http uri, downloading (uri: https://media.tenor.com/sqBO7Yvu4SkAAAAk/siamese-cat.gif)
+10-15 08:07:07.899  4289  4923 D cevx    : Starting download: https://media.tenor.com/6a_4Q6DHoWcAAAAk/chef-cooking.gif
+10-15 08:07:07.899  4289  4923 V cevx    : Is http uri, downloading (uri: https://media.tenor.com/6a_4Q6DHoWcAAAAk/chef-cooking.gif)
+10-15 08:07:07.915  4289  4421 D cevx    : Starting download: https://media.tenor.com/-0nrZ8IubicAAAAk/raf-rafs.gif
+10-15 08:07:07.916  4289  4421 V cevx    : Is http uri, downloading (uri: https://media.tenor.com/-0nrZ8IubicAAAAk/raf-rafs.gif)
+10-15 08:07:07.917  4289  4923 D cevx    : Starting download: https://media.tenor.com/ViBJL3aU4uoAAAAk/cooking-molang.gif
+10-15 08:07:07.917  4289  4923 V cevx    : Is http uri, downloading (uri: https://media.tenor.com/ViBJL3aU4uoAAAAk/cooking-molang.gif)
+10-15 08:07:07.936  4289  4934 D cevx    : Starting download: https://media.tenor.com/G32yCkHMUSQAAAAk/%E3%83%91%E3%83%B3-%E3%81%8A%E3%82%84%E3%81%99%E3%81%BF.gif
+10-15 08:07:07.936  4289  4934 V cevx    : Is http uri, downloading (uri: https://media.tenor.com/G32yCkHMUSQAAAAk/%E3%83%91%E3%83%B3-%E3%81%8A%E3%82%84%E3%81%99%E3%81%BF.gif)
+10-15 08:07:07.943  4289  4421 D cevx    : Starting download: https://media.tenor.com/uxnyAewyRoQAAAAk/shourimajo-bubble-kittea.gif
+10-15 08:07:07.943  4289  4421 V cevx    : Is http uri, downloading (uri: https://media.tenor.com/uxnyAewyRoQAAAAk/shourimajo-bubble-kittea.gif)
+10-15 08:07:07.953  4289  4923 D cevx    : Starting download: https://media.tenor.com/b0hb7xUg4aMAAAAk/pumpkin-pumpkin-spice.gif
+10-15 08:07:07.953  4289  4923 V cevx    : Is http uri, downloading (uri: https://media.tenor.com/b0hb7xUg4aMAAAAk/pumpkin-pumpkin-spice.gif)
+10-15 08:07:07.961  4289  4934 D cevx    : Starting download: https://media.tenor.com/gkh0rTd7dGMAAAAk/smile-kopi.gif
+10-15 08:07:07.961  4289  4934 V cevx    : Is http uri, downloading (uri: https://media.tenor.com/gkh0rTd7dGMAAAAk/smile-kopi.gif)
+10-15 08:07:07.991  4289  4421 D cevx    : Starting download: https://media.tenor.com/rLsTS3eQiyoAAAAk/tonton-friends-tobi.gif
+10-15 08:07:07.991  4289  4421 V cevx    : Is http uri, downloading (uri: https://media.tenor.com/rLsTS3eQiyoAAAAk/tonton-friends-tobi.gif)
+10-15 08:07:08.005  4289  4923 D cevx    : Starting download: https://media.tenor.com/fw1tSaC3MvUAAAAk/danser-encourager.gif
+10-15 08:07:08.005  4289  4923 V cevx    : Is http uri, downloading (uri: https://media.tenor.com/fw1tSaC3MvUAAAAk/danser-encourager.gif)
+10-15 08:07:08.015  4289  4934 D cevx    : Starting download: https://media.tenor.com/PeVTYLl4H0UAAAAk/cheering-encouraging.gif
+10-15 08:07:08.015  4289  4934 V cevx    : Is http uri, downloading (uri: https://media.tenor.com/PeVTYLl4H0UAAAAk/cheering-encouraging.gif)
+10-15 08:07:08.024  4289  4421 D cevx    : Starting download: https://media.tenor.com/yz6NdVlFMnwAAAAk/graduation-grad.gif
+10-15 08:07:08.024  4289  4421 V cevx    : Is http uri, downloading (uri: https://media.tenor.com/yz6NdVlFMnwAAAAk/graduation-grad.gif)
+10-15 08:07:08.031  4289  4923 D cevx    : Starting download: https://media.tenor.com/WHKPJhsQ69AAAAAk/heytvm-tvm.gif
+10-15 08:07:08.031  4289  4923 V cevx    : Is http uri, downloading (uri: https://media.tenor.com/WHKPJhsQ69AAAAAk/heytvm-tvm.gif)
+10-15 08:07:08.051  4289  4934 D cevx    : Starting download: https://media.tenor.com/Oy_rYG15YzgAAAAk/raf-rafs.gif
+10-15 08:07:08.051  4289  4934 V cevx    : Is http uri, downloading (uri: https://media.tenor.com/Oy_rYG15YzgAAAAk/raf-rafs.gif)
+10-15 08:07:08.055  4289  4421 D cevx    : Starting download: https://media.tenor.com/I_YaFQsuN84AAAAk/going-to-school-nibble-nom.gif
+10-15 08:07:08.055  4289  4421 V cevx    : Is http uri, downloading (uri: https://media.tenor.com/I_YaFQsuN84AAAAk/going-to-school-nibble-nom.gif)
+10-15 08:07:08.103  4289  4923 D cevx    : Starting download: https://media.tenor.com/XUC7T_bcbcYAAAAk/raf-rafs.gif
+10-15 08:07:08.103  4289  4923 V cevx    : Is http uri, downloading (uri: https://media.tenor.com/XUC7T_bcbcYAAAAk/raf-rafs.gif)
+10-15 08:07:08.106  4289  4934 D cevx    : Starting download: https://media.tenor.com/qidX4V9FxCcAAAAk/reading-nibble-nom.gif
+10-15 08:07:08.106  4289  4934 V cevx    : Is http uri, downloading (uri: https://media.tenor.com/qidX4V9FxCcAAAAk/reading-nibble-nom.gif)
+10-15 08:07:08.123  4289  4421 D cevx    : Starting download: https://media.tenor.com/hBr38cG4IzcAAAAk/homework-research.gif
+10-15 08:07:08.123  4289  4421 V cevx    : Is http uri, downloading (uri: https://media.tenor.com/hBr38cG4IzcAAAAk/homework-research.gif)
+10-15 08:07:08.126  4289  4923 D cevx    : Starting download: https://media.tenor.com/tXffFYxygbQAAAAk/raf-rafs.gif
+10-15 08:07:08.126  4289  4923 V cevx    : Is http uri, downloading (uri: https://media.tenor.com/tXffFYxygbQAAAAk/raf-rafs.gif)
+10-15 08:07:08.141  4289  4934 D cevx    : Starting download: https://media.tenor.com/8FzDBsdoLcwAAAAk/animated-cute.gif
+10-15 08:07:08.141  4289  4934 V cevx    : Is http uri, downloading (uri: https://media.tenor.com/8FzDBsdoLcwAAAAk/animated-cute.gif)
+10-15 08:07:08.143  4289  4923 D cevx    : Starting download: https://media.tenor.com/5muD2FopQK0AAAAk/reading-om-nelle.gif
+10-15 08:07:08.143  4289  4923 V cevx    : Is http uri, downloading (uri: https://media.tenor.com/5muD2FopQK0AAAAk/reading-om-nelle.gif)
+10-15 08:07:08.161  4289  4421 D cevx    : Starting download: https://www.gstatic.com/messages/smarts/smarts_expressive_content_scoped_v1/smart_tenor_stickers_pack_scoped_v2.pb_1734978962204
+10-15 08:07:08.161  4289  4421 V cevx    : Is http uri, downloading (uri: https://www.gstatic.com/messages/smarts/smarts_expressive_content_scoped_v1/smart_tenor_stickers_pack_scoped_v2.pb_1734978962204)
+10-15 08:07:08.192  4289  4934 D cevx    : Starting download: https://www.gstatic.com/messages/smarts/multitask_experiment/multi_lite_9head_20200301_model.tflite_1584573658696
+10-15 08:07:08.192  4289  4934 V cevx    : Is http uri, downloading (uri: https://www.gstatic.com/messages/smarts/multitask_experiment/multi_lite_9head_20200301_model.tflite_1584573658696)
+10-15 08:07:08.226  4289  4923 D cevx    : Starting download: https://www.gstatic.com/icing/idd/smart_actions_ml_models/multi_sr_phn_loc_wea_res_mov_spam_20190324_1554245216.pb
+10-15 08:07:08.226  4289  4923 V cevx    : Is http uri, downloading (uri: https://www.gstatic.com/icing/idd/smart_actions_ml_models/multi_sr_phn_loc_wea_res_mov_spam_20190324_1554245216.pb)
