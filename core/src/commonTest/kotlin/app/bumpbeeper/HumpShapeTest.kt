@@ -38,10 +38,15 @@ class HumpShapeTest {
     }
 
     @Test fun theShapeIsStoredAndObserved() {
+        // Judged after the first pass, so the next hit's observation carries it.
         val sink = ListSink()
-        Simulator(74).drive(MemoryStore(), DriveSpec(profileHumps = listOf(ProfileHump(900.0, "sinus", 0.12, 1.0)), bumpKmh = 15.0, cruiseKmh = 40.0), observationSink = sink)
-        val jolt = sink.got.single { it.kind == "jolt" }
-        assertTrue(jolt.shape != null, "$jolt")
+        val store = MemoryStore()
+        val spec = DriveSpec(profileHumps = listOf(ProfileHump(900.0, "sinus", 0.12, 1.0)), bumpKmh = 15.0, cruiseKmh = 40.0)
+        Simulator(74).drive(store, spec, tripId = 1, observationSink = sink)
+        Simulator(75).drive(store, spec, tripId = 2, observationSink = sink)
+        assertEquals(1, store.events.count { it.type == "hump_shape" && it.tripId == 1L }, "${store.events.map { it.type }}")
+        val hit = sink.got.single { it.kind == "known_hit" }
+        assertEquals(BumpShape.SHORT_STEEP, hit.shape, "$hit")
         val b = Bump(1, 0.0, 0.0, 0.0, 1, 1, 0, 1, 0, 0, shape = BumpShape.LONG_FLAT)
         assertEquals(BumpShape.LONG_FLAT, b.copy().shape)
     }
