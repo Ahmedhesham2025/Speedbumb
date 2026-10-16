@@ -10,7 +10,7 @@ class HumpShapeTest {
         val store = MemoryStore()
         // A steady 15 km/h, so the GPS speed is right and the axle pair is found (braking, GPS lags 1 s).
         val r = Simulator(seed).drive(store, DriveSpec(profileHumps = listOf(hump), bumpKmh = 15.0, cruiseKmh = 15.0, roadM = 1200.0))
-        assertEquals(1, r.newBumps, "${hump.kind} ${hump.lengthM} m: ${r.rejected} ${store.events.filter { it.type == "rejected" }.map { it.note }}")
+        assertEquals(1, r.newBumps, "${hump.kind} ${hump.lengthM} m: ${r.rejected} ${store.events.filter { it.type == "rejected" || it.type == "new_bump" }.map { it.note }}")
         return store.saved.single().shape to store
     }
 
