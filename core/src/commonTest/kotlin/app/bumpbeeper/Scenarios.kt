@@ -1145,7 +1145,7 @@ object Scenarios {
         "stillReadIsPhoneUse" to ::stillReadIsPhoneUse,
         "repeatedHandlingIsPhoneUse" to ::repeatedHandlingIsPhoneUse,
         "fastBumpVersusRoadJoint" to ::fastBumpVersusRoadJoint,
-        "dipIsABump" to ::dipIsABump,
+        "dipIsNotABump" to ::dipIsNotABump,
         "severityCountsAndSounds" to ::severityCountsAndSounds,
         "noGyroStillLearns" to ::noGyroStillLearns,
         "fastDipRejected" to ::fastDipRejected,
