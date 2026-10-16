@@ -66,7 +66,8 @@ class HumpShapeTest {
         val store = MemoryStore()
         // A strong-pair gate no pair can reach: every judged hump in the pocket stays unknown.
         val cfg = EngineConfig().apply { shapePocketMinScore = 1.1 }
-        Simulator(84).drive(store, DriveSpec(profileHumps = listOf(ProfileHump(900.0, "trapez", 0.10, 4.0, plateauM = 2.5)), bumpKmh = 15.0, cruiseKmh = 15.0, roadM = 1200.0), cfg, drivingCfg = pocket)
+        // (Slowing from 40 to 15 km/h for it: the slowdown is the evidence that learns it in a pocket.)
+        Simulator(84).drive(store, DriveSpec(profileHumps = listOf(ProfileHump(900.0, "sinus", 0.12, 1.0)), bumpKmh = 15.0, cruiseKmh = 40.0), cfg, drivingCfg = pocket)
         assertTrue(store.saved.isNotEmpty() && store.saved.all { it.shape == null }, "${store.saved.map { it.shape }}")
     }
 

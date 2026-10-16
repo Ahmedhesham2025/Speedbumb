@@ -248,12 +248,14 @@ class EngineConfig {
     /**
      * E4c, humps in a row: at [rowMaxKmh] or slower the refractory time ends with the decision, so the next hump of a
      * row is felt; a jolt on the same pass [rowMinGapM] or more from the spot just felt is a hump of its own, unless it
-     * is a wheelbase away (± [AxleConfig.dtTolerance]: the rear axle). Spots within [rowMaxGapM] of each other ahead
+     * is a wheelbase away (± [AxleConfig.dtTolerance]: the rear axle) or, after a long flat top, within a wheelbase +
+     * [rowLongHumpM] (its far end and rear axle). Spots within [rowMaxGapM] of each other ahead
      * warn as one group ("2 bumps ahead"), even when fewer than [clusterMinExtra] follow.
      */
     var rowMaxKmh = 20.0
     var rowMinGapM = 3.0
     var rowMaxGapM = 25.0
+    var rowLongHumpM = 4.5
 }
 
 /** How a jolt started, in the car's frame (E4, [EngineConfig.polarityPitchMs]). */
@@ -988,8 +990,10 @@ class BumpEngine(
             val a0 = approaches[b0.id]
             val last0 = lastHitMs[b0.id]
             val samePass = (a0 != null && a0.hit) || (a0 == null && last0 != null && tMs - last0 < 15_000)
-            val rearAxle = abs(bestD - vehicle.wheelbaseM) <= cfg.axle.dtTolerance * vehicle.wheelbaseM
-            if (samePass && bestD >= cfg.rowMinGapM && speedKmh <= cfg.rowMaxKmh && !rearAxle) best = null
+            // A wheelbase on is the rear axle; anywhere over a long flat top and its rear axle is still that hump.
+            val sameHump = abs(bestD - vehicle.wheelbaseM) <= cfg.axle.dtTolerance * vehicle.wheelbaseM ||
+                (b0.shape == BumpShape.LONG_FLAT && bestD <= vehicle.wheelbaseM + cfg.rowLongHumpM)
+            if (samePass && bestD >= cfg.rowMinGapM && speedKmh <= cfg.rowMaxKmh && !sameHump) best = null
         }
         if (best == null) {
             // First time here → record it. No beep: we are already on top of it.
