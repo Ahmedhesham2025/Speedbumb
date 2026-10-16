@@ -8,7 +8,8 @@ import kotlin.test.assertTrue
 class HumpShapeTest {
     private fun shapeOf(hump: ProfileHump, seed: Long = 71): Pair<BumpShape?, MemoryStore> {
         val store = MemoryStore()
-        val r = Simulator(seed).drive(store, DriveSpec(profileHumps = listOf(hump), bumpKmh = 15.0, cruiseKmh = 40.0, slowZonesAt = listOf(300.0)))
+        // A steady 15 km/h, so the GPS speed is right and the axle pair is found (braking, GPS lags 1 s).
+        val r = Simulator(seed).drive(store, DriveSpec(profileHumps = listOf(hump), bumpKmh = 15.0, cruiseKmh = 15.0, roadM = 1200.0))
         assertEquals(1, r.newBumps, "${hump.kind} ${hump.lengthM} m: ${r.rejected} ${store.events.filter { it.type == "rejected" }.map { it.note }}")
         return store.saved.single().shape to store
     }
@@ -25,7 +26,7 @@ class HumpShapeTest {
         val (shape, store) = shapeOf(hump)
         assertEquals(BumpShape.LONG_FLAT, shape, "${store.events.filter { it.type == "new_bump" }.map { it.note }}")
         // Felt again, confirmed: 3 beeps and the voice, whatever its band.
-        val spec = DriveSpec(profileHumps = listOf(hump), bumpKmh = 15.0, cruiseKmh = 40.0, slowZonesAt = listOf(300.0))
+        val spec = DriveSpec(profileHumps = listOf(hump), bumpKmh = 15.0, cruiseKmh = 15.0, roadM = 1200.0)
         Simulator(72).drive(store, spec, tripId = 2)
         val t3 = Simulator(73).drive(store, spec, EngineConfig().apply { quietBelowKmh = 0.0 }, tripId = 3)
         assertEquals(Confidence.FULL, store.saved.single().confidence(EngineConfig()))
@@ -54,7 +55,7 @@ class HumpShapeTest {
         for (gap in listOf(4.0, 5.0, 6.0)) for (kmh in listOf(5.0, 10.0, 15.0, 20.0)) {
             val store = MemoryStore()
             val humps = List(3) { ProfileHump(900.0 + gap * it, "sinus", 0.10, 0.6) }
-            Simulator(83).drive(store, DriveSpec(profileHumps = humps, bumpKmh = kmh, cruiseKmh = 40.0, slowZonesAt = listOf(300.0)))
+            Simulator(83).drive(store, DriveSpec(profileHumps = humps, bumpKmh = kmh, cruiseKmh = kmh, roadM = 1000.0))
             assertTrue(store.saved.none { it.shape == BumpShape.LONG_FLAT },
                 "gap $gap m, $kmh km/h: ${store.events.filter { it.type == "new_bump" || it.type == "hit_repeat" }.map { it.note.substringAfter("hump=") }}")
         }
@@ -65,7 +66,7 @@ class HumpShapeTest {
         val store = MemoryStore()
         // A strong-pair gate no pair can reach: every judged hump in the pocket stays unknown.
         val cfg = EngineConfig().apply { shapePocketMinScore = 1.1 }
-        Simulator(84).drive(store, DriveSpec(profileHumps = listOf(ProfileHump(900.0, "trapez", 0.10, 4.0, plateauM = 2.5)), bumpKmh = 15.0, cruiseKmh = 40.0), cfg, drivingCfg = pocket)
+        Simulator(84).drive(store, DriveSpec(profileHumps = listOf(ProfileHump(900.0, "trapez", 0.10, 4.0, plateauM = 2.5)), bumpKmh = 15.0, cruiseKmh = 15.0, roadM = 1200.0), cfg, drivingCfg = pocket)
         assertTrue(store.saved.isNotEmpty() && store.saved.all { it.shape == null }, "${store.saved.map { it.shape }}")
     }
 
@@ -78,7 +79,7 @@ class HumpShapeTest {
         // Judged after the first pass, so the next hit's observation carries it.
         val sink = ListSink()
         val store = MemoryStore()
-        val spec = DriveSpec(profileHumps = listOf(ProfileHump(900.0, "sinus", 0.12, 1.0)), bumpKmh = 15.0, cruiseKmh = 40.0)
+        val spec = DriveSpec(profileHumps = listOf(ProfileHump(900.0, "sinus", 0.12, 1.0)), bumpKmh = 15.0, cruiseKmh = 15.0, roadM = 1200.0)
         Simulator(74).drive(store, spec, tripId = 1, observationSink = sink)
         Simulator(75).drive(store, spec, tripId = 2, observationSink = sink)
         val hit = sink.got.single { it.kind == "known_hit" }

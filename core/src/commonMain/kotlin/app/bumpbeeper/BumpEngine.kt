@@ -236,11 +236,11 @@ class EngineConfig {
      * lobe's velocity step × the front impulse's length / (pi/2 × speed); under [shapeLowM] LOW. Else SHORT_STEEP;
      * anything else UNKNOWN (null), which keeps the band's sound.
      */
-    var shapeLowHz = 0.5
+    var shapeLowHz = 0.1
     var shapeHighHz = 15.0
     var shapeStrongFraction = 0.35
     var shapeQuietM = 1.2
-    var shapeBalance = 0.2
+    var shapeBalance = 0.15
     var shapeTyreM = 0.2
     var shapeLowM = 0.04
     var shapePocketMinScore = 0.8
