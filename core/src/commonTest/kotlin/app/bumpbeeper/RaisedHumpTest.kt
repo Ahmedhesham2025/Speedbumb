@@ -63,6 +63,32 @@ class RaisedHumpTest {
         assertTrue(notes(store, "new_bump").all { "profile=none" in it }, "${notes(store, "new_bump")}")
     }
 
+    @Test fun crawlingOverAHumpFindsBothAxles() {
+        // 4, 6 and 8 km/h all the way: the rear axle comes 1.2-2.3 s after the front one; the decision waits for it.
+        // (A lighter trigger: at 4 km/h the simulator's hump gives under 3 m/s².)
+        val cfg = EngineConfig().apply { joltThreshold = 2.5 }
+        for (kmh in listOf(4.0, 6.0, 8.0)) {
+            val store = MemoryStore()
+            val r = Simulator(58).drive(store, DriveSpec(bumpsAt = listOf(250.0), bumpKmh = kmh, cruiseKmh = kmh, roadM = 400.0), cfg)
+            val learned = notes(store, "new_bump")
+            assertEquals(1, r.newBumps, "$kmh km/h: ${r.rejected} $learned")
+            assertTrue(learned.single().contains("axle=both"), "$kmh km/h: $learned")
+            assertTrue(notes(store, "hit_repeat").isEmpty() && r.rejected.isEmpty(), "$kmh km/h: the rear axle is no jolt of its own: ${r.rejected}")
+        }
+    }
+
+    @Test fun aRoundedHumpsCrestIsNotADrop() {
+        // A rounded hump crawled at 8 km/h, phone in its holder: the trigger is on the crest (down), after a nose-up
+        // climb. Never DOWN, never rejected as down first.
+        for (seed in 61L..63L) {
+            val store = MemoryStore()
+            Simulator(seed).drive(store, DriveSpec(roundHumpsAt = listOf(900.0), bumpKmh = 8.0, slowZonesAt = listOf(400.0), cruiseKmh = 40.0))
+            val judged = notes(store, "new_bump") + notes(store, "rejected")
+            assertTrue(judged.isNotEmpty(), "seed $seed: the hump was felt")
+            assertTrue(judged.none { it.startsWith("down_first") || "polarity=down" in it }, "seed $seed: $judged")
+        }
+    }
+
     @Test fun anEgyptianCrossingIsAV() {
         // 40 km/h, down to 8 for the hump, back up past 35: the V and the hump going up first confirm it at once.
         val store = MemoryStore()

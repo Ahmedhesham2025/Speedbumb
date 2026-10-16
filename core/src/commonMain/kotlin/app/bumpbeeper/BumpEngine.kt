@@ -214,6 +214,15 @@ class EngineConfig {
     var vMinDropFraction = 0.4
     var vAfterMs = 8000L
     var vRiseKmh = 8.0
+
+    /**
+     * E4b, crawling over a hump: below [crawlKmh] (the lag-corrected low speed, [AxleSignature.lowSpeedMps]) the rear
+     * axle comes after [AxleConfig.decideMaxMs]; the decision then waits for it, Δt at that speed (learned wheelbase)
+     * + [AxleConfig.dtTolerance] + [AxleConfig.decideMarginMs], at most [crawlDecideMaxMs]. The refractory time is at
+     * least that wait, so the rear axle never triggers a jolt of its own. Warnings don't wait for decisions.
+     */
+    var crawlKmh = 10.0
+    var crawlDecideMaxMs = 3000L
 }
 
 /** How a jolt started, in the car's frame (E4, [EngineConfig.polarityPitchMs]). */
@@ -539,7 +548,7 @@ class BumpEngine(
             joltWaitMs = axleWaitMs(tMs)
             joltLeft = leftUnit()
             joltFrameTrusted = joltLeft != null && !phone.pocketMode && phone.state == PhoneState.STABLE_MOUNTED
-            refractoryUntilMs = tMs + cfg.refractoryMs
+            refractoryUntilMs = tMs + max(cfg.refractoryMs, joltWaitMs)
             phoneJolt = false
         }
     }
@@ -626,6 +635,8 @@ class BumpEngine(
             if (bufT[k] >= tMs - 50 - cfg.polarityBaselineMs && bufT[k] < tMs - 50) { sum += noseUp(k); m++ }
         }
         val base = if (m >= 3) sum / m else 0.0
+        // Already climbing nose-up before a down-first trigger: the crest of a rounded hump, not a drop.
+        val climbing = base * cfg.polarityPitchMs / 1000.0 >= cfg.polarityMinPitchRad
         var turn = 0.0
         var prevT = -1L
         for (i in 0 until bufCount) {
@@ -642,6 +653,7 @@ class BumpEngine(
         }
         return when {
             !shape.firstDown && pitch > 0 -> Polarity.UP
+            shape.firstDown && climbing -> Polarity.UNCLEAR
             shape.firstDown && pitch < 0 -> Polarity.DOWN
             shape.firstDown && speedKmh < cfg.vMaxMinKmh -> Polarity.UNCLEAR   // a rounded hump's crest can come first
             shape.firstDown && pitch == 0 -> Polarity.DOWN_WEAK
@@ -682,7 +694,11 @@ class BumpEngine(
     private fun axleWaitMs(tMs: Long): Long {
         val f = lastFix ?: return cfg.decideAfterMs
         val low = AxleSignature.lowSpeedMps(fixes.toList(), tMs, f.speedMps, cfg.axle)
-        return max(cfg.decideAfterMs, AxleSignature.decideWindowMs(low, vehicle.wheelbaseM, cfg.axle))
+        val wait = max(cfg.decideAfterMs, AxleSignature.decideWindowMs(low, vehicle.wheelbaseM, cfg.axle))
+        if (low * 3.6 >= cfg.crawlKmh) return wait
+        // A crawl (E4b): wait for the rear axle at the slowest plausible speed, past the usual cap.
+        val rear = vehicle.wheelbaseM / low * 1000.0 * (1 + cfg.axle.dtTolerance) + cfg.axle.decideMarginMs
+        return rear.toLong().coerceIn(wait, max(wait, cfg.crawlDecideMaxMs))
     }
 
     /** The two-axle signature of the jolt at [trig], from the sample buffer (pitch nose-up; none until the frame is known). */
@@ -1531,8 +1547,8 @@ class BumpEngine(
          */
         fun remoteSpotId(bumpId: Long): Long? = if (bumpId <= -2L) -2L - bumpId else null
 
-        /** Sample buffer size: ≥ 5 s even at 200 samples per second (the axle signature's span). */
-        private const val BUF = 1024
+        /** Sample buffer size: ≥ 7.5 s even at 200 samples per second (the axle signature's span at a crawl, E4b). */
+        private const val BUF = 1536
 
         /** [AxleResult.reason]s where the axle check could not look: no evidence either way. */
         val AXLE_BLIND = setOf("window", "slow", "no_data", "fast", "ringing")

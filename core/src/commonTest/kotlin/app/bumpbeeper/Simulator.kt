@@ -97,6 +97,11 @@ class DriveSpec(
     val brakePitchRads: Double = 0.0,
     /** How much a dip pitches the car (1 = nose-dip at the front wheel; 0 = none, a dip felt only as a drop). */
     val dipPitch: Double = 1.0,
+    /**
+     * Rounded humps crawled over (the driver slows to [bumpKmh]): a gentle climb (+1.5 m/s², nose up), the crest
+     * (-4.5 m/s², the strongest part, nose down) and a gentle way down; the rear axle the same, a wheelbase later.
+     */
+    val roundHumpsAt: List<Double> = emptyList(),
     /** The car's wheelbase: the rear wheels cross a bump this far after the front ones. */
     val wheelbaseM: Double = 2.6,
     /** Sets the phone's own signals on every sample: (seconds driven, metres driven, speed m/s, the signals, sensor time ms). */
@@ -201,7 +206,7 @@ class Simulator(seed: Long) {
         fun travel(p: Double) = if (spec.westbound) len - p else p   // road position ↔ distance travelled
         val bumps = spec.bumpsAt.map { travel(it) }
         // (position, speed the driver slows to)
-        val slowFor = (spec.bumpsAt + spec.silentBumpsAt).map { Pair(travel(it), spec.bumpKmh / 3.6) } +
+        val slowFor = (spec.bumpsAt + spec.silentBumpsAt + spec.roundHumpsAt).map { Pair(travel(it), spec.bumpKmh / 3.6) } +
             spec.crawlAt.map { Pair(travel(it), 8 / 3.6) }
         val jolts = spec.oneOffJoltsAt.map { travel(it) }
         // (distance travelled, side: +1 right / -1 left, jolt size)
@@ -257,6 +262,8 @@ class Simulator(seed: Long) {
         val twists = spec.pocketTwistsAt.map { travel(it) }
         val jostles = spec.jostlesAt.map { travel(it) }
         val seams = spec.seamsAt.map { travel(it) }
+        val rounds = spec.roundHumpsAt.map { travel(it) }
+        val roundHits = ArrayList<DoubleArray>()   // (time, scale, +1 front / -1 rear)
         val holds = spec.holdsAt.map { Pair(travel(it.first), it.second) }
         val spikes = spec.brakeSpikesAt.map { travel(it) }
         val stops = spec.stopsAt.map { doubleArrayOf(travel(it.first), it.second, -1.0, 0.0) }   // (where, seconds, leave at, gone)
@@ -343,6 +350,10 @@ class Simulator(seed: Long) {
                 if (s < sb + wb && sNew >= sb + wb) crossings.add(doubleArrayOf(t, 0.8 * bumpAmp(vNew), -1.0)) // rear axle
             }
             for (sj in jolts) if (s < sj && sNew >= sj) crossings.add(doubleArrayOf(t, 6.0))
+            for (sr in rounds) {
+                if (s < sr && sNew >= sr) roundHits.add(doubleArrayOf(t, 1.0, 1.0))
+                if (s < sr + spec.wheelbaseM && sNew >= sr + spec.wheelbaseM) roundHits.add(doubleArrayOf(t, 0.8, -1.0))
+            }
             for (ss in seams) {
                 if (s < ss && sNew >= ss) seamHits.add(doubleArrayOf(t, 6.0))
                 if (s < ss + 2.6 && sNew >= ss + 2.6) seamHits.add(doubleArrayOf(t, 5.0))
@@ -364,6 +375,16 @@ class Simulator(seed: Long) {
             for (c in crossings) av += pulse(t - c[0], c[1])
             for (c in holeHits) av += dipPulse(t - c[0], c[1])
             for (c in seamHits) av += pulse(t - c[0], c[1])
+            for (c in roundHits) {
+                val tau = t - c[0]
+                av += c[1] * when {
+                    tau < 0 -> 0.0
+                    tau < 0.4 -> 1.5 * sin(PI * tau / 0.4)                 // climbing
+                    tau < 0.7 -> -4.5 * sin(PI * (tau - 0.4) / 0.3)        // over the crest
+                    tau < 1.1 -> 1.5 * sin(PI * (tau - 0.7) / 0.4)         // levelling out
+                    else -> 0.0
+                }
+            }
 
             // Rotation (car axes: roll about forward, pitch about left, yaw about up), rad/s.
             // Bumps tip the car nose-up/down (pitch); a dip under one wheel rocks it sideways (roll).
@@ -414,6 +435,17 @@ class Simulator(seed: Long) {
             crossings.removeAll { t - it[0] > 0.5 }
             holeHits.removeAll { t - it[0] > 0.5 }
             seamHits.removeAll { t - it[0] > 0.5 }
+            for (c in roundHits) {
+                // Nose up while the front wheels climb, down over the crest (rear axle the other way); nose-down positive.
+                val tau = t - c[0]
+                pitch += c[2] * when {
+                    tau < 0 -> 0.0
+                    tau < 0.45 -> -0.15 * sin(PI * tau / 0.45)
+                    tau < 0.9 -> 0.15 * sin(PI * (tau - 0.45) / 0.45)
+                    else -> 0.0
+                }
+            }
+            roundHits.removeAll { t - it[0] > 1.2 }
 
             // Passenger picks the phone up: it rotates 70° and gets shaken, is held 5 s, then put back.
             var extraTilt = 0.0
