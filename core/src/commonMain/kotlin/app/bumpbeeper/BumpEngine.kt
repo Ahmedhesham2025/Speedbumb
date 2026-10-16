@@ -632,9 +632,10 @@ class BumpEngine(
         if (ax?.verdict == AxleVerdict.BOTH) vehicle.learn(ax.dtMs, fix.speedMps)
         // For the shared map: the hit's vibration dose (SeverityIndex) and how clearly both axles showed.
         val sev = SeverityIndex.of(bufTimes(), bufVerticals(), tMs, fix.speedMps).index
+        shapeNote = ""
         val hump = bumpShape(tMs, fix.speedMps)
         val hitInfo = HitInfo(sev.takeIf { !it.isNaN() }, ax?.score?.takeIf { !it.isNaN() }?.coerceIn(0.0, 1.0), hump)
-        registerHit(tMs, pos[0], pos[1], speedKmh, peak, slowdownKmh, shape, grade, note + " hump=${hump?.name?.lowercase() ?: "unknown"}", hitInfo)
+        registerHit(tMs, pos[0], pos[1], speedKmh, peak, slowdownKmh, shape, grade, note + " hump=${hump?.name?.lowercase() ?: "unknown"}$shapeNote", hitInfo)
         val spot = lastSpot
         if (spot != null && profile == CrossProfile.SLOWDOWN && (up || ax?.verdict == AxleVerdict.BOTH)) {
             pendingV.add(PendingV(spot.id, tMs, minKmh))
@@ -738,6 +739,9 @@ class BumpEngine(
     /** What a hit tells the shared map besides its peak ([Observation.sevIndex], [Observation.axle]); null = unknown. */
     private class HitInfo(val sevIndex: Double?, val axle: Double?, val shape: BumpShape? = null)
 
+    /** The last [bumpShape]'s rise and length, for the event log. */
+    private var shapeNote = ""
+
     /** The hump's shape and length from its front impulse ([EngineConfig.shapeLongM]); null when it can't tell. */
     private fun bumpShape(tMs: Long, speedMps: Double): BumpShape? {
         if (!(speedMps * 3.6 >= cfg.shapeMinKmh)) return null
@@ -758,6 +762,7 @@ class BumpEngine(
         for (k in 1 until n) z[k] = z[k - 1] + 0.5 * (vel[k] + vel[k - 1]) * (t[i0 + k] - t[i0 + k - 1]) / 1000.0
         var top = 0
         for (k in 0 until n) if (z[k] > z[top]) top = k
+        shapeNote = " rise=${formatFixed(z[top] * 100, 1)}cm"
         if (z[top] < cfg.shapeLowM) return BumpShape.LOW
         var a = top
         var b = top
@@ -767,6 +772,7 @@ class BumpEngine(
         var fastest = 0.0
         for (k in a..b) fastest = max(fastest, abs(vel[k]))
         val flat = (a..b).count { abs(vel[it]) < cfg.shapeFlatRate * fastest }.toDouble() / (b - a + 1)
+        shapeNote += " long=${formatFixed(lengthM, 1)}m flat=${formatFixed(flat, 2)}"
         return if (lengthM >= cfg.shapeLongM && flat >= cfg.shapeFlatShare) BumpShape.LONG_FLAT else BumpShape.SHORT_STEEP
     }
 
