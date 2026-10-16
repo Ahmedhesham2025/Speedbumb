@@ -33,6 +33,36 @@ class RaisedHumpTest {
         assertTrue(notes(store, "rejected").none { it.startsWith("down_first") }, "${notes(store, "rejected")}")
     }
 
+    @Test fun aLoosePhoneHasNoPolarity() {
+        // In a cup holder the phone rests loose: its frame isn't trusted, so the same dip is no "down_first".
+        val loose = DrivingConfig().apply { placement = "cupholder" }
+        val store = MemoryStore()
+        Simulator(52).drive(store, DriveSpec(dipsAt = listOf(900.0), slowZonesAt = listOf(400.0), cruiseKmh = 40.0), drivingCfg = loose)
+        val judged = notes(store, "new_bump") + notes(store, "rejected")
+        assertTrue(judged.none { it.startsWith("down_first") } && judged.filter { "polarity=" in it }.all { "polarity=unclear" in it }, "$judged")
+    }
+
+    @Test fun brakingPitchIsNotTheJolts() {
+        // The car pitches nose-down while braking (0.05 rad/s at 3.5 m/s², over 10 x the threshold in 0.25 s).
+        // A hump crossed while braking still goes UP, and a drop felt with no nose-dip of its own is never DOWN.
+        val store = MemoryStore()
+        val r = Simulator(55).drive(store, DriveSpec(bumpsAt = listOf(900.0), brakePitchRads = 0.05, cruiseKmh = 40.0))
+        assertEquals(1, r.newBumps, "${r.rejected}")
+        assertTrue(notes(store, "new_bump").single().contains("polarity=up"), "${notes(store, "new_bump")}")
+        val drop = MemoryStore()
+        Simulator(56).drive(drop, DriveSpec(dipsAt = listOf(900.0), dipPitch = 0.0, slowZonesAt = listOf(400.0, 900.0), brakePitchRads = 0.05, cruiseKmh = 40.0))
+        val judged = notes(drop, "new_bump") + notes(drop, "rejected")
+        assertTrue(judged.none { it.startsWith("down_first") }, "$judged")
+    }
+
+    @Test fun aStartFromStandstillIsNoV() {
+        // Stopped, then off over a ramp: slow, then faster, but no approach: the hump is not confirmed by a V.
+        val store = MemoryStore()
+        Simulator(57).drive(store, DriveSpec(stopsAt = listOf(800.0 to 10.0), bumpsAt = listOf(806.0), bumpKmh = 8.0, cruiseKmh = 40.0))
+        assertTrue(notes(store, "cross_v").isEmpty(), "${store.events.filter { it.type == "cross_v" || it.type == "new_bump" }.map { it.note }}")
+        assertTrue(notes(store, "new_bump").all { "profile=none" in it }, "${notes(store, "new_bump")}")
+    }
+
     @Test fun anEgyptianCrossingIsAV() {
         // 40 km/h, down to 8 for the hump, back up past 35: the V and the hump going up first confirm it at once.
         val store = MemoryStore()

@@ -188,17 +188,24 @@ class EngineConfig {
 
     /**
      * E4, Egyptian raised humps. **Polarity**: a raised hump lifts the car first, the nose up as the front wheels climb;
-     * a pothole, drain, dip or manhole drops it first, nose down. Only with a trusted car frame (not in a pocket, the
-     * phone not handled, the forward direction known): the vertical's first big movement ([JoltShape.firstDown]) and the
-     * pitch turned in the [polarityPitchMs] after the trigger (at least [polarityMinPitchRad], else the axle pair's
-     * pitch order) give UP (evidence, like a slowdown), DOWN (never a bump: rejected "down_first") or, down first with
-     * the pitch unknown, DOWN_WEAK (at most a maybe); anything else is UNCLEAR, which is neutral.
+     * a pothole, drain, dip or manhole drops it first, nose down. Only with a trusted car frame: the phone resting in a
+     * holder ([PhoneState.STABLE_MOUNTED]) at the trigger and not handled at the decision, the forward direction known
+     * (a loose or pocketed phone turns on its own). The vertical's first big movement ([JoltShape.firstDown]) and the
+     * pitch turned in the [polarityPitchMs] after the trigger, less its average rate over the [polarityBaselineMs]
+     * before (braking pitches the car too), at least [polarityMinPitchRad] (else the axle pair's pitch order), give UP
+     * (evidence, like a slowdown), DOWN (never a bump: rejected "down_first") or, down first with the pitch unknown,
+     * DOWN_WEAK (at most a maybe). Anything else is UNCLEAR, which is neutral; so is a down-first jolt below
+     * [vMaxMinKmh] without a nose-down pitch (a rounded hump crawled over can show its crest first).
      * **Crossing profile** (GPS speed, [axle]'s lag taken off the fix times): SLOWDOWN when the slowest speed within
      * [vNearMs] of the jolt is [vMaxMinKmh] or less and at least [vMinDropFraction] below the top speed [vBeforeFromMs]
-     * to [vBeforeToMs] before it; V when the speed then rises [vRiseKmh] above that minimum within [vAfterMs]. A V with
+     * to [vBeforeToMs] before it, which was at least [vMinApproachKmh] or that much faster by [vMinDropKmh] (not a
+     * start from standstill over a ramp or kerb); V when the speed then rises [vRiseKmh] above that minimum within [vAfterMs]. A V with
      * UP or both axles confirms the spot ([Bump.axleHits] at least 2: FULL).
      */
     var polarityPitchMs = 200L
+    var polarityBaselineMs = 300L
+    var vMinApproachKmh = 25.0
+    var vMinDropKmh = 10.0
     var polarityMinPitchRad = 0.004
     var vBeforeFromMs = 8000L
     var vBeforeToMs = 5000L
@@ -335,7 +342,7 @@ class BumpEngine(
     private var joltWaitMs = 0L
     /** The car's left axis when the jolt triggered (a pick-up before the decision makes the frame be learned again). */
     private var joltLeft: DoubleArray? = null
-    /** The car frame could be trusted when the jolt triggered (E4 polarity): not in a pocket, the phone not handled. */
+    /** The car frame could be trusted when the jolt triggered (E4 polarity): the phone resting in a holder. */
     private var joltFrameTrusted = false
     /** Spots felt with a slowdown and UP or both axles, waiting for the speed to rise again (a V, E4). */
     private class PendingV(val bumpId: Long, val tMs: Long, val minKmh: Double)
@@ -531,7 +538,7 @@ class BumpEngine(
             joltPeak = abs(v)
             joltWaitMs = axleWaitMs(tMs)
             joltLeft = leftUnit()
-            joltFrameTrusted = joltLeft != null && !phone.pocketMode && phone.state != PhoneState.HANDLED
+            joltFrameTrusted = joltLeft != null && !phone.pocketMode && phone.state == PhoneState.STABLE_MOUNTED
             refractoryUntilMs = tMs + cfg.refractoryMs
             phoneJolt = false
         }
@@ -581,7 +588,7 @@ class BumpEngine(
         // where the rear would be): that is no evidence
         // against it, so the jolt is an ordinary hit (a steady crawl has no slowdown either).
         val blind = ax == null || ax.reason in AXLE_BLIND
-        val pol = polarityOf(tMs, shape, ax)
+        val pol = polarityOf(tMs, shape, ax, fix.speedMps * 3.6)
         val (profile, minKmh) = crossProfile(tMs)
         val note = "$axNote slow=${formatFixed(drop, 1)} polarity=${pol.name.lowercase()} profile=${profile.name.lowercase()}" +
             if (overridden) " over_handled" else ""
@@ -607,17 +614,25 @@ class BumpEngine(
     }
 
     /** [EngineConfig.polarityPitchMs]: UP, DOWN, DOWN_WEAK or UNCLEAR; UNCLEAR whenever the car frame isn't trusted. */
-    private fun polarityOf(tMs: Long, shape: JoltShape, ax: AxleResult?): Polarity {
+    private fun polarityOf(tMs: Long, shape: JoltShape, ax: AxleResult?, speedKmh: Double): Polarity {
         val left = joltLeft
-        if (!joltFrameTrusted || left == null) return Polarity.UNCLEAR
+        if (!joltFrameTrusted || left == null || phone.state == PhoneState.HANDLED) return Polarity.UNCLEAR
+        fun noseUp(k: Int) = -(bufGx[k] * left[0] + bufGy[k] * left[1] + bufGz[k] * left[2])
+        // The rate before the jolt (braking, a curve's slope, gyro bias) is not the jolt's.
+        var sum = 0.0
+        var m = 0
+        for (i in 0 until bufCount) {
+            val k = (bufHead - bufCount + i + BUF) % BUF
+            if (bufT[k] >= tMs - 50 - cfg.polarityBaselineMs && bufT[k] < tMs - 50) { sum += noseUp(k); m++ }
+        }
+        val base = if (m >= 3) sum / m else 0.0
         var turn = 0.0
         var prevT = -1L
         for (i in 0 until bufCount) {
             val k = (bufHead - bufCount + i + BUF) % BUF
             val t = bufT[k]
             if (t < tMs - 50 || t > tMs + cfg.polarityPitchMs) continue
-            val noseUp = -(bufGx[k] * left[0] + bufGy[k] * left[1] + bufGz[k] * left[2])
-            if (prevT >= 0) turn += noseUp * (t - prevT) / 1000.0
+            if (prevT >= 0) turn += (noseUp(k) - base) * (t - prevT) / 1000.0
             prevT = t
         }
         val pitch = when {
@@ -628,6 +643,7 @@ class BumpEngine(
         return when {
             !shape.firstDown && pitch > 0 -> Polarity.UP
             shape.firstDown && pitch < 0 -> Polarity.DOWN
+            shape.firstDown && speedKmh < cfg.vMaxMinKmh -> Polarity.UNCLEAR   // a rounded hump's crest can come first
             shape.firstDown && pitch == 0 -> Polarity.DOWN_WEAK
             else -> Polarity.UNCLEAR
         }
@@ -639,7 +655,8 @@ class BumpEngine(
         val before = fixes.filter { it.timeMs - lag in tMs - cfg.vBeforeFromMs..tMs - cfg.vBeforeToMs }.maxOfOrNull { it.speedMps }
         val min = fixes.filter { abs(it.timeMs - lag - tMs) <= cfg.vNearMs }.minOfOrNull { it.speedMps }
         if (before == null || min == null) return CrossProfile.NONE to Double.NaN
-        val slowed = min * 3.6 <= cfg.vMaxMinKmh && (before - min) >= cfg.vMinDropFraction * before
+        val approached = before * 3.6 >= cfg.vMinApproachKmh || (before - min) * 3.6 >= cfg.vMinDropKmh
+        val slowed = approached && min * 3.6 <= cfg.vMaxMinKmh && (before - min) >= cfg.vMinDropFraction * before
         return (if (slowed) CrossProfile.SLOWDOWN else CrossProfile.NONE) to min * 3.6
     }
 
