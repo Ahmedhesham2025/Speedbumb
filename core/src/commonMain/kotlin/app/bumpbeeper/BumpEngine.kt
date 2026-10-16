@@ -185,7 +185,42 @@ class EngineConfig {
     var overrideMaxRotRads = 0.6
     var overrideMinProfileHits = 3
     var overrideWheelbaseTolM = 0.3
+
+    /**
+     * E4, Egyptian raised humps. **Polarity**: a raised hump lifts the car first, the nose up as the front wheels climb;
+     * a pothole, drain, dip or manhole drops it first, nose down. Only with a trusted car frame: the phone resting in a
+     * holder ([PhoneState.STABLE_MOUNTED]) at the trigger and not handled at the decision, the forward direction known
+     * (a loose or pocketed phone turns on its own). The vertical's first big movement ([JoltShape.firstDown]) and the
+     * pitch turned in the [polarityPitchMs] after the trigger, less its average rate over the [polarityBaselineMs]
+     * before (braking pitches the car too), at least [polarityMinPitchRad] (else the axle pair's pitch order), give UP
+     * (evidence, like a slowdown), DOWN (never a bump: rejected "down_first") or, down first with the pitch unknown,
+     * DOWN_WEAK (at most a maybe). Anything else is UNCLEAR, which is neutral; so is a down-first jolt below
+     * [vMaxMinKmh] without a nose-down pitch (a rounded hump crawled over can show its crest first).
+     * **Crossing profile** (GPS speed, [axle]'s lag taken off the fix times): SLOWDOWN when the slowest speed within
+     * [vNearMs] of the jolt is [vMaxMinKmh] or less and at least [vMinDropFraction] below the top speed [vBeforeFromMs]
+     * to [vBeforeToMs] before it, which was at least [vMinApproachKmh] or that much faster by [vMinDropKmh] (not a
+     * start from standstill over a ramp or kerb); V when the speed then rises [vRiseKmh] above that minimum within [vAfterMs]. A V with
+     * UP or both axles confirms the spot ([Bump.axleHits] at least 2: FULL).
+     */
+    var polarityPitchMs = 200L
+    var polarityBaselineMs = 300L
+    var vMinApproachKmh = 25.0
+    var vMinDropKmh = 10.0
+    var polarityMinPitchRad = 0.004
+    var vBeforeFromMs = 8000L
+    var vBeforeToMs = 5000L
+    var vNearMs = 3000L
+    var vMaxMinKmh = 15.0
+    var vMinDropFraction = 0.4
+    var vAfterMs = 8000L
+    var vRiseKmh = 8.0
 }
+
+/** How a jolt started, in the car's frame (E4, [EngineConfig.polarityPitchMs]). */
+enum class Polarity { UP, DOWN, DOWN_WEAK, UNCLEAR }
+
+/** The speed around a jolt (E4, [EngineConfig.vMaxMinKmh]): slowed to a crawl and sped up again (V), or only slowed. */
+enum class CrossProfile { V, SLOWDOWN, NONE }
 
 /**
  * How one jolt looked: diagnostics for the event log, training samples and research. Nothing decides a spot's type
@@ -307,6 +342,13 @@ class BumpEngine(
     private var joltWaitMs = 0L
     /** The car's left axis when the jolt triggered (a pick-up before the decision makes the frame be learned again). */
     private var joltLeft: DoubleArray? = null
+    /** The car frame could be trusted when the jolt triggered (E4 polarity): the phone resting in a holder. */
+    private var joltFrameTrusted = false
+    /** Spots felt with a slowdown and UP or both axles, waiting for the speed to rise again (a V, E4). */
+    private class PendingV(val bumpId: Long, val tMs: Long, val minKmh: Double)
+    private val pendingV = ArrayList<PendingV>()
+    /** The spot the last [registerHit] learned or hit, null for a repeat or a weak hit. */
+    private var lastSpot: Bump? = null
     private var refractoryUntilMs = Long.MIN_VALUE / 4
     /**
      * The last jolt was the phone's ([handledReason]) and its handling had begun by then ([EngineConfig.phoneJoltLeadMs]):
@@ -496,6 +538,7 @@ class BumpEngine(
             joltPeak = abs(v)
             joltWaitMs = axleWaitMs(tMs)
             joltLeft = leftUnit()
+            joltFrameTrusted = joltLeft != null && !phone.pocketMode && phone.state == PhoneState.STABLE_MOUNTED
             refractoryUntilMs = tMs + cfg.refractoryMs
             phoneJolt = false
         }
@@ -545,12 +588,18 @@ class BumpEngine(
         // where the rear would be): that is no evidence
         // against it, so the jolt is an ordinary hit (a steady crawl has no slowdown either).
         val blind = ax == null || ax.reason in AXLE_BLIND
-        val note = "$axNote slow=${formatFixed(drop, 1)}" + if (overridden) " over_handled" else ""
+        val pol = polarityOf(tMs, shape, ax, fix.speedMps * 3.6)
+        val (profile, minKmh) = crossProfile(tMs)
+        val note = "$axNote slow=${formatFixed(drop, 1)} polarity=${pol.name.lowercase()} profile=${profile.name.lowercase()}" +
+            if (overridden) " over_handled" else ""
         if (phone.pocketMode && ax?.verdict == AxleVerdict.ONE) { reject(tMs, peak, "no_axle", fix, note.trim(), shape); return }
-        if (phone.pocketMode && !axleSeen && !slowed && !blind) { reject(tMs, peak, "no_evidence", fix, note.trim(), shape); return }
+        if (pol == Polarity.DOWN) { reject(tMs, peak, "down_first", fix, note.trim(), shape); return }
+        val up = pol == Polarity.UP
+        if (phone.pocketMode && !axleSeen && !slowed && !blind && !up) { reject(tMs, peak, "no_evidence", fix, note.trim(), shape); return }
         val grade = when {
+            pol == Polarity.DOWN_WEAK -> 0   // down first: at most a maybe, never a confirmation
             ax?.verdict == AxleVerdict.BOTH || (peak >= cfg.strongJoltMs2 && axleSeen && slowed) -> 2
-            axleSeen || slowed || blind -> 1
+            axleSeen || slowed || blind || up -> 1
             else -> 0
         }
         if (ax?.verdict == AxleVerdict.BOTH) vehicle.learn(ax.dtMs, fix.speedMps)
@@ -558,6 +607,75 @@ class BumpEngine(
         val sev = SeverityIndex.of(bufTimes(), bufVerticals(), tMs, fix.speedMps).index
         val hitInfo = HitInfo(sev.takeIf { !it.isNaN() }, ax?.score?.takeIf { !it.isNaN() }?.coerceIn(0.0, 1.0))
         registerHit(tMs, pos[0], pos[1], speedKmh, peak, slowdownKmh, shape, grade, note, hitInfo)
+        val spot = lastSpot
+        if (spot != null && profile == CrossProfile.SLOWDOWN && (up || ax?.verdict == AxleVerdict.BOTH)) {
+            pendingV.add(PendingV(spot.id, tMs, minKmh))
+        }
+    }
+
+    /** [EngineConfig.polarityPitchMs]: UP, DOWN, DOWN_WEAK or UNCLEAR; UNCLEAR whenever the car frame isn't trusted. */
+    private fun polarityOf(tMs: Long, shape: JoltShape, ax: AxleResult?, speedKmh: Double): Polarity {
+        val left = joltLeft
+        if (!joltFrameTrusted || left == null || phone.state == PhoneState.HANDLED) return Polarity.UNCLEAR
+        fun noseUp(k: Int) = -(bufGx[k] * left[0] + bufGy[k] * left[1] + bufGz[k] * left[2])
+        // The rate before the jolt (braking, a curve's slope, gyro bias) is not the jolt's.
+        var sum = 0.0
+        var m = 0
+        for (i in 0 until bufCount) {
+            val k = (bufHead - bufCount + i + BUF) % BUF
+            if (bufT[k] >= tMs - 50 - cfg.polarityBaselineMs && bufT[k] < tMs - 50) { sum += noseUp(k); m++ }
+        }
+        val base = if (m >= 3) sum / m else 0.0
+        var turn = 0.0
+        var prevT = -1L
+        for (i in 0 until bufCount) {
+            val k = (bufHead - bufCount + i + BUF) % BUF
+            val t = bufT[k]
+            if (t < tMs - 50 || t > tMs + cfg.polarityPitchMs) continue
+            if (prevT >= 0) turn += (noseUp(k) - base) * (t - prevT) / 1000.0
+            prevT = t
+        }
+        val pitch = when {
+            turn >= cfg.polarityMinPitchRad -> 1
+            turn <= -cfg.polarityMinPitchRad -> -1
+            else -> ax?.pitchOrder ?: 0
+        }
+        return when {
+            !shape.firstDown && pitch > 0 -> Polarity.UP
+            shape.firstDown && pitch < 0 -> Polarity.DOWN
+            shape.firstDown && speedKmh < cfg.vMaxMinKmh -> Polarity.UNCLEAR   // a rounded hump's crest can come first
+            shape.firstDown && pitch == 0 -> Polarity.DOWN_WEAK
+            else -> Polarity.UNCLEAR
+        }
+    }
+
+    /** The speed profile so far around the jolt at [tMs] (V needs the rise, [checkV]) and its slowest speed, km/h. */
+    private fun crossProfile(tMs: Long): Pair<CrossProfile, Double> {
+        val lag = cfg.axle.gpsLagMs.toLong()
+        val before = fixes.filter { it.timeMs - lag in tMs - cfg.vBeforeFromMs..tMs - cfg.vBeforeToMs }.maxOfOrNull { it.speedMps }
+        val min = fixes.filter { abs(it.timeMs - lag - tMs) <= cfg.vNearMs }.minOfOrNull { it.speedMps }
+        if (before == null || min == null) return CrossProfile.NONE to Double.NaN
+        val approached = before * 3.6 >= cfg.vMinApproachKmh || (before - min) * 3.6 >= cfg.vMinDropKmh
+        val slowed = approached && min * 3.6 <= cfg.vMaxMinKmh && (before - min) >= cfg.vMinDropFraction * before
+        return (if (slowed) CrossProfile.SLOWDOWN else CrossProfile.NONE) to min * 3.6
+    }
+
+    /** On each fix: a spot whose crossing sped up again ([EngineConfig.vRiseKmh]) is confirmed (a V with UP or both axles). */
+    private fun checkV(f: Fix) {
+        if (pendingV.isEmpty()) return
+        val t = f.timeMs - cfg.axle.gpsLagMs.toLong()
+        val it = pendingV.iterator()
+        while (it.hasNext()) {
+            val p = it.next()
+            if (t > p.tMs + cfg.vAfterMs) { it.remove(); continue }
+            if (t < p.tMs || f.speedMps * 3.6 < p.minKmh + cfg.vRiseKmh) continue
+            it.remove()
+            val b = bumps.firstOrNull { s -> s.id == p.bumpId } ?: continue
+            b.axleHits = max(b.axleHits + 1, 2)
+            store.updateBump(b)
+            log("cross_v", b.id, b.lat, b.lon, f.speedMps * 3.6, Double.NaN, Double.NaN, Double.NaN,
+                "speed ${formatFixed(p.minKmh, 0)} -> ${formatFixed(f.speedMps * 3.6, 0)} km/h, now ${bandNote(b)}")
+        }
     }
 
     /** The decision wait for a trigger at [tMs]: [AxleSignature.decideWindowMs] at the lag-corrected speed. */
@@ -749,6 +867,7 @@ class BumpEngine(
         /** 2: confirmed by the car's signature, 1: some evidence, 0: none ([EngineConfig.axle]); [evidence] for the log. */
         grade: Int, evidence: String, info: HitInfo,
     ) {
+        lastSpot = null
         // Nearest known bump within matchRadius, same direction of travel.
         var best: Bump? = null
         var bestD = Double.MAX_VALUE
@@ -796,6 +915,7 @@ class BumpEngine(
                 lastTickMs = tMs
                 listener.onNewSpotTick(b)
             }
+            lastSpot = b
             return
         }
 
@@ -857,6 +977,7 @@ class BumpEngine(
         observe("known_hit", lat, lon, speedKmh, peak, shape.score, now, info = info)
         sample("hit", null, tMs, speedKmh, peak, shape, null, lat, lon, b.id)
         listener.onKnownBumpHit(b)
+        lastSpot = b
     }
 
     /** For the event log: the spot's band and confidence after this hit ("sev=moderate conf=soft"). */
@@ -912,6 +1033,7 @@ class BumpEngine(
         while (fixes.size > 1 && f.timeMs - fixes.first().timeMs > 12_000) fixes.removeFirst()
         lastFix = f
         phone.onFix(f)
+        checkV(f)
 
         // GPS bearing is garbage when crawling; keep the last good one.
         if (!brg.isNaN() && speed >= 1.5) heading = brg

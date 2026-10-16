@@ -78,17 +78,21 @@ class SelfTest {
 
     // ---------- core's simulator: gyroscope, phone tilted in a holder, GPS 0.8 s late with ±3 m noise ----------
 
-    /** Bump at 300 m (driver slows to 15 km/h), harsh potholes at 700 m (right) and 1100 m (left) hit at 40 km/h. */
+    /**
+     * Bump at 300 m (driver slows to 15 km/h), harsh potholes at 700 m (right) and 1100 m (left) hit at 40 km/h. With
+     * the gyroscope the engine sees the nose dip into a pothole and never learns it (E4); without it, it can't tell.
+     */
     private val spec = DriveSpec(bumpsAt = listOf(300.0), potholesAt = listOf(700.0), potholesLeftAt = listOf(1100.0), cruiseKmh = 40.0)
+    private val noGyro = DriveSpec(bumpsAt = listOf(300.0), potholesAt = listOf(700.0), potholesLeftAt = listOf(1100.0), cruiseKmh = 40.0, gyro = false)
     private val truth = listOf(300.0 to "bump", 700.0 to "pothole_r", 1100.0 to "pothole_l")
 
     /**
      * Records one simulated drive (sensor rows only, like the app's recording) and adds the passenger's taps
      * [tapDelayMs] after the front wheels hit each hazard. 0.9 s at 40 km/h puts the tap 10 m past the spot.
      */
-    private fun simulatedRun(sim: Simulator, tapDelayMs: Long = 900): List<String> {
+    private fun simulatedRun(sim: Simulator, tapDelayMs: Long = 900, drive: DriveSpec = noGyro): List<String> {
         val rec = ArrayList<TraceSample>()
-        sim.drive(MemoryStore(), spec, recorder = rec)
+        sim.drive(MemoryStore(), drive, recorder = rec)
         val sensors = rec.filter { it !is TraceSample.Event }   // the simulator's own engine events are not replayed
         val fixes = sensors.filterIsInstance<TraceSample.Gps>()
         val accel = sensors.filterIsInstance<TraceSample.Accel>()
@@ -103,10 +107,19 @@ class SelfTest {
         return TraceWriterCore.toCsv((sensors + taps).sortedBy { it.tMs }, startMs = 0).lines()
     }
 
-    @Test fun gyroscopeAndFastHits() {
-        val runs = replayRuns(listOf("sim-gyro" to simulatedRun(Simulator(41))))
+    @Test fun potholesAreNoBumpsWithTheGyroscope() {
+        val runs = replayRuns(listOf("sim-gyro" to simulatedRun(Simulator(41), drive = spec)))
         val r = Metrics.compute(runs)
         println(r.toMarkdown("simulated, gyroscope, potholes at 40 km/h"))
+        assertEquals(3, r.labels)
+        assertEquals(1, r.detections)                  // the bump only
+        assertEquals(2, runs[0].result.events.count { it.type == "rejected" && it.note.startsWith("down_first") })
+    }
+
+    @Test fun fastHits() {
+        val runs = replayRuns(listOf("sim-gyro" to simulatedRun(Simulator(41))))
+        val r = Metrics.compute(runs)
+        println(r.toMarkdown("simulated, potholes at 40 km/h"))
         val dets = Metrics.detections(runs[0].result.events)
         for (l in runs[0].labels) for (d in dets) println(String.format(java.util.Locale.US, "  label %s t=%d  det %s t=%d  %.1f m", l.kind, l.tMs, d.band, d.tMs, Geo.distance(l.lat, l.lon, d.lat, d.lon)))
         assertEquals(3, r.labels)

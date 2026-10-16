@@ -14,7 +14,7 @@ class BumpEngineTest {
     @Test fun userMute() = Scenarios.userMute()
     @Test fun softThenFull() = Scenarios.softThenFull()
     @Test fun legacySpotSoftUntilFelt() = Scenarios.legacySpotSoftUntilFelt()
-    @Test fun dipIsABump() = Scenarios.dipIsABump()
+    @Test fun dipIsNotABump() = Scenarios.dipIsNotABump()
     @Test fun noGyroStillLearns() = Scenarios.noGyroStillLearns()
     @Test fun severityCountsAndSounds() = Scenarios.severityCountsAndSounds()
     @Test fun fastDipRejected() = Scenarios.fastDipRejected()

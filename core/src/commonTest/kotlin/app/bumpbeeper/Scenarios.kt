@@ -225,16 +225,17 @@ object Scenarios {
         log("softThenFull")
         val sim = Simulator(81)
         val store = MemoryStore()
-        val cfg = EngineConfig()
+        // The V crossing (E4: down to 15 km/h and back up) is off here; it would confirm a spot on its first pass.
+        val cfg = EngineConfig().apply { vMaxMinKmh = 0.0 }
         val spec = DriveSpec(bumpsAt = listOf(500.0, 1100.0, 1600.0))
-        val t1 = sim.drive(store, spec, tripId = 1)
+        val t1 = sim.drive(store, spec, cfg, tripId = 1)
         describe("trip 1", t1)
         val s1 = t1.stats
         check(t1.newBumps == 3 && s1.soft == 3 && s1.full == 0, "trip 1: 3 new spots, all soft, got new=${t1.newBumps} soft=${s1.soft} full=${s1.full}")
         check(s1.mild + s1.moderate + s1.strong == 3, "each felt spot is counted in one band: ${s1.mild}/${s1.moderate}/${s1.strong}")
         check(store.saved.all { it.confidence(cfg) == Confidence.SOFT && it.lastBand != null && it.sevIndex >= 3.0 }, "stored soft, with a band")
 
-        val t2 = sim.drive(store, spec, tripId = 2)
+        val t2 = sim.drive(store, spec, cfg, tripId = 2)
         describe("trip 2", t2)
         check(t2.knownHits == 3 && t2.stats.full == 3 && t2.stats.soft == 0, "felt again: full, got soft=${t2.stats.soft} full=${t2.stats.full}")
         check(store.saved.all { it.confidence(cfg) == Confidence.FULL }, "stored as confirmed")
@@ -276,44 +277,32 @@ object Scenarios {
     }
 
     /**
-     * A dip (the jolt goes down first, the car rolls) is a bump like any other: no type and no side, its shape is only
-     * kept in the notes. Felt once it warns with the soft beep, felt twice by its band; a 7 m/s² dip is strong.
+     * E4: a dip (the jolt goes down first, the nose dips: a pothole, drain or manhole) is never a bump: rejected as
+     * "down_first" with the phone in its holder. The raised humps around it go up first and are learned.
      */
-    fun dipIsABump() {
-        log("dipIsABump")
+    fun dipIsNotABump() {
+        log("dipIsNotABump")
         val sim = Simulator(21)
         val store = MemoryStore()
-        val cfg = EngineConfig()
         val spec = DriveSpec(bumpsAt = listOf(400.0, 1500.0), dipsAt = listOf(900.0), cruiseKmh = 40.0)
 
         val t1 = sim.drive(store, spec, tripId = 1)
         describe("trip 1", t1)
-        check(t1.newBumps == 3, "trip 1 should record 2 bumps + the dip, got ${t1.newBumps}")
-        check(store.saved.none { it.legacy }, "new spots are never old pothole spots")
-        // The shape is still measured (the gyroscope was used), as a diagnostic only.
         val notes = store.events.filter { it.type == "new_bump" }.map { it.note }
         log("  notes: $notes")
-        check(notes.all { it.startsWith("bump sev=") && "conf=" in it && "roll/pitch" in it && "axle=" in it }, "band, confidence, shape and axle in every note: $notes")
+        check(t1.newBumps == 2, "trip 1 should record the 2 humps, not the dip, got ${t1.newBumps}: ${t1.rejected}")
+        check("down_first" in t1.rejected, "the dip is rejected as down first: ${t1.rejected}")
+        check(notes.all { "polarity=up" in it && "roll/pitch" in it && "axle=" in it }, "humps go up first: $notes")
         check(notes.none { "pothole" in it || "side=" in it || "looks=" in it }, "no type or side in the notes: $notes")
-        val dip = nearest(store, sim, 900.0)
-        check(dip.severity(cfg) == Severity.STRONG, "a 7 m/s² dip is strong, got ${dip.severity(cfg)} (${formatFixed(dip.sevIndex, 1)})")
-
         val t2 = sim.drive(store, spec, tripId = 2)
         describe("trip 2", t2)
-        // E2: the strong dip showed both axles, so its one hit confirmed it; the others are still a maybe.
-        val sounds = listOf(WarnSound.SOFT, WarnSound.STRONG, WarnSound.SOFT)
-        check(t2.warnings.map { it.sound } == sounds, "trip 2: felt once, the strong dip confirmed: ${t2.warnings.map { it.sound }}")
-
-        val bands = listOf(400.0, 900.0, 1500.0).map { bandSound(nearest(store, sim, it), cfg) }
-        val t3 = sim.drive(store, spec, tripId = 3)
-        describe("trip 3", t3)
-        check(t3.warnings.map { it.sound } == bands, "trip 3: confirmed, each by its band: ${t3.warnings.map { it.sound }}, expected $bands")
-        check(bands[1] == WarnSound.STRONG, "the dip warns by voice (strong)")
+        check(t2.newBumps == 0 && t2.warnings.size == 2, "trip 2: the 2 humps warn, the dip never: ${t2.warnings.size}")
     }
 
     /**
      * Every felt spot is counted by its band, and soft vs full: a bump, two 7 m/s² dips (one given with the old pothole
      * name, which still makes a bump) and a 4.2 m/s² dip. Felt once they are soft; felt again, full and by their band.
+     * Without a gyroscope (E4): the car's pitch is unknown, so a down-first jolt is no "down_first" and the dips count.
      */
     @Suppress("DEPRECATION")
     fun severityCountsAndSounds() {
@@ -323,7 +312,7 @@ object Scenarios {
         val cfg = EngineConfig()
         val spec = DriveSpec(
             bumpsAt = listOf(300.0), dipsAt = listOf(700.0), potholesLeftAt = listOf(1100.0),
-            smallDipsAt = listOf(1500.0), cruiseKmh = 40.0,
+            smallDipsAt = listOf(1500.0), cruiseKmh = 40.0, gyro = false,
         )
         val t1 = sim.drive(store, spec, tripId = 1)
         describe("trip 1", t1)
@@ -342,8 +331,9 @@ object Scenarios {
         val t2 = sim.drive(store, spec, tripId = 2)
         describe("trip 2", t2)
         check(t2.newBumps == 0, "trip 2 must not record anything new (all spots are known), got ${t2.newBumps}")
-        val firstSounds = listOf(WarnSound.SOFT, WarnSound.STRONG, WarnSound.STRONG, WarnSound.SOFT)
-        check(t2.warnings.map { it.sound } == firstSounds, "trip 2: the strong dips confirmed, the rest soft: ${t2.warnings.map { it.sound }}")
+        // E4: the bump was crossed in a V (40, 15, back to 40) with both axles: confirmed on its first pass too.
+        val firstSounds = listOf(WarnSound.MODERATE, WarnSound.STRONG, WarnSound.STRONG, WarnSound.SOFT)
+        check(t2.warnings.map { it.sound } == firstSounds, "trip 2: the strong dips and the V bump confirmed, the small dip soft: ${t2.warnings.map { it.sound }}")
         check(t2.stats.full == 4 && t2.stats.soft == 0, "felt again: all full, got soft=${t2.stats.soft} full=${t2.stats.full}")
         check(t2.warnings.last().spot.id == small.id, "the last warning is the small dip")
 
@@ -1084,13 +1074,14 @@ object Scenarios {
         log("groupOfBumps")
         val sim = Simulator(74)
         val store = MemoryStore()
+        // The V crossing (E4) is off here: it would confirm the spots on their first pass.
         val spec = DriveSpec(bumpsAt = listOf(600.0, 660.0, 720.0, 1400.0))
-        val t1 = sim.drive(store, spec, tripId = 1)
+        val t1 = sim.drive(store, spec, EngineConfig().apply { vMaxMinKmh = 0.0 }, tripId = 1)
         describe("trip 1", t1)
         check(t1.newBumps == 4, "trip 1 should learn 4 bumps, got ${t1.newBumps}")
 
         // Quiet-below off, so without grouping all 4 would warn even at bump speed.
-        val always = EngineConfig().apply { quietBelowKmh = 0.0 }
+        val always = EngineConfig().apply { quietBelowKmh = 0.0; vMaxMinKmh = 0.0 }
         val t2 = sim.drive(store, spec, always, tripId = 2)
         describe("trip 2", t2)
         check(t2.warnings.size == 2, "a group warning + the lone bump expected, got ${t2.warnings.size}")
@@ -1101,7 +1092,7 @@ object Scenarios {
         check(grouped == 2, "the 2 following bumps stay silent (beep_grouped), got $grouped")
         check(Phrases.cluster("en", g!!.count, anyStrong = false) == "3 bumps ahead.", "group phrase")
 
-        val noGroups = EngineConfig().apply { quietBelowKmh = 0.0; clusterMinExtra = 99 }
+        val noGroups = EngineConfig().apply { quietBelowKmh = 0.0; clusterMinExtra = 99; vMaxMinKmh = 0.0 }
         val t3 = sim.drive(store, spec, noGroups, tripId = 3)
         check(t3.warnings.size == 4, "without grouping every bump warns, got ${t3.warnings.size}")
     }
@@ -1157,7 +1148,7 @@ object Scenarios {
         "stillReadIsPhoneUse" to ::stillReadIsPhoneUse,
         "repeatedHandlingIsPhoneUse" to ::repeatedHandlingIsPhoneUse,
         "fastBumpVersusRoadJoint" to ::fastBumpVersusRoadJoint,
-        "dipIsABump" to ::dipIsABump,
+        "dipIsNotABump" to ::dipIsNotABump,
         "severityCountsAndSounds" to ::severityCountsAndSounds,
         "noGyroStillLearns" to ::noGyroStillLearns,
         "fastDipRejected" to ::fastDipRejected,

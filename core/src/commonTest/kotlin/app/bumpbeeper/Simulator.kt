@@ -93,6 +93,10 @@ class DriveSpec(
     val slipsAt: List<Pair<Double, Double>> = emptyList(),
     /** The phone twists 40° about the vertical and straight back, 0.6 s each way: the gyroscope turns both ways. */
     val wigglesAt: List<Double> = emptyList(),
+    /** The car pitches nose-down at this rate (rad/s) per 3.5 m/s² of braking, nose-up as it speeds up again. */
+    val brakePitchRads: Double = 0.0,
+    /** How much a dip pitches the car (1 = nose-dip at the front wheel; 0 = none, a dip felt only as a drop). */
+    val dipPitch: Double = 1.0,
     /** The car's wheelbase: the rear wheels cross a bump this far after the front ones. */
     val wheelbaseM: Double = 2.6,
     /** Sets the phone's own signals on every sample: (seconds driven, metres driven, speed m/s, the signals, sensor time ms). */
@@ -344,8 +348,8 @@ class Simulator(seed: Long) {
                 if (s < ss + 2.6 && sNew >= ss + 2.6) seamHits.add(doubleArrayOf(t, 5.0))
             }
             for ((sp, side, amp) in dips) {
-                if (s < sp && sNew >= sp) holeHits.add(doubleArrayOf(t, amp, side))                    // front wheel
-                if (s < sp + 2.6 && sNew >= sp + 2.6) holeHits.add(doubleArrayOf(t, 0.7 * amp, side))  // rear wheel, same side
+                if (s < sp && sNew >= sp) holeHits.add(doubleArrayOf(t, amp, side, 1.0))                    // front wheel
+                if (s < sp + 2.6 && sNew >= sp + 2.6) holeHits.add(doubleArrayOf(t, 0.7 * amp, side, -1.0))  // rear wheel, same side
             }
             for (sh in handlings) if (s < sh && sNew >= sh) handlingStart = t
 
@@ -365,7 +369,7 @@ class Simulator(seed: Long) {
             // Bumps tip the car nose-up/down (pitch); a dip under one wheel rocks it sideways (roll).
             // Positive roll (about the forward axis) = left side up, right side down: a right-wheel dip starts positive.
             var roll = gauss(0.02)
-            var pitch = gauss(0.02)
+            var pitch = gauss(0.02) - spec.brakePitchRads * aLong / 3.5   // nose-down positive while braking
             var yaw = gauss(0.01)
             var carTurn = 0.0
             if (swerveStart >= 0) {
@@ -399,7 +403,13 @@ class Simulator(seed: Long) {
                 pitch += if (c.size < 3) swing(tau, 0.05 * c[1], 0.2)
                 else if (tau >= 0 && tau < 0.15) -c[2] * 0.05 * c[1] * sin(PI * tau / 0.15) else 0.0
             }
-            for (c in holeHits) { roll += c[2] * swing(t - c[0], 0.08 * c[1], 0.15); pitch += swing(t - c[0], 0.015 * c[1], 0.15) }
+            for (c in holeHits) {
+                // The wheel drops into it: the nose dips at the front wheel (pitch about left, nose-down positive), the
+                // tail at the rear one; and the car rolls towards that side.
+                roll += c[2] * swing(t - c[0], 0.08 * c[1], 0.15)
+                val tau = t - c[0]
+                if (tau >= 0 && tau < 0.15) pitch += spec.dipPitch * c[3] * 0.015 * c[1] * sin(PI * tau / 0.15)
+            }
             for (c in seamHits) pitch += swing(t - c[0], 0.005 * c[1], 0.1)   // a seam is too short to rock the car
             crossings.removeAll { t - it[0] > 0.5 }
             holeHits.removeAll { t - it[0] > 0.5 }
