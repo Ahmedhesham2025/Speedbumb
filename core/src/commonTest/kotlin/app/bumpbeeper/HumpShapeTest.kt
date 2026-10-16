@@ -32,6 +32,23 @@ class HumpShapeTest {
         assertEquals(WarnSound.STRONG, t3.warnings.first().sound, "${t3.warnings.map { it.sound }}")
     }
 
+    @Test fun humpsInARowAreSeparateSpotsAndOneWarning() {
+        // 2 and 3 humps 8 m apart at 15 km/h: each learned on its own (never the first one's rear axle), then one
+        // group warning for the row.
+        for (n in listOf(2, 3)) {
+            val store = MemoryStore()
+            val spec = DriveSpec(bumpsAt = List(n) { 900.0 + 8.0 * it }, bumpKmh = 15.0, cruiseKmh = 40.0)
+            val t1 = Simulator(81).drive(store, spec, tripId = 1)
+            assertEquals(n, t1.newBumps, "$n humps: ${t1.rejected} ${store.events.filter { it.type in setOf("new_bump", "hit_repeat") }.map { it.type }}")
+            val t2 = Simulator(82).drive(store, spec, EngineConfig().apply { quietBelowKmh = 0.0 }, tripId = 2)
+            val g = t2.warnings.firstOrNull()?.cluster
+            assertTrue(g != null && g.count == n, "$n humps: ${t2.warnings.map { it.cluster?.count }}")
+            assertEquals(1, t2.warnings.size, "one warning for the row")
+            assertEquals(n - 1, store.events.count { it.tripId == 2L && it.type == "beep_grouped" })
+        }
+        assertEquals("2 bumps ahead.", Phrases.cluster("en", 2, anyStrong = false))
+    }
+
     @Test fun aLowHump() {
         val (shape, store) = shapeOf(ProfileHump(900.0, "sinus", 0.03, 0.6))
         assertEquals(BumpShape.LOW, shape, "${store.events.filter { it.type == "new_bump" }.map { it.note }}")

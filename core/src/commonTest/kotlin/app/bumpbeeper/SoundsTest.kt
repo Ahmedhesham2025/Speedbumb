@@ -18,7 +18,8 @@ class SoundsTest {
         assertEquals("4 bumps ahead, one strong.", Phrases.cluster("en", 4, anyStrong = true))
         // Unknown language falls back to English.
         assertEquals("3 bumps ahead.", Phrases.cluster("fr", 3, anyStrong = false))
-        assertEquals(null, Phrases.cluster("en", 2, anyStrong = true))   // fewer than 3: no group line
+        assertEquals("2 bumps ahead, one strong.", Phrases.cluster("en", 2, anyStrong = true))   // a row of two (E4c)
+        assertEquals(null, Phrases.cluster("en", 1, anyStrong = true))
     }
 
     @Test fun groupPhrasesArabic() {
@@ -26,7 +27,8 @@ class SoundsTest {
         assertEquals("4 مطبات قدام، منهم واحد قوي.", Phrases.cluster("ar", 4, anyStrong = true))
         // 11 and up take the singular in Arabic.
         assertEquals("12 مطب قدام.", Phrases.cluster("ar", 12, anyStrong = false))
-        assertEquals(null, Phrases.cluster("ar", 2, anyStrong = false))
+        assertEquals("مطبين قدام.", Phrases.cluster("ar", 2, anyStrong = false))   // the dual
+        assertEquals(null, Phrases.cluster("ar", 1, anyStrong = false))
     }
 
     @Test fun strongBumpPhrase() {

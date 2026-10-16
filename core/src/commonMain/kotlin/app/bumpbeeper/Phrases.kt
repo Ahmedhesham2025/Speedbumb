@@ -11,7 +11,10 @@ object Phrases {
      * build; the caller then plays the first spot's own sound.
      */
     fun cluster(lang: String, count: Int, anyStrong: Boolean): String? = when {
-        count < 3 -> null
+        count < 2 -> null
+        // Two humps in a row (E4c): the Arabic dual.
+        count == 2 && lang == "ar" -> "مطبين قدام${if (anyStrong) "، واحد منهم قوي" else ""}."
+        count == 2 -> "2 bumps ahead${if (anyStrong) ", one strong" else ""}."
         // Arabic counts 3–10 take the plural, 11 and up the singular.
         lang == "ar" -> "$count ${if (count in 3..10) "مطبات" else "مطب"} قدام${if (anyStrong) "، منهم واحد قوي" else ""}."
         else -> "$count bumps ahead${if (anyStrong) ", one strong" else ""}."

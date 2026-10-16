@@ -243,6 +243,16 @@ class EngineConfig {
     var shapeLowM = 0.04
     var shapeLongM = 2.0
     var shapeMinKmh = 3.0
+
+    /**
+     * E4c, humps in a row: at [rowMaxKmh] or slower the refractory time ends with the decision, so the next hump of a
+     * row is felt; a jolt on the same pass [rowMinGapM] or more from the spot just felt is a hump of its own, unless it
+     * is a wheelbase away (± [AxleConfig.dtTolerance]: the rear axle). Spots within [rowMaxGapM] of each other ahead
+     * warn as one group ("2 bumps ahead"), even when fewer than [clusterMinExtra] follow.
+     */
+    var rowMaxKmh = 20.0
+    var rowMinGapM = 3.0
+    var rowMaxGapM = 25.0
 }
 
 /** How a jolt started, in the car's frame (E4, [EngineConfig.polarityPitchMs]). */
@@ -569,7 +579,8 @@ class BumpEngine(
             joltWaitMs = axleWaitMs(tMs)
             joltLeft = leftUnit()
             joltFrameTrusted = joltLeft != null && !phone.pocketMode && phone.state == PhoneState.STABLE_MOUNTED
-            refractoryUntilMs = tMs + max(cfg.refractoryMs, joltWaitMs)
+            val crawl = (lastFix?.speedMps ?: Double.MAX_VALUE) * 3.6 <= cfg.rowMaxKmh
+            refractoryUntilMs = tMs + if (crawl) joltWaitMs else max(cfg.refractoryMs, joltWaitMs)
             phoneJolt = false
         }
     }
@@ -983,6 +994,14 @@ class BumpEngine(
             }
         }
 
+        // Humps in a row: the same pass, a few metres on, but not a wheelbase on (that is the rear axle).
+        best?.let { b0 ->
+            val a0 = approaches[b0.id]
+            val last0 = lastHitMs[b0.id]
+            val samePass = (a0 != null && a0.hit) || (a0 == null && last0 != null && tMs - last0 < 15_000)
+            val rearAxle = abs(bestD - vehicle.wheelbaseM) <= cfg.axle.dtTolerance * vehicle.wheelbaseM
+            if (samePass && bestD >= cfg.rowMinGapM && speedKmh <= cfg.rowMaxKmh && !rearAxle) best = null
+        }
         if (best == null) {
             // First time here → record it. No beep: we are already on top of it.
             val b = Bump(0, lat, lon, heading, hits = 1, passes = 1, misses = 0, nPos = 1, firstSeen = now, lastSeen = now)
@@ -1523,7 +1542,19 @@ class BumpEngine(
             if (along < -cfg.matchRadiusM || along > cfg.clusterRangeM || gap * sin(off) > cfg.maxCrossTrackM) continue
             members.add(s to ds)
         }
-        if (members.size < cfg.clusterMinExtra) return null
+        if (members.size < cfg.clusterMinExtra) {
+            // A row of humps: each within rowMaxGapM of the one before it, from the warned one on.
+            val row = ArrayList<Pair<Bump, Double>>()
+            var prev = firstDist
+            for (m in members.sortedBy { it.second }) {
+                if (m.second - prev > cfg.rowMaxGapM) break
+                row.add(m)
+                prev = m.second
+            }
+            if (row.isEmpty()) return null
+            members.clear()
+            members.addAll(row)
+        }
 
         // Silent until about when you get there (twice the time at today's speed, plus a margin); cleared
         // earlier if you turn round or drive away from it.
