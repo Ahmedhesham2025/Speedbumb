@@ -30,7 +30,7 @@ enum class Severity(val label: String) {
 }
 
 /**
- * A hump's shape (E4c, [EngineConfig.shapeLongM]): short and steep, long with a flat top (a plateau the car stands
+ * A hump's shape (E4c, [EngineConfig.shapeQuietM]): short and steep, long with a flat top (a plateau the car stands
  * on, warned like a strong bump), or low.
  */
 enum class BumpShape { SHORT_STEEP, LONG_FLAT, LOW;

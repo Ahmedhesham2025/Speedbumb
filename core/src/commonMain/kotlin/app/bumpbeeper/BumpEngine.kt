@@ -226,23 +226,24 @@ class EngineConfig {
     var crawlDecideMaxMs = 3000L
 
     /**
-     * E4c, a hump's shape, judged once both axles have crossed it (up to [shapeMaxM] long, at most [shapeMaxWaitMs]
-     * after the trigger; warnings never wait for it). The vertical acceleration, band-passed ([shapeLowHz] ..
-     * [shapeHighHz]), is strong (at least [shapeStrongFraction] of its peak) from the front wheels' first contact to
-     * the rear wheels' last, a wheelbase later: the hump's length = that span × speed - the wheelbase - the tyre's
-     * contact [shapeTyreM]. Its height, relative only: the first impulse's velocity step × length / (pi/2 × speed), the
-     * slope a hump of that length climbs. LOW: under [shapeLowM]; LONG_FLAT: [shapeLongM] or longer (a top the car
-     * stands on: 3 beeps and the voice, like a strong bump); else SHORT_STEEP. Unknown below [shapeMinKmh].
+     * E4c, a hump's shape, from the front wheels' impulse alone, before the rear ones arrive: only with a clear axle
+     * pair ([AxleVerdict.BOTH]; in a pocket a score of at least [shapePocketMinScore]), whose Δt also gives the speed
+     * (wheelbase / Δt, no GPS lag). In the band-passed vertical ([shapeLowHz]..[shapeHighHz]) from the front impulse
+     * to just before the rear one, the strong samples (at least [shapeStrongFraction] of the peak) form lobes. A short
+     * hump climbs, crests and comes down: three lobes or more. A long flat top only climbs onto it (up, then a balanced
+     * stop, the two within [shapeBalance]) and then stays quiet for [shapeQuietM] or more before the rear axle: a
+     * LONG_FLAT top the car stands on (3 beeps and the voice, like a strong bump). Height, relative only: the first
+     * lobe's velocity step × the front impulse's length / (pi/2 × speed); under [shapeLowM] LOW. Else SHORT_STEEP;
+     * anything else UNKNOWN (null), which keeps the band's sound.
      */
     var shapeLowHz = 0.5
     var shapeHighHz = 15.0
     var shapeStrongFraction = 0.35
-    var shapeMaxM = 4.5
-    var shapeMaxWaitMs = 5000L
+    var shapeQuietM = 1.2
+    var shapeBalance = 0.2
     var shapeTyreM = 0.2
     var shapeLowM = 0.04
-    var shapeLongM = 2.0
-    var shapeMinKmh = 3.0
+    var shapePocketMinScore = 0.8
 
     /**
      * E4c, humps in a row: at [rowMaxKmh] or slower the refractory time ends with the decision, so the next hump of a
@@ -544,7 +545,6 @@ class BumpEngine(
             noteBraking(tMs, dt, hx, hy, hz, aFast)
         }
         approachBeep(tMs)
-        checkShapes(tMs)
 
         bufT[bufHead] = tMs
         bufV[bufHead] = v
@@ -646,14 +646,11 @@ class BumpEngine(
         if (ax?.verdict == AxleVerdict.BOTH) vehicle.learn(ax.dtMs, fix.speedMps)
         // For the shared map: the hit's vibration dose (SeverityIndex) and how clearly both axles showed.
         val sev = SeverityIndex.of(bufTimes(), bufVerticals(), tMs, fix.speedMps).index
-        val hitInfo = HitInfo(sev.takeIf { !it.isNaN() }, ax?.score?.takeIf { !it.isNaN() }?.coerceIn(0.0, 1.0))
-        registerHit(tMs, pos[0], pos[1], speedKmh, peak, slowdownKmh, shape, grade, note, hitInfo)
+        val hump = ax?.let { bumpShape(tMs, it) }
+        val hitInfo = HitInfo(sev.takeIf { !it.isNaN() }, ax?.score?.takeIf { !it.isNaN() }?.coerceIn(0.0, 1.0), hump?.first)
+        val humpNote = " hump=" + (hump?.let { it.first.name.lowercase() + it.second } ?: "unknown")
+        registerHit(tMs, pos[0], pos[1], speedKmh, peak, slowdownKmh, shape, grade, note + humpNote, hitInfo)
         val spot = lastSpot
-        // Its shape once the rear wheels are over it too ([checkShapes]).
-        if (spot != null && fix.speedMps * 3.6 >= cfg.shapeMinKmh) {
-            val due = tMs + min(cfg.shapeMaxWaitMs, ((vehicle.wheelbaseM + cfg.shapeMaxM) / fix.speedMps * 1000).toLong() + 150)
-            pendingShapes.add(PendingShape(spot.id, tMs, due, fix.speedMps))
-        }
         if (spot != null && profile == CrossProfile.SLOWDOWN && (up || ax?.verdict == AxleVerdict.BOTH)) {
             pendingV.add(PendingV(spot.id, tMs, minKmh))
         }
@@ -756,55 +753,47 @@ class BumpEngine(
     /** What a hit tells the shared map besides its peak ([Observation.sevIndex], [Observation.axle]); null = unknown. */
     private class HitInfo(val sevIndex: Double?, val axle: Double?, val shape: BumpShape? = null)
 
-    /** A spot waiting for both axles to be over it before its shape is judged ([EngineConfig.shapeMaxM]). */
-    private class PendingShape(val bumpId: Long, val trigMs: Long, val dueMs: Long, val speedMps: Double)
-    private val pendingShapes = ArrayList<PendingShape>()
-
-    /** On each sample: judge the shapes that are due, store them on their spots and log them. */
-    private fun checkShapes(tMs: Long) {
-        if (pendingShapes.isEmpty()) return
-        val it = pendingShapes.iterator()
-        while (it.hasNext()) {
-            val p = it.next()
-            if (tMs < p.dueMs) continue
-            it.remove()
-            val b = bumps.firstOrNull { s -> s.id == p.bumpId } ?: continue
-            val (shape, why) = bumpShape(p.trigMs, p.dueMs, p.speedMps) ?: continue
-            b.shape = shape
-            store.updateBump(b)
-            log("hump_shape", b.id, b.lat, b.lon, p.speedMps * 3.6, Double.NaN, Double.NaN, Double.NaN,
-                "${shape.name.lowercase()}$why now ${bandNote(b)}")
-        }
-    }
-
-    /** The hump's shape from [trigMs] to [endMs] ([EngineConfig.shapeMaxM]) and its numbers for the log; null: can't tell. */
-    private fun bumpShape(trigMs: Long, endMs: Long, speedMps: Double): Pair<BumpShape, String>? {
+    /** The hump's shape from its front impulse ([EngineConfig.shapeQuietM]) and its numbers for the log; null: unknown. */
+    private fun bumpShape(trigMs: Long, ax: AxleResult): Pair<BumpShape, String>? {
+        if (ax.verdict != AxleVerdict.BOTH || !(ax.dtMs > 0)) return null
+        if (phone.pocketMode && ax.score < cfg.shapePocketMinScore) return null
+        val speed = vehicle.wheelbaseM / (ax.dtMs / 1000.0)
+        val front = if (ax.rearFirst) trigMs - ax.dtMs.toLong() else trigMs
+        val end = front + ax.dtMs.toLong() - max(60L, (ax.dtMs * 0.1).toLong())   // just before the rear impulse
         val t = bufTimes()
         val rate = Biquad.rateHz(t)
-        if (t.size < 20 || rate < 20.0 || t[0] > trigMs - 1000) return null
+        if (t.size < 20 || rate < 20.0 || t[0] > front - 1000) return null
         val x = Biquad.bandPass(bufVerticals(), cfg.shapeLowHz, cfg.shapeHighHz, rate)
-        val w = t.indices.filter { t[it] >= trigMs - 100 && t[it] <= endMs }
+        val w = t.indices.filter { t[it] >= front - 100 && t[it] <= end }
         if (w.size < 5) return null
         val peak = w.maxOf { abs(x[it]) }
         val strong = w.filter { abs(x[it]) >= cfg.shapeStrongFraction * peak }
-        val spanS = (t[strong.last()] - t[strong.first()]) / 1000.0
-        val lengthM = max(0.0, spanS * speedMps - vehicle.wheelbaseM - cfg.shapeTyreM)
-        // The first impulse: the velocity it gives, from where it starts to where it turns.
-        val first = strong.first()
-        val sign = if (x[first] > 0) 1.0 else -1.0
-        var a = first
-        while (a > 0 && x[a - 1] * sign > 0) a--
-        var b = first
-        while (b < t.size - 1 && x[b + 1] * sign > 0) b++
-        var lobe = 0.0
-        for (k in a + 1..b) lobe += 0.5 * (x[k] + x[k - 1]) * sign * (t[k] - t[k - 1]) / 1000.0
-        val heightM = lobe * max(lengthM, 0.3) / (PI / 2 * speedMps)
+        // Lobes: runs of one sign among the strong samples, each with the velocity step of its whole run.
+        val lobes = ArrayList<Double>()
+        var lastSign = 0
+        for (k in strong) {
+            val sign = if (x[k] > 0) 1 else -1
+            if (sign == lastSign) continue
+            lastSign = sign
+            var a = k
+            while (a > w.first() && x[a - 1] * sign > 0) a--
+            var b = k
+            while (b < w.last() && x[b + 1] * sign > 0) b++
+            var area = 0.0
+            for (q in a + 1..b) area += 0.5 * (x[q] + x[q - 1]) * (t[q] - t[q - 1]) / 1000.0
+            lobes.add(area)
+        }
+        val frontM = (t[strong.last()] - t[strong.first()]) / 1000.0 * speed + cfg.shapeTyreM
+        val quietM = (end - t[strong.last()]) / 1000.0 * speed
+        val heightM = abs(lobes.first()) * frontM / (PI / 2 * speed)
+        val flatTop = lobes.size == 2 && lobes[0] > 0 && lobes[1] < 0 &&
+            abs(lobes[0] + lobes[1]) <= cfg.shapeBalance * lobes[0] && quietM >= cfg.shapeQuietM
         val shape = when {
+            flatTop -> BumpShape.LONG_FLAT
             heightM < cfg.shapeLowM -> BumpShape.LOW
-            lengthM >= cfg.shapeLongM -> BumpShape.LONG_FLAT
             else -> BumpShape.SHORT_STEEP
         }
-        return shape to " length=${formatFixed(lengthM, 1)}m height~${formatFixed(heightM * 100, 0)}cm"
+        return shape to " lobes=${lobes.size} quiet=${formatFixed(quietM, 1)}m height~${formatFixed(heightM * 100, 0)}cm"
     }
 
     /** The car's left axis (up × forward) in phone axes; null without gyroscope or a known forward direction. */
@@ -1008,6 +997,7 @@ class BumpEngine(
             b.addPeak(peak, 0)
             b.addSeverity(peak, 0, cfg)   // E2: the vibration index instead of the peak
             if (grade >= 2) b.axleHits = 1
+            b.shape = info.shape
             b.id = store.insertBump(b)
             countSpot(b)
             bumps.add(b)
@@ -1063,6 +1053,7 @@ class BumpEngine(
         b.addSeverity(peak, b.hits, cfg)
         b.hits++
         if (grade >= 2) b.axleHits++
+        info.shape?.let { b.shape = it }
         b.legacy = false   // felt again: an old pothole spot is an ordinary bump from now on
         b.lastSeen = now
         countSpot(b)
@@ -1086,7 +1077,7 @@ class BumpEngine(
             "hit", b.id, lat, lon, speedKmh, peak, slowdownKmh, bestD,
             "hits ${b.hits}/${b.passes} now=bump ${bandNote(b)} ${shape.describe()}$evidence",
         )
-        observe("known_hit", lat, lon, speedKmh, peak, shape.score, now, info = HitInfo(info.sevIndex, info.axle, b.shape))
+        observe("known_hit", lat, lon, speedKmh, peak, shape.score, now, info = HitInfo(info.sevIndex, info.axle, info.shape ?: b.shape))
         sample("hit", null, tMs, speedKmh, peak, shape, null, lat, lon, b.id)
         listener.onKnownBumpHit(b)
         lastSpot = b

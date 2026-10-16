@@ -49,6 +49,26 @@ class HumpShapeTest {
         assertEquals("2 bumps ahead.", Phrases.cluster("en", 2, anyStrong = false))
     }
 
+    @Test fun shortHumpsInARowAreNeverLongFlat() {
+        // Short humps 4, 5 and 6 m apart, crossed at 5-20 km/h: each is short, whatever comes after it.
+        for (gap in listOf(4.0, 5.0, 6.0)) for (kmh in listOf(5.0, 10.0, 15.0, 20.0)) {
+            val store = MemoryStore()
+            val humps = List(3) { ProfileHump(900.0 + gap * it, "sinus", 0.10, 0.6) }
+            Simulator(83).drive(store, DriveSpec(profileHumps = humps, bumpKmh = kmh, cruiseKmh = 40.0, slowZonesAt = listOf(300.0)))
+            assertTrue(store.saved.none { it.shape == BumpShape.LONG_FLAT },
+                "gap $gap m, $kmh km/h: ${store.events.filter { it.type == "new_bump" || it.type == "hit_repeat" }.map { it.note.substringAfter("hump=") }}")
+        }
+    }
+
+    @Test fun inAPocketWithoutAStrongPairTheShapeIsUnknown() {
+        val pocket = DrivingConfig().apply { placement = "pocket" }
+        val store = MemoryStore()
+        // A strong-pair gate no pair can reach: every judged hump in the pocket stays unknown.
+        val cfg = EngineConfig().apply { shapePocketMinScore = 1.1 }
+        Simulator(84).drive(store, DriveSpec(profileHumps = listOf(ProfileHump(900.0, "trapez", 0.10, 4.0, plateauM = 2.5)), bumpKmh = 15.0, cruiseKmh = 40.0), cfg, drivingCfg = pocket)
+        assertTrue(store.saved.isNotEmpty() && store.saved.all { it.shape == null }, "${store.saved.map { it.shape }}")
+    }
+
     @Test fun aLowHump() {
         val (shape, store) = shapeOf(ProfileHump(900.0, "sinus", 0.03, 0.6))
         assertEquals(BumpShape.LOW, shape, "${store.events.filter { it.type == "new_bump" }.map { it.note }}")
@@ -61,7 +81,6 @@ class HumpShapeTest {
         val spec = DriveSpec(profileHumps = listOf(ProfileHump(900.0, "sinus", 0.12, 1.0)), bumpKmh = 15.0, cruiseKmh = 40.0)
         Simulator(74).drive(store, spec, tripId = 1, observationSink = sink)
         Simulator(75).drive(store, spec, tripId = 2, observationSink = sink)
-        assertEquals(1, store.events.count { it.type == "hump_shape" && it.tripId == 1L }, "${store.events.map { it.type }}")
         val hit = sink.got.single { it.kind == "known_hit" }
         assertEquals(BumpShape.SHORT_STEEP, hit.shape, "$hit")
         val b = Bump(1, 0.0, 0.0, 0.0, 1, 1, 0, 1, 0, 0, shape = BumpShape.LONG_FLAT)
