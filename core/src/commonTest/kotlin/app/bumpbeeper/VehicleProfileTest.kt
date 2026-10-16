@@ -25,7 +25,7 @@ class VehicleProfileTest {
         val p = VehicleProfile()
         repeat(30) { p.learn(3.7 / 5.0 * 1000, 5.0) }        // a van, or a steady speed error
         assertEquals(3.2, p.wheelbaseM, 1e-12)
-        repeat(30) { p.learn(1.9 / 5.0 * 1000, 5.0) }
+        repeat(30) { p.learn(1.9 / 5.0 * 1000, 5.0) }        // (relearned after 5 misses in a row)
         assertEquals(2.2, p.wheelbaseM, 1e-12)
     }
 
@@ -45,6 +45,19 @@ class VehicleProfileTest {
         repeat(50) { p.learn(2.4 / 6.0 * 1000, 6.0) }
         repeat(15) { p.learn(3.0 / 6.0 * 1000, 6.0) }
         assertTrue(abs(p.wheelbaseM - 3.0) <= 0.15, "${p.wheelbaseM}")
+    }
+
+    @Test fun aRowOfHumpsDoesNotDragIt() {
+        // A 2.6 m car with 3 hits; humps 3.3 m apart in a row read as "pairs" (27 % long), off and on: never learned.
+        val p = VehicleProfile()
+        repeat(3) { p.learn(2.6 / 5.0 * 1000, 5.0) }
+        repeat(10) {
+            assertFalse(p.learn(3.3 / 5.0 * 1000, 5.0))
+            assertTrue(p.learn(2.62 / 5.0 * 1000, 5.0))
+        }
+        assertEquals(2.6, p.wheelbaseM, 0.03)
+        // Within 15 %: learned as before.
+        assertTrue(p.learn(2.85 / 5.0 * 1000, 5.0))
     }
 
     @Test fun storedAsText() {

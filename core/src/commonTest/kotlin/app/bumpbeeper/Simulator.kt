@@ -28,6 +28,25 @@ class MemoryStore : BumpStore {
     override fun logEvent(e: BumpEvent) { events.add(e) }
 }
 
+/**
+ * A hump by its profile (the standard diagrams): [kind] "circular" (an arc), "sinus" (a full cosine wave) or "trapez"
+ * (ramps up to a flat top of [plateauM]); [heightM] high and [lengthM] long, starting at [at] m.
+ */
+class ProfileHump(val at: Double, val kind: String, val heightM: Double, val lengthM: Double, val plateauM: Double = 0.0) {
+    /** Height of the road over the hump at [x] metres from its start. */
+    fun h(x: Double): Double {
+        if (x <= 0.0 || x >= lengthM) return 0.0
+        return when (kind) {
+            "circular" -> heightM * (1 - (2 * x / lengthM - 1).let { it * it })
+            "sinus" -> heightM * (1 - cos(2 * PI * x / lengthM)) / 2
+            else -> {
+                val ramp = (lengthM - plateauM) / 2
+                heightM * minOf(1.0, x / ramp, (lengthM - x) / ramp)
+            }
+        }
+    }
+}
+
 /** What happens on one simulated drive. Positions are metres from the west end of a 2 km east–west road. */
 class DriveSpec(
     val westbound: Boolean = false,
@@ -102,6 +121,8 @@ class DriveSpec(
      * (-4.5 m/s², the strongest part, nose down) and a gentle way down; the rear axle the same, a wheelbase later.
      */
     val roundHumpsAt: List<Double> = emptyList(),
+    /** Humps by their profile: the driver slows to [bumpKmh] for them; each axle rides the profile (0.15 m tyre). */
+    val profileHumps: List<ProfileHump> = emptyList(),
     /** The car's wheelbase: the rear wheels cross a bump this far after the front ones. */
     val wheelbaseM: Double = 2.6,
     /** Sets the phone's own signals on every sample: (seconds driven, metres driven, speed m/s, the signals, sensor time ms). */
@@ -206,7 +227,7 @@ class Simulator(seed: Long) {
         fun travel(p: Double) = if (spec.westbound) len - p else p   // road position ↔ distance travelled
         val bumps = spec.bumpsAt.map { travel(it) }
         // (position, speed the driver slows to)
-        val slowFor = (spec.bumpsAt + spec.silentBumpsAt + spec.roundHumpsAt).map { Pair(travel(it), spec.bumpKmh / 3.6) } +
+        val slowFor = (spec.bumpsAt + spec.silentBumpsAt + spec.roundHumpsAt + spec.profileHumps.map { it.at }).map { Pair(travel(it), spec.bumpKmh / 3.6) } +
             spec.crawlAt.map { Pair(travel(it), 8 / 3.6) }
         val jolts = spec.oneOffJoltsAt.map { travel(it) }
         // (distance travelled, side: +1 right / -1 left, jolt size)
@@ -263,7 +284,11 @@ class Simulator(seed: Long) {
         val jostles = spec.jostlesAt.map { travel(it) }
         val seams = spec.seamsAt.map { travel(it) }
         val rounds = spec.roundHumpsAt.map { travel(it) }
+        // The road's height under an axle at [p] (eastbound), averaged over the tyre's contact.
+        fun road(p: Double): Double = spec.profileHumps.sumOf { hp -> (-2..2).sumOf { hp.h(p + it * 0.0375 - hp.at) } / 5 }
+        val hist = ArrayDeque<DoubleArray>()   // (front height, rear height) of the last two steps
         val roundHits = ArrayList<DoubleArray>()   // (time, scale, +1 front / -1 rear)
+        var profilePitch = 0.0
         val holds = spec.holdsAt.map { Pair(travel(it.first), it.second) }
         val spikes = spec.brakeSpikesAt.map { travel(it) }
         val stops = spec.stopsAt.map { doubleArrayOf(travel(it.first), it.second, -1.0, 0.0) }   // (where, seconds, leave at, gone)
@@ -371,6 +396,18 @@ class Simulator(seed: Long) {
 
             // Vertical: road noise + occasional rough patch + bump pulses.
             var av = gauss(0.35)
+            if (spec.profileHumps.isNotEmpty() && !spec.westbound) {
+                // Each axle follows the road's height: the body heaves by their average, pitches by their difference.
+                val hf = road(s)
+                val hr = road(s - spec.wheelbaseM)
+                hist.addLast(doubleArrayOf(hf, hr))
+                if (hist.size > 3) hist.removeFirst()
+                if (hist.size == 3) {
+                    val (a, b, c) = Triple(hist[0], hist[1], hist[2])
+                    av += 0.5 * ((c[0] - 2 * b[0] + a[0]) + (c[1] - 2 * b[1] + a[1])) / (dt * dt)
+                    profilePitch = -((c[0] - c[1]) - (b[0] - b[1])) / spec.wheelbaseM / dt   // nose-down positive
+                }
+            }
             if (rnd.nextDouble() < 0.002) av += if (rnd.nextBoolean()) 1.5 else -1.5
             for (c in crossings) av += pulse(t - c[0], c[1])
             for (c in holeHits) av += dipPulse(t - c[0], c[1])
@@ -446,6 +483,7 @@ class Simulator(seed: Long) {
                 }
             }
             roundHits.removeAll { t - it[0] > 1.2 }
+            pitch += profilePitch
 
             // Passenger picks the phone up: it rotates 70° and gets shaken, is held 5 s, then put back.
             var extraTilt = 0.0

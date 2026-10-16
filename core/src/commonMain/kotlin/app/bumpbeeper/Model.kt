@@ -29,6 +29,16 @@ enum class Severity(val label: String) {
     }
 }
 
+/**
+ * A hump's shape (E4c, [EngineConfig.shapeLongM]): short and steep, long with a flat top (a plateau the car stands
+ * on, warned like a strong bump), or low.
+ */
+enum class BumpShape { SHORT_STEEP, LONG_FLAT, LOW;
+    companion object {
+        fun of(name: String?): BumpShape? = entries.firstOrNull { it.name == name }
+    }
+}
+
 /** How sure the app is about a spot: a [SOFT] one warns with one soft beep ("maybe"), a [FULL] one by its severity. */
 enum class Confidence(val label: String) {
     /** Felt once, or an old pothole spot ([Bump.legacy]) not felt since. */
@@ -72,6 +82,8 @@ class Bump(
     var legacy: Boolean = false,
     /** The band [severity] settled on when [sevIndex] last changed: the memory for its hysteresis. Null = none yet. */
     var lastBand: Severity? = null,
+    /** Its shape as the last hit that could tell showed it (E4c); null = unknown. */
+    var shape: BumpShape? = null,
 ) {
     val hitRate: Double get() = if (passes <= 0) 1.0 else hits.toDouble() / passes
 
@@ -118,7 +130,7 @@ class Bump(
 
     fun copy() = Bump(
         id, lat, lon, heading, hits, passes, misses, nPos, firstSeen, lastSeen, userMuted,
-        peakAvg, sevIndex, axleHits, legacy, lastBand,
+        peakAvg, sevIndex, axleHits, legacy, lastBand, shape,
     )
 }
 
@@ -187,8 +199,8 @@ enum class WarnSound(val beeps: Int, val voice: Boolean = false) {
     /** Moderate bump: two beeps. */
     MODERATE(2),
     /**
-     * Strong bump: three beeps, then the voice says "Strong bump ahead." ([Phrases.strongBump]). A long bump will get
-     * the same once E2 measures how long a bump is.
+     * Strong bump: three beeps, then the voice says "Strong bump ahead." ([Phrases.strongBump]). A long flat-topped hump
+     * ([BumpShape.LONG_FLAT], E4c) gets the same, whatever its band.
      */
     STRONG(3, voice = true),
 }

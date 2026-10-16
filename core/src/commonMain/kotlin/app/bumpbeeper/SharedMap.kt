@@ -85,6 +85,8 @@ data class Observation(
     val sevIndex: Double? = null,
     /** The hit's axle score ([AxleSignature], 0..1; ≥ 0.6 = both axles felt); null when not known. */
     val axle: Double? = null,
+    /** The hump's shape ([BumpShape], E4c); null when not known. Not uploaded until the server has a column for it. */
+    val shape: BumpShape? = null,
 )
 
 /** Where the engine sends [Observation]s (the app queues them in an outbox for upload). Called on the engine thread. */
