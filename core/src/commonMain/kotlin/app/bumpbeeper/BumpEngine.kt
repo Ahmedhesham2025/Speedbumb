@@ -1,6 +1,7 @@
 package app.bumpbeeper
 
 import kotlin.concurrent.Volatile
+import kotlin.math.PI
 import kotlin.math.abs
 import kotlin.math.acos
 import kotlin.math.cos
@@ -223,6 +224,43 @@ class EngineConfig {
      */
     var crawlKmh = 10.0
     var crawlDecideMaxMs = 3000L
+
+    /**
+     * E4c, a hump's shape, from the front wheels' impulse alone, before the rear ones arrive: only with a clear axle
+     * pair ([AxleVerdict.BOTH]; in a pocket a score of at least [shapePocketMinScore]), whose Δt also gives the speed
+     * (wheelbase / Δt, no GPS lag). In the band-passed vertical ([shapeLowHz]..[shapeHighHz]) from the front impulse
+     * to just before the rear one, the strong samples (at least [shapeStrongFraction] of the peak) form lobes. A short
+     * hump climbs, crests and comes down: three lobes or more. A long flat top only climbs onto it (up, then a balanced
+     * stop, the two within [shapeBalance]) and then stays quiet for [shapeQuietM] or more before the rear axle: a
+     * LONG_FLAT top the car stands on (3 beeps and the voice, like a strong bump). With three lobes or more within
+     * [shapeCompactM], then [shapeCompactQuietM] quiet before the rear axle, height
+     * (relative only: the first lobe's velocity step × the front impulse's length / (pi/2 × speed)) under [shapeLowM]
+     * is LOW, else SHORT_STEEP. Anything else is UNKNOWN (null), which keeps the band's sound: missing a long top is
+     * fine, a short hard hump must never read LONG_FLAT.
+     */
+    var shapeLowHz = 0.1
+    var shapeHighHz = 15.0
+    var shapeStrongFraction = 0.35
+    var shapeQuietM = 1.2
+    var shapeBalance = 0.15
+    var shapeTyreM = 0.2
+    var shapeLowM = 0.04
+    var shapePocketMinScore = 0.8
+    var shapeCompactM = 1.5
+    var shapeCompactQuietM = 0.3
+
+    /**
+     * E4c, humps in a row: at [rowMaxKmh] or slower the refractory time ends with the decision, so the next hump of a
+     * row is felt; a jolt on the same pass [rowMinGapM] or more from a SHORT_STEEP spot just felt is a hump of its own
+     * (never after a long, low or unknown one), unless it
+     * is a wheelbase away (± [AxleConfig.dtTolerance]: the rear axle) or, after a long flat top, within a wheelbase +
+     * [rowLongHumpM] (its far end and rear axle). Spots within [rowMaxGapM] of each other ahead
+     * warn as one group ("2 bumps ahead"), even when fewer than [clusterMinExtra] follow.
+     */
+    var rowMaxKmh = 20.0
+    var rowMinGapM = 3.0
+    var rowMaxGapM = 25.0
+    var rowLongHumpM = 4.5
 }
 
 /** How a jolt started, in the car's frame (E4, [EngineConfig.polarityPitchMs]). */
@@ -548,7 +586,8 @@ class BumpEngine(
             joltWaitMs = axleWaitMs(tMs)
             joltLeft = leftUnit()
             joltFrameTrusted = joltLeft != null && !phone.pocketMode && phone.state == PhoneState.STABLE_MOUNTED
-            refractoryUntilMs = tMs + max(cfg.refractoryMs, joltWaitMs)
+            val crawl = (lastFix?.speedMps ?: Double.MAX_VALUE) * 3.6 <= cfg.rowMaxKmh
+            refractoryUntilMs = tMs + if (crawl) joltWaitMs else max(cfg.refractoryMs, joltWaitMs)
             phoneJolt = false
         }
     }
@@ -614,8 +653,10 @@ class BumpEngine(
         if (ax?.verdict == AxleVerdict.BOTH) vehicle.learn(ax.dtMs, fix.speedMps)
         // For the shared map: the hit's vibration dose (SeverityIndex) and how clearly both axles showed.
         val sev = SeverityIndex.of(bufTimes(), bufVerticals(), tMs, fix.speedMps).index
-        val hitInfo = HitInfo(sev.takeIf { !it.isNaN() }, ax?.score?.takeIf { !it.isNaN() }?.coerceIn(0.0, 1.0))
-        registerHit(tMs, pos[0], pos[1], speedKmh, peak, slowdownKmh, shape, grade, note, hitInfo)
+        val hump = ax?.let { bumpShape(tMs, it) }
+        val hitInfo = HitInfo(sev.takeIf { !it.isNaN() }, ax?.score?.takeIf { !it.isNaN() }?.coerceIn(0.0, 1.0), hump?.first)
+        val humpNote = " hump=" + (hump?.let { it.first.name.lowercase() + it.second } ?: "unknown")
+        registerHit(tMs, pos[0], pos[1], speedKmh, peak, slowdownKmh, shape, grade, note + humpNote, hitInfo)
         val spot = lastSpot
         if (spot != null && profile == CrossProfile.SLOWDOWN && (up || ax?.verdict == AxleVerdict.BOTH)) {
             pendingV.add(PendingV(spot.id, tMs, minKmh))
@@ -717,7 +758,54 @@ class BumpEngine(
     private fun bufVerticals() = DoubleArray(bufCount) { bufV[(bufHead - bufCount + it + BUF) % BUF] }
 
     /** What a hit tells the shared map besides its peak ([Observation.sevIndex], [Observation.axle]); null = unknown. */
-    private class HitInfo(val sevIndex: Double?, val axle: Double?)
+    private class HitInfo(val sevIndex: Double?, val axle: Double?, val shape: BumpShape? = null)
+
+    /** The hump's shape from its front impulse ([EngineConfig.shapeQuietM]) and its numbers for the log; null: unknown. */
+    private fun bumpShape(trigMs: Long, ax: AxleResult): Pair<BumpShape, String>? {
+        if (ax.verdict != AxleVerdict.BOTH || !(ax.dtMs > 0)) return null
+        if (phone.pocketMode && ax.score < cfg.shapePocketMinScore) return null
+        val speed = vehicle.wheelbaseM / (ax.dtMs / 1000.0)
+        val front = if (ax.rearFirst) trigMs - ax.dtMs.toLong() else trigMs
+        val end = front + ax.dtMs.toLong() - max(60L, (ax.dtMs * 0.1).toLong())   // just before the rear impulse
+        val t = bufTimes()
+        val rate = Biquad.rateHz(t)
+        if (t.size < 20 || rate < 20.0 || t[0] > front - 1000) return null
+        val x = Biquad.bandPass(bufVerticals(), cfg.shapeLowHz, cfg.shapeHighHz, rate)
+        val w = t.indices.filter { t[it] >= front - 100 && t[it] <= end }
+        if (w.size < 5) return null
+        val peak = w.maxOf { abs(x[it]) }
+        val strong = w.filter { abs(x[it]) >= cfg.shapeStrongFraction * peak }
+        // Lobes: runs of one sign among the strong samples, each with the velocity step of its whole run.
+        val lobes = ArrayList<Double>()
+        var lastSign = 0
+        for (k in strong) {
+            val sign = if (x[k] > 0) 1 else -1
+            if (sign == lastSign) continue
+            lastSign = sign
+            var a = k
+            while (a > w.first() && x[a - 1] * sign > 0) a--
+            var b = k
+            while (b < w.last() && x[b + 1] * sign > 0) b++
+            var area = 0.0
+            for (q in a + 1..b) area += 0.5 * (x[q] + x[q - 1]) * (t[q] - t[q - 1]) / 1000.0
+            lobes.add(area)
+        }
+        val frontM = (t[strong.last()] - t[strong.first()]) / 1000.0 * speed + cfg.shapeTyreM
+        val quietM = (end - t[strong.last()]) / 1000.0 * speed
+        val heightM = abs(lobes.first()) * frontM / (PI / 2 * speed)
+        val flatTop = lobes.size == 2 && lobes[0] > 0 && lobes[1] < 0 &&
+            abs(lobes[0] + lobes[1]) <= cfg.shapeBalance * lobes[0] && quietM >= cfg.shapeQuietM
+        val shape = when {
+            flatTop -> BumpShape.LONG_FLAT
+            lobes.size < 3 -> return null   // climbed and stopped, but not clearly onto a flat top: unknown
+            // Short only when compact: the strong part within shapeCompactM, then quiet until the rear axle (body
+            // bounce on a long top adds lobes of its own).
+            frontM > cfg.shapeCompactM || quietM < cfg.shapeCompactQuietM -> return null
+            heightM < cfg.shapeLowM -> BumpShape.LOW
+            else -> BumpShape.SHORT_STEEP
+        }
+        return shape to " lobes=${lobes.size} quiet=${formatFixed(quietM, 1)}m height~${formatFixed(heightM * 100, 0)}cm"
+    }
 
     /** The car's left axis (up × forward) in phone axes; null without gyroscope or a known forward direction. */
     private fun leftUnit(): DoubleArray? {
@@ -906,12 +994,25 @@ class BumpEngine(
             }
         }
 
+        // Humps in a row: the same pass, a few metres on, but not a wheelbase on (that is the rear axle).
+        best?.let { b0 ->
+            val a0 = approaches[b0.id]
+            val last0 = lastHitMs[b0.id]
+            val samePass = (a0 != null && a0.hit) || (a0 == null && last0 != null && tMs - last0 < 15_000)
+            // A wheelbase on is the rear axle; anywhere over a long flat top and its rear axle is still that hump.
+            val sameHump = abs(bestD - vehicle.wheelbaseM) <= cfg.axle.dtTolerance * vehicle.wheelbaseM ||
+                (b0.shape == BumpShape.LONG_FLAT && bestD <= vehicle.wheelbaseM + cfg.rowLongHumpM)
+            // Only after a hump known to be short and steep: a long, low or unknown one may still be under the car.
+            val short = b0.shape == BumpShape.SHORT_STEEP
+            if (samePass && short && bestD >= cfg.rowMinGapM && speedKmh <= cfg.rowMaxKmh && !sameHump) best = null
+        }
         if (best == null) {
             // First time here → record it. No beep: we are already on top of it.
             val b = Bump(0, lat, lon, heading, hits = 1, passes = 1, misses = 0, nPos = 1, firstSeen = now, lastSeen = now)
             b.addPeak(peak, 0)
             b.addSeverity(peak, 0, cfg)   // E2: the vibration index instead of the peak
             if (grade >= 2) b.axleHits = 1
+            b.shape = info.shape
             b.id = store.insertBump(b)
             countSpot(b)
             bumps.add(b)
@@ -967,6 +1068,7 @@ class BumpEngine(
         b.addSeverity(peak, b.hits, cfg)
         b.hits++
         if (grade >= 2) b.axleHits++
+        info.shape?.let { b.shape = it }
         b.legacy = false   // felt again: an old pothole spot is an ordinary bump from now on
         b.lastSeen = now
         countSpot(b)
@@ -990,7 +1092,7 @@ class BumpEngine(
             "hit", b.id, lat, lon, speedKmh, peak, slowdownKmh, bestD,
             "hits ${b.hits}/${b.passes} now=bump ${bandNote(b)} ${shape.describe()}$evidence",
         )
-        observe("known_hit", lat, lon, speedKmh, peak, shape.score, now, info = info)
+        observe("known_hit", lat, lon, speedKmh, peak, shape.score, now, info = HitInfo(info.sevIndex, info.axle, info.shape ?: b.shape))
         sample("hit", null, tMs, speedKmh, peak, shape, null, lat, lon, b.id)
         listener.onKnownBumpHit(b)
         lastSpot = b
@@ -1115,7 +1217,7 @@ class BumpEngine(
         val sink = observationSink ?: return
         try {
             // The shape score goes up as a diagnostic in the old kind_score field; bumps have no side (0).
-            sink.record(Observation(randomUuid(), kind, lat, lon, dir, speedKmh, peak, shapeScore, 0.0, now, info?.sevIndex, info?.axle))
+            sink.record(Observation(randomUuid(), kind, lat, lon, dir, speedKmh, peak, shapeScore, 0.0, now, info?.sevIndex, info?.axle, info?.shape))
         } catch (e: Exception) {
             // A full or broken outbox must not stop detection.
         }
@@ -1414,6 +1516,7 @@ class BumpEngine(
     /** A "maybe" spot gets one soft beep whatever its severity; a confirmed one the sound of its band. */
     private fun soundFor(b: Bump): WarnSound =
         if (b.confidence(cfg) == Confidence.SOFT) WarnSound.SOFT
+        else if (b.shape == BumpShape.LONG_FLAT) WarnSound.STRONG   // "very hard or long": 3 beeps and the voice
         else when (b.severity(cfg)) {
             Severity.MILD -> WarnSound.MILD
             Severity.MODERATE -> WarnSound.MODERATE
@@ -1445,7 +1548,19 @@ class BumpEngine(
             if (along < -cfg.matchRadiusM || along > cfg.clusterRangeM || gap * sin(off) > cfg.maxCrossTrackM) continue
             members.add(s to ds)
         }
-        if (members.size < cfg.clusterMinExtra) return null
+        if (members.size < cfg.clusterMinExtra) {
+            // A row of humps: each within rowMaxGapM of the one before it, from the warned one on.
+            val row = ArrayList<Pair<Bump, Double>>()
+            var prev = firstDist
+            for (m in members.sortedBy { it.second }) {
+                if (m.second - prev > cfg.rowMaxGapM) break
+                row.add(m)
+                prev = m.second
+            }
+            if (row.isEmpty()) return null
+            members.clear()
+            members.addAll(row)
+        }
 
         // Silent until about when you get there (twice the time at today's speed, plus a margin); cleared
         // earlier if you turn round or drive away from it.

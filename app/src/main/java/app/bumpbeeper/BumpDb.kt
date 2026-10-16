@@ -21,7 +21,7 @@ import kotlin.math.roundToInt
  * plus the shared-map sync tables (outbox, remote_spots, sync_state), see [SyncStore], and the training outbox
  * ("Help improve detection"), see [TrainingStore].
  */
-class BumpDb(ctx: Context) : SQLiteOpenHelper(ctx, "bumps.db", null, 9), BumpStore {
+class BumpDb(ctx: Context) : SQLiteOpenHelper(ctx, "bumps.db", null, 10), BumpStore {
 
     init {
         setWriteAheadLoggingEnabled(true)
@@ -58,6 +58,7 @@ class BumpDb(ctx: Context) : SQLiteOpenHelper(ctx, "bumps.db", null, 9), BumpSto
         addSeverityColumns(db)
         SyncStore.addSpotColumns(db)
         addBreakdownColumns(db)
+        addShapeColumn(db)
     }
 
     /** Version 9: the most over the fixed speeding threshold, for the score breakdown ([DrivingStats.scoreBreakdown]). */
@@ -133,6 +134,13 @@ class BumpDb(ctx: Context) : SQLiteOpenHelper(ctx, "bumps.db", null, 9), BumpSto
         }
         // Version 9: one trips column; trips saved before read 0 km/h over.
         if (oldVersion < 9) addBreakdownColumns(db)
+        // Version 10: a hump's shape (E4c); spots saved before have none until they are hit again.
+        if (oldVersion < 10) addShapeColumn(db)
+    }
+
+    private fun addShapeColumn(db: SQLiteDatabase) {
+        val have = db.rawQuery("PRAGMA table_info(bumps)", null).use { c -> buildSet { while (c.moveToNext()) add(c.getString(1)) } }
+        if ("shape" !in have) db.execSQL("ALTER TABLE bumps ADD COLUMN shape TEXT")
     }
 
     // ---------------- BumpStore (used by the engine) ----------------
@@ -141,7 +149,7 @@ class BumpDb(ctx: Context) : SQLiteOpenHelper(ctx, "bumps.db", null, 9), BumpSto
         val out = ArrayList<Bump>()
         readableDatabase.rawQuery(
             "SELECT id, lat, lon, heading, hits, passes, misses, n_pos, first_seen, last_seen, user_muted, " +
-                "peak_avg, sev_index, axle_hits, legacy, last_band FROM bumps", null
+                "peak_avg, sev_index, axle_hits, legacy, last_band, shape FROM bumps", null
         ).use { c ->
             while (c.moveToNext()) {
                 out.add(
@@ -150,6 +158,7 @@ class BumpDb(ctx: Context) : SQLiteOpenHelper(ctx, "bumps.db", null, 9), BumpSto
                         c.getInt(4), c.getInt(5), c.getInt(6), c.getInt(7), c.getLong(8), c.getLong(9),
                         c.getInt(10) != 0, peakAvg = c.getDouble(11), sevIndex = c.getDouble(12),
                         axleHits = c.getInt(13), legacy = c.getInt(14) != 0, lastBand = band(c.getString(15)),
+                        shape = BumpShape.of(c.getString(16)),
                     )
                 )
             }
@@ -178,6 +187,7 @@ class BumpDb(ctx: Context) : SQLiteOpenHelper(ctx, "bumps.db", null, 9), BumpSto
         put("peak_avg", b.peakAvg)
         put("sev_index", b.sevIndex); put("axle_hits", b.axleHits); put("legacy", if (b.legacy) 1 else 0)
         if (b.lastBand == null) putNull("last_band") else put("last_band", b.lastBand!!.label)
+        if (b.shape == null) putNull("shape") else put("shape", b.shape!!.name)
         // The old kind columns keep carrying the "old pothole spot" flag the way v7 wrote it, so the two never disagree.
         put("kind_score", if (b.legacy) 1.0 else 0.0); put("kind_votes", if (b.legacy) 1 else 0)
     }
