@@ -276,44 +276,32 @@ object Scenarios {
     }
 
     /**
-     * A dip (the jolt goes down first, the car rolls) is a bump like any other: no type and no side, its shape is only
-     * kept in the notes. Felt once it warns with the soft beep, felt twice by its band; a 7 m/s² dip is strong.
+     * E4: a dip (the jolt goes down first, the nose dips: a pothole, drain or manhole) is never a bump: rejected as
+     * "down_first" with the phone in its holder. The raised humps around it go up first and are learned.
      */
-    fun dipIsABump() {
-        log("dipIsABump")
+    fun dipIsNotABump() {
+        log("dipIsNotABump")
         val sim = Simulator(21)
         val store = MemoryStore()
-        val cfg = EngineConfig()
         val spec = DriveSpec(bumpsAt = listOf(400.0, 1500.0), dipsAt = listOf(900.0), cruiseKmh = 40.0)
 
         val t1 = sim.drive(store, spec, tripId = 1)
         describe("trip 1", t1)
-        check(t1.newBumps == 3, "trip 1 should record 2 bumps + the dip, got ${t1.newBumps}")
-        check(store.saved.none { it.legacy }, "new spots are never old pothole spots")
-        // The shape is still measured (the gyroscope was used), as a diagnostic only.
         val notes = store.events.filter { it.type == "new_bump" }.map { it.note }
         log("  notes: $notes")
-        check(notes.all { it.startsWith("bump sev=") && "conf=" in it && "roll/pitch" in it && "axle=" in it }, "band, confidence, shape and axle in every note: $notes")
+        check(t1.newBumps == 2, "trip 1 should record the 2 humps, not the dip, got ${t1.newBumps}: ${t1.rejected}")
+        check("down_first" in t1.rejected, "the dip is rejected as down first: ${t1.rejected}")
+        check(notes.all { "polarity=up" in it && "roll/pitch" in it && "axle=" in it }, "humps go up first: $notes")
         check(notes.none { "pothole" in it || "side=" in it || "looks=" in it }, "no type or side in the notes: $notes")
-        val dip = nearest(store, sim, 900.0)
-        check(dip.severity(cfg) == Severity.STRONG, "a 7 m/s² dip is strong, got ${dip.severity(cfg)} (${formatFixed(dip.sevIndex, 1)})")
-
         val t2 = sim.drive(store, spec, tripId = 2)
         describe("trip 2", t2)
-        // E2: the strong dip showed both axles, so its one hit confirmed it; the others are still a maybe.
-        val sounds = listOf(WarnSound.SOFT, WarnSound.STRONG, WarnSound.SOFT)
-        check(t2.warnings.map { it.sound } == sounds, "trip 2: felt once, the strong dip confirmed: ${t2.warnings.map { it.sound }}")
-
-        val bands = listOf(400.0, 900.0, 1500.0).map { bandSound(nearest(store, sim, it), cfg) }
-        val t3 = sim.drive(store, spec, tripId = 3)
-        describe("trip 3", t3)
-        check(t3.warnings.map { it.sound } == bands, "trip 3: confirmed, each by its band: ${t3.warnings.map { it.sound }}, expected $bands")
-        check(bands[1] == WarnSound.STRONG, "the dip warns by voice (strong)")
+        check(t2.newBumps == 0 && t2.warnings.size == 2, "trip 2: the 2 humps warn, the dip never: ${t2.warnings.size}")
     }
 
     /**
      * Every felt spot is counted by its band, and soft vs full: a bump, two 7 m/s² dips (one given with the old pothole
      * name, which still makes a bump) and a 4.2 m/s² dip. Felt once they are soft; felt again, full and by their band.
+     * Without a gyroscope (E4): the car's pitch is unknown, so a down-first jolt is no "down_first" and the dips count.
      */
     @Suppress("DEPRECATION")
     fun severityCountsAndSounds() {
@@ -323,7 +311,7 @@ object Scenarios {
         val cfg = EngineConfig()
         val spec = DriveSpec(
             bumpsAt = listOf(300.0), dipsAt = listOf(700.0), potholesLeftAt = listOf(1100.0),
-            smallDipsAt = listOf(1500.0), cruiseKmh = 40.0,
+            smallDipsAt = listOf(1500.0), cruiseKmh = 40.0, gyro = false,
         )
         val t1 = sim.drive(store, spec, tripId = 1)
         describe("trip 1", t1)

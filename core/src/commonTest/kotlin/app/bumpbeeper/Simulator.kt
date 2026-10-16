@@ -344,8 +344,8 @@ class Simulator(seed: Long) {
                 if (s < ss + 2.6 && sNew >= ss + 2.6) seamHits.add(doubleArrayOf(t, 5.0))
             }
             for ((sp, side, amp) in dips) {
-                if (s < sp && sNew >= sp) holeHits.add(doubleArrayOf(t, amp, side))                    // front wheel
-                if (s < sp + 2.6 && sNew >= sp + 2.6) holeHits.add(doubleArrayOf(t, 0.7 * amp, side))  // rear wheel, same side
+                if (s < sp && sNew >= sp) holeHits.add(doubleArrayOf(t, amp, side, 1.0))                    // front wheel
+                if (s < sp + 2.6 && sNew >= sp + 2.6) holeHits.add(doubleArrayOf(t, 0.7 * amp, side, -1.0))  // rear wheel, same side
             }
             for (sh in handlings) if (s < sh && sNew >= sh) handlingStart = t
 
@@ -399,7 +399,13 @@ class Simulator(seed: Long) {
                 pitch += if (c.size < 3) swing(tau, 0.05 * c[1], 0.2)
                 else if (tau >= 0 && tau < 0.15) -c[2] * 0.05 * c[1] * sin(PI * tau / 0.15) else 0.0
             }
-            for (c in holeHits) { roll += c[2] * swing(t - c[0], 0.08 * c[1], 0.15); pitch += swing(t - c[0], 0.015 * c[1], 0.15) }
+            for (c in holeHits) {
+                // The wheel drops into it: the nose dips at the front wheel (pitch about left, nose-down positive), the
+                // tail at the rear one; and the car rolls towards that side.
+                roll += c[2] * swing(t - c[0], 0.08 * c[1], 0.15)
+                val tau = t - c[0]
+                if (tau >= 0 && tau < 0.15) pitch += c[3] * 0.015 * c[1] * sin(PI * tau / 0.15)
+            }
             for (c in seamHits) pitch += swing(t - c[0], 0.005 * c[1], 0.1)   // a seam is too short to rock the car
             crossings.removeAll { t - it[0] > 0.5 }
             holeHits.removeAll { t - it[0] > 0.5 }

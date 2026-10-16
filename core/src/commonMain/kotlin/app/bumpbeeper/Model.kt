@@ -63,7 +63,10 @@ class Bump(
      * as [peakAvg] (m/s²); E2 feeds it a speed-normalised vibration index instead.
      */
     var sevIndex: Double = 0.0,
-    /** Hits where both axles were felt (front wheels, then the rear ones a wheelbase later). 0 until E2 detects them. */
+    /**
+     * Confirmations by the car's own signature: 1 per hit with both axles felt (or a strong jolt with axle evidence and a
+     * slowdown, E2); a crossing with the V speed profile and UP or both axles (E4) brings it to at least 2.
+     */
     var axleHits: Int = 0,
     /** An old pothole spot (from before v2, your own or shared): only a soft "maybe" until it is felt again. */
     var legacy: Boolean = false,
@@ -81,7 +84,7 @@ class Bump(
      */
     fun confidence(cfg: EngineConfig): Confidence = when {
         legacy -> Confidence.SOFT
-        hits >= 2 || (axleHits >= 1 && severity(cfg) == Severity.STRONG) -> Confidence.FULL
+        hits >= 2 || axleHits >= 2 || (axleHits >= 1 && severity(cfg) == Severity.STRONG) -> Confidence.FULL
         else -> Confidence.SOFT
     }
 
