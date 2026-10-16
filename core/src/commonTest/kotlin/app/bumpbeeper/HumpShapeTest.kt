@@ -22,7 +22,8 @@ class HumpShapeTest {
     }
 
     @Test fun aLongFlatTopWarnsLikeAStrongBump() {
-        val hump = ProfileHump(900.0, "trapez", 0.10, 4.0, plateauM = 2.5)
+        // (A 3 m top: with 2.5 m the front's way down and the rear's climb onto the top meet, a wheelbase apart.)
+        val hump = ProfileHump(900.0, "trapez", 0.10, 4.0, plateauM = 3.0)
         val (shape, store) = shapeOf(hump)
         assertEquals(BumpShape.LONG_FLAT, shape, "${store.events.filter { it.type == "new_bump" }.map { it.note }}")
         // Felt again, confirmed: 3 beeps and the voice, whatever its band.

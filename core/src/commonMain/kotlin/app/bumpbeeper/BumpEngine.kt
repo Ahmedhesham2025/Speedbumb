@@ -993,7 +993,9 @@ class BumpEngine(
             // A wheelbase on is the rear axle; anywhere over a long flat top and its rear axle is still that hump.
             val sameHump = abs(bestD - vehicle.wheelbaseM) <= cfg.axle.dtTolerance * vehicle.wheelbaseM ||
                 (b0.shape == BumpShape.LONG_FLAT && bestD <= vehicle.wheelbaseM + cfg.rowLongHumpM)
-            if (samePass && bestD >= cfg.rowMinGapM && speedKmh <= cfg.rowMaxKmh && !sameHump) best = null
+            // Only after a hump known to be short: a long or unknown one may still be under the car.
+            val short = b0.shape == BumpShape.SHORT_STEEP || b0.shape == BumpShape.LOW
+            if (samePass && short && bestD >= cfg.rowMinGapM && speedKmh <= cfg.rowMaxKmh && !sameHump) best = null
         }
         if (best == null) {
             // First time here → record it. No beep: we are already on top of it.
