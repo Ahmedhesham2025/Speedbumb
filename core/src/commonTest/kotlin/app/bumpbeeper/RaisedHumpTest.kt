@@ -17,8 +17,9 @@ class RaisedHumpTest {
 
     @Test fun aDipGoesDownFirstAndIsNoBump() {
         val store = MemoryStore()
-        val r = Simulator(52).drive(store, DriveSpec(dipsAt = listOf(900.0), cruiseKmh = 40.0))
-        assertEquals(0, r.newBumps, "${r.rejected} ${notes(store, "rejected")}")
+        // (A slow zone first, so the car's forward direction is known: the frame is then trusted.)
+        val r = Simulator(52).drive(store, DriveSpec(dipsAt = listOf(900.0), slowZonesAt = listOf(400.0), cruiseKmh = 40.0))
+        assertEquals(0, r.newBumps, "${r.rejected} ${notes(store, "rejected")} ${notes(store, "new_bump")}")
         assertTrue(notes(store, "rejected").any { it.startsWith("down_first") && "polarity=down" in it }, "${notes(store, "rejected")}")
     }
 

@@ -226,7 +226,8 @@ object Scenarios {
         val sim = Simulator(81)
         val store = MemoryStore()
         val cfg = EngineConfig()
-        val spec = DriveSpec(bumpsAt = listOf(500.0, 1100.0, 1600.0))
+        // Slowing to 20 km/h only: a crawl to 15 or less and back up (a V, E4) would confirm a spot on its first pass.
+        val spec = DriveSpec(bumpsAt = listOf(500.0, 1100.0, 1600.0), bumpKmh = 20.0)
         val t1 = sim.drive(store, spec, tripId = 1)
         describe("trip 1", t1)
         val s1 = t1.stats
@@ -330,8 +331,9 @@ object Scenarios {
         val t2 = sim.drive(store, spec, tripId = 2)
         describe("trip 2", t2)
         check(t2.newBumps == 0, "trip 2 must not record anything new (all spots are known), got ${t2.newBumps}")
-        val firstSounds = listOf(WarnSound.SOFT, WarnSound.STRONG, WarnSound.STRONG, WarnSound.SOFT)
-        check(t2.warnings.map { it.sound } == firstSounds, "trip 2: the strong dips confirmed, the rest soft: ${t2.warnings.map { it.sound }}")
+        // E4: the bump was crossed in a V (40, 15, back to 40) with both axles: confirmed on its first pass too.
+        val firstSounds = listOf(WarnSound.MODERATE, WarnSound.STRONG, WarnSound.STRONG, WarnSound.SOFT)
+        check(t2.warnings.map { it.sound } == firstSounds, "trip 2: the strong dips and the V bump confirmed, the small dip soft: ${t2.warnings.map { it.sound }}")
         check(t2.stats.full == 4 && t2.stats.soft == 0, "felt again: all full, got soft=${t2.stats.soft} full=${t2.stats.full}")
         check(t2.warnings.last().spot.id == small.id, "the last warning is the small dip")
 
@@ -1072,7 +1074,8 @@ object Scenarios {
         log("groupOfBumps")
         val sim = Simulator(74)
         val store = MemoryStore()
-        val spec = DriveSpec(bumpsAt = listOf(600.0, 660.0, 720.0, 1400.0))
+        // Not a crawl (20 km/h): a V crossing (E4) would confirm the spots on their first pass.
+        val spec = DriveSpec(bumpsAt = listOf(600.0, 660.0, 720.0, 1400.0), bumpKmh = 20.0)
         val t1 = sim.drive(store, spec, tripId = 1)
         describe("trip 1", t1)
         check(t1.newBumps == 4, "trip 1 should learn 4 bumps, got ${t1.newBumps}")
