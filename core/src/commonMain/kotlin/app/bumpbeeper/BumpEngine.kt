@@ -232,7 +232,8 @@ class EngineConfig {
      * to just before the rear one, the strong samples (at least [shapeStrongFraction] of the peak) form lobes. A short
      * hump climbs, crests and comes down: three lobes or more. A long flat top only climbs onto it (up, then a balanced
      * stop, the two within [shapeBalance]) and then stays quiet for [shapeQuietM] or more before the rear axle: a
-     * LONG_FLAT top the car stands on (3 beeps and the voice, like a strong bump). With three lobes or more, height
+     * LONG_FLAT top the car stands on (3 beeps and the voice, like a strong bump). With three lobes or more within
+     * [shapeCompactM], then [shapeCompactQuietM] quiet before the rear axle, height
      * (relative only: the first lobe's velocity step × the front impulse's length / (pi/2 × speed)) under [shapeLowM]
      * is LOW, else SHORT_STEEP. Anything else is UNKNOWN (null), which keeps the band's sound: missing a long top is
      * fine, a short hard hump must never read LONG_FLAT.
@@ -245,10 +246,13 @@ class EngineConfig {
     var shapeTyreM = 0.2
     var shapeLowM = 0.04
     var shapePocketMinScore = 0.8
+    var shapeCompactM = 1.5
+    var shapeCompactQuietM = 0.3
 
     /**
      * E4c, humps in a row: at [rowMaxKmh] or slower the refractory time ends with the decision, so the next hump of a
-     * row is felt; a jolt on the same pass [rowMinGapM] or more from the spot just felt is a hump of its own, unless it
+     * row is felt; a jolt on the same pass [rowMinGapM] or more from a SHORT_STEEP spot just felt is a hump of its own
+     * (never after a long, low or unknown one), unless it
      * is a wheelbase away (± [AxleConfig.dtTolerance]: the rear axle) or, after a long flat top, within a wheelbase +
      * [rowLongHumpM] (its far end and rear axle). Spots within [rowMaxGapM] of each other ahead
      * warn as one group ("2 bumps ahead"), even when fewer than [clusterMinExtra] follow.
@@ -794,6 +798,9 @@ class BumpEngine(
         val shape = when {
             flatTop -> BumpShape.LONG_FLAT
             lobes.size < 3 -> return null   // climbed and stopped, but not clearly onto a flat top: unknown
+            // Short only when compact: the strong part within shapeCompactM, then quiet until the rear axle (body
+            // bounce on a long top adds lobes of its own).
+            frontM > cfg.shapeCompactM || quietM < cfg.shapeCompactQuietM -> return null
             heightM < cfg.shapeLowM -> BumpShape.LOW
             else -> BumpShape.SHORT_STEEP
         }
@@ -995,8 +1002,8 @@ class BumpEngine(
             // A wheelbase on is the rear axle; anywhere over a long flat top and its rear axle is still that hump.
             val sameHump = abs(bestD - vehicle.wheelbaseM) <= cfg.axle.dtTolerance * vehicle.wheelbaseM ||
                 (b0.shape == BumpShape.LONG_FLAT && bestD <= vehicle.wheelbaseM + cfg.rowLongHumpM)
-            // Only after a hump known to be short: a long or unknown one may still be under the car.
-            val short = b0.shape == BumpShape.SHORT_STEEP || b0.shape == BumpShape.LOW
+            // Only after a hump known to be short and steep: a long, low or unknown one may still be under the car.
+            val short = b0.shape == BumpShape.SHORT_STEEP
             if (samePass && short && bestD >= cfg.rowMinGapM && speedKmh <= cfg.rowMaxKmh && !sameHump) best = null
         }
         if (best == null) {

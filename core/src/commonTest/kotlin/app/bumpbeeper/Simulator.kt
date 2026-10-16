@@ -123,6 +123,8 @@ class DriveSpec(
     val roundHumpsAt: List<Double> = emptyList(),
     /** Humps by their profile: the driver slows to [bumpKmh] for them; each axle rides the profile (0.15 m tyre). */
     val profileHumps: List<ProfileHump> = emptyList(),
+    /** The body bounces on its springs (1.4 Hz, damping 0.25) over profiled humps, on top of what the wheels feel. */
+    val bodyBounce: Boolean = false,
     /** The car's wheelbase: the rear wheels cross a bump this far after the front ones. */
     val wheelbaseM: Double = 2.6,
     /** Sets the phone's own signals on every sample: (seconds driven, metres driven, speed m/s, the signals, sensor time ms). */
@@ -289,6 +291,8 @@ class Simulator(seed: Long) {
         val hist = ArrayDeque<DoubleArray>()   // (front height, rear height) of the last two steps
         val roundHits = ArrayList<DoubleArray>()   // (time, scale, +1 front / -1 rear)
         var profilePitch = 0.0
+        var bodyZ = 0.0
+        var bodyV = 0.0
         val holds = spec.holdsAt.map { Pair(travel(it.first), it.second) }
         val spikes = spec.brakeSpikesAt.map { travel(it) }
         val stops = spec.stopsAt.map { doubleArrayOf(travel(it.first), it.second, -1.0, 0.0) }   // (where, seconds, leave at, gone)
@@ -406,6 +410,16 @@ class Simulator(seed: Long) {
                     val (a, b, c) = Triple(hist[0], hist[1], hist[2])
                     av += 0.5 * ((c[0] - 2 * b[0] + a[0]) + (c[1] - 2 * b[1] + a[1])) / (dt * dt)
                     profilePitch = -((c[0] - c[1]) - (b[0] - b[1])) / spec.wheelbaseM / dt   // nose-down positive
+                    if (spec.bodyBounce) {
+                        // The body on its springs, driven by the axles' average height: it keeps bouncing on a long top.
+                        val w = 2 * PI * 1.4
+                        val h = 0.5 * (c[0] + c[1])
+                        val hDot = 0.5 * ((c[0] - b[0]) + (c[1] - b[1])) / dt
+                        val acc = w * w * (h - bodyZ) + 2 * 0.25 * w * (hDot - bodyV)
+                        bodyV += acc * dt
+                        bodyZ += bodyV * dt
+                        av += acc
+                    }
                 }
             }
             if (rnd.nextDouble() < 0.002) av += if (rnd.nextBoolean()) 1.5 else -1.5

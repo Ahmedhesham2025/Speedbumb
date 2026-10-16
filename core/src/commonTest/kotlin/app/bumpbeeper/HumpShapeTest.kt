@@ -76,6 +76,23 @@ class HumpShapeTest {
         assertTrue(store.saved.isNotEmpty() && store.saved.all { it.shape == null }, "${store.saved.map { it.shape }}")
     }
 
+    @Test fun aLongTopWithBodyBounceIsOneHump() {
+        // 3.5-4.5 m flat tops with the body bouncing on them, at 5-20 km/h: one spot each, never "2 bumps ahead".
+        for (top in listOf(3.5, 4.0, 4.5)) for (kmh in listOf(5.0, 10.0, 15.0, 20.0)) {
+            val store = MemoryStore()
+            val spec = DriveSpec(
+                profileHumps = listOf(ProfileHump(900.0, "trapez", 0.10, top + 1.0, plateauM = top)), bodyBounce = true,
+                bumpKmh = kmh, cruiseKmh = kmh, roadM = 1000.0,
+            )
+            val t1 = Simulator(85).drive(store, spec, tripId = 1)
+            val what = "top $top m, $kmh km/h: ${store.events.filter { it.type == "new_bump" }.map { it.note.substringAfter("hump=") }}"
+            assertTrue(t1.newBumps <= 1, what)
+            assertTrue(store.saved.none { it.shape == BumpShape.SHORT_STEEP }, what)
+            val t2 = Simulator(86).drive(store, spec, EngineConfig().apply { quietBelowKmh = 0.0 }, tripId = 2)
+            assertTrue(t2.warnings.none { it.cluster != null }, "$what: ${t2.warnings.map { it.cluster?.count }}")
+        }
+    }
+
     @Test fun aLowHump() {
         val (shape, store) = shapeOf(ProfileHump(900.0, "sinus", 0.03, 0.6))
         assertEquals(BumpShape.LOW, shape, "${store.events.filter { it.type == "new_bump" }.map { it.note }}")
