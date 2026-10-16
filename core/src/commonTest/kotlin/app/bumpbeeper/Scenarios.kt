@@ -225,17 +225,17 @@ object Scenarios {
         log("softThenFull")
         val sim = Simulator(81)
         val store = MemoryStore()
-        val cfg = EngineConfig()
-        // Slowing to 20 km/h only: a crawl to 15 or less and back up (a V, E4) would confirm a spot on its first pass.
-        val spec = DriveSpec(bumpsAt = listOf(500.0, 1100.0, 1600.0), bumpKmh = 20.0)
-        val t1 = sim.drive(store, spec, tripId = 1)
+        // The V crossing (E4: down to 15 km/h and back up) is off here; it would confirm a spot on its first pass.
+        val cfg = EngineConfig().apply { vMaxMinKmh = 0.0 }
+        val spec = DriveSpec(bumpsAt = listOf(500.0, 1100.0, 1600.0))
+        val t1 = sim.drive(store, spec, cfg, tripId = 1)
         describe("trip 1", t1)
         val s1 = t1.stats
         check(t1.newBumps == 3 && s1.soft == 3 && s1.full == 0, "trip 1: 3 new spots, all soft, got new=${t1.newBumps} soft=${s1.soft} full=${s1.full}")
         check(s1.mild + s1.moderate + s1.strong == 3, "each felt spot is counted in one band: ${s1.mild}/${s1.moderate}/${s1.strong}")
         check(store.saved.all { it.confidence(cfg) == Confidence.SOFT && it.lastBand != null && it.sevIndex >= 3.0 }, "stored soft, with a band")
 
-        val t2 = sim.drive(store, spec, tripId = 2)
+        val t2 = sim.drive(store, spec, cfg, tripId = 2)
         describe("trip 2", t2)
         check(t2.knownHits == 3 && t2.stats.full == 3 && t2.stats.soft == 0, "felt again: full, got soft=${t2.stats.soft} full=${t2.stats.full}")
         check(store.saved.all { it.confidence(cfg) == Confidence.FULL }, "stored as confirmed")
@@ -1074,14 +1074,14 @@ object Scenarios {
         log("groupOfBumps")
         val sim = Simulator(74)
         val store = MemoryStore()
-        // Not a crawl (20 km/h): a V crossing (E4) would confirm the spots on their first pass.
-        val spec = DriveSpec(bumpsAt = listOf(600.0, 660.0, 720.0, 1400.0), bumpKmh = 20.0)
-        val t1 = sim.drive(store, spec, tripId = 1)
+        // The V crossing (E4) is off here: it would confirm the spots on their first pass.
+        val spec = DriveSpec(bumpsAt = listOf(600.0, 660.0, 720.0, 1400.0))
+        val t1 = sim.drive(store, spec, EngineConfig().apply { vMaxMinKmh = 0.0 }, tripId = 1)
         describe("trip 1", t1)
         check(t1.newBumps == 4, "trip 1 should learn 4 bumps, got ${t1.newBumps}")
 
         // Quiet-below off, so without grouping all 4 would warn even at bump speed.
-        val always = EngineConfig().apply { quietBelowKmh = 0.0 }
+        val always = EngineConfig().apply { quietBelowKmh = 0.0; vMaxMinKmh = 0.0 }
         val t2 = sim.drive(store, spec, always, tripId = 2)
         describe("trip 2", t2)
         check(t2.warnings.size == 2, "a group warning + the lone bump expected, got ${t2.warnings.size}")
@@ -1092,7 +1092,7 @@ object Scenarios {
         check(grouped == 2, "the 2 following bumps stay silent (beep_grouped), got $grouped")
         check(Phrases.cluster("en", g!!.count, anyStrong = false) == "3 bumps ahead.", "group phrase")
 
-        val noGroups = EngineConfig().apply { quietBelowKmh = 0.0; clusterMinExtra = 99 }
+        val noGroups = EngineConfig().apply { quietBelowKmh = 0.0; clusterMinExtra = 99; vMaxMinKmh = 0.0 }
         val t3 = sim.drive(store, spec, noGroups, tripId = 3)
         check(t3.warnings.size == 4, "without grouping every bump warns, got ${t3.warnings.size}")
     }
