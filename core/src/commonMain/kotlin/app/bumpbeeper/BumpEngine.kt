@@ -232,9 +232,10 @@ class EngineConfig {
      * to just before the rear one, the strong samples (at least [shapeStrongFraction] of the peak) form lobes. A short
      * hump climbs, crests and comes down: three lobes or more. A long flat top only climbs onto it (up, then a balanced
      * stop, the two within [shapeBalance]) and then stays quiet for [shapeQuietM] or more before the rear axle: a
-     * LONG_FLAT top the car stands on (3 beeps and the voice, like a strong bump). Height, relative only: the first
-     * lobe's velocity step × the front impulse's length / (pi/2 × speed); under [shapeLowM] LOW. Else SHORT_STEEP;
-     * anything else UNKNOWN (null), which keeps the band's sound.
+     * LONG_FLAT top the car stands on (3 beeps and the voice, like a strong bump). With three lobes or more, height
+     * (relative only: the first lobe's velocity step × the front impulse's length / (pi/2 × speed)) under [shapeLowM]
+     * is LOW, else SHORT_STEEP. Anything else is UNKNOWN (null), which keeps the band's sound: missing a long top is
+     * fine, a short hard hump must never read LONG_FLAT.
      */
     var shapeLowHz = 0.1
     var shapeHighHz = 15.0
@@ -792,6 +793,7 @@ class BumpEngine(
             abs(lobes[0] + lobes[1]) <= cfg.shapeBalance * lobes[0] && quietM >= cfg.shapeQuietM
         val shape = when {
             flatTop -> BumpShape.LONG_FLAT
+            lobes.size < 3 -> return null   // climbed and stopped, but not clearly onto a flat top: unknown
             heightM < cfg.shapeLowM -> BumpShape.LOW
             else -> BumpShape.SHORT_STEEP
         }
