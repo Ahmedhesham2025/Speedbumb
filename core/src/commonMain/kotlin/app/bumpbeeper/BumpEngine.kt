@@ -228,11 +228,14 @@ class EngineConfig {
      * E4c, a hump's shape from its front impulse: the vertical acceleration band-passed ([shapeLowHz]..[shapeHighHz]),
      * integrated twice from [shapePreMs] before the trigger to the decision (velocity detrended to zero at both ends),
      * gives the car's rise, relative only. Its length is how long the rise stays above half its top × the speed, less
-     * the tyre's contact [shapeTyreM]. LOW: a top under [shapeLowM]; LONG_FLAT: [shapeLongM] or longer (a plateau the
-     * car stands on: 3 beeps and the voice, like a strong bump); else SHORT_STEEP. Unknown below [shapeMinKmh].
+     * the tyre's contact [shapeTyreM]. LOW: a top under [shapeLowM]; LONG_FLAT: [shapeLongM] or longer with at least
+     * [shapeFlatShare] of that time flat (rising at under [shapeFlatRate] of its fastest: a plateau the car stands on,
+     * not a drift; 3 beeps and the voice, like a strong bump); else SHORT_STEEP. Unknown below [shapeMinKmh].
      */
     var shapeLowHz = 0.1
-    var shapeHighHz = 15.0
+    var shapeHighHz = 5.0
+    var shapeFlatShare = 0.5
+    var shapeFlatRate = 0.25
     var shapePreMs = 300L
     var shapeTyreM = 0.2
     var shapeLowM = 0.025
@@ -761,7 +764,10 @@ class BumpEngine(
         while (a > 0 && z[a - 1] >= 0.5 * z[top]) a--
         while (b < n - 1 && z[b + 1] >= 0.5 * z[top]) b++
         val lengthM = (t[i0 + b] - t[i0 + a]) / 1000.0 * speedMps - cfg.shapeTyreM
-        return if (lengthM >= cfg.shapeLongM) BumpShape.LONG_FLAT else BumpShape.SHORT_STEEP
+        var fastest = 0.0
+        for (k in a..b) fastest = max(fastest, abs(vel[k]))
+        val flat = (a..b).count { abs(vel[it]) < cfg.shapeFlatRate * fastest }.toDouble() / (b - a + 1)
+        return if (lengthM >= cfg.shapeLongM && flat >= cfg.shapeFlatShare) BumpShape.LONG_FLAT else BumpShape.SHORT_STEEP
     }
 
     /** The car's left axis (up × forward) in phone axes; null without gyroscope or a known forward direction. */
