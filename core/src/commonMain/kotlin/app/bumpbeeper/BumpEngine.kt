@@ -143,6 +143,13 @@ class EngineConfig {
     var muteAfterPasses = 3
     /** ...stop beeping for spots felt less than this fraction of the time. */
     var muteBelowHitRate = 0.5
+    /**
+     * Self-cleaning map: a spot passed clean this many times in a row ([Bump.missStreak]) is only a "maybe"...
+     * ...and from [retireAfterMisses] it is retired (silent, off the map) until it is felt again. Shared spots are
+     * cleaned by the server from the pass_clear observations.
+     */
+    var softAfterMisses = 3
+    var retireAfterMisses = 5
 
     var maxFixAgeMs = 3000L
     var maxAccuracyM = 30.0
@@ -1067,6 +1074,7 @@ class BumpEngine(
         b.addPeak(peak, b.hits)
         b.addSeverity(peak, b.hits, cfg)
         b.hits++
+        b.missStreak = 0
         if (grade >= 2) b.axleHits++
         info.shape?.let { b.shape = it }
         b.legacy = false   // felt again: an old pothole spot is an ordinary bump from now on
@@ -1511,7 +1519,7 @@ class BumpEngine(
     fun ungroup() = grouped.clear()
 
     /** Should this spot warn at all? Not when muted. */
-    private fun warnable(b: Bump): Boolean = !b.isMuted(cfg)
+    private fun warnable(b: Bump): Boolean = !b.isMuted(cfg) && !b.isRetired(cfg)
 
     /** A "maybe" spot gets one soft beep whatever its severity; a confirmed one the sound of its band. */
     private fun soundFor(b: Bump): WarnSound =
@@ -1590,12 +1598,16 @@ class BumpEngine(
             b.passes++
             if (!a.hit) {
                 b.misses++
+                b.missStreak++
                 trip.misses++
                 recentMissMs[b.id] = f.timeMs
                 log(
                     "miss", b.id, f.lat, f.lon, f.speedMps * 3.6, a.maxJoltNear, Double.NaN, a.minDist,
-                    "hits ${b.hits}/${b.passes}, $nearNote",
+                    "hits ${b.hits}/${b.passes}, clean ${b.missStreak} in a row, $nearNote",
                 )
+                if (b.missStreak == cfg.retireAfterMisses) {
+                    log("retired", b.id, b.lat, b.lon, Double.NaN, Double.NaN, Double.NaN, Double.NaN, "${b.missStreak} clean passes in a row")
+                }
                 observe("pass_clear", b.lat, b.lon, a.minSpeedNearMps * 3.6, a.maxJoltNear, 0.0, wallClock(), b.heading)
                 sample("miss", null, a.minDistMs, passKmh(a, f), a.maxJoltNear, null, b.severity(cfg), b.lat, b.lon, b.id, b.heading)
             }

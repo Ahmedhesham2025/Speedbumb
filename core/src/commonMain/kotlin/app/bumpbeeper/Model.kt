@@ -84,7 +84,16 @@ class Bump(
     var lastBand: Severity? = null,
     /** Its shape as the last hit that could tell showed it (E4c); null = unknown. */
     var shape: BumpShape? = null,
+    /**
+     * Clean passes in a row since it was last felt (informative speed, phone not handled, its direction): from
+     * [EngineConfig.softAfterMisses] it is only a "maybe", from [EngineConfig.retireAfterMisses] it is retired. A hit
+     * resets it.
+     */
+    var missStreak: Int = 0,
 ) {
+    /** Retired: passed clean too often in a row ([missStreak]). Silent and off the map until it is felt again. */
+    fun isRetired(cfg: EngineConfig): Boolean = missStreak >= cfg.retireAfterMisses
+
     val hitRate: Double get() = if (passes <= 0) 1.0 else hits.toDouble() / passes
 
     /** How hard it hits: the band of [sevIndex], staying in [lastBand] inside the hysteresis ([Severity.of]). */
@@ -92,10 +101,11 @@ class Bump(
 
     /**
      * [Confidence.FULL] once felt twice, or after one strong hit with both axles felt ([axleHits], from E2).
-     * An old pothole spot ([legacy]) stays [Confidence.SOFT] until it is felt again.
+     * An old pothole spot ([legacy]) stays [Confidence.SOFT] until it is felt again, and so does a spot passed clean
+     * [EngineConfig.softAfterMisses] times in a row ([missStreak]).
      */
     fun confidence(cfg: EngineConfig): Confidence = when {
-        legacy -> Confidence.SOFT
+        legacy || missStreak >= cfg.softAfterMisses -> Confidence.SOFT
         hits >= 2 || axleHits >= 2 || (axleHits >= 1 && severity(cfg) == Severity.STRONG) -> Confidence.FULL
         else -> Confidence.SOFT
     }
@@ -130,7 +140,7 @@ class Bump(
 
     fun copy() = Bump(
         id, lat, lon, heading, hits, passes, misses, nPos, firstSeen, lastSeen, userMuted,
-        peakAvg, sevIndex, axleHits, legacy, lastBand, shape,
+        peakAvg, sevIndex, axleHits, legacy, lastBand, shape, missStreak,
     )
 }
 
