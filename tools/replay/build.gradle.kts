@@ -11,12 +11,14 @@ plugins {
 java { sourceCompatibility = JavaVersion.VERSION_17; targetCompatibility = JavaVersion.VERSION_17 }
 kotlin { compilerOptions { jvmTarget.set(JvmTarget.JVM_17) } }
 
-// Research recordings (rr2, contracts/research-rr2.md) are read with the app's own reader, and the engine is fed through
-// the app's RateAverager, exactly as BumpService does while research records. Both are plain Kotlin without Android, so
-// they are copied (read-only) from the app at build time; no dependency on the Android module.
+// Research recordings (rr2, contracts/research-rr2.md) are read with the app's own reader, the engine is fed through
+// the app's RateAverager, exactly as BumpService does while research records, and the anonymizer trims with the app's
+// own upload trim (ResearchTrim, #115). All plain Kotlin without Android, so they are copied (read-only) from the app
+// at build time; no dependency on the Android module.
 val appResearch = tasks.register<Copy>("appResearch") {
     from(rootProject.file("app/src/main/java/app/bumpbeeper/research/ResearchFormat.kt"))
     from(rootProject.file("app/src/main/java/app/bumpbeeper/research/RateAverager.kt"))
+    from(rootProject.file("app/src/main/java/app/bumpbeeper/research/ResearchTrim.kt"))
     into(layout.buildDirectory.dir("generated/appResearch"))
 }
 kotlin.sourceSets.named("main") { kotlin.srcDir(appResearch) }
