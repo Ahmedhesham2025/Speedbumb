@@ -429,9 +429,10 @@ class DrivingMonitor(
             checkLongitudinal(f.timeMs, if (aGps > 0) aGps - 0.5 else aGps + 0.5, sustainMs = 0, fromGps = true)
         }
 
-        // Without a gyroscope, turning rate comes from the GPS heading.
-        if (!gyroSeen && !f.bearingDeg.isNaN() && speedMps >= 4.0) {
-            if (!lastBearing.isNaN() && !handled) {
+        // Without a gyroscope, or while the phone is handled (the sensors are the hand's, the GPS is still the car's),
+        // the turning rate comes from the GPS heading.
+        if (!f.bearingDeg.isNaN() && speedMps >= 4.0) {
+            if (!lastBearing.isNaN() && (!gyroSeen || handled)) {
                 var d = f.bearingDeg - lastBearing
                 if (d > 180) d -= 360
                 if (d < -180) d += 360

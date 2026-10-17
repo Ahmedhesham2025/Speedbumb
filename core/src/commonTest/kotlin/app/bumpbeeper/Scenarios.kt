@@ -1181,6 +1181,23 @@ object Scenarios {
             check(r.driving.phoneUse == 0, "seat, $deg°: a slide is no phone use, got ${r.driving.phoneUse}")
             check(r.phone?.state == PhoneState.STABLE_LOOSE, "seat, $deg°: it rests loose again: ${r.phone?.state}")
         }
+        // A hump 20 m after a slide in a brake is learned: the slide has landed and rests there.
+        val hump = Simulator(84).drive(MemoryStore(), DriveSpec(onSeat = true, hardBrakesAt = listOf(900.0), hardBrakeMs2 = 3.0,
+            seatSlidesAt = listOf(904.0 to 35.0), bumpsAt = listOf(925.0), slowZonesAt = listOf(300.0)), drivingCfg = seat)
+        describe("seat, slid 35° in a brake, hump 21 m later", hump)
+        check(hump.newBumps == 1 && hump.driving.phoneUse == 0, "seat: the hump after a slide is learned, no phone use: " +
+            "new=${hump.newBumps} rejected=${hump.rejected} use=${hump.driving.phoneUse}")
+        // The car's own harsh events still count once, judged by the GPS while the slid phone is not trusted.
+        val brake = Simulator(84).drive(MemoryStore(), DriveSpec(onSeat = true, hardBrakesAt = listOf(900.0), hardBrakeMs2 = 4.5,
+            seatSlidesAt = listOf(904.0 to 35.0), slowZonesAt = listOf(300.0)), drivingCfg = seat)
+        describeDriving("seat, slid in a 4.5 m/s² brake", brake.driving)
+        check(brake.driving.harshBrakes == 1 && brake.driving.phoneUse == 0, "seat: a 4.5 m/s² brake with a slide is one harsh brake: " +
+            "${brake.driving.harshBrakes}, use ${brake.driving.phoneUse}")
+        val turn = Simulator(62).drive(MemoryStore(), DriveSpec(onSeat = true, sharpTurnsAt = listOf(700.0), seatSlidesAt = listOf(705.0 to 35.0)),
+            drivingCfg = seat)
+        describeDriving("seat, slid in a sharp turn", turn.driving)
+        check(turn.driving.harshCorners == 2 && turn.driving.phoneUse == 0, "seat: the slid turn counts once, the turn back once: " +
+            "${turn.driving.harshCorners}, use ${turn.driving.phoneUse}")
         val pick = Simulator(85).drive(MemoryStore(), DriveSpec(onSeat = true, holdsAt = listOf(900.0 to 3.0), holdDeg = 60.0,
             holdLiftS = 0.6, phoneSignals = { _, s, _, sig, _ -> sig.screenOn = s >= 900.0 && s < 960.0 }), drivingCfg = seat)
         describeDriving("seat, picked up 3 s with the screen on", pick.driving)
