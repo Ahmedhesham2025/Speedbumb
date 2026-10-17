@@ -490,6 +490,10 @@ class StreetMap(private val ctx: Context, private val interactive: Boolean, priv
         val drawn = try {
             m?.queryRenderedFeatures(RectF(0f, 0f, view.width.toFloat(), view.height.toFloat()), L_SPOTS, L_CLUSTERS, L_ME)?.size
         } catch (_: Exception) { null }
+        val puckDrawn = try {
+            val ids = style?.layers?.map { it.id }?.filter { it.contains("location") }?.toTypedArray() ?: emptyArray()
+            if (ids.isEmpty()) 0 else m?.queryRenderedFeatures(RectF(0f, 0f, view.width.toFloat(), view.height.toFloat()), *ids)?.size
+        } catch (_: Exception) { null }
         val osmDrawn = try {
             m?.queryRenderedFeatures(RectF(0f, 0f, view.width.toFloat(), view.height.toFloat()), L_OSM)?.size
         } catch (_: Exception) { null }
@@ -500,7 +504,7 @@ class StreetMap(private val ctx: Context, private val interactive: Boolean, priv
         return "labels=$labels idle=$idle style=${style != null} failed=$failed spots=${features.size} me=${me?.toList()} " +
             "puck=${puck != null} tracking=$tracking render=${try { puck?.renderMode } catch (_: Exception) { null }} " +
             "tilt=${m?.cameraPosition?.tilt} bearing=${m?.cameraPosition?.bearing} " +
-            "camera=${camera()?.toList()} drawn=$drawn osm=${osm.size} osmDrawn=$osmDrawn"
+            "camera=${camera()?.toList()} drawn=$drawn osm=${osm.size} osmDrawn=$osmDrawn puckDrawn=$puckDrawn"
     }
 
     /** Fewer frames when nothing moves saves battery. */

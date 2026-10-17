@@ -93,10 +93,13 @@ class SpotMap(ctx: Context, interactive: Boolean, pan: Boolean = interactive) : 
     var onPanned: () -> Unit = {}
     var onRecentered: () -> Unit = {}
     private val autoRecenter = Runnable { if (!following) recenter() }
-    /** Drive: your puck about 70 % down the map, so more of the road ahead is visible. */
+    /**
+     * Drive: your puck about 60 % down the map, so more of the road ahead is visible (lower, it hid under the road
+     * name and the speed bubble).
+     */
     var puckLow = false
         set(v) {
-            field = v; street.topPaddingPx = if (v) height * 0.4 else 0.0; last = null
+            field = v; street.topPaddingPx = if (v) height * PUCK_LOW else 0.0; last = null
             if (navigation) street.setNavigation(true, force = true) else camera()
         }
 
@@ -323,7 +326,7 @@ class SpotMap(ctx: Context, interactive: Boolean, pan: Boolean = interactive) : 
 
     override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
         super.onSizeChanged(w, h, oldw, oldh)
-        if (puckLow) street.topPaddingPx = h * 0.4
+        if (puckLow) street.topPaddingPx = h * PUCK_LOW
         last = null
         camera()
     }
@@ -352,5 +355,7 @@ class SpotMap(ctx: Context, interactive: Boolean, pan: Boolean = interactive) : 
         const val EARTH_M = 40_075_016.686
         const val DRIVE_FPS = 30
         const val AUTO_RECENTER_MS = 10_000L
+        /** Top padding (a share of the map's height) that puts the puck 60 % down. */
+        const val PUCK_LOW = 0.2
     }
 }
