@@ -109,6 +109,17 @@ class SelfCleaningTest {
             "passes beside it are not clean")
     }
 
+    /**
+     * The closest fix must also be within 12 m: a road only 13 m off (3 m GPS noise) almost never counts, so the spot
+     * doesn't even become a "maybe" in 5 passes.
+     */
+    @Test fun theClosestFixMustBeNear() {
+        confirmed()
+        repeat(5) { pass(DriveSpec(sideOffsetM = 13.0)) }
+        assertTrue(spot().missStreak < cfg.softAfterMisses, store.events.filter { it.type == "miss" }.joinToString { it.note })
+        assertEquals(Confidence.FULL, spot().confidence(cfg))
+    }
+
     /** A bump taken at 70 km/h every day (its jolt rejected as too fast) is not passed clean. */
     @Test fun aBumpTakenTooFastIsNotPassedClean() {
         stored(700.0)
