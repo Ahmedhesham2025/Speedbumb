@@ -157,6 +157,11 @@ class StreetMap(private val ctx: Context, private val interactive: Boolean, priv
             if (style == null && !failed) { failed = true; onFailed() }
         }
         mv.addOnDidBecomeIdleListener { idle = true }
+        mv.addOnDidFinishRenderingFrameListener(object : MapView.OnDidFinishRenderingFrameListener {
+            override fun onDidFinishRenderingFrame(fully: Boolean, frameEncodingTime: Double, frameRenderingTime: Double) {
+                if (fully) drawnSinceResume = true
+            }
+        })
         mv.addOnCameraWillChangeListener { idle = false }
         mv.getMapAsync { m -> setUp(m) }
         return mv
@@ -317,7 +322,7 @@ class StreetMap(private val ctx: Context, private val interactive: Boolean, priv
     fun roadNameAt(lat: Double, lon: Double, arabic: Boolean): String? {
         val m = map ?: return null
         // A paused map's render thread never answers: the query would block the main thread for good.
-        if (style == null || !resumed) return null
+        if (style == null || !queryable) return null
         val p = m.projection.toScreenLocation(LatLng(lat, lon))
         val r = dp(24).toFloat()
         val keys = if (arabic) listOf("name:ar", "name") else listOf("name:latin", "name:en", "name")
@@ -332,6 +337,14 @@ class StreetMap(private val ctx: Context, private val interactive: Boolean, priv
     private fun pushSpots() {
         style?.getSourceAs<GeoJsonSource>(SRC_SPOTS)?.setGeoJson(FeatureCollection.fromFeatures(features))?.also { MapStats.geojson++ }
     }
+
+    /**
+     * A frame was fully drawn since the map last resumed. Until then its render thread may still be starting: a
+     * rendered-feature query answered then crashes MapLibre's render thread (SIGSEGV, seen on the CI emulator right
+     * after switching back to the Drive tab).
+     */
+    private var drawnSinceResume = false
+    private val queryable: Boolean get() = resumed && drawnSinceResume
 
     // ---------------------------------------------------------------- the location puck (Drive)
 
@@ -473,7 +486,7 @@ class StreetMap(private val ctx: Context, private val interactive: Boolean, priv
 
     /** What the street map has, for the screenshot test's check file: style, spots, you, camera, pins drawn. */
     internal fun debug(): String {
-        val m = map?.takeIf { resumed }   // never query a paused map (see roadNameAt)
+        val m = map?.takeIf { queryable }   // never query a paused or restarting map (see roadNameAt)
         val drawn = try {
             m?.queryRenderedFeatures(RectF(0f, 0f, view.width.toFloat(), view.height.toFloat()), L_SPOTS, L_CLUSTERS, L_ME)?.size
         } catch (_: Exception) { null }
@@ -498,7 +511,7 @@ class StreetMap(private val ctx: Context, private val interactive: Boolean, priv
     fun resume() {
         val mv = mapView ?: return
         if (!started) { mv.onStart(); started = true }
-        if (!resumed) { mv.onResume(); resumed = true }
+        if (!resumed) { drawnSinceResume = false; mv.onResume(); resumed = true }
         // Last time there was no network: try the streets again.
         if (failed && style == null) { failed = false; map?.setStyle(Style.Builder().fromUri(styleUrl())) { styleReady(it) } }
         // Loaded from the cache while offline, and online now: load again, so the tiles that were missing get fetched.
