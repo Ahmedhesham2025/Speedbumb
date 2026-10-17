@@ -158,7 +158,7 @@ class ScreenshotTest {
         }
         fakeFix(false)
         val files = dir.listFiles { f -> f.name.endsWith(".png") }.orEmpty()
-        assertTrue("expected 29 screenshots in $dir, got ${files.size}: ${files.map { it.name }.sorted()}", files.size == 29)
+        assertTrue("expected 30 screenshots in $dir, got ${files.size}: ${files.map { it.name }.sorted()}", files.size == 30)
     }
 
     /**

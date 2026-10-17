@@ -277,8 +277,9 @@ class SpotMap(ctx: Context, interactive: Boolean, pan: Boolean = interactive) : 
     fun colorOf(b: Bump): Int = offline.colorOf(b)
 
     fun resume() = street.resume()
-    fun pause() = street.pause()
-    fun destroy() = street.destroy()
+    // The 10 s auto-recenter never fires on a map that is paused or gone.
+    fun pause() { removeCallbacks(autoRecenter); street.pause() }
+    fun destroy() { removeCallbacks(autoRecenter); street.destroy() }
 
     override fun invalidate() {
         super.invalidate()
