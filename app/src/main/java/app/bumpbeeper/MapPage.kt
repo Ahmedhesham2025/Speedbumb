@@ -145,7 +145,8 @@ class MapPage(private val a: MainActivity) : Page {
         cfg = Prefs.engineConfig(a)
         Thread {
             val db = BumpDb(a.applicationContext)
-            val loaded = try { db.loadBumps() } finally { db.close() }
+            // Retired spots (passed clean too often in a row) are off the map until they are felt again.
+            val loaded = try { db.loadBumps().filter { !it.isRetired(cfg) } } finally { db.close() }
             ui.post { all = loaded; show() }
         }.start()
     }
