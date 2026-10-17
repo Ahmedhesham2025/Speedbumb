@@ -9,7 +9,7 @@ private const val USAGE = """Usage:
   replay --trace run1.csv[.gz] [--trace run2.csv …] [--out metrics.json]
       replay labelled recordings (the runs of one route, oldest first) on one shared map, print the accuracy table;
       research recordings (rr2, rr_<id>_<start>_<segment>.csv.gz) are read too, the segments of a trip as one run;
-      --placement mounted|cupholder|pocket|unknown (default) for every run, or "recording": each file's own setting;
+      --placement mounted|cupholder|pocket|seat|unknown (default) for every run, or "recording": each file's own setting;
       --sensor-period-us N: the engine's sensor period (Prefs.sensorPeriodUs), default 20000 (≤ 100 Hz while research runs)
   anonymize --in raw.csv[.gz] --out anon.csv[.gz]      fake origin + clock at zero, before anything enters testdata/
       a research trip: --in rr_…_000.csv.gz [--in rr_…_001.csv.gz …]: also trimmed like the upload, ids and chips dropped"""
@@ -69,11 +69,15 @@ fun readLines(f: File): List<String> {
     return stream.bufferedReader(Charsets.UTF_8).use { it.readLines() }
 }
 
-/** One drive to replay: its samples and the phone placement to replay it with (mounted, cupholder, pocket, unknown). */
-class Recording(val name: String, val samples: List<TraceSample>, val placement: String = "unknown")
+/** One drive to replay: its samples and the phone placement to replay it with (mounted, cupholder, pocket, seat, unknown). */
+class Recording(
+    val name: String, val samples: List<TraceSample>, val placement: String = "unknown",
+    /** A research trip's phone signals ([Rr2Trip.phone]) and header (for the proximity sensor's range); none for a CSV trace. */
+    val phone: List<PhoneLine> = emptyList(), val meta: Map<String, String> = emptyMap(),
+)
 
 /** The phone placements the app knows (Prefs.placement). */
-val PLACEMENTS = listOf("mounted", "cupholder", "pocket", "unknown")
+val PLACEMENTS = listOf("mounted", "cupholder", "pocket", "seat", "unknown")
 
 /**
  * Recordings in the order given: a CSV trace is one run; research (rr2) files of one trip (same `rr_<id>_<start>`
@@ -103,7 +107,7 @@ fun loadRecordings(
         val trip = Rr2.read(segments, sensorPeriodUs)
         if (!trip.complete || trip.truncated) System.err.println("${r.name}: cut short (no footer or a truncated segment)")
         if (trip.missingSegments.isNotEmpty()) System.err.println("${r.name}: segment ${trip.missingSegments.joinToString()} missing")
-        Recording(r.name, trip.samples, pick(trip.meta["placement"]))
+        Recording(r.name, trip.samples, pick(trip.meta["placement"]), trip.phone, trip.meta)
     }
 }
 
@@ -121,11 +125,10 @@ fun replaySamples(recordings: List<Recording>): List<Run> {
     val store = MemStore()
     return recordings.mapIndexed { k, rec ->
         val samples = rec.samples
-        // TODO(E3 #123/#125): replay research trips' phone signals (Rr2Trip.phone) into engine.phone.signals once E3 has
-        //  merged: scr → screenOn, unl → unlockedAtMs, px → proximityNear (< min(sensor max, 5 cm)), lx → lux,
-        //  aud → handheldCall (mode 2 or 3 with call_device 1, the earpiece). Needs a per-sample hook in Replayer.
+        // A research trip's own signals (screen, unlock, proximity, light, call, lock screen, charging), as on the phone.
+        val feed = PhoneSignalFeed(rec.phone, rec.meta)
         val driving = DrivingConfig().apply { placement = rec.placement }
-        val result = Replayer.replay(samples, store, drivingCfg = driving, tripId = k + 1L)
+        val result = Replayer.replay(samples, store, drivingCfg = driving, tripId = k + 1L, signals = feed::apply)
         Run(rec.name, Metrics.labels(samples), result, samples, rec.placement)
     }
 }

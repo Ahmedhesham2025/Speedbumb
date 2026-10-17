@@ -256,6 +256,7 @@ class DiagnosticsPage(private val a: MainActivity, private val onClose: () -> Un
             }
             val (rInfo, rProblem) = ResearchChoice.status(ctx, ResearchUploader.status)
             out += ctx.getString(R.string.diag_research, yn(Prefs.researchRecording(ctx)))
+            out += ctx.getString(R.string.diag_calibration, Prefs.calibration(ctx).describe())
             out += listOf(rInfo, rProblem).filter { it.isNotEmpty() }
             val st = TrainingConsent.status(ctx)
             val (tInfo, tProblem) = AutoDetectText.training(ctx, st)

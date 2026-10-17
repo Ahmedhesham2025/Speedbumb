@@ -133,13 +133,14 @@
     <string name="settings_place_mounted">متثبّت</string>
     <string name="settings_place_cupholder">حامل الأكواب</string>
     <string name="settings_place_pocket">الجيب</string>
+    <string name="settings_place_seat">على الكرسي</string>
     <string name="settings_section_road_testing">اختبار الطريق</string>
     <string name="settings_label_mode_title">وضع التصنيف</string>
     <string name="settings_beta_updates">تحديثات البيتا</string>
     <string name="settings_beta_updates_hint">قولّي كمان على النسخ التجريبية (بيتا) من التطبيق. بيتشيّك على GitHub مرة في اليوم بالكتير.</string>
     <string name="settings_label_mode_desc">لراكب بيساعد في اختبار التطبيق: وقت التسجيل، تبويب السواقة بيعرض أزرار كبيرة لتعليم كل مطبّ وجزء وعر وإنت معدّي عليه. بيتحفظ مع تسجيل الحسّاسات لضبط الكشف.</string>
     <string name="settings_phone_where">الموبايل فين؟</string>
-    <string name="settings_phone_hint">الموبايل في الحامل بيحسّ بالطريق غير اللي في حامل الأكواب أو الجيب. بيتحفظ مع التسجيلات.</string>
+    <string name="settings_phone_hint">الموبايل في الحامل بيحسّ بالطريق غير اللي في حامل الأكواب أو الجيب أو اللي محطوط على الكرسي. بيتحفظ مع التسجيلات.</string>
     <string name="settings_section_debug">تسجيل التصحيح</string>
     <string name="settings_debug_title">سجّل بيانات الحسّاسات الخام أثناء السواقة</string>
     <string name="settings_debug_desc">حوالي 12 ميجا في الساعة. بنحتفظ بآخر %1$d سواقات.</string>
@@ -564,6 +565,7 @@
     <string name="diag_sync_result">نتيجة آخر مزامنة: %1$s</string>
     <string name="diag_sync_queue">ملاحظات مستنية الرفع: %1$d</string>
     <string name="diag_research">تسجيلات البحث: %1$s</string>
+    <string name="diag_calibration">معايرة الموبايل (مقياس الهزة): %1$s</string>
     <string name="diag_training">ساعد في تحسين الكشف: %1$s، %2$d مستنيين</string>
     <string name="diag_start_log">التشغيل التلقائي، الأحدث الأول:</string>
     <string name="start_motion_check">حركة: بنشوف السرعة</string>

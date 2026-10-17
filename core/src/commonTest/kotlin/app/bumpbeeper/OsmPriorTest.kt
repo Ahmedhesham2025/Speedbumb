@@ -88,18 +88,38 @@ class OsmPriorTest {
         assertEquals(0, src.bumps.single().cleanPasses, "not warned, not counted")
     }
 
-    @Test fun aJoltAtAnOsmBumpIsEvidenceLikeASlowdown() {
-        // One knock, no rear axle, no slowdown: without OSM the second pass is only "hit_weak" (BumpEvidenceTest).
-        for (osm in listOf(false, true)) {
-            val store = MemoryStore()
-            val sim = Simulator(3)
-            val src = if (osm) ListOsmSource(listOf(osmAt(sim, 900.0))) else null
-            val spec = DriveSpec(oneOffJoltsAt = listOf(900.0), cruiseKmh = 40.0)
-            sim.drive(store, spec, tripId = 1, osmSource = src)
-            val t2 = Simulator(4).drive(store, spec, tripId = 2, osmSource = src)
-            assertEquals(if (osm) 1 else 0, t2.knownHits, "osm=$osm ${store.events.map { it.type + " " + it.note }}")
-            if (osm) assertTrue(store.events.any { it.type == "hit" && " osm" in it.note })
-        }
+    @Test fun anOsmBumpNeverConfirmsASpot() {
+        // Two strong knocks with only a weak axle reading, no slowdown, right on an OSM node: still a "maybe".
+        val store = MemoryStore()
+        val sim = Simulator(3)
+        val src = ListOsmSource(listOf(osmAt(sim, 900.0)))
+        val spec = DriveSpec(oneOffJoltsAt = listOf(900.0), cruiseKmh = 40.0)
+        sim.drive(store, spec, tripId = 1, osmSource = src)
+        Simulator(4).drive(store, spec, tripId = 2, osmSource = src)
+        val b = store.saved.single()
+        assertEquals(Confidence.SOFT, b.confidence(EngineConfig()), "${store.events.map { it.type + " " + it.note }}")
+        assertEquals(0, b.axleHits)
+        assertTrue(store.events.any { " osm" in it.note }, "the OSM node was seen")
+    }
+
+    @Test fun inAPocketAnOsmBumpLetsAJoltBeAMaybe() {
+        // Without OSM a lone knock in a pocket is rejected (BumpEvidenceTest); next to an OSM node it is at most a maybe.
+        val sim = Simulator(3)
+        val store = MemoryStore()
+        val r = sim.drive(store, DriveSpec(oneOffJoltsAt = listOf(900.0), cruiseKmh = 40.0),
+            drivingCfg = DrivingConfig().apply { placement = "pocket" }, osmSource = ListOsmSource(listOf(osmAt(sim, 900.0))))
+        assertTrue("no_evidence" !in r.rejected, "${r.rejected}")
+        store.saved.forEach { assertEquals(Confidence.SOFT, it.confidence(EngineConfig())) }
+    }
+
+    @Test fun aRoad13mAsideNeverQuietsIt() {
+        // The same clean-pass rule as your own spots: passing 13 m beside it says nothing about it.
+        val sim = Simulator(87)
+        val p = sim.point(1000.0, false)
+        val aside = Geo.move(p[0], p[1], 0.0, 13.0)
+        val src = ListOsmSource(listOf(OsmBump("n1", aside[0], aside[1], "hump")))
+        for (trip in 1L..4L) sim.drive(MemoryStore(), DriveSpec(), tripId = trip, osmSource = src)
+        assertEquals(0, src.bumps.single().cleanPasses)
     }
 
     @Test fun muteLastWarningQuietsItForGood() {

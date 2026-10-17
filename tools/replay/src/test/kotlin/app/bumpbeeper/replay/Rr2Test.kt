@@ -149,6 +149,71 @@ class Rr2Test {
         }
     }
 
+    @Test fun theScreenAndAnUnlockWhileDrivingAreTheSameHandlingAsOnThePhone() {
+        // A loose phone lying still at 30 km/h; at 60 s the screen goes on and the phone is unlocked. Only the phone's
+        // own signals show it: the replay must feed them in (before, it never saw them).
+        val trip = Rr2.readStreams(listOf(ByteArrayInputStream(segment(0, last = true) { e ->
+            quietDrive(e, 90)
+            e.sample(600_000, ResearchFormat.SCREEN, doubleArrayOf(1.0))
+            e.start(605_000, "unl").end()
+            e.sample(700_000, ResearchFormat.SCREEN, doubleArrayOf(0.0))
+        })))
+        fun phoneUse(placement: String, signals: Boolean): List<BumpEvent> {
+            val rec = Recording("t", trip.samples, placement, if (signals) trip.phone else emptyList(), trip.meta)
+            return replaySamples(listOf(rec)).single().result.events.filter { it.type == "phone_use" }
+        }
+        for (placement in listOf("pocket", "cupholder")) {   // never a holder
+            val use = phoneUse(placement, signals = true)
+            assertEquals("$placement: ${use.map { it.note }}", 1, use.size)
+            assertEquals("phone unlocked while driving", use.single().note)   // a HANDLED episode, its cause the unlock
+            assertTrue(use.single().wallTime - Replayer.WALL_BASE_MS in 60_500L..63_000L)
+            assertEquals(placement, 0, phoneUse(placement, signals = false).size)   // the motion alone shows nothing
+        }
+        // In a holder the screen and an unlock are the driver's navigation, not handling.
+        assertEquals(0, phoneUse("mounted", signals = true).size)
+        // Placement unknown: a phone lying this still for a minute is taken to be in a holder, as on the phone.
+        assertEquals(0, phoneUse("unknown", signals = true).size)
+    }
+
+    @Test fun phoneSignalsAreSetLikePhoneFeed() {
+        fun line(t: Long, code: String, vararg v: Double) = PhoneLine(t, code, v.toList())
+        val s = PhoneSignals()
+        val feed = PhoneSignalFeed(
+            listOf(
+                line(-10, "scr", 1.0), line(0, "px", 0.0), line(0, "lx", 3.0), line(5, "lk", 0.0), line(10, "bat", 80.0, 2.0, 2.0, 300.0),
+                line(20, "aud", 2.0, 0.0, 1.0), line(30, "px", 1.0), line(40, "aud", 2.0, 1.0, 7.0), line(50, "lk", 1.0),
+                line(60, "aud", 3.0, 0.0, Double.NaN), line(70, "aud", 3.0, 2.0, Double.NaN), line(80, "unl"), line(90, "scr", 0.0),
+            ),
+            mapOf("sensor.px" to "Prox;Acme;v1;res=1.0;max=1.0;min_delay_us=0"),
+        )
+        feed.apply(10, s)
+        assertTrue(s.screenOn); assertEquals(true, s.proximityNear); assertEquals(3.0, s.lux, 0.0); assertTrue(s.charging)
+        assertEquals(false, s.keyguardPresent)                      // lock screen not seen up yet
+        feed.apply(20, s); assertTrue(s.handheldCall)               // in a call at the earpiece
+        feed.apply(30, s); assertEquals(false, s.proximityNear)     // 1 cm is this sensor's "far" (its range)
+        feed.apply(40, s); assertFalse(s.handheldCall)              // Bluetooth headset
+        feed.apply(50, s); assertEquals(true, s.keyguardLocked); assertEquals(true, s.keyguardPresent)
+        feed.apply(60, s); assertTrue(s.handheldCall)               // VoIP, no call device, nothing connected
+        feed.apply(70, s); assertFalse(s.handheldCall)              // wired
+        feed.apply(85, s); assertEquals(80L, s.unlockedAtMs); assertTrue(s.screenOn)
+        feed.apply(90, s); assertFalse(s.screenOn)
+    }
+
+    /** Eastbound at 30 km/h for [seconds], the phone lying flat and still, 200 Hz with a little noise, 1 Hz GPS. */
+    private fun quietDrive(e: LineEncoder, seconds: Long) {
+        val rnd = Random(5)
+        val v = 30 / 3.6
+        for (k in 0..seconds * 200) {
+            val tMs = k * 5
+            e.sample(tMs * 10, ResearchFormat.ACCEL, doubleArrayOf(rnd.nextGaussian() * 0.05, rnd.nextGaussian() * 0.05, 9.81 + rnd.nextGaussian() * 0.1))
+            e.sample(tMs * 10 + 1, ResearchFormat.GYRO, doubleArrayOf(rnd.nextGaussian() * 0.01, rnd.nextGaussian() * 0.01, rnd.nextGaussian() * 0.01))
+            if (tMs % 1000 == 0L) {
+                val p = Geo.move(30.0444, 31.2357, 90.0, v * tMs / 1000.0)
+                e.sample(tMs * 10, ResearchFormat.GPS, doubleArrayOf(p[0], p[1], Double.NaN, v, 90.0, 5.0, 0.5, 2.0, Double.NaN, 600.0))
+            }
+        }
+    }
+
     /**
      * Eastbound at 30 km/h with the phone lying flat: 200 Hz accelerometer and gyroscope (with 0.1 ms jitter), 1 Hz GPS
      * written up to 0.6 s late like on the phone, three bumps at 200, 600 and 1000 m, each tapped 0.6 s after the hit.
