@@ -152,7 +152,7 @@ class ScreenshotTest {
         }
         fakeFix(false)
         val files = dir.listFiles { f -> f.name.endsWith(".png") }.orEmpty()
-        assertTrue("expected 28 screenshots in $dir, got ${files.size}: ${files.map { it.name }.sorted()}", files.size == 28)
+        assertTrue("expected 29 screenshots in $dir, got ${files.size}: ${files.map { it.name }.sorted()}", files.size == 29)
     }
 
     /**
@@ -250,6 +250,10 @@ class ScreenshotTest {
         val keep = Regex("(?i)total frames|janky|percentile|slow ui|slow bitmap|slow issue|frame deadline|gpu")
         val gfx = sh("dumpsys gfxinfo ${ctx.packageName}").lineSequence().map { it.trim() }.filter { keep.containsMatchIn(it) }.take(16)
         out.writeText((listOf("seconds=" + String.format(java.util.Locale.US, "%.1f", s), rates) + gfx.toList()).joinToString(System.lineSeparator()) + System.lineSeparator())
+        // The Drive screen as it is after Start, mid-drive: a fresh fix a moment ago, the puck following it.
+        settle(800)
+        shot(out.parentFile!!, "18-drive-nav")
+        mapCheck(scenario, MainActivity.TAB_DRIVE, File(out.parentFile, "18-drive-nav.txt"))
         LiveState.spotsAhead = emptyList()
     }
 
@@ -282,12 +286,20 @@ class ScreenshotTest {
 
     /** Waits (up to 25 s) until the street map has drawn everything, labels included, and stopped moving. */
     private fun waitForMap(scenario: ActivityScenario<MainActivity>, tab: Int) {
-        val tmp = File(ctx.cacheDir, "map-check.txt")
         val until = SystemClock.elapsedRealtime() + 25_000
         settle(3000)
+        // Polls the map's idle flag only: querying rendered features while tiles still load sometimes crashes
+        // MapLibre's render thread (SIGSEGV answering the query); the check file is written once it is idle.
         while (SystemClock.elapsedRealtime() < until) {
-            mapCheck(scenario, tab, tmp)
-            if (tmp.readText().contains("idle=true")) break
+            var idle = false
+            scenario.onActivity { a ->
+                idle = try {
+                    val page = a.pages[tab]!!
+                    val map = page.javaClass.getDeclaredField("map").apply { isAccessible = true }.get(page)!!
+                    map.javaClass.methods.first { it.name == "getIdle" }.invoke(map) == true
+                } catch (_: Exception) { false }
+            }
+            if (idle) break
             SystemClock.sleep(500)
         }
         settle(1000)

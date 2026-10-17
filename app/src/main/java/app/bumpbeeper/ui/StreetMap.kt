@@ -399,15 +399,22 @@ class StreetMap(private val ctx: Context, private val interactive: Boolean, priv
         try {
             if (changed) {
                 lc.renderMode = if (on) RenderMode.GPS else RenderMode.NORMAL
-                lc.cameraMode = if (on) CameraMode.TRACKING_GPS else CameraMode.NONE
                 if (on) {
-                    lc.tiltWhileTracking(NAV_TILT, 600)
-                    lc.paddingWhileTracking(doubleArrayOf(0.0, topPaddingPx, 0.0, 0.0), 600)
-                } else map?.animateCamera(CameraUpdateFactory.tiltTo(0.0), 600)
+                    // The puck low on the screen, then one transition to it with zoom, bearing and tilt: the
+                    // ...WhileTracking calls are ignored while a mode transition runs.
+                    map?.moveCamera(CameraUpdateFactory.paddingTo(0.0, topPaddingPx, 0.0, 0.0))
+                    if (!zoom.isNaN()) navZoom = zoom
+                    val bearing = puckFix?.takeIf { it.hasBearing() }?.bearing?.toDouble()
+                    lc.setCameraMode(CameraMode.TRACKING_GPS, 750, navZoom.takeIf { !it.isNaN() }, bearing, NAV_TILT, null)
+                } else {
+                    lc.cameraMode = CameraMode.NONE
+                    map?.animateCamera(CameraUpdateFactory.tiltTo(0.0), 600)
+                }
+                return
             }
-            if (on && !zoom.isNaN() && (navZoom.isNaN() || abs(zoom - navZoom) >= 0.25 || changed)) {
+            if (on && !zoom.isNaN() && (navZoom.isNaN() || abs(zoom - navZoom) >= 0.25)) {
                 navZoom = zoom
-                lc.zoomWhileTracking(zoom, 1500)
+                lc.zoomWhileTracking(zoom, 1500)   // ignored mid-transition: the next fix tries again
             }
         } catch (_: Exception) {}
     }
@@ -415,8 +422,12 @@ class StreetMap(private val ctx: Context, private val interactive: Boolean, priv
     /** Following the car right now (the puck's camera; false after a finger moved the map). */
     val tracking: Boolean get() = try { puck?.cameraMode == CameraMode.TRACKING_GPS } catch (_: Exception) { false }
 
+    private var meHidden = false
+
     private fun pushMe() {
         val src = style?.getSourceAs<GeoJsonSource>(SRC_ME) ?: return
+        // With the puck our own dot is emptied once, not again on every fix.
+        if (puck != null) { if (meHidden) return; meHidden = true } else meHidden = false
         val m = if (puck != null) null else me
         MapStats.geojson++
         src.setGeoJson(FeatureCollection.fromFeatures(if (m == null) emptyList() else listOf(
@@ -474,7 +485,8 @@ class StreetMap(private val ctx: Context, private val interactive: Boolean, priv
             if (ids.isEmpty()) 0 else m?.queryRenderedFeatures(RectF(0f, 0f, view.width.toFloat(), view.height.toFloat()), *ids)?.size
         } catch (_: Exception) { null }
         return "labels=$labels idle=$idle style=${style != null} failed=$failed spots=${features.size} me=${me?.toList()} " +
-            "puck=${puck != null} tracking=$tracking tilt=${m?.cameraPosition?.tilt} " +
+            "puck=${puck != null} tracking=$tracking render=${try { puck?.renderMode } catch (_: Exception) { null }} " +
+            "tilt=${m?.cameraPosition?.tilt} bearing=${m?.cameraPosition?.bearing} " +
             "camera=${camera()?.toList()} drawn=$drawn osm=${osm.size} osmDrawn=$osmDrawn"
     }
 
