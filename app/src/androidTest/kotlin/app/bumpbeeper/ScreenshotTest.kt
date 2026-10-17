@@ -86,6 +86,7 @@ class ScreenshotTest {
                 shot(dir, "17-map-osm-streets")
                 mapCheck(scenario, MainActivity.TAB_MAP, File(dir, "17-map-osm-streets.txt"))
                 osmFilter(scenario, false)
+                scenario.onActivity { it.select(MainActivity.TAB_DRIVE) }   // the next shots are the Drive tab's
                 // Driving on the street map with a strong bump close ahead (the screen the owner asked for).
                 val demo = BumpDb(ctx).let { db -> try { db.loadBumps().first() } finally { db.close() } }
                 liveDemo(recording = true)

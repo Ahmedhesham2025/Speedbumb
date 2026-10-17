@@ -288,7 +288,8 @@ class StreetMap(private val ctx: Context, private val interactive: Boolean) {
      */
     fun roadNameAt(lat: Double, lon: Double, arabic: Boolean): String? {
         val m = map ?: return null
-        if (style == null) return null
+        // A paused map's render thread never answers: the query would block the main thread for good.
+        if (style == null || !resumed) return null
         val p = m.projection.toScreenLocation(LatLng(lat, lon))
         val r = dp(24).toFloat()
         val keys = if (arabic) listOf("name:ar", "name") else listOf("name:latin", "name:en", "name")
@@ -348,7 +349,7 @@ class StreetMap(private val ctx: Context, private val interactive: Boolean) {
 
     /** What the street map has, for the screenshot test's check file: style, spots, you, camera, pins drawn. */
     internal fun debug(): String {
-        val m = map
+        val m = map?.takeIf { resumed }   // never query a paused map (see roadNameAt)
         val drawn = try {
             m?.queryRenderedFeatures(RectF(0f, 0f, view.width.toFloat(), view.height.toFloat()), L_SPOTS, L_CLUSTERS, L_ME)?.size
         } catch (_: Exception) { null }
