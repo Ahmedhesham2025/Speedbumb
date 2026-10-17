@@ -75,6 +75,17 @@ class Rr2AnonymizerTest {
         assertTrue(Rr2Anonymizer.problems(readLines(segments[0])).size >= 4)   // the raw file fails the testdata check
     }
 
+    @Test fun pressureIsRelativeToTheStart() {
+        val w = ResearchTrim.window(ResearchTrim.scan(ordered))!!
+        val before = ordered.flatMap { ResearchReader.read(it).records }.filter { it.code == "pa" && it.tDms in w.fromT..w.toT }
+        val after = ResearchReader.read(ByteArrayInputStream(gzip(out))).records.filter { it.code == "pa" }
+        assertEquals(before.size, after.size)
+        assertEquals(0.0, after.first().value(0), 1e-9)
+        assertEquals(before.last().value(0) - before.first().value(0), after.last().value(0), 1e-3)
+        assertFalse("no absolute pressure left", text.contains(",pa,100"))
+        assertTrue(Rr2Anonymizer.problems(readLines(segments[0])).any { "pressure" in it })
+    }
+
     @Test fun labelsAndTheReplayStay() {
         val trip = Rr2.readStreams(listOf(ByteArrayInputStream(gzip(out))))
         assertEquals("pocket", trip.placement)
@@ -114,6 +125,7 @@ class Rr2AnonymizerTest {
                 val t = s * 10_000L
                 for (k in 0 until 20) e.sample(t + k * 500, ResearchFormat.ACCEL, doubleArrayOf(0.1, 0.2, 9.8 + noise.nextGaussian() * 0.2))
                 e.sample(t, ResearchFormat.GPS, doubleArrayOf(p[0], p[1], 70.0 + s * 0.05, 10.0, brg, 4.0, 0.5, 2.0, 3.0, 400.0))
+                e.sample(t + 10, ResearchFormat.PRESSURE, doubleArrayOf(1004.2 - s * 0.006))   // hPa: falls 0.6 hPa a km up
                 if (s == 0) e.sample(-30_000, ResearchFormat.SCREEN, doubleArrayOf(0.0))
                 // 20 s and 340 s fall in the trimmed ends (first and last 300 m driven); 60–125 s are kept.
                 val label = mapOf(20 to "bump", 60 to "bump", 120 to "rough", 125 to "undo", 340 to "bump")[s]
