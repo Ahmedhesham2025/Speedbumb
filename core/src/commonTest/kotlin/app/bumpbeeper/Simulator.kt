@@ -144,6 +144,12 @@ class DriveSpec(
     val seatSlidesAt: List<Pair<Double, Double>> = emptyList(),
     /** Sets the phone's own signals on every sample: (seconds driven, metres driven, speed m/s, the signals, sensor time ms). */
     val phoneSignals: ((Double, Double, Double, PhoneSignals, Long) -> Unit)? = null,
+    /** The phone's own response: everything vertical it feels × [phoneGain], plus its own rattle (RMS [phoneNoise], m/s²). */
+    val phoneGain: Double = 1.0,
+    val phoneNoise: Double = 0.0,
+    /** Rough road (broken asphalt) between these positions: extra vertical vibration of RMS [roughRms], m/s². */
+    val roughAt: List<Pair<Double, Double>> = emptyList(),
+    val roughRms: Double = 1.1,
 )
 
 class TripResult(
@@ -242,6 +248,8 @@ class Simulator(seed: Long) {
         muteEveryBeep: Boolean = false,
         /** The engine's learned car (E2); a fresh one by default. */
         vehicle: VehicleProfile = VehicleProfile(),
+        /** The phone's learned noise floor ([PhoneCalibration]); a fresh one (scale 1) by default. */
+        calibration: PhoneCalibration = PhoneCalibration(),
     ): TripResult {
         val len = spec.roadM
         fun travel(p: Double) = if (spec.westbound) len - p else p   // road position ↔ distance travelled
@@ -293,7 +301,7 @@ class Simulator(seed: Long) {
             override fun onJoltRejected(peak: Double, reason: String) { rejected.add(reason) }
         }
         val engine = BumpEngine(cfg, sink, listener, { 1_700_000_000_000L + (t * 1000).toLong() }, tripId, spotSource, observationSink,
-            vehicle = vehicle)
+            vehicle = vehicle, calibration = calibration)
         monitor = DrivingMonitor(drivingCfg, engine) { type, lat, lon, kmh, value, note ->
             sink.logEvent(BumpEvent(1_700_000_000_000L + (t * 1000).toLong(), tripId, type, -1, lat, lon, kmh, Double.NaN, value, Double.NaN, Double.NaN, note))
         }
@@ -582,6 +590,9 @@ class Simulator(seed: Long) {
             prevTilt = extraTilt
 
             // Specific force in car axes (fwd, left, up), then into the tilted phone's axes.
+            if (spec.phoneNoise > 0) av += gauss(spec.phoneNoise)
+            if (spec.roughAt.any { s >= it.first && s < it.second }) av += gauss(spec.roughRms)
+            av *= spec.phoneGain
             val fv = doubleArrayOf(aLong + 0.3 * av + gauss(0.2) + spike, lateral + gauss(0.2), 9.81 + av)
             val r = rot(yaw0 + twist, pitch0 + extraTilt, roll0)   // pitch axis is horizontal → tilts the phone 70° relative to gravity
             val ax = r[0][0] * fv[0] + r[1][0] * fv[1] + r[2][0] * fv[2] + gauss(shake)

@@ -28,6 +28,7 @@ object Prefs {
     val PLACEMENTS = listOf("mounted", "cupholder", "pocket", "seat", "unknown")
     /** The car the engine learned from both-axle hits ([VehicleProfile.encode]: wheelbase and hits). */
     const val VEHICLE = "vehicle_profile"
+    const val CALIBRATION = "phone_calibration"
     /** Update check: when it last asked GitHub, and the newer version it found (if any). */
     const val UPDATE_CHECKED_AT = "update_checked_at"
     const val UPDATE_VERSION = "update_version"
@@ -95,6 +96,9 @@ object Prefs {
     /** The learned car for the next trip's engine; a fresh one (2.6 m) when none was saved or it is unreadable. */
     fun vehicle(ctx: Context): VehicleProfile = VehicleProfile.decode(sp(ctx).getString(VEHICLE, null))
     fun setVehicle(ctx: Context, v: VehicleProfile) = sp(ctx).edit().putString(VEHICLE, v.encode()).apply()
+    /** The phone's noise floor per placement ([PhoneCalibration]), learned while driving. */
+    fun calibration(ctx: Context): PhoneCalibration = PhoneCalibration.decode(sp(ctx).getString(CALIBRATION, null))
+    fun setCalibration(ctx: Context, c: PhoneCalibration) = sp(ctx).edit().putString(CALIBRATION, c.encode()).apply()
 
     fun placement(ctx: Context): String = sp(ctx).getString(PLACEMENT, "unknown")?.takeIf { it in PLACEMENTS } ?: "unknown"
     fun setPlacement(ctx: Context, value: String) =
