@@ -145,16 +145,27 @@ class SelfCleaningTest {
         assertTrue(b.isRetired(cfg))
         b.weakDownHits = -1
         assertFalse(b.isRetired(cfg), "felt for real: never retired this way")
-        // In the simulator: dips felt down-first over two trips.
-        val dips = MemoryStore()
-        for (t in 1..2) Simulator(30L + t).drive(dips, DriveSpec(smallDipsAt = listOf(600.0), dipsAt = listOf(1300.0)), tripId = t.toLong())
-        val weak = dips.events.filter { (it.type == "new_bump" || it.type == "hit_weak") && "polarity=down_weak" in it.note }
-        for (s in dips.saved) {
-            val onlyWeak = dips.events.filter { it.bumpId == s.id && it.type in setOf("new_bump", "hit", "hit_weak") }
-            val allDownWeak = onlyWeak.isNotEmpty() && onlyWeak.all { it.type != "hit" && "polarity=down_weak" in it.note }
-            if (allDownWeak && onlyWeak.size >= 2) assertTrue(s.isRetired(cfg), "spot ${s.id}: ${onlyWeak.map { it.type }}")
-            if (!allDownWeak) assertFalse(s.weakDownHits >= cfg.retireAfterWeakDown, "spot ${s.id} was felt for real")
+        // In the simulator: dips that only ever come out as weak down-first jolts (the "maybe" potholes).
+        val tried = ArrayList<String>()
+        var retiredAny = false
+        for ((name, spec) in listOf(
+            "small dips 30 km/h" to DriveSpec(smallDipsAt = listOf(600.0, 1400.0), cruiseKmh = 30.0),
+            "dips 30 km/h" to DriveSpec(dipsAt = listOf(600.0, 1400.0), cruiseKmh = 30.0),
+            "small dips 40 km/h" to DriveSpec(smallDipsAt = listOf(600.0, 1400.0), cruiseKmh = 40.0),
+            "dips 20 km/h" to DriveSpec(dipsAt = listOf(600.0, 1400.0), cruiseKmh = 20.0),
+        )) {
+            val dips = MemoryStore()
+            for (t in 1..3) Simulator(30L + t).drive(dips, spec, tripId = t.toLong())
+            for (s in dips.saved) {
+                val felt = dips.events.filter { it.bumpId == s.id && it.type in setOf("new_bump", "hit", "hit_weak") }
+                val allDownWeak = felt.isNotEmpty() && felt.all { it.type != "hit" && "polarity=down_weak" in it.note }
+                if (allDownWeak && felt.size >= cfg.retireAfterWeakDown) assertTrue(s.isRetired(cfg), "$name, spot ${s.id}: ${felt.map { it.type }}")
+                if (!allDownWeak) assertFalse(s.weakDownHits >= cfg.retireAfterWeakDown, "$name, spot ${s.id} was felt for real")
+                if (s.isRetired(cfg)) retiredAny = true
+            }
+            tried += "$name: " + dips.events.filter { it.type in setOf("new_bump", "hit", "hit_weak", "rejected") }
+                .joinToString(" | ") { it.type + " " + Regex("polarity=\w+").find(it.note)?.value.orEmpty() + " " + it.note.substringBefore(' ') }
         }
-        println("weak down-first events: ${weak.size}, retired ${dips.saved.count { it.isRetired(cfg) }} of ${dips.saved.size}")
+        assertTrue(retiredAny, "a weak down-first pothole retires; seen: ${tried.joinToString(" || ")}")
     }
 }
