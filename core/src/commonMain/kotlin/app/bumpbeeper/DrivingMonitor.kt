@@ -422,6 +422,13 @@ class DrivingMonitor(
             val a = (speedMps + prev.speedMps) / 2 * degToRad(-d) / dt
             gpsLateral.addLast(Pair(f.timeMs, a))
             stats.maxGpsLateralMs2 = max(stats.maxGpsLateralMs2, abs(a))
+            // The phone was handled while this fix's turn happened (GPS lag): its gyroscope was the hand's, so the
+            // GPS judges the corner (held for the whole fix interval, so no sustain is needed).
+            if (gyroSeen && phone.handledDuring(f.timeMs - GPS_LOOKBACK_MS, f.timeMs) && abs(a) >= cfg.harshCornerMs2 &&
+                f.timeMs >= coolCornerUntil && speedMps * 3.6 >= 15) {
+                coolCornerUntil = f.timeMs + 4000
+                countCorner(a)
+            }
         }
         while (gpsLateral.isNotEmpty() && gpsLateral.first().first < f.timeMs - 10_000) gpsLateral.removeFirst()
         resolvePending(f.timeMs)
@@ -429,7 +436,7 @@ class DrivingMonitor(
             checkLongitudinal(f.timeMs, if (aGps > 0) aGps - 0.5 else aGps + 0.5, sustainMs = 0, fromGps = true)
         }
 
-        // Without a gyroscope, turning rate comes from the GPS heading.
+        // Without a gyroscope, the turning rate comes from the GPS heading.
         if (!gyroSeen && !f.bearingDeg.isNaN() && speedMps >= 4.0) {
             if (!lastBearing.isNaN() && !handled) {
                 var d = f.bearingDeg - lastBearing
@@ -522,6 +529,11 @@ class DrivingMonitor(
     private fun countSwerve(value: Double) {
         stats.swerves++
         event("swerve", value, "sudden left-right")
+    }
+
+    private companion object {
+        /** GPS fixes report the car up to this long before they arrive (lag plus the fix interval). */
+        const val GPS_LOOKBACK_MS = 3000L
     }
 
     private fun countCorner(lat: Double) {

@@ -279,6 +279,8 @@ class PhoneStateDetector(val cfg: PhoneStateConfig = PhoneStateConfig(), val sig
     // Recent episodes (start, end; end = Long.MAX_VALUE while going on), for [handledDuring].
     private val starts = LongArray(HISTORY); private val ends = LongArray(HISTORY); private var count = 0
     private val wasJostle = BooleanArray(HISTORY)
+    /** The episode was a seat slide that landed: no margin after it, like a jostle. */
+    private val wasSlide = BooleanArray(HISTORY)
 
     /** True if the phone was HANDLED at any time from [fromMs] to [toMs]. */
     fun handledDuring(fromMs: Long, toMs: Long): Boolean {
@@ -304,7 +306,7 @@ class PhoneStateDetector(val cfg: PhoneStateConfig = PhoneStateConfig(), val sig
         return true
     }
 
-    private fun margin(i: Int) = if (ends[i] != Long.MAX_VALUE && wasJostle[i]) cfg.jostleMarginMs else cfg.marginMs
+    private fun margin(i: Int) = if (ends[i] != Long.MAX_VALUE && (wasJostle[i] || wasSlide[i])) cfg.jostleMarginMs else cfg.marginMs
 
     /**
      * The episode is a seat slide while the car braked or cornered ([PhoneStateConfig.seatSlideGpsMs2]) with nothing
@@ -501,7 +503,12 @@ class PhoneStateDetector(val cfg: PhoneStateConfig = PhoneStateConfig(), val sig
             // Rested in one place for a while (put down, slipped in its holder): that is where it is now. Not while the
             // screen is on and the phone is turned past tiltDeg: a hand held still looks the same, and the hand wins.
             val rested = t - anchorMs >= cfg.resettleMs && !(signals.screenOn && tiltOver)
-            if (signs != 0 && (signs and (GYRO or TURN or CALL)) == 0 && rested) end(t)
+            // A seat slide in a brake or corner that has landed (still for restMs where it lies): it rests there now,
+            // at once, so the bumps after it are trusted again ([seatSlideExcused]: nothing but motion).
+            val landed = slideStart && t - stillSinceMs >= cfg.restMs && t - anchorMs >= cfg.restMs &&
+                (signs and (GYRO or TURN or CALL)) == 0 && seatSlideExcused(t) == true
+            if (landed) end(t)
+            else if (signs != 0 && (signs and (GYRO or TURN or CALL)) == 0 && rested) end(t)
             else if (if (jostle) t - lastMotionMs >= cfg.jostleCalmMs else t - lastSignMs >= cfg.calmMs) end(t)
         } else {
             val dt = dtMs / 1000.0
@@ -543,6 +550,7 @@ class PhoneStateDetector(val cfg: PhoneStateConfig = PhoneStateConfig(), val sig
         starts[i] = start
         ends[i] = Long.MAX_VALUE
         wasJostle[i] = false
+        wasSlide[i] = false
         count++
     }
 
@@ -550,6 +558,7 @@ class PhoneStateDetector(val cfg: PhoneStateConfig = PhoneStateConfig(), val sig
         pendingTiltMs = 0L
         ends[(count - 1) % HISTORY] = t
         wasJostle[(count - 1) % HISTORY] = jostle
+        wasSlide[(count - 1) % HISTORY] = slideStart && seatSlideExcused(t) == true
         lastHandledEndMs = t
         handledSinceMs = NEVER
         // Put back where it rested before (the holder): it keeps its standing. Anywhere else: learned from scratch.
