@@ -334,8 +334,14 @@ class BumpEngine(
 
     init { calibration.freeze() }
 
-    /** This trip's jolt scale for where the phone sits ([PhoneCalibration.scaleFor]): the trigger × it, severity ÷ it. */
-    val joltScale: Double get() = calibration.scaleFor(phone.placement)
+    /** How the phone sits, for its calibration ([PhoneCalibration.keyFor]): the setting, or what it is doing. */
+    private val calKey: String? get() = PhoneCalibration.keyFor(phone.placement, phone.pocketMode, phone.state)
+
+    /** This trip's jolt scale for how the phone sits now ([PhoneCalibration.scaleFor]): severity ÷ it. */
+    val joltScale: Double get() = calibration.scaleFor(calKey)
+
+    /** The jolt trigger now: [EngineConfig.joltThreshold] × [joltScale], never lowered below 1.8 m/s². */
+    val joltTrigger: Double get() = calibration.trigger(cfg.joltThreshold, calKey)
     val trip = TripStats()
 
     /**
@@ -547,7 +553,7 @@ class BumpEngine(
         // Learn the phone's noise floor on steady straight road with the phone at rest (for the next trip).
         calibration.onSample(
             tMs, v, (lastFix?.speedMps ?: 0.0) * 3.6, gpsSteadyFixes >= 2 && horNow < 0.4 && phone.state != PhoneState.HANDLED,
-            abs(v) >= cfg.joltThreshold, phone.placement,
+            abs(v) >= cfg.joltThreshold, calKey,
         )
         val steady = (gpsSteadyFixes >= 1 && horNow < 0.4) ||   // steady speed and nothing pushing sideways
             (gravSettledS < 3.0 && gpsSteadyFixes >= 3)          // first time: trust a few seconds of steady GPS
@@ -591,7 +597,7 @@ class BumpEngine(
                 joltStartMs = -1
                 decide(start, joltPeak)
             }
-        } else if (abs(v) >= cfg.joltThreshold * joltScale && (tMs >= refractoryUntilMs || (phoneJolt && !phone.untrusted(tMs, tMs)))) {
+        } else if (abs(v) >= joltTrigger && (tMs >= refractoryUntilMs || (phoneJolt && !phone.untrusted(tMs, tMs)))) {
             // A rejected jostle has no rear axle to wait for: a bump right after it (braking before it) still counts.
             joltStartMs = tMs
             joltPeak = abs(v)

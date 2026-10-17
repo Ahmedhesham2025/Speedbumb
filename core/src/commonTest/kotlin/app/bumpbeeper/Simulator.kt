@@ -132,6 +132,9 @@ class DriveSpec(
     /** The phone's own response: everything vertical it feels × [phoneGain], plus its own rattle (RMS [phoneNoise], m/s²). */
     val phoneGain: Double = 1.0,
     val phoneNoise: Double = 0.0,
+    /** Rough road (broken asphalt) between these positions: extra vertical vibration of RMS [roughRms], m/s². */
+    val roughAt: List<Pair<Double, Double>> = emptyList(),
+    val roughRms: Double = 1.1,
 )
 
 class TripResult(
@@ -542,6 +545,7 @@ class Simulator(seed: Long) {
 
             // Specific force in car axes (fwd, left, up), then into the tilted phone's axes.
             if (spec.phoneNoise > 0) av += gauss(spec.phoneNoise)
+            if (spec.roughAt.any { s >= it.first && s < it.second }) av += gauss(spec.roughRms)
             av *= spec.phoneGain
             val fv = doubleArrayOf(aLong + 0.3 * av + gauss(0.2) + spike, lateral + gauss(0.2), 9.81 + av)
             val r = rot(yaw0 + twist, pitch0 + extraTilt, roll0)   // pitch axis is horizontal → tilts the phone 70° relative to gravity
