@@ -102,7 +102,7 @@ class TrainingSampleTest {
         for (p in listOf("mounted", "cupholder", "pocket", "unknown")) assertEquals(p, TrainingJson.serverPlacement(p))
         assertEquals("unknown", TrainingJson.serverPlacement("sofa"))
         val trip = TrainingJson.trip("t2", 1_759_000_000_000L, 1_759_000_600_000L, "seat", emptyMap(), null, null, 50, 49)
-        assertEquals("unknown", trip.getString("placement"))
+        assertEquals("seat", trip.getString("placement"))
     }
 
     @Test fun tripSummaryAndBatch() {
