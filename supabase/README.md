@@ -13,8 +13,10 @@ migrations/20261007000002_research.sql   research recordings: consent, ledger, e
 migrations/20261008000001_bump_severity.sql   v2 bumps: severity band + confidence, legacy potholes, spots_near_v2
 migrations/20261008000002_severity_average.sql   spot severity averaged like the app's (first 10 hits equally, then 1/10)
 migrations/20261014000001_confirm_hits.sql   a spot is confirmed only after confirm_hits (2) hits in total
+migrations/20261017000001_osm_bumps.sql   OpenStreetMap speed bumps (ODbL) as a prior, read via osm_bumps_near
 functions/speed-limits/              Edge Function: road speed limits from TomTom (lib.ts logic, lib_test.ts Deno tests)
 tools/research/                      owner tool (Deno): download, clear and erase research files, plus its smoke test
+tools/osm/                           owner tool (Deno): weekly import of OSM speed bumps from Overpass, plus its test
 seed.sql                             sample fleets/spots for local runs and CI only (desert coordinates)
 tests/*.sql                          pgTAP tests, run by CI (`supabase test db`)
 config.toml                          local `supabase start` settings (anonymous sign-ins on, Storage on)
@@ -35,6 +37,7 @@ config.toml                          local `supabase start` settings (anonymous 
 | `crash_reports` | crash stacks (≤ 8 KB) | written only by `submit_crash_report`; nobody reads through the API |
 | `training_samples`, `training_trips`, `training_quota` | learning samples, trip summaries, daily counters (see *Training samples*) | nobody; only the training RPCs |
 | `research_uploads`, `research_forgotten` | research file reservations; users to erase after forget_me (see *Research recordings*) | nobody; the research RPCs and the owner's tool (service role) |
+| `osm_bumps` | OpenStreetMap speed bumps in Egypt (`osm_id`, `lat`, `lon`, `kind`, `imported_at`), ODbL (see *OSM speed bumps*) | nobody directly; signed-in users read through `osm_bumps_near`, the owner's tool writes through service-role RPCs |
 
 `anon` (not signed in) has no table privileges and cannot call any RPC. The app always signs in anonymously first.
 
@@ -225,6 +228,38 @@ or phone number); "Yes" first and Wi-Fi only; turning it off keeps uploaded file
 shared data" erases them at the owner's next weekly run; show the account id ("Research ID", copyable) for deletion
 requests; the privacy policy says how long the owner keeps downloaded files (owner decision).
 
+## OSM speed bumps (a prior, © OpenStreetMap contributors, ODbL)
+
+OpenStreetMap already maps thousands of Egyptian speed bumps (5,803 in Egypt's bounding box on 2026-10-17: 5,778 nodes
+and 25 ways). The app can use them as a prior: warn softly before a mapped bump it hasn't felt yet. They live in
+their own table, `osm_bumps`, and are **never mixed into `spots`** (crowd data stays ours, OSM data stays OSM's).
+
+- **What is imported**: nodes and ways tagged `traffic_calming=bump|hump|table|cushion|yes` or the legacy
+  `highway=speed_bump`, inside lat 22.0..31.8, lon 24.6..37.0 (the box takes in a little of the neighbours; harmless).
+  A way is stored at its centre. `osm_id` is `n<node id>` or `w<way id>`; `kind` is the tag value (`speed_bump` for the
+  legacy tag). No personal data: no OSM user names, versions or timestamps.
+- **Read** (signed-in only): `osm_bumps_near(lat, lon, radius_m default 3000)` → `[{"osm_id", "lat", "lon", "kind"}]`,
+  nearest first, radius capped at 10 km, at most 2000 rows. anon gets `42501`.
+- **Licence**: `osm_bumps` is a *derived database* of OpenStreetMap data under the
+  [ODbL 1.0](https://opendatacommons.org/licenses/odbl/). Wherever the app shows or uses these bumps it must credit
+  **"© OpenStreetMap contributors"** (in its credits, next to the map-tile credit) with a link to
+  https://www.openstreetmap.org/copyright. If we ever publish the table itself or a database made from it, it must be
+  under the ODbL too (share-alike); the app's warnings are a *produced work* and need only the credit.
+- **Import** (owner, at most weekly, never in CI): `supabase/tools/osm/import_osm_bumps.ts` makes **one** Overpass query
+  (`https://overpass-api.de/api/interpreter`, a descriptive User-Agent, no retry loop), refuses to run if the last
+  import is under 6 days old (`--force` overrides) or if fewer than half of the stored bumps came back, upserts in
+  batches of 5000 (`osm_bumps_import(batch, run_at)`, idempotent) and then deletes what the run no longer saw
+  (`osm_bumps_prune(run_at)`). `--dry-run` only counts. Size: ~5,800 rows, under 2 MB with the index.
+
+  ```powershell
+  $env:SUPABASE_URL = "https://<project-ref>.supabase.co"
+  $env:SUPABASE_SERVICE_ROLE_KEY = Read-Host -MaskInput "secret key"
+  deno run --allow-net=<project-ref>.supabase.co,overpass-api.de --allow-env=SUPABASE_URL,SUPABASE_SERVICE_ROLE_KEY supabase/tools/osm/import_osm_bumps.ts --dry-run
+  # then the same without --dry-run
+  Remove-Item Env:SUPABASE_SERVICE_ROLE_KEY
+  ```
+  Test (offline): `deno test supabase/tools/osm/`.
+
 ## Edge Function `speed-limits` (road speed limits: live display/warnings and the driving score)
 
 The phone sends a stretch of its own drive; the function asks the TomTom Snap to Roads API which road each point is on
@@ -296,7 +331,8 @@ hit, axle + strong = full, total hits, the app's severity average, `spots_near` 
 candidate, two hits from one or two phones confirm, the pass ratio and `confirm_devices` still apply, the setting's
 fallback, server-only grants), `10_research.sql` (consent,
 reservations and caps, the Storage policy against foreign folders, missing or oversized Content-Length, signed-URL and S3
-uploads, no client read/update/delete, clearing, forget_me queueing).
+uploads, no client read/update/delete, clearing, forget_me queueing), `12_osm_bumps.sql` (RLS and grants, the
+idempotent import upsert, prune, validation, `osm_bumps_near` nearest first with the 10 km cap, anon refused).
 The same job runs `deno test`, `deno check` and `deno lint` on `functions/`.
 
 ## Fleets
@@ -347,6 +383,11 @@ Agents never link or push to the hosted project. When the owner approves:
    spot changes at once: each is re-checked when an observation next touches it. Check:
    `select value from public.app_settings where key = 'confirm_hits';` is `2`. Rollback: re-create
    `aggregate_observations` from `20261008000002_severity_average.sql` and delete the `confirm_hits` row.
+8. OSM speed bumps (owner OK first): apply `migrations/20261017000001_osm_bumps.sql` after step 7 (file order); it only
+   adds a table, a type and functions, so it is safe at any time. Then run the import tool once (see *OSM speed bumps*).
+   Check: `select public.osm_bumps_status();` shows about 5,800 bumps. Rollback: `drop function public.osm_bumps_near(
+   double precision, double precision, int), public.osm_bumps_import(jsonb, timestamptz), public.osm_bumps_prune(
+   timestamptz), public.osm_bumps_status(); drop type public.osm_bump; drop table public.osm_bumps;`.
 
 Rollback (nothing depends on it yet): `drop schema public cascade` is too broad; instead drop the tables listed above,
 the eight functions and the `memberships_keep_last_owner` trigger, and `select cron.unschedule('aggregate-observations');`.
