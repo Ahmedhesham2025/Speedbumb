@@ -31,8 +31,9 @@ class BumpEvidenceTest {
 
     @Test fun aLoneJoltAtASteadySpeedIsOnlyAMaybe() {
         // One knock, no rear axle, no slowdown: a maybe in a holder that never confirms, rejected in a pocket.
+        // (At 30 km/h: above 35 such a jolt is no new spot at all, see aLoneFastJoltIsNoNewSpot.)
         val store = MemoryStore()
-        val spec = DriveSpec(oneOffJoltsAt = listOf(900.0), cruiseKmh = 40.0)
+        val spec = DriveSpec(oneOffJoltsAt = listOf(900.0), cruiseKmh = 30.0)
         val t1 = Simulator(3).drive(store, spec, tripId = 1)
         assertEquals(1, t1.newBumps, "${t1.rejected}")
         val t2 = Simulator(4).drive(store, spec, tripId = 2)
@@ -44,6 +45,25 @@ class BumpEvidenceTest {
         val p = Simulator(3).drive(MemoryStore(), spec, drivingCfg = pocket)
         assertEquals(0, p.newBumps)
         assertTrue(p.rejected.last() in listOf("no_evidence", "no_axle"), "${p.rejected}")
+    }
+
+    @Test fun aLoneFastJoltIsNoNewSpot() {
+        // E5: above 35 km/h a new spot needs both axles or a GPS slowdown; a known spot is still hit.
+        val spec = DriveSpec(oneOffJoltsAt = listOf(900.0), cruiseKmh = 40.0)
+        val t = Simulator(3).drive(MemoryStore(), spec)
+        assertEquals(0, t.newBumps, "${t.rejected}")
+        assertEquals(listOf("fast_unconfirmed"), t.rejected)
+        val store = MemoryStore()
+        Simulator(3).drive(store, DriveSpec(oneOffJoltsAt = listOf(900.0), cruiseKmh = 30.0), tripId = 1)
+        assertEquals(1, store.saved.size)
+        Simulator(4).drive(store, spec, tripId = 2)
+        assertEquals(1, notes(store, "hit_weak").size, "known spot still felt at 40 km/h: ${store.events.map { it.type }}")
+    }
+
+    @Test fun aSlowCrossingInAPocketIsEvidence() {
+        // E5: in a pocket, a jolt at 20 km/h or slower with no axle pair and no slowdown is a hit, not no_evidence.
+        val p = Simulator(3).drive(MemoryStore(), DriveSpec(oneOffJoltsAt = listOf(900.0), cruiseKmh = 18.0), drivingCfg = pocket)
+        assertEquals(1, p.newBumps, "${p.rejected}")
     }
 
     @Test fun aSteadyCrawlInAPocketIsABump() {
