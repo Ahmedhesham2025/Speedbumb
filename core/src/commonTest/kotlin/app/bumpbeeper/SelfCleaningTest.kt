@@ -164,7 +164,7 @@ class SelfCleaningTest {
                 if (s.isRetired(cfg)) retiredAny = true
             }
             tried += "$name: " + dips.events.filter { it.type in setOf("new_bump", "hit", "hit_weak", "rejected") }
-                .joinToString(" | ") { it.type + " " + Regex("polarity=\w+").find(it.note)?.value.orEmpty() + " " + it.note.substringBefore(' ') }
+                .joinToString(" | ") { it.type + " " + Regex("polarity=[a-z_]+").find(it.note)?.value.orEmpty() + " " + it.note.substringBefore(' ') }
         }
         assertTrue(retiredAny, "a weak down-first pothole retires; seen: ${tried.joinToString(" || ")}")
     }
