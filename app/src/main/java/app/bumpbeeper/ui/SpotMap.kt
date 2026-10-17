@@ -24,9 +24,9 @@ import kotlin.math.max
  * nothing cached, or no map engine on this phone). Both get the same spots, position and camera, so switching is
  * seamless. The pages talk to it like they did to the offline map: [bumps], [centerLat], [radiusM], [meLat]…
  */
-class SpotMap(ctx: Context, interactive: Boolean) : FrameLayout(ctx) {
+class SpotMap(ctx: Context, interactive: Boolean, pan: Boolean = interactive) : FrameLayout(ctx) {
     private val offline = BumpMapView(ctx)
-    private val street = StreetMap(ctx, interactive)
+    private val street = StreetMap(ctx, interactive, pan)
     private var streetsOn = false
     private val cfg = EngineConfig()
 
@@ -84,23 +84,86 @@ class SpotMap(ctx: Context, interactive: Boolean) : FrameLayout(ctx) {
             camera()
         }
 
-    /** Follows the car (Drive). A finger on the map stops it until [recenter]; [onPanned] shows the button. */
+    /**
+     * Follows the car (Drive). A finger on the map stops it until [recenter], or [AUTO_RECENTER_MS] after the last
+     * touch; [onPanned] shows the button, [onRecentered] hides it again.
+     */
     var following = true
         private set
     var onPanned: () -> Unit = {}
-    /** Drive: your puck about 70 % down the map, so more of the road ahead is visible. */
+    var onRecentered: () -> Unit = {}
+    private val autoRecenter = Runnable { if (!following) recenter() }
+    /**
+     * Drive: your puck about 60 % down the map, so more of the road ahead is visible (lower, it hid under the road
+     * name and the speed bubble).
+     */
     var puckLow = false
-        set(v) { field = v; street.topPaddingPx = if (v) height * 0.4 else 0.0; last = null; camera() }
+        set(v) {
+            field = v; street.topPaddingPx = if (v) height * PUCK_LOW else 0.0; last = null
+            if (navigation) street.setNavigation(true, force = true) else camera()
+        }
 
-    fun recenter() {
-        following = true
-        last = null
-        camera()
+    /**
+     * Driving (Drive while recording): the street map's own puck, an arrow on the GPS bearing, with the camera following
+     * it heading-up, tilted and zoomed by speed ([location]), like a navigation app. Off: a dot, north-up.
+     */
+    var navigation = false
+        set(v) {
+            if (field == v) return
+            field = v
+            following = true
+            street.setNavigation(v, zoomForKmh(speedKmh))
+            if (!v) { removeCallbacks(autoRecenter); last = null; camera() }
+        }
+    private var speedKmh = 0.0
+
+    /**
+     * A new fix (Drive): moves your puck (MapLibre animates it between fixes), its heading, and the zoom for its
+     * speed. One call per fix; the camera follows by itself while [navigation] is on.
+     */
+    fun location(loc: android.location.Location) {
+        offline.meLat = loc.latitude
+        offline.meLon = loc.longitude
+        heading = if (loc.hasBearing() && loc.speed > 1.5f) loc.bearing.toDouble() else Double.NaN
+        speedKmh = if (loc.hasSpeed()) loc.speed * 3.6 else 0.0
+        if (street.available) {
+            street.setLocation(loc)
+            if (navigation) street.setNavigation(true, zoomForKmh(speedKmh))
+        }
+        // No puck (offline map, no location permission): the camera follows the fix itself, as before.
+        if (navigation && following && !street.hasPuck) {
+            offline.centerLat = loc.latitude
+            offline.centerLon = loc.longitude
+            camera()
+        }
+        pushMe()
     }
 
-    /** The road you are on, from the tiles on screen (null: unknown, or the offline map is showing). */
-    fun roadName(arabic: Boolean): String? =
-        (if (streetsOn && !meLat.isNaN()) street.roadNameAt(meLat, meLon, arabic) else null) ?: roadNameForTest
+    fun recenter() {
+        removeCallbacks(autoRecenter)
+        following = true
+        last = null
+        if (navigation && street.hasPuck) street.setNavigation(true, zoomForKmh(speedKmh), force = true) else camera()
+        onRecentered()
+    }
+
+    private var roadAt = 0L
+    private var roadAr = false
+    private var road: String? = null
+
+    /**
+     * The road you are on, from the tiles on screen (null: unknown, or the offline map is showing). Looked up at most
+     * once a second: each look is a query of the rendered map on the main thread.
+     */
+    fun roadName(arabic: Boolean): String? {
+        val now = android.os.SystemClock.uptimeMillis()
+        if (now - roadAt >= 1000 || arabic != roadAr) {
+            roadAt = now
+            roadAr = arabic
+            road = if (streetsOn && !meLat.isNaN()) street.roadNameAt(meLat, meLon, arabic) else null
+        }
+        return road ?: roadNameForTest
+    }
 
     /** The screenshot test's road name when the emulator's tiles give none at the puck (never set by the app). */
     internal var roadNameForTest: String? = null
@@ -155,7 +218,15 @@ class SpotMap(ctx: Context, interactive: Boolean) : FrameLayout(ctx) {
      */
     fun aheadStrong(distanceM: Double?) {
         if (!street.available) return
-        if (distanceM == null || meLat.isNaN() || heading.isNaN()) { street.setAhead(null, null); return }
+        if (distanceM == null || meLat.isNaN() || heading.isNaN()) {
+            if (aheadSent != null) { aheadSent = null; street.setAhead(null, null) }
+            return
+        }
+        // Called 4 times a second: only a change you could see (3 m, 2 degrees) updates the map.
+        val sent = aheadSent
+        if (sent != null && abs(sent[0] - distanceM) < 3.0 && abs(sent[1] - heading) < 2.0 &&
+            Geo.distance(sent[2], sent[3], meLat, meLon) < 3.0) return
+        aheadSent = doubleArrayOf(distanceM, heading, meLat, meLon)
         val d = distanceM / 6_371_000.0
         val b = Math.toRadians(heading)
         val la = Math.toRadians(meLat)
@@ -164,6 +235,8 @@ class SpotMap(ctx: Context, interactive: Boolean) : FrameLayout(ctx) {
         val lo2 = lo + Math.atan2(Math.sin(b) * Math.sin(d) * Math.cos(la), Math.cos(d) - Math.sin(la) * Math.sin(la2))
         street.setAhead(meLat to meLon, Math.toDegrees(la2) to Math.toDegrees(lo2))
     }
+
+    private var aheadSent: DoubleArray? = null   // distance, heading, lat, lon of the red road on the map
 
     /** True while the street map is on screen (false: the offline map is). */
     val showingStreets: Boolean get() = streetsOn
@@ -175,11 +248,13 @@ class SpotMap(ctx: Context, interactive: Boolean) : FrameLayout(ctx) {
             addView(street.view, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
             street.onReady = {
                 streetsOn = true; street.view.visibility = View.VISIBLE; offlineChip.visibility = View.GONE
+                offline.visibility = View.INVISIBLE   // under the streets: never drawn for nothing
                 showCredits(); onStreetsChanged()
                 pushPins(); pushMe(); camera()
             }
             street.onFailed = {
                 streetsOn = false; street.view.visibility = View.INVISIBLE; offlineChip.visibility = View.VISIBLE
+                offline.visibility = View.VISIBLE
                 showCredits(); onStreetsChanged()
             }
         }
@@ -188,7 +263,13 @@ class SpotMap(ctx: Context, interactive: Boolean) : FrameLayout(ctx) {
         offlineChip.visibility = if (street.available) View.GONE else View.VISIBLE
         if (street.available) {
             street.onSpot = { key -> bumps.firstOrNull { "m${it.id}" == key }?.let { selectedId = it.id; onSelect(it) } }
-            street.onUserMove = { if (headingUp && following) { following = false; onPanned() } }
+            street.onUserMove = {
+                if (headingUp || navigation) {
+                    if (following) { following = false; onPanned() }
+                    removeCallbacks(autoRecenter)   // each touch waits again
+                    postDelayed(autoRecenter, AUTO_RECENTER_MS)
+                }
+            }
         }
     }
 
@@ -196,12 +277,13 @@ class SpotMap(ctx: Context, interactive: Boolean) : FrameLayout(ctx) {
     fun colorOf(b: Bump): Int = offline.colorOf(b)
 
     fun resume() = street.resume()
-    fun pause() = street.pause()
-    fun destroy() = street.destroy()
+    // The 10 s auto-recenter never fires on a map that is paused or gone.
+    fun pause() { removeCallbacks(autoRecenter); street.pause() }
+    fun destroy() { removeCallbacks(autoRecenter); street.destroy() }
 
     override fun invalidate() {
         super.invalidate()
-        offline.invalidate()
+        if (!streetsOn) offline.invalidate()
     }
 
     private fun pushPins() {
@@ -222,6 +304,7 @@ class SpotMap(ctx: Context, interactive: Boolean) : FrameLayout(ctx) {
     private fun camera() {
         if (!street.available || centerLat == 0.0 && centerLon == 0.0) return
         if (headingUp && !following) return   // a finger moved the map: leave it until Recenter
+        if (navigation && street.hasPuck) return   // the puck's camera follows the car by itself
         val zoom = zoomFor(radiusM, centerLat)
         val bearing = if (headingUp && !heading.isNaN()) heading else 0.0
         val l = last
@@ -244,9 +327,18 @@ class SpotMap(ctx: Context, interactive: Boolean) : FrameLayout(ctx) {
 
     override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
         super.onSizeChanged(w, h, oldw, oldh)
-        if (puckLow) street.topPaddingPx = h * 0.4
+        if (puckLow) street.topPaddingPx = h * PUCK_LOW
         last = null
         camera()
+    }
+
+    /** Navigation zoom for a speed, like a navigation app: close in town, further out on fast roads. */
+    internal fun zoomForKmh(kmh: Double): Double = when {
+        kmh <= 20 -> 17.5
+        kmh <= 50 -> 17.5 - (kmh - 20) / 30
+        kmh <= 90 -> 16.5 - (kmh - 50) / 40
+        kmh <= 120 -> 15.5 - (kmh - 90) / 60
+        else -> 15.0
     }
 
     /** The pin a spot gets: muted first, then "maybe", then its severity. */
@@ -263,5 +355,8 @@ class SpotMap(ctx: Context, interactive: Boolean) : FrameLayout(ctx) {
     private companion object {
         const val EARTH_M = 40_075_016.686
         const val DRIVE_FPS = 30
+        const val AUTO_RECENTER_MS = 10_000L
+        /** Top padding (a share of the map's height) that puts the puck 60 % down. */
+        const val PUCK_LOW = 0.2
     }
 }
