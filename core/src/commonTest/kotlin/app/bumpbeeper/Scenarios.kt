@@ -1126,6 +1126,66 @@ object Scenarios {
         check(t2.warnings.size == 2 && t2.warnings.all { it.cluster == null }, "2 single warnings expected, got ${t2.warnings.map { it.cluster?.count }}")
     }
 
+    /**
+     * Placement "seat": the phone lies flat, screen up, on the seat foam ([DriveSpec.onSeat]). It rests loose, never
+     * mounted, so the up-first polarity rule stays off (foam bounce can flip the first sign) and it is not a pocket.
+     * Humps at 20 and 40 km/h are learned on real evidence: both axles or the slowdown (40 km/h is above
+     * [EngineConfig.fastNewMinKmh], E5). A lone jolt at a steady 40 km/h without both axles is no new spot.
+     */
+    fun seatBumpsLearnedOnEvidence() {
+        log("seatBumpsLearnedOnEvidence")
+        val seat = DrivingConfig().apply { placement = "seat" }
+        val minSlow = EngineConfig().speedEvidenceKmh
+        for (kmh in listOf(20.0, 40.0)) {
+            val store = MemoryStore()
+            val r = Simulator(82).drive(store, DriveSpec(onSeat = true, bumpsAt = listOf(900.0, 1500.0), bumpKmh = kmh,
+                slowZonesAt = listOf(300.0)), drivingCfg = seat)
+            describe("seat, humps at $kmh km/h", r)
+            val notes = store.events.filter { it.type == "new_bump" }.map { it.note }
+            notes.forEach { log("    $it") }
+            check(r.newBumps == 2, "seat, $kmh km/h: both humps are learned: new=${r.newBumps} rejected=${r.rejected}")
+            for (n in notes) {
+                val slow = Regex("slow=([0-9.]+)").find(n)?.groupValues?.get(1)?.toDouble() ?: 0.0
+                check("axle=both" in n || slow >= minSlow, "seat, $kmh km/h: learned on both axles or a slowdown: $n")
+                check("polarity=unclear" in n, "seat, $kmh km/h: no polarity on the seat: $n")
+            }
+            check(r.phone?.state == PhoneState.STABLE_LOOSE && r.mountedShare == 0.0 && !r.pocketMode,
+                "seat: loose, never mounted, not a pocket: ${r.phone?.state} ${r.mountedShare} ${r.pocketMode}")
+            check(r.driving.phoneUse == 0, "seat: no phone use, got ${r.driving.phoneUse}")
+        }
+        val fast = Simulator(83).drive(MemoryStore(), DriveSpec(onSeat = true, oneOffJoltsAt = listOf(900.0), cruiseKmh = 40.0,
+            slowZonesAt = listOf(300.0)), drivingCfg = seat)
+        describe("seat, a lone jolt at a steady 40 km/h", fast)
+        check(fast.newBumps == 0, "seat: a lone jolt at a steady 40 km/h is no new spot: ${fast.rejected}")
+    }
+
+    /**
+     * On the seat the phone slides forward and tips (15°, 35°, 70°) as the car brakes at 3 m/s² (the GPS shows it, not
+     * harsh): no bump is learned from its knock, no harsh event, no phone use, and it rests loose again. A pick-up from
+     * the seat with the screen on while driving is phone use.
+     */
+    fun seatSlideIsNoBumpNoEventNoPhoneUse() {
+        log("seatSlideIsNoBumpNoEventNoPhoneUse")
+        val seat = DrivingConfig().apply { placement = "seat" }
+        for (deg in listOf(15.0, 35.0, 70.0)) {
+            val store = MemoryStore()
+            val spec = DriveSpec(onSeat = true, hardBrakesAt = listOf(900.0), hardBrakeMs2 = 3.0, seatSlidesAt = listOf(904.0 to deg),
+                slowZonesAt = listOf(300.0))
+            val r = Simulator(84).drive(store, spec, drivingCfg = seat)
+            describe("seat, slid $deg° in a brake", r)
+            describeDriving("seat, slid $deg° in a brake, handled ${formatFixed(r.handledS, 1)} s", r.driving)
+            check(r.newBumps == 0, "seat, $deg°: a slide is no bump: ${store.events.filter { it.type == "new_bump" }.map { it.note }}")
+            check(r.driving.harshBrakes + r.driving.harshAccels + r.driving.harshCorners + r.driving.swerves == 0,
+                "seat, $deg°: no harsh event from the phone: brakes ${r.driving.harshBrakes} corners ${r.driving.harshCorners}")
+            check(r.driving.phoneUse == 0, "seat, $deg°: a slide is no phone use, got ${r.driving.phoneUse}")
+            check(r.phone?.state == PhoneState.STABLE_LOOSE, "seat, $deg°: it rests loose again: ${r.phone?.state}")
+        }
+        val pick = Simulator(85).drive(MemoryStore(), DriveSpec(onSeat = true, holdsAt = listOf(900.0 to 3.0), holdDeg = 60.0,
+            holdLiftS = 0.6, phoneSignals = { _, s, _, sig, _ -> sig.screenOn = s >= 900.0 && s < 960.0 }), drivingCfg = seat)
+        describeDriving("seat, picked up 3 s with the screen on", pick.driving)
+        check(pick.driving.phoneUse == 1, "seat: a pick-up with the screen on is phone use, got ${pick.driving.phoneUse}")
+    }
+
     fun all(): List<Pair<String, () -> Unit>> = listOf(
         "calmDrivingScoresHigh" to ::calmDrivingScoresHigh,
         "speedingAndHardBraking" to ::speedingAndHardBraking,
@@ -1148,6 +1208,8 @@ object Scenarios {
         "stillReadIsPhoneUse" to ::stillReadIsPhoneUse,
         "repeatedHandlingIsPhoneUse" to ::repeatedHandlingIsPhoneUse,
         "fastBumpVersusRoadJoint" to ::fastBumpVersusRoadJoint,
+        "seatBumpsLearnedOnEvidence" to ::seatBumpsLearnedOnEvidence,
+        "seatSlideIsNoBumpNoEventNoPhoneUse" to ::seatSlideIsNoBumpNoEventNoPhoneUse,
         "dipIsNotABump" to ::dipIsNotABump,
         "severityCountsAndSounds" to ::severityCountsAndSounds,
         "noGyroStillLearns" to ::noGyroStillLearns,

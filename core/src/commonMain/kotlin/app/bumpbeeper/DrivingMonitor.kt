@@ -24,7 +24,7 @@ class DrivingConfig {
     /** Driving over a known speed bump faster than this. */
     var bumpFastKmh = 25.0
 
-    /** Where the phone sits: mounted | cupholder | pocket | unknown. (setting: Prefs.placement) */
+    /** Where the phone sits: mounted | cupholder | pocket | seat | unknown. (setting: Prefs.placement) */
     @Volatile var placement = "unknown"
     /**
      * Phone use: the phone handled ([PhoneStateDetector.movingMs]: tilted, or held by a sign other than its motion) for
@@ -33,7 +33,8 @@ class DrivingConfig {
      * sign of coming out of it (proximity, light, screen, unlock, call) counts at the same bar. An unlock (not in a holder) or a hand-held call seen while
      * driving at that moment ([PhoneStateDetector.movingCauses]). Never: a mounted phone with its screen on
      * (navigation), an unlock at a red light, a Bluetooth / wired / speaker call. Once per handling, and at most once
-     * per [phoneUseGapS].
+     * per [phoneUseGapS]. On the seat, a slide or tip-over while the car brakes or corners
+     * ([PhoneStateDetector.seatSlideExcused]) is no phone use unless the screen, an unlock or a call joins in.
      */
     var phoneUseS = 1.5
     var phoneUseGapS = 30.0
@@ -335,7 +336,7 @@ class DrivingMonitor(
     fun onAccel(tMs: Long, x: Double, y: Double, z: Double) {
         val dt = if (lastAccelMs < 0) 0.02 else ((tMs - lastAccelMs).coerceIn(1L, 200L) / 1000.0)
         lastAccelMs = tMs
-        checkPhoneUse()
+        checkPhoneUse(tMs)
         val up = engine.upVector() ?: return
         if (handledNear(tMs)) {   // the readings are the hand's, not the car's
             gated = true
@@ -597,15 +598,17 @@ class DrivingMonitor(
     /**
      * Phone use ([DrivingConfig.phoneUseS]), judged on every sample of a handling: a hand-held call or an unlock (when
      * not in a holder, see [PhoneStateDetector]) seen while driving, or handled long enough while driving. Pocket mode
-     * excuses only a jostle. Once per handling, at most once per [DrivingConfig.phoneUseGapS].
+     * excuses only a jostle; the seat, a slide while the car brakes or corners (judged once the GPS could show it).
+     * Once per handling, at most once per [DrivingConfig.phoneUseGapS].
      */
-    private fun checkPhoneUse() {
+    private fun checkPhoneUse(tMs: Long) {
         val p = phone
         if (p.episode == 0 || p.episode == phoneEpisode) return
         val note = when {
             (p.movingCauses and PhoneStateDetector.CALL) != 0 -> "hand-held call while driving"
             (p.movingCauses and PhoneStateDetector.UNLOCK) != 0 -> "phone unlocked while driving"
-            p.movingMs >= (cfg.phoneUseS * 1000).toLong() && !(p.pocketMode && p.jostle) -> "phone held while driving"
+            p.movingMs >= (cfg.phoneUseS * 1000).toLong() && !(p.pocketMode && p.jostle) &&
+                p.seatSlideExcused(tMs) == false -> "phone held while driving"
             else -> return
         }
         phoneEpisode = p.episode
