@@ -168,11 +168,10 @@ object TrainingJson {
     private val CLASSES = setOf("mild", "moderate", "strong")
 
     /**
-     * The hosted server takes placement "seat" only once `20261017000002_training_placement_seat.sql` is applied there
-     * (its CHECK would refuse the whole batch). Until then "seat" uploads as "unknown". The lead flips this to true
-     * after applying that migration (supabase/README.md, step 9).
+     * The hosted server takes placement "seat" since `20261017000002_training_placement_seat.sql` was applied there
+     * (2026-10-17). Set it back to false only if that migration is rolled back (supabase/README.md, step 9).
      */
-    const val SERVER_ACCEPTS_SEAT = false
+    const val SERVER_ACCEPTS_SEAT = true
     /** What the server's placement CHECK takes, "seat" aside. */
     private val SERVER_PLACEMENTS = setOf("mounted", "cupholder", "pocket", "unknown")
 
