@@ -75,12 +75,12 @@ class MonteCarloTest {
 
     @Test fun potholesInAHolder() {
         // Down first with the phone in a holder: rejected ("down_first"), or with too little pitch to tell (DOWN_WEAK)
-        // at most a maybe. "found" is the false rate here; measured 0.26 (all DOWN_WEAK), 0.98 before the warm-up.
+        // at most a maybe. "found" is the false rate here; measured 0.16 (all DOWN_WEAK; 0.26 before E5 rejected fast new spots), 0.98 before the warm-up.
         val r = run("potholes (holder)", 5) { rnd ->
             Crossing(HalfCarDrive.pothole(250.0, between(rnd, 0.05, 0.08), between(rnd, 0.5, 1.0)), listOf(250.0), between(rnd, 20.0, 40.0), cruiseKmh = 40.0) to
                 phone(rnd, pocket = false)
         }
-        assertTrue(r.found <= 0.4, "$r")
+        assertTrue(r.found <= 0.3, "$r")
         assertTrue(r.learned.all { "polarity=down_weak" in it.note }, "a pothole learned other than as a down-first maybe: $r")
     }
 
