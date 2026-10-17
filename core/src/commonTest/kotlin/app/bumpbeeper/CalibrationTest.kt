@@ -21,6 +21,33 @@ class CalibrationTest {
         r.newBumps + r.rejected.size
     }
 
+    /** Jolts that set the trigger off (learned or rejected) on a flat phone at 30 km/h with three 2.5 m/s² jolts. */
+    private fun gentleJolts(c: PhoneCalibration): Int {
+        var tMs = 0L
+        var triggers = 0
+        val eng = BumpEngine(EngineConfig(), MemoryStore(), object : EngineListener {
+            override fun onNewBump(b: Bump) { triggers++ }
+            override fun onKnownBumpHit(b: Bump) { triggers++ }
+            override fun onJoltRejected(peak: Double, reason: String) { triggers++ }
+        }, { 1_700_000_000_000L + tMs }, calibration = c)
+        val jolts = listOf(20.0, 40.0, 60.0)
+        while (tMs <= 70_000L) {
+            val ts = tMs / 1000.0
+            var z = 9.81
+            for (j in jolts) {
+                val tau = ts - j
+                if (tau in 0.0..0.1) z += 2.5 else if (tau > 0.1 && tau <= 0.2) z -= 1.8
+            }
+            eng.onAccel(tMs, 0.0, 0.0, z)
+            if (tMs % 1000 == 0L) {
+                val p = Geo.move(30.0444, 31.2357, 90.0, 8.33 * ts)
+                eng.onFix(Fix(tMs, p[0], p[1], 8.33, 90.0, 5.0))
+            }
+            tMs += 20
+        }
+        return triggers
+    }
+
     @Test fun learnsTheNoiseFloorPerPhone() {
         val base = learn()
         assertTrue(base.windowCount("unknown") >= base.cfg.minWindows, "windows ${base.windowCount("unknown")}")
@@ -62,11 +89,10 @@ class CalibrationTest {
         val noisy = Simulator(601).drive(MemoryStore(), DriveSpec(bumpsAt = bumps, bumpKmh = 25.0, phoneNoise = 0.8),
             calibration = PhoneCalibration.decode(learn(noise = 0.8).encode()))
         assertTrue(noisy.newBumps >= 3, "noisy phone, calibrated: ${noisy.newBumps} bumps, rejected ${noisy.rejected}")
-        val stiff = DriveSpec(bumpsAt = bumps, bumpKmh = 15.0, phoneGain = 0.5)
-        val rawR = Simulator(602).drive(MemoryStore(), stiff)
-        val calR = Simulator(602).drive(MemoryStore(), stiff, calibration = PhoneCalibration.decode(learn(gain = 0.5).encode()))
-        val raw = rawR.newBumps
-        val cal = calR.newBumps
-        assertTrue(cal >= raw && cal >= 3, "stiff mount: $cal bumps calibrated (rejected ${calR.rejected}), $raw without (rejected ${rawR.rejected})")
+        // A stiff mount (scale 0.7): three gentle jolts of 2.5 m/s² set its trigger off; uncalibrated (3.0) they don't.
+        val stiff = PhoneCalibration.decode("unknown:" + List(200) { "0.17" }.joinToString(","))
+        assertEquals(0.7, stiff.learnedScale("unknown"), 1e-9)
+        assertEquals(0, gentleJolts(PhoneCalibration()), "uncalibrated")
+        assertEquals(3, gentleJolts(stiff), "calibrated stiff mount")
     }
 }
