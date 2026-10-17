@@ -14,7 +14,7 @@ import kotlin.math.max
  *
  * A drive with a `<name>.expected.properties` next to it is a regression guard: each count given there must stay
  * within ±25 % (at least ±3), the distance within ±10 %, and none may drop to 0 where more is expected. Empty values
- * are printed but not checked. `placement=` there (mounted, cupholder, pocket) sets the phone placement the drive is
+ * are printed but not checked. `placement=` there (mounted, cupholder, pocket, seat) sets the phone placement the drive is
  * replayed with; without it, unknown. Labelled drives also print their labels against the engine's decisions.
  */
 class RealDriveTest {
@@ -47,6 +47,22 @@ class RealDriveTest {
                 assertTrue("${f.name} moved outside its expected range:\n" + bad.joinToString("\n"), bad.isEmpty())
             }
         }
+    }
+}
+
+/** Per-phone calibration on a real phone: drive01's pocket phone is the real-phone reference (scale about 1). */
+class RealDriveCalibrationTest {
+    private val f = File(File(System.getProperty("testdata.dir") ?: "../../testdata", "real"), "drive01_pocket.csv.gz")
+
+    @Test fun drive01ScalesToAboutOne() {
+        val samples = TraceReader.read(readLines(f).asSequence())
+        // One 18-minute drive gives few steady straight windows; judge it on what it has (at least 5).
+        val c = PhoneCalibration(CalibrationConfig().apply { minWindows = 5.0 })
+        Replayer.replay(samples, MemStore(), drivingCfg = DrivingConfig().apply { placement = "pocket" }, calibration = c)
+        println("drive01 calibration: ${c.describe()}, floor ${formatFixed(c.floor("pocket"), 3)} m/s²")
+        assertFalse("drive01 must give a floor: ${c.describe()}", c.floor("pocket").isNaN())
+        val scale = c.learnedScale("pocket")
+        assertTrue("drive01 (pocket) scale ${formatFixed(scale, 2)}: ${c.describe()}", scale in 0.9..1.1)
     }
 }
 

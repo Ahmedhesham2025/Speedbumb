@@ -22,7 +22,7 @@ class DriveSummary(
     /** Spots felt (new_bump + hit) by their band after the hit (mild, moderate, strong) and by confidence (soft, full). */
     val bands: Map<String, Int> = emptyMap(),
     val confidence: Map<String, Int> = emptyMap(),
-    /** The placement the drive was replayed with (mounted, cupholder, pocket, unknown). */
+    /** The placement the drive was replayed with (mounted, cupholder, pocket, seat, unknown). */
     val placement: String = "unknown",
 ) {
     fun toMarkdown(title: String): String {

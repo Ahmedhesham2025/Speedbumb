@@ -50,6 +50,8 @@ class ProfileHump(val at: Double, val kind: String, val heightM: Double, val len
 /** What happens on one simulated drive. Positions are metres from the west end of a 2 km east–west road. */
 class DriveSpec(
     val westbound: Boolean = false,
+    /** The road runs this far to the right of the usual one (a parallel road, a far lane), m. */
+    val sideOffsetM: Double = 0.0,
     /** Real speed bumps: the driver sees them and slows to 15 km/h. */
     val bumpsAt: List<Double> = emptyList(),
     /** One-off jolts that are NOT real bumps (something on the road, something dropped). Felt only on this drive. */
@@ -127,8 +129,27 @@ class DriveSpec(
     val bodyBounce: Boolean = false,
     /** The car's wheelbase: the rear wheels cross a bump this far after the front ones. */
     val wheelbaseM: Double = 2.6,
+    /**
+     * The phone lies flat, screen up, on the seat foam: the foam is a spring under it ([seatFoamHz], damping
+     * [seatFoamDamping]), so a jolt reaches it softened and rings on (it can bounce back past zero).
+     */
+    val onSeat: Boolean = false,
+    val seatFoamHz: Double = 6.0,
+    val seatFoamDamping: Double = 0.6,
+    /**
+     * The phone slides forward on the seat and tips that many degrees (position, degrees): for 0.4 s it slides (it
+     * feels a third of the car's braking), then it knocks into the seat back (6 m/s² back, a 6 m/s² jolt) and lies
+     * there tipped. Put it where the car brakes ([hardBrakesAt]) or turns.
+     */
+    val seatSlidesAt: List<Pair<Double, Double>> = emptyList(),
     /** Sets the phone's own signals on every sample: (seconds driven, metres driven, speed m/s, the signals, sensor time ms). */
     val phoneSignals: ((Double, Double, Double, PhoneSignals, Long) -> Unit)? = null,
+    /** The phone's own response: everything vertical it feels × [phoneGain], plus its own rattle (RMS [phoneNoise], m/s²). */
+    val phoneGain: Double = 1.0,
+    val phoneNoise: Double = 0.0,
+    /** Rough road (broken asphalt) between these positions: extra vertical vibration of RMS [roughRms], m/s². */
+    val roughAt: List<Pair<Double, Double>> = emptyList(),
+    val roughRms: Double = 1.1,
 )
 
 class TripResult(
@@ -171,8 +192,11 @@ class Simulator(seed: Long) {
     val roadLen = 2000.0
 
     /** Road position → lat/lon. Westbound lane is 10 m south of the eastbound one (divided road). */
+    private var sideM = 0.0
+
     fun point(p: Double, westbound: Boolean): DoubleArray {
-        val base = Geo.move(lat0, lon0, 90.0, p)
+        var base = Geo.move(lat0, lon0, 90.0, p)
+        if (sideM != 0.0) base = Geo.move(base[0], base[1], 180.0, sideM)
         return if (westbound) Geo.move(base[0], base[1], 180.0, 10.0) else base
     }
 
@@ -224,11 +248,14 @@ class Simulator(seed: Long) {
         muteEveryBeep: Boolean = false,
         /** The engine's learned car (E2); a fresh one by default. */
         vehicle: VehicleProfile = VehicleProfile(),
+        /** The phone's learned noise floor ([PhoneCalibration]); a fresh one (scale 1) by default. */
+        calibration: PhoneCalibration = PhoneCalibration(),
         /** OpenStreetMap bumps (off by default). */
         osmSource: OsmSource? = null,
     ): TripResult {
         val len = spec.roadM
         fun travel(p: Double) = if (spec.westbound) len - p else p   // road position ↔ distance travelled
+        sideM = spec.sideOffsetM
         val bumps = spec.bumpsAt.map { travel(it) }
         // (position, speed the driver slows to)
         val slowFor = (spec.bumpsAt + spec.silentBumpsAt + spec.roundHumpsAt + spec.profileHumps.map { it.at }).map { Pair(travel(it), spec.bumpKmh / 3.6) } +
@@ -276,7 +303,7 @@ class Simulator(seed: Long) {
             override fun onJoltRejected(peak: Double, reason: String) { rejected.add(reason) }
         }
         val engine = BumpEngine(cfg, sink, listener, { 1_700_000_000_000L + (t * 1000).toLong() }, tripId, spotSource, observationSink,
-            vehicle = vehicle, osmSource = osmSource)
+            vehicle = vehicle, calibration = calibration, osmSource = osmSource)
         monitor = DrivingMonitor(drivingCfg, engine) { type, lat, lon, kmh, value, note ->
             sink.logEvent(BumpEvent(1_700_000_000_000L + (t * 1000).toLong(), tripId, type, -1, lat, lon, kmh, Double.NaN, value, Double.NaN, Double.NaN, note))
         }
@@ -300,6 +327,10 @@ class Simulator(seed: Long) {
         val stops = spec.stopsAt.map { doubleArrayOf(travel(it.first), it.second, -1.0, 0.0) }   // (where, seconds, leave at, gone)
         val slips = spec.slipsAt.map { Pair(travel(it.first), it.second) }
         val slipStart = DoubleArray(slips.size) { -1.0 }
+        val seatSlides = spec.seatSlidesAt.map { Pair(travel(it.first), it.second) }
+        val seatSlideStart = DoubleArray(seatSlides.size) { -1.0 }
+        var foamX = 0.0   // the phone's height on the foam, relative to the seat, m
+        var foamV = 0.0
         val wiggles = spec.wigglesAt.map { travel(it) }
         var wiggleStart = -1.0
         var samplesAfter1Min = 0
@@ -324,8 +355,8 @@ class Simulator(seed: Long) {
         val maxDecel = 3.5
         val maxAccel = 1.5
         val yaw0 = degToRad(25.0)
-        val pitch0 = degToRad(-65.0)
-        val roll0 = degToRad(12.0)
+        val pitch0 = degToRad(if (spec.onSeat) -3.0 else -65.0)   // on the seat: flat, screen up, the cushion's slope
+        val roll0 = degToRad(if (spec.onSeat) 2.0 else 12.0)
         val gpsLag = 0.8
 
         val history = ArrayList<DoubleArray>()   // (t, s, v)
@@ -365,6 +396,7 @@ class Simulator(seed: Long) {
                 }
             }
             for ((i, sl) in slips.withIndex()) if (s < sl.first && s + v * dt >= sl.first) slipStart[i] = t
+            for ((i, sl) in seatSlides.withIndex()) if (s < sl.first && s + v * dt >= sl.first) seatSlideStart[i] = t
             for (sw in wiggles) if (s < sw && s + v * dt >= sw) wiggleStart = t
             val vNew = when {
                 t < forceBrakeUntil -> max(0.5, v - spec.hardBrakeMs2 * dt)
@@ -533,11 +565,36 @@ class Simulator(seed: Long) {
             }
             var spike = 0.0
             if (spikeStart >= 0 && t - spikeStart < 1.2) spike = -5.0 * minOf(1.0, (t - spikeStart) / 0.15, (1.2 - (t - spikeStart)) / 0.15)
+            for ((i, st) in seatSlideStart.withIndex()) {
+                if (st < 0) continue
+                val k = t - st
+                extraTilt += degToRad(seatSlides[i].second) * min(1.0, k / 0.4)
+                if (k < 0.4) spike -= 2.0 / 3.0 * aLong   // sliding: it feels only a third of the braking
+                else if (k < 0.6) {
+                    spike -= 6.0 * sin(PI * (k - 0.4) / 0.2)   // the knock into the seat back
+                    av += pulse(k - 0.4, 6.0)
+                }
+                if (k < 0.8) shake = max(shake, 1.0)
+            }
+            if (spec.onSeat) {
+                // The foam under the phone: x'' = -w²x - 2ζw x' - a_seat; the phone feels a_seat + x'' (10 sub-steps).
+                val w = 2 * PI * spec.seatFoamHz
+                var acc = 0.0
+                repeat(10) {
+                    acc = -w * w * foamX - 2 * spec.seatFoamDamping * w * foamV - av
+                    foamV += acc * dt / 10
+                    foamX += foamV * dt / 10
+                }
+                av += acc
+            }
             // The phone's own turning when it is tipped (the gyroscope feels it), about the axis the tilt turns around.
             val tiltRate = (extraTilt - prevTilt) / dt
             prevTilt = extraTilt
 
             // Specific force in car axes (fwd, left, up), then into the tilted phone's axes.
+            if (spec.phoneNoise > 0) av += gauss(spec.phoneNoise)
+            if (spec.roughAt.any { s >= it.first && s < it.second }) av += gauss(spec.roughRms)
+            av *= spec.phoneGain
             val fv = doubleArrayOf(aLong + 0.3 * av + gauss(0.2) + spike, lateral + gauss(0.2), 9.81 + av)
             val r = rot(yaw0 + twist, pitch0 + extraTilt, roll0)   // pitch axis is horizontal → tilts the phone 70° relative to gravity
             val ax = r[0][0] * fv[0] + r[1][0] * fv[1] + r[2][0] * fv[2] + gauss(shake)

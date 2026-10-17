@@ -22,6 +22,13 @@ object Replayer {
         cfg: EngineConfig = EngineConfig(),
         drivingCfg: DrivingConfig = DrivingConfig(),
         tripId: Long = 1L,
+        /**
+         * Before each sample: set the phone's own signals ([PhoneStateDetector.signals]: screen, unlock, proximity,
+         * light, call, …) as they were at that time, like the app's PhoneFeed. Default: none (a trace without them).
+         */
+        signals: (tMs: Long, s: PhoneSignals) -> Unit = { _, _ -> },
+        /** The phone's calibration to replay with (learns as it goes); a fresh one (scale 1) by default. */
+        calibration: PhoneCalibration = PhoneCalibration(),
     ): ReplayResult {
         val events = ArrayList<BumpEvent>()
         val logging = object : BumpStore by store {
@@ -38,7 +45,7 @@ object Replayer {
             override fun onNewBump(b: Bump) { monitor?.onBumpHit(b, (engine?.lastFix?.speedMps ?: 0.0) * 3.6) }
             override fun onKnownBumpHit(b: Bump) { monitor?.onBumpHit(b, (engine?.lastFix?.speedMps ?: 0.0) * 3.6) }
         }
-        val eng = BumpEngine(cfg, logging, listener, { WALL_BASE_MS + nowMs }, tripId)
+        val eng = BumpEngine(cfg, logging, listener, { WALL_BASE_MS + nowMs }, tripId, calibration = calibration)
         engine = eng
         val mon = DrivingMonitor(drivingCfg, eng) { type, lat, lon, kmh, value, note ->
             logging.logEvent(BumpEvent(WALL_BASE_MS + nowMs, tripId, type, -1, lat, lon, kmh, Double.NaN, value, Double.NaN, Double.NaN, note))
@@ -50,6 +57,7 @@ object Replayer {
         var gyroSeen = false
         for (s in samples.sortedBy { it.tMs }) {   // stable: rows with the same time keep their order
             nowMs = s.tMs
+            signals(s.tMs, eng.phone.signals)
             when (s) {
                 is TraceSample.Accel -> {
                     val hasGyro = !s.gx.isNaN() && !s.gy.isNaN() && !s.gz.isNaN()
