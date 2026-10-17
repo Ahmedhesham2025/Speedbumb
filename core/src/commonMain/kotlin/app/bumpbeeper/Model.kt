@@ -90,9 +90,17 @@ class Bump(
      * resets it.
      */
     var missStreak: Int = 0,
+    /**
+     * Times it was felt only as a weak, down-first jolt (a dip, never a car going over a bump); -1 once it was felt
+     * any other way. From [EngineConfig.retireAfterWeakDown] such hits and nothing else, it is retired.
+     */
+    var weakDownHits: Int = -1,
 ) {
-    /** Retired: passed clean too often in a row ([missStreak]). Silent and off the map until it is felt again. */
-    fun isRetired(cfg: EngineConfig): Boolean = missStreak >= cfg.retireAfterMisses
+    /**
+     * Retired: passed clean too often in a row ([missStreak]), or only ever felt as a weak down-first jolt
+     * ([weakDownHits]). Silent and off the map until it is felt again (a weak hit doesn't bring it back).
+     */
+    fun isRetired(cfg: EngineConfig): Boolean = missStreak >= cfg.retireAfterMisses || weakDownHits >= cfg.retireAfterWeakDown
 
     val hitRate: Double get() = if (passes <= 0) 1.0 else hits.toDouble() / passes
 
@@ -140,7 +148,7 @@ class Bump(
 
     fun copy() = Bump(
         id, lat, lon, heading, hits, passes, misses, nPos, firstSeen, lastSeen, userMuted,
-        peakAvg, sevIndex, axleHits, legacy, lastBand, shape, missStreak,
+        peakAvg, sevIndex, axleHits, legacy, lastBand, shape, missStreak, weakDownHits,
     )
 }
 

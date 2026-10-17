@@ -150,6 +150,17 @@ class EngineConfig {
      */
     var softAfterMisses = 3
     var retireAfterMisses = 5
+    /**
+     * A pass is clean (adds to [Bump.missStreak]) only if it went over the spot: a fix within [cleanMaxCrossM] of it
+     * across the road, at an accuracy of [cleanMaxAccM] or better; no jolt over the trigger nearby, felt or rejected;
+     * and no other spot hit within [cleanAfterHitMs] (a hump in a row swallowed by the first one's refractory or wait).
+     * Other passes still count as passes and misses, but hold the streak.
+     */
+    var cleanMaxCrossM = 8.0
+    var cleanMaxAccM = 10.0
+    var cleanAfterHitMs = 5500L
+    /** Felt this many times only as a weak, down-first jolt, and never otherwise: retired ([Bump.weakDownHits]). */
+    var retireAfterWeakDown = 2
 
     var maxFixAgeMs = 3000L
     var maxAccuracyM = 30.0
@@ -468,6 +479,10 @@ class BumpEngine(
         var minSpeedNearMps = Double.MAX_VALUE   // slowest speed seen within 30 m of the bump
         var maxJoltNear = 0.0                     // strongest jolt felt within 40 m of the bump
         var minDistMs = startMs                   // fix time of the closest approach
+        var spot: Bump? = null
+        var minCross = Double.MAX_VALUE           // closest across the road, of the fixes within 40 m, and its accuracy
+        var minCrossAccM = Double.MAX_VALUE
+        var feltRejected = false                  // a jolt was rejected within passRadiusM of the spot
         // Approach beeps: the spot, from the last fix (distance, speed, time); next beep due; the sequence ended.
         var seqSpot: Bump? = null
         var seqDist = 0.0
@@ -663,7 +678,7 @@ class BumpEngine(
         val hump = ax?.let { bumpShape(tMs, it) }
         val hitInfo = HitInfo(sev.takeIf { !it.isNaN() }, ax?.score?.takeIf { !it.isNaN() }?.coerceIn(0.0, 1.0), hump?.first)
         val humpNote = " hump=" + (hump?.let { it.first.name.lowercase() + it.second } ?: "unknown")
-        registerHit(tMs, pos[0], pos[1], speedKmh, peak, slowdownKmh, shape, grade, note + humpNote, hitInfo)
+        registerHit(tMs, pos[0], pos[1], speedKmh, peak, slowdownKmh, shape, grade, note + humpNote, hitInfo, pol == Polarity.DOWN_WEAK)
         val spot = lastSpot
         if (spot != null && profile == CrossProfile.SLOWDOWN && (up || ax?.verdict == AxleVerdict.BOTH)) {
             pendingV.add(PendingV(spot.id, tMs, minKmh))
@@ -891,6 +906,33 @@ class BumpEngine(
             if (note.isEmpty()) reason else "$reason $note",
         )
         listener.onJoltRejected(peak, reason)
+        // Felt there, just not taken as a hit: the pass over a spot here is not clean.
+        if (fix != null) for (a in approaches.values) {
+            val s = a.spot ?: continue
+            if (Geo.distance(fix.lat, fix.lon, s.lat, s.lon) <= cfg.passRadiusM) a.feltRejected = true
+        }
+    }
+
+    // Recent hits (time, spot), for "no clean pass right after another spot's hit".
+    private val recentHits = ArrayDeque<Pair<Long, Long>>()
+
+    private fun noteHit(tMs: Long, id: Long) {
+        recentHits.addLast(tMs to id)
+        while (recentHits.size > 8) recentHits.removeFirst()
+    }
+
+    /** Why the pass of [b] is not clean, or null if it is. */
+    private fun notClean(b: Bump, a: Approach): String? = when {
+        a.minCross > cfg.cleanMaxCrossM || a.minCrossAccM > cfg.cleanMaxAccM -> "beside it"
+        a.feltRejected -> "jolt rejected"
+        a.maxJoltNear >= cfg.joltThreshold -> "jolt nearby"
+        recentHits.any { it.second != b.id && abs(a.minDistMs - it.first) <= cfg.cleanAfterHitMs } -> "another spot hit"
+        else -> null
+    }
+
+    private fun retire(b: Bump, why: String) {
+        log("retired", b.id, b.lat, b.lon, Double.NaN, Double.NaN, Double.NaN, Double.NaN, why)
+        if (remoteAll.isNotEmpty()) dedupRemote()   // its shared twin is no longer hidden behind it
     }
 
     // =====================================================================
@@ -977,6 +1019,8 @@ class BumpEngine(
         tMs: Long, lat: Double, lon: Double, speedKmh: Double, peak: Double, slowdownKmh: Double, shape: JoltShape,
         /** 2: confirmed by the car's signature, 1: some evidence, 0: none ([EngineConfig.axle]); [evidence] for the log. */
         grade: Int, evidence: String, info: HitInfo,
+        /** A weak, down-first jolt ([Polarity.DOWN_WEAK]): counts towards [Bump.weakDownHits]. */
+        downWeak: Boolean = false,
     ) {
         lastSpot = null
         // Nearest known bump within matchRadius, same direction of travel.
@@ -1020,7 +1064,9 @@ class BumpEngine(
             b.addSeverity(peak, 0, cfg)   // E2: the vibration index instead of the peak
             if (grade >= 2) b.axleHits = 1
             b.shape = info.shape
+            b.weakDownHits = if (downWeak) 1 else -1
             b.id = store.insertBump(b)
+            noteHit(tMs, b.id)
             countSpot(b)
             bumps.add(b)
             val a = Approach(tMs, 0.0)
@@ -1053,12 +1099,18 @@ class BumpEngine(
             return
         }
         lastHitMs[b.id] = tMs
+        noteHit(tMs, b.id)
         if (grade == 0) {
             // Felt, but nothing of a car going over a bump: the pass counts as felt, the hit doesn't (it never confirms).
             if (a != null) {
                 a.hit = true
                 if (!a.counted) { a.counted = true; b.passes++ }
             } else b.passes++
+            // Only ever a weak dip, twice: no bump there (a pothole the car rolls into, a road joint).
+            if (downWeak && b.weakDownHits >= 0) {
+                b.weakDownHits++
+                if (b.weakDownHits == cfg.retireAfterWeakDown) retire(b, "felt only as a weak down-first jolt, ${b.weakDownHits} times")
+            }
             store.updateBump(b)
             log("hit_weak", b.id, lat, lon, speedKmh, peak, slowdownKmh, bestD, "hits ${b.hits}/${b.passes}$evidence")
             sample("hit", "weak", tMs, speedKmh, peak, shape, null, lat, lon, b.id)
@@ -1074,7 +1126,10 @@ class BumpEngine(
         b.addPeak(peak, b.hits)
         b.addSeverity(peak, b.hits, cfg)
         b.hits++
+        val wasRetired = b.isRetired(cfg)
         b.missStreak = 0
+        b.weakDownHits = -1
+        if (wasRetired && remoteAll.isNotEmpty()) dedupRemote()   // back: it replaces its shared twin again
         if (grade >= 2) b.axleHits++
         info.shape?.let { b.shape = it }
         b.legacy = false   // felt again: an old pothole spot is an ordinary bump from now on
@@ -1208,7 +1263,7 @@ class BumpEngine(
     private fun dedupRemote() {
         remoteActive = remoteAll.filter { r ->
             bumps.none { b ->
-                abs(b.lat - r.lat) <= 0.0005 && abs(b.lon - r.lon) <= 0.0006 &&   // quick ~55 m box
+                !b.isRetired(cfg) && abs(b.lat - r.lat) <= 0.0005 && abs(b.lon - r.lon) <= 0.0006 &&   // quick ~55 m box
                     Geo.distance(b.lat, b.lon, r.lat, r.lon) <= cfg.matchRadiusM &&
                     Geo.angleDiff(b.heading, r.heading) <= cfg.headingTolDeg
             }
@@ -1361,6 +1416,11 @@ class BumpEngine(
             approaches[b.id] = a
         }
         if (d < a.minDist) { a.minDist = d; a.minDistMs = f.timeMs }
+        a.spot = b
+        if (d <= 40.0) {
+            val cross = abs(d * sin(degToRad(aheadDiff)))
+            if (cross < a.minCross) { a.minCross = cross; a.minCrossAccM = f.accuracyM }
+        }
         if (d <= 30.0) a.minSpeedNearMps = min(a.minSpeedNearMps, f.speedMps)
         if (d <= 40.0) a.maxJoltNear = max(a.maxJoltNear, joltSinceFix)
 
@@ -1598,16 +1658,15 @@ class BumpEngine(
             b.passes++
             if (!a.hit) {
                 b.misses++
-                b.missStreak++
+                val unclean = notClean(b, a)
+                if (unclean == null) b.missStreak++
                 trip.misses++
                 recentMissMs[b.id] = f.timeMs
                 log(
                     "miss", b.id, f.lat, f.lon, f.speedMps * 3.6, a.maxJoltNear, Double.NaN, a.minDist,
-                    "hits ${b.hits}/${b.passes}, clean ${b.missStreak} in a row, $nearNote",
+                    "hits ${b.hits}/${b.passes}, " + (if (unclean == null) "clean ${b.missStreak} in a row" else "not clean: $unclean") + ", $nearNote",
                 )
-                if (b.missStreak == cfg.retireAfterMisses) {
-                    log("retired", b.id, b.lat, b.lon, Double.NaN, Double.NaN, Double.NaN, Double.NaN, "${b.missStreak} clean passes in a row")
-                }
+                if (unclean == null && b.missStreak == cfg.retireAfterMisses) retire(b, "${b.missStreak} clean passes in a row")
                 observe("pass_clear", b.lat, b.lon, a.minSpeedNearMps * 3.6, a.maxJoltNear, 0.0, wallClock(), b.heading)
                 sample("miss", null, a.minDistMs, passKmh(a, f), a.maxJoltNear, null, b.severity(cfg), b.lat, b.lon, b.id, b.heading)
             }
