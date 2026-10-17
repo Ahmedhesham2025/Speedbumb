@@ -18,10 +18,10 @@ import kotlin.math.roundToInt
  *  bumps  – the learned map
  *  events – everything that happened (new bump, hit, miss, beep, rejected jolt) → for tuning
  *  trips  – one row per Start…Stop
- * plus the shared-map sync tables (outbox, remote_spots, sync_state), see [SyncStore], and the training outbox
+ * plus the shared-map sync tables (outbox, remote_spots, osm_bumps, sync_state), see [SyncStore], and the training outbox
  * ("Help improve detection"), see [TrainingStore].
  */
-class BumpDb(ctx: Context) : SQLiteOpenHelper(ctx, "bumps.db", null, 10), BumpStore {
+class BumpDb(ctx: Context) : SQLiteOpenHelper(ctx, "bumps.db", null, 11), BumpStore {
 
     init {
         setWriteAheadLoggingEnabled(true)
@@ -59,6 +59,7 @@ class BumpDb(ctx: Context) : SQLiteOpenHelper(ctx, "bumps.db", null, 10), BumpSt
         SyncStore.addSpotColumns(db)
         addBreakdownColumns(db)
         addShapeColumn(db)
+        SyncStore.createOsmTable(db)
     }
 
     /** Version 9: the most over the fixed speeding threshold, for the score breakdown ([DrivingStats.scoreBreakdown]). */
@@ -136,6 +137,8 @@ class BumpDb(ctx: Context) : SQLiteOpenHelper(ctx, "bumps.db", null, 10), BumpSt
         if (oldVersion < 9) addBreakdownColumns(db)
         // Version 10: a hump's shape (E4c); spots saved before have none until they are hit again.
         if (oldVersion < 10) addShapeColumn(db)
+        // Version 11: the OpenStreetMap bump cache (filled by the next sync). New table only.
+        if (oldVersion < 11) SyncStore.createOsmTable(db)
     }
 
     private fun addShapeColumn(db: SQLiteDatabase) {

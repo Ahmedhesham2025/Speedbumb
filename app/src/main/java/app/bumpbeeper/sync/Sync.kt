@@ -28,7 +28,7 @@ import kotlin.math.roundToLong
  *
  * Nothing touches the network until the user answered the first-run screen ([Prefs.syncChoice] not "unset").
  * One run: sign in (anonymous) → register_device → upload the outbox and crash reports (choice "share" only)
- * → download confirmed spots within 10 km of the last trip position into the cache.
+ * → download confirmed spots within 10 km of the last trip position into the cache, and OpenStreetMap bumps ([pullOsm]).
  */
 object Sync {
     private const val TAG = "BumpBeeper"
@@ -370,6 +370,22 @@ object Sync {
         store.replaceRemoteSpots(lat, lon, PULL_RADIUS_M.toDouble(), rows, now)
         store.put(SPOTS_OK_AT, now)
         store.put(SPOTS_FAILED, null)
+        pullOsm(api, store, lat, lon, now)
+    }
+
+    /**
+     * OpenStreetMap bumps in the same circle, right after the shared spots (same runs, same offline cache). A server
+     * without `osm_bumps_near` has none: the cache empties there. Any other failure keeps the cache as it was and
+     * never fails the run: the shared map is what the status and the offline banner are about.
+     */
+    internal fun pullOsm(api: SupabaseApi, store: SyncStore, lat: Double, lon: Double, now: Long) {
+        val rows = try {
+            api.osmBumpsNear(lat, lon, PULL_RADIUS_M) ?: emptyList()
+        } catch (e: ApiException) {
+            Log.w(TAG, "osm bumps: ${e.message}")
+            return
+        }
+        store.replaceOsmBumps(lat, lon, PULL_RADIUS_M.toDouble(), rows, now)
     }
 
     /**
@@ -390,6 +406,7 @@ object Sync {
         LiveState.syncLastError = store.get(LAST_ERROR) ?: ""
         LiveState.syncPending = store.outboxCount()
         LiveState.syncRemoteSpots = store.remoteSpotCount()
+        LiveState.osmBumps = store.osmBumpCount()
         LiveState.spotsOkAt = store.getLong(SPOTS_OK_AT)
         LiveState.spotsFailed = store.get(SPOTS_FAILED) != null
         LiveState.trainingQueued = try { TrainingStore(store.helper).count() } catch (_: Exception) { 0 }

@@ -10,6 +10,8 @@ object Prefs {
     const val SENSITIVITY = "sensitivity"   // 0 = low, 1 = normal, 2 = high
     const val LOUD = "loud"
     const val CLICK_ON_NEW = "click_on_new"
+    /** "Warn for OpenStreetMap bumps": a soft "maybe" beep for bumps mapped on OSM that we don't know yet. */
+    const val OSM_WARNINGS = "osm_warnings"
     const val LEAD_SECONDS = "lead_seconds"
     const val QUIET_BELOW_KMH = "quiet_below_kmh"
     const val MAX_BUMP_KMH = "max_bump_kmh"
@@ -66,6 +68,8 @@ object Prefs {
     fun loud(ctx: Context): Boolean = sp(ctx).getBoolean(LOUD, false)
     /** Soft tick when a new spot is recorded on the first pass (on unless switched off). */
     fun clickOnNew(ctx: Context): Boolean = sp(ctx).getBoolean(CLICK_ON_NEW, true)
+    /** Soft warnings for OpenStreetMap bumps ([EngineConfig.osmWarnings]), on unless switched off. */
+    fun osmWarnings(ctx: Context): Boolean = sp(ctx).getBoolean(OSM_WARNINGS, true)
 
     /** Seconds of warning before a bump (4–12). */
     fun leadSeconds(ctx: Context): Int = sp(ctx).getInt(LEAD_SECONDS, 7)
@@ -230,6 +234,7 @@ object Prefs {
         cfg.leadSeconds = leadSeconds(ctx).toDouble()
         cfg.quietBelowKmh = quietBelowKmh(ctx).toDouble()
         cfg.maxSpeedKmh = maxBumpKmh(ctx).toDouble()
+        cfg.osmWarnings = osmWarnings(ctx)
     }
 
     /**

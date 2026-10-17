@@ -4,14 +4,17 @@ import android.content.ContentValues
 import android.database.sqlite.SQLiteDatabase
 import android.database.sqlite.SQLiteOpenHelper
 import app.bumpbeeper.Geo
+import app.bumpbeeper.OsmBump
 import org.json.JSONArray
 import org.json.JSONObject
 import kotlin.math.cos
 
 /**
- * The sync tables inside bumps.db (database version 5; v8 added the spots_near_v2 columns of remote_spots):
+ * The sync tables inside bumps.db (database version 5; v8 added the spots_near_v2 columns of remote_spots, v11 osm_bumps):
  *  outbox       – hazard observations waiting for upload (already privacy-filtered), one JSON element each
  *  remote_spots – the cache of confirmed shared-map spots the engine warns for (filled in the background)
+ *  osm_bumps    – the cache of OpenStreetMap speed bumps (v11): a prior the engine warns softly for ([CachedOsmSource]),
+ *                 with this phone's clean passes over each
  *  sync_state   – small key/value notes (last sync time, back-off, last position for the download), and the
  *                 held observations of unconfirmed trips ([holdAdd])
  */
@@ -156,6 +159,61 @@ class SyncStore(internal val helper: SQLiteOpenHelper) {
 
     fun remoteSpotCount(): Int = count("remote_spots")
 
+    // ---------------- OpenStreetMap bump cache (v11)
+
+    /** Cached OSM bumps in a box around the point (callers check the exact distance), with this phone's clean passes. */
+    fun osmBumpsInBox(lat: Double, lon: Double, radiusM: Double): List<OsmBump> {
+        val dLat = radiusM / 111_000.0
+        val dLon = radiusM / (111_000.0 * cos(Math.toRadians(lat)).coerceAtLeast(0.01))
+        return db.rawQuery(
+            "SELECT osm_id, lat, lon, kind, clean_passes FROM osm_bumps WHERE lat BETWEEN ? AND ? AND lon BETWEEN ? AND ?",
+            arrayOf((lat - dLat).toString(), (lat + dLat).toString(), (lon - dLon).toString(), (lon + dLon).toString()),
+        ).use { c ->
+            val out = ArrayList<OsmBump>()
+            while (c.moveToNext()) out.add(OsmBump(c.getString(0), c.getDouble(1), c.getDouble(2), c.getString(3), c.getInt(4)))
+            out
+        }
+    }
+
+    /**
+     * Stores a fresh `osm_bumps_near` answer for the circle ([lat], [lon], [radiusM]): upserts every row (keeping its
+     * clean passes) and deletes cached ones inside the circle the server no longer returned. The server sends at most
+     * [OSM_MAX_ROWS], nearest first: a full answer only covers the circle up to its farthest row.
+     */
+    fun replaceOsmBumps(lat: Double, lon: Double, radiusM: Double, rows: List<OsmBump>, now: Long) {
+        val covered = if (rows.size < OSM_MAX_ROWS) radiusM else rows.maxOf { Geo.distance(lat, lon, it.lat, it.lon) }
+        val keep = HashSet<String>()
+        val d = db
+        d.beginTransaction()
+        try {
+            for (r in rows) {
+                keep.add(r.osmId)
+                val v = ContentValues().apply { put("lat", r.lat); put("lon", r.lon); put("kind", r.kind); put("fetched_at", now) }
+                if (d.update("osm_bumps", v, "osm_id = ?", arrayOf(r.osmId)) == 0) {
+                    v.put("osm_id", r.osmId)
+                    d.insert("osm_bumps", null, v)
+                }
+            }
+            val gone = osmBumpsInBox(lat, lon, covered)
+                .filter { it.osmId !in keep && Geo.distance(lat, lon, it.lat, it.lon) <= covered }
+                .map { it.osmId }
+            inChunks(gone) { part -> d.delete("osm_bumps", "osm_id IN (${part.joinToString(",") { "?" }})", part.toTypedArray()) }
+            d.setTransactionSuccessful()
+        } finally {
+            d.endTransaction()
+        }
+    }
+
+    /** This phone passed [osmId] cleanly once more ([app.bumpbeeper.BumpEngine], engine thread). */
+    fun osmCleanPass(osmId: String) =
+        db.execSQL("UPDATE osm_bumps SET clean_passes = clean_passes + 1 WHERE osm_id = ?", arrayOf<Any>(osmId))
+
+    /** Muted after it warned: as many clean passes as never to warn again. */
+    fun osmMute(osmId: String) =
+        db.execSQL("UPDATE osm_bumps SET clean_passes = MAX(clean_passes, $OSM_MUTED) WHERE osm_id = ?", arrayOf<Any>(osmId))
+
+    fun osmBumpCount(): Int = count("osm_bumps")
+
     // ---------------- key/value
 
     fun get(key: String): String? =
@@ -174,6 +232,7 @@ class SyncStore(internal val helper: SQLiteOpenHelper) {
     fun clearAll() {
         db.delete("outbox", null, null)
         db.delete("remote_spots", null, null)
+        db.delete("osm_bumps", null, null)
         db.delete("sync_state", null, null)
     }
 
@@ -186,6 +245,20 @@ class SyncStore(internal val helper: SQLiteOpenHelper) {
 
     companion object {
         private const val HELD = "held_trip_"
+        /** The most rows one `osm_bumps_near` answer has (the server's limit). */
+        const val OSM_MAX_ROWS = 2000
+        /** The clean passes a muted OSM bump gets: far past [app.bumpbeeper.EngineConfig.osmQuietAfterPasses]. */
+        const val OSM_MUTED = 1000
+
+        /** Version 11: the OpenStreetMap bump cache. New table only; safe to repeat. */
+        fun createOsmTable(db: SQLiteDatabase) {
+            db.execSQL(
+                """CREATE TABLE IF NOT EXISTS osm_bumps(
+                    osm_id TEXT PRIMARY KEY, lat REAL NOT NULL, lon REAL NOT NULL, kind TEXT,
+                    fetched_at INTEGER NOT NULL, clean_passes INTEGER NOT NULL DEFAULT 0)"""
+            )
+            db.execSQL("CREATE INDEX IF NOT EXISTS osm_bumps_lat ON osm_bumps(lat)")
+        }
 
         /** Version 5: creates the sync tables (fresh install and upgrade alike). */
         fun createTables(db: SQLiteDatabase) {

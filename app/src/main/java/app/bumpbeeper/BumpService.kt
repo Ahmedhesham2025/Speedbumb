@@ -43,6 +43,7 @@ import app.bumpbeeper.research.ResearchFiles
 import app.bumpbeeper.research.ResearchQueue
 import app.bumpbeeper.research.ResearchRecorder
 import app.bumpbeeper.research.ResearchUploader
+import app.bumpbeeper.sync.CachedOsmSource
 import app.bumpbeeper.sync.CachedSpotSource
 import app.bumpbeeper.sync.LiveSpeedLimit
 import app.bumpbeeper.sync.OutboxSink
@@ -81,7 +82,7 @@ class BumpService : Service(), SensorEventListener, LocationListener, EngineList
         /** Settings that [Prefs.applyTo] copies into the engine or driving monitor. */
         private val ENGINE_KEYS: Set<String?> = setOf(
             Prefs.SENSITIVITY, Prefs.LEAD_SECONDS, Prefs.QUIET_BELOW_KMH, Prefs.MAX_BUMP_KMH,
-            Prefs.WARN_POTHOLES, Prefs.HARSH_MS2, Prefs.SPEED_LIMIT,
+            Prefs.WARN_POTHOLES, Prefs.HARSH_MS2, Prefs.SPEED_LIMIT, Prefs.OSM_WARNINGS,
         )
         private const val NOTIF_AUTO_ID = 2
         private const val TAG = "BumpBeeper"
@@ -697,7 +698,7 @@ class BumpService : Service(), SensorEventListener, LocationListener, EngineList
             // "Help improve detection" (separate opt-in): jolt samples with their signal window, no coordinates uploaded.
             training = if (Prefs.trainingActive(this)) TrainingSink(Prefs.placement(this), System.currentTimeMillis(), batteryPercent()) else null
             val eng = BumpEngine(cfg, store, this, { System.currentTimeMillis() }, tripId, CachedSpotSource(syncStore), outbox,
-                training ?: JoltSampleSink.NONE, Prefs.vehicle(this))
+                training ?: JoltSampleSink.NONE, Prefs.vehicle(this), CachedOsmSource(syncStore))
             eng.cfg.groupWarnings = voice?.speaks == true
             engine = eng
             val logStore = store
