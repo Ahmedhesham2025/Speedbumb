@@ -9,7 +9,7 @@ private const val USAGE = """Usage:
   replay --trace run1.csv[.gz] [--trace run2.csv …] [--out metrics.json]
       replay labelled recordings (the runs of one route, oldest first) on one shared map, print the accuracy table;
       research recordings (rr2, rr_<id>_<start>_<segment>.csv.gz) are read too, the segments of a trip as one run;
-      --placement mounted|cupholder|pocket|unknown (default) for every run, or "recording": each file's own setting;
+      --placement mounted|cupholder|pocket|seat|unknown (default) for every run, or "recording": each file's own setting;
       --sensor-period-us N: the engine's sensor period (Prefs.sensorPeriodUs), default 20000 (≤ 100 Hz while research runs)
   anonymize --in raw.csv[.gz] --out anon.csv[.gz]      fake origin + clock at zero, before anything enters testdata/
       a research trip: --in rr_…_000.csv.gz [--in rr_…_001.csv.gz …]: also trimmed like the upload, ids and chips dropped"""
@@ -69,11 +69,11 @@ fun readLines(f: File): List<String> {
     return stream.bufferedReader(Charsets.UTF_8).use { it.readLines() }
 }
 
-/** One drive to replay: its samples and the phone placement to replay it with (mounted, cupholder, pocket, unknown). */
+/** One drive to replay: its samples and the phone placement to replay it with (mounted, cupholder, pocket, seat, unknown). */
 class Recording(val name: String, val samples: List<TraceSample>, val placement: String = "unknown")
 
 /** The phone placements the app knows (Prefs.placement). */
-val PLACEMENTS = listOf("mounted", "cupholder", "pocket", "unknown")
+val PLACEMENTS = listOf("mounted", "cupholder", "pocket", "seat", "unknown")
 
 /**
  * Recordings in the order given: a CSV trace is one run; research (rr2) files of one trip (same `rr_<id>_<start>`

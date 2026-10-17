@@ -36,7 +36,7 @@ class Rr2Trip(
     /** Segment numbers missing between 0 and the last one given (the upload skips segments wholly in the privacy zone). */
     val missingSegments: List<Int> = emptyList(),
 ) {
-    /** The user's placement setting while recording: mounted, cupholder, pocket or unknown. */
+    /** The user's placement setting while recording: mounted, cupholder, pocket, seat or unknown. */
     val placement: String get() = meta["placement"] ?: "unknown"
 }
 

@@ -22,7 +22,8 @@ knowledge needed. Each drive needs **two people: a driver and a passenger.**
 1. Open **Settings → Debug recording** and switch on **Record raw sensor data while driving**.
 2. Open **Settings → Road testing** and switch on **Label mode**.
 3. In the same **Road testing** card, under **Where is the phone?**, pick **Mounted** (phone in a holder),
-   **Cup holder** or **Pocket**. It is saved in the recording as `mounted`, `cupholder` or `pocket`.
+   **Cup holder**, **Pocket** or **On a seat** (lying on the passenger seat, or the driver's seat between the legs).
+   It is saved in the recording as `mounted`, `cupholder`, `pocket` or `seat`.
 4. Start a drive on the Drive tab (or let auto start do it when the car's Bluetooth connects). While recording,
    the Drive tab shows a panel **"PASSENGER: TAP WHAT YOU JUST DROVE OVER"** with big buttons:
    **Bump** · **Rough road**, then **Pothole left** · **Pothole right**, then **Undo**.
@@ -58,7 +59,7 @@ When you are back home (not while driving):
   Only the owner's team runs them through the anonymizer before anything goes into the project.
 - Rename each file before uploading:
   `route<1-3>_run<1-5>_<driver initials>_<phone model>_<placement>_<yyyy-mm-dd>.csv`
-  for example `route2_run3_AH_A51_mounted_2026-10-12.csv` (placement: `mounted`, `cupholder` or `pocket`).
+  for example `route2_run3_AH_A51_mounted_2026-10-12.csv` (placement: `mounted`, `cupholder`, `pocket` or `seat`).
 - In the folder's notes sheet, add one line per file: vehicle type, weather, traffic, anything odd
   ("forgot to tap at the third bump", "phone fell off at the end").
 

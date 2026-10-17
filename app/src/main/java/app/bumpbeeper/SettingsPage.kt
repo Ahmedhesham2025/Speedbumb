@@ -232,7 +232,8 @@ class SettingsPage(private val a: MainActivity) : Page, BackHandler {
 
         val sens = Ui.segmented(a, listOf(R.string.settings_sens_low, R.string.settings_sens_normal, R.string.settings_sens_high).map { a.getString(it) },
             Prefs.sensitivity(a)) { sp.edit().putInt(Prefs.SENSITIVITY, it).apply() }
-        val places = listOf("mounted" to R.string.settings_place_mounted, "cupholder" to R.string.settings_place_cupholder, "pocket" to R.string.settings_place_pocket)
+        val places = listOf("mounted" to R.string.settings_place_mounted, "cupholder" to R.string.settings_place_cupholder, "pocket" to R.string.settings_place_pocket,
+            "seat" to R.string.settings_place_seat)
         val place = Ui.segmented(a, places.map { a.getString(it.second) }, places.indexOfFirst { it.first == Prefs.placement(a) }) {
             Prefs.setPlacement(a, places[it].first)
         }

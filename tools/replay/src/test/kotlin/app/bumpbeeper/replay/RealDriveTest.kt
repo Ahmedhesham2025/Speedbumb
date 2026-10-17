@@ -14,7 +14,7 @@ import kotlin.math.max
  *
  * A drive with a `<name>.expected.properties` next to it is a regression guard: each count given there must stay
  * within ±25 % (at least ±3), the distance within ±10 %, and none may drop to 0 where more is expected. Empty values
- * are printed but not checked. `placement=` there (mounted, cupholder, pocket) sets the phone placement the drive is
+ * are printed but not checked. `placement=` there (mounted, cupholder, pocket, seat) sets the phone placement the drive is
  * replayed with; without it, unknown. Labelled drives also print their labels against the engine's decisions.
  */
 class RealDriveTest {
