@@ -23,9 +23,9 @@ object Prefs {
     const val CAR_NAME = "car_name"
     /** Label mode: the driver taps what they just drove over; forces a recording even with debug recording off. */
     const val LABEL_MODE = "label_mode"
-    /** Where the phone sits in the car (written into recordings): mounted | cupholder | pocket | unknown. */
+    /** Where the phone sits in the car (written into recordings): mounted | cupholder | pocket | seat | unknown. */
     const val PLACEMENT = "placement"
-    val PLACEMENTS = listOf("mounted", "cupholder", "pocket", "unknown")
+    val PLACEMENTS = listOf("mounted", "cupholder", "pocket", "seat", "unknown")
     /** The car the engine learned from both-axle hits ([VehicleProfile.encode]: wheelbase and hits). */
     const val VEHICLE = "vehicle_profile"
     const val CALIBRATION = "phone_calibration"
@@ -84,7 +84,7 @@ object Prefs {
     /** Read at each trip start (BumpService builds a new config), so a placement change applies to the next trip. */
     fun applyTo(cfg: DrivingConfig, ctx: Context) {
         cfg.speedLimitKmh = speedLimit(ctx).toDouble()
-        cfg.placement = placement(ctx)   // same values as DrivingConfig: mounted | cupholder | pocket | unknown
+        cfg.placement = placement(ctx)   // same values as DrivingConfig: mounted | cupholder | pocket | seat | unknown
     }
     fun debugRecording(ctx: Context): Boolean = sp(ctx).getBoolean(DEBUG_RECORDING, false)
 
