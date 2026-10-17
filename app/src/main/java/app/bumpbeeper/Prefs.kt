@@ -3,6 +3,7 @@ package app.bumpbeeper
 import android.content.Context
 import android.content.SharedPreferences
 import app.bumpbeeper.research.ResearchFiles
+import app.bumpbeeper.sync.UpdateCheck
 
 /** User settings, stored on the phone. */
 object Prefs {
@@ -25,11 +26,20 @@ object Prefs {
     /** Where the phone sits in the car (written into recordings): mounted | cupholder | pocket | unknown. */
     const val PLACEMENT = "placement"
     val PLACEMENTS = listOf("mounted", "cupholder", "pocket", "unknown")
+    /** The car the engine learned from both-axle hits ([VehicleProfile.encode]: wheelbase and hits). */
+    const val VEHICLE = "vehicle_profile"
     /** Update check: when it last asked GitHub, and the newer version it found (if any). */
     const val UPDATE_CHECKED_AT = "update_checked_at"
     const val UPDATE_VERSION = "update_version"
     const val UPDATE_URL = "update_url"
     const val UPDATE_HTML_URL = "update_html_url"
+    /** The last version announced by a system notification (one per version, also across restarts). */
+    const val UPDATE_NOTIFIED = "update_notified"
+    /** "Beta updates": betas count as updates too. Unset = on for a beta install, off for a stable one. */
+    const val BETA_UPDATES = "beta_updates"
+    fun betaUpdates(ctx: Context): Boolean =
+        sp(ctx).getBoolean(BETA_UPDATES, UpdateCheck.isPreRelease(TraceWriter.appVersion(ctx)))
+    fun setBetaUpdates(ctx: Context, on: Boolean) = sp(ctx).edit().putBoolean(BETA_UPDATES, on).apply()
     /**
      * The online bump map, as answered on the first-run screen: [SYNC_UNSET] (not answered: no network at all),
      * [SYNC_RECEIVE] (download confirmed spots only) or [SYNC_SHARE] (also upload hazard points and crash reports).
@@ -81,6 +91,10 @@ object Prefs {
     fun setLabelMode(ctx: Context, on: Boolean) = sp(ctx).edit().putBoolean(LABEL_MODE, on).apply()
     /** A recording file is written when debug recording or label mode is on. */
     fun recordTrace(ctx: Context): Boolean = debugRecording(ctx) || labelMode(ctx)
+
+    /** The learned car for the next trip's engine; a fresh one (2.6 m) when none was saved or it is unreadable. */
+    fun vehicle(ctx: Context): VehicleProfile = VehicleProfile.decode(sp(ctx).getString(VEHICLE, null))
+    fun setVehicle(ctx: Context, v: VehicleProfile) = sp(ctx).edit().putString(VEHICLE, v.encode()).apply()
 
     fun placement(ctx: Context): String = sp(ctx).getString(PLACEMENT, "unknown")?.takeIf { it in PLACEMENTS } ?: "unknown"
     fun setPlacement(ctx: Context, value: String) =

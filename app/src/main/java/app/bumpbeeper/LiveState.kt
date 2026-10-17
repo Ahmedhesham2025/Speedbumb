@@ -24,6 +24,10 @@ object LiveState {
     @Volatile var tripMovingS = 0.0
     @Volatile var tripEvents = 0
     @Volatile var speedingPct = 0.0
+    /** The next spots on the road ahead, nearest first, at most two (Drive card: "Then: strong bump in 650 m"). */
+    @Volatile var spotsAhead: List<SpotAhead> = emptyList()
+    /** Where this trip's points went so far; null while too short to score. */
+    @Volatile var scoreBreakdown: ScoreBreakdown? = null
     @Volatile var lastDriveEvent = ""
     /** "Help improve detection": elements waiting for upload. */
     @Volatile var trainingQueued = 0
@@ -40,6 +44,10 @@ object LiveState {
     /** Last label the driver tapped this trip ("" = none yet) and how many labels count (an undo takes one back). */
     @Volatile var lastLabel = ""
     @Volatile var labelCount = 0
+    /** Research recording is writing this trip's files (Diagnostics: "Mark" writes into them). */
+    @Volatile var researchRunning = false
+    /** The accelerometer rate the engine got this trip, Hz (0 = not measured yet). For Diagnostics. */
+    @Volatile var sensorHz = 0.0
 
     /** Online bump map: last finished sync (wall ms, 0 = never), cached shared spots, observations waiting
      *  for upload, and the last problem in a few words ("" = none). Filled by app.bumpbeeper.sync.Sync. */
@@ -47,6 +55,9 @@ object LiveState {
     @Volatile var syncRemoteSpots = 0
     @Volatile var syncPending = 0
     @Volatile var syncLastError = ""
+    /** Shared spots: the last successful download (wall ms, 0 = never), and whether the last try failed. By Sync. */
+    @Volatile var spotsOkAt = 0L
+    @Volatile var spotsFailed = false
 
     /**
      * Live road speed limit (opt-in, [app.bumpbeeper.sync.LiveSpeedLimit]): km/h, null = unknown. In memory only,
@@ -95,6 +106,7 @@ object LiveState {
         lastIgnored = ""
         forwardKnown = false
         lastLabel = ""; labelCount = 0
+        sensorHz = 0.0
         setSpeedLimit(null, 0L); overLimit = 0; liveLimitsOn = false
     }
 
@@ -110,4 +122,6 @@ object Labels {
     /** Takes back the previous label (the replay tool drops the label before an undo). */
     const val UNDO = "undo"
     val ALL = listOf(BUMP, POTHOLE_LEFT, POTHOLE_RIGHT, ROUGH, UNDO)
+    /** Not a label kind (not in [ALL]): Diagnostics' "Mark", a research `lbl` line for test drives. */
+    const val MARK = "mark"
 }

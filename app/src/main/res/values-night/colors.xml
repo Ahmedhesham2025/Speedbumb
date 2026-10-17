@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="bb_primary">#8AB4FF</color>
+    <color name="bb_bg">#0F1216</color>
+    <color name="bb_surface">#1A1E24</color>
+    <color name="bb_text">#ECEFF3</color>
+    <bool name="bb_light_bars">false</bool>
+</resources>

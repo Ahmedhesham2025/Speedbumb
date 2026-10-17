@@ -103,7 +103,7 @@ class BumpDbV8Test {
     @Test fun upgradeFromV7MovesSeverityAndTheOldPotholeFlag() {
         v7()
         val db = db()
-        assertEquals(8, db.writableDatabase.version)
+        assertEquals(10, db.writableDatabase.version)   // v8's move, v9's breakdown column, v10's hump shape
         val b = db.loadBumps().sortedBy { it.lat }
         assertEquals(4, b.size)
         assertEquals(listOf(3.2, 6.1, 4.0, 0.0), b.map { it.sevIndex })
