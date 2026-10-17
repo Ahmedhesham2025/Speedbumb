@@ -88,7 +88,8 @@ class DrivePage(private val a: MainActivity) : Page {
         .apply { topMargin = dp(top) }
 
     private fun buildReady(): View {
-        map = SpotMap(a, interactive = false).apply { radiusM = 600.0 }
+        // A finger may move and zoom it (no taps); while driving it comes back by itself ([SpotMap.following]).
+        map = SpotMap(a, interactive = false, pan = true).apply { radiusM = 600.0 }
         val o = Ui.Space.OVERLAY
 
         // Top: what starts the next drive, and the shared map (tap: Settings).
@@ -192,14 +193,21 @@ class DrivePage(private val a: MainActivity) : Page {
         }.start()
     }
 
-    /** The blue dot from the newest position Android has; centres on it the first time (or when asked). */
+    /** The fix [updateMe] last gave the map (its time), so an unchanged one costs the map nothing. */
+    private var meAt = Long.MIN_VALUE
+
+    /**
+     * Your puck from the newest position Android has; centres on it the first time (or when asked). While recording
+     * the map is in navigation mode: the arrow on the GPS bearing, the camera following it ([SpotMap.navigation]).
+     */
     private fun updateMe(centre: Boolean) {
         val me = a.lastLocation() ?: return
-        map.meLat = me.latitude
-        map.meLon = me.longitude
-        // While driving the street map turns with the car (heading-up); parked it stays north-up.
-        map.heading = if (me.hasBearing() && me.speed > 1.5f) me.bearing.toDouble() else Double.NaN
-        map.headingUp = LiveState.recording
+        val rec = LiveState.recording
+        map.headingUp = rec
+        map.navigation = rec
+        if (me.time == meAt && !centre) return
+        meAt = me.time
+        map.location(me)
         if (centre || !mapCentred) {
             map.centerLat = me.latitude
             map.centerLon = me.longitude
@@ -302,6 +310,7 @@ class DrivePage(private val a: MainActivity) : Page {
             recenterBtn.visibility = View.GONE
         }.apply { visibility = View.GONE }
         map.onPanned = { recenterBtn.visibility = View.VISIBLE }
+        map.onRecentered = { recenterBtn.visibility = View.GONE }
         val fabs = LinearLayout(a).apply {
             orientation = LinearLayout.VERTICAL
             for (v in listOf(
@@ -703,8 +712,9 @@ class DrivePage(private val a: MainActivity) : Page {
         if (autoChip.text.toString() != auto) autoChip.text = auto
         autoChip.visibility = if (auto.isEmpty()) View.INVISIBLE else View.VISIBLE
         readyHint.text = a.getString(if (a.autoStartOn()) R.string.drive_ready_auto_hint else R.string.drive_ready_hint)
-        // The map: the blue dot every 2 s when parked; while recording it follows the car every second.
-        if (if (rec) ticks % 4 == 0 else ticks % 8 == 0) updateMe(centre = rec)
+        // The map: the puck every 2 s when parked; while recording each new fix within half a second (the map
+        // animates between them). Recording, the puck's camera follows by itself: no centring here.
+        if (if (rec) ticks % 2 == 0 else ticks % 8 == 0) updateMe(centre = false)
         // Once a second is enough for the network check; off at once when recording stops.
         ticks++
         if (!rec || ticks % 4 == 0) offline.visibility = if (rec && OfflineBanner.show(a)) View.VISIBLE else View.GONE
