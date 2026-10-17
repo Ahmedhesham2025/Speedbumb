@@ -111,7 +111,11 @@ object Rr2 {
             // speed m/s → km/h like the CSV traces; bearing degrees; horizontal accuracy m (empty → NaN → the service's 99).
             out.add(TraceSample.Gps(ms(r.tDms), lat, lon, r.value(3) * 3.6, r.value(4), r.value(5)))
         }
-        for (r in of("lbl")) out.add(TraceSample.Event(ms(r.tDms), "label", -1, Double.NaN, r.text(0)))
+        // A `mark` (Diagnostics, the phone picked up) is its own event like in the debug trace: never a label, never undone.
+        for (r in of("lbl")) out.add(
+            if (r.text(0).trim() == MarkReport.MARK) TraceSample.Event(ms(r.tDms), MarkReport.MARK, -1, Double.NaN, "")
+            else TraceSample.Event(ms(r.tDms), "label", -1, Double.NaN, r.text(0)),
+        )
         val phone = PHONE_CODES.flatMap { c ->
             val n = ResearchFormat.code(c)?.scales?.size ?: 0
             of(c).map { r -> PhoneLine(ms(r.tDms), c, List(n) { r.value(it) }) }
