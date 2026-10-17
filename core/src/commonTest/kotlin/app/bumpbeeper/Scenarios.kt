@@ -1175,6 +1175,7 @@ object Scenarios {
             describe("seat, slid $deg° in a brake", r)
             describeDriving("seat, slid $deg° in a brake, handled ${formatFixed(r.handledS, 1)} s", r.driving)
             check(r.newBumps == 0, "seat, $deg°: a slide is no bump: ${store.events.filter { it.type == "new_bump" }.map { it.note }}")
+            check("handled" in r.rejected, "seat, $deg°: the knock is felt and kept as the phone's: ${r.rejected}")
             check(r.driving.harshBrakes + r.driving.harshAccels + r.driving.harshCorners + r.driving.swerves == 0,
                 "seat, $deg°: no harsh event from the phone: brakes ${r.driving.harshBrakes} corners ${r.driving.harshCorners}")
             check(r.driving.phoneUse == 0, "seat, $deg°: a slide is no phone use, got ${r.driving.phoneUse}")
