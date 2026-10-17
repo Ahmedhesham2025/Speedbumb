@@ -136,6 +136,19 @@ class PhoneStateConfig {
     var autoPocketWindowMs = 300_000L
     /** Handling only counts as "while driving" at this speed or faster. */
     var movingKmh = 10.0
+    /**
+     * Placement "seat": the phone lies loose on the seat foam and slides or tips when the car brakes or corners. A turn
+     * of more than [seatSlideDeg] from where it rests is a SLIDE: the phone is HANDLED (its jolts and pushes are not
+     * the road's or the car's) until it rests again. A slide that began within [seatSlideBeforeMs] before to
+     * [seatSlideAfterMs] after a GPS fix showing the car braking or speeding up by [seatSlideGpsMs2] or more, or turning
+     * at [seatSlideTurnRads] or more, is no phone use unless a sign other than motion (screen, unlock, call) joins in
+     * ([PhoneStateDetector.seatSlideExcused]).
+     */
+    var seatSlideDeg = 12.0
+    var seatSlideGpsMs2 = 1.5
+    var seatSlideTurnRads = 0.15
+    var seatSlideBeforeMs = 1500L
+    var seatSlideAfterMs = 3000L
 }
 
 /**
@@ -153,7 +166,8 @@ class PhoneStateConfig {
  *  - it was unlocked less than [PhoneStateConfig.unlockMs] ago, or its screen is on and it turned
  *    ([PhoneStateConfig.screenTiltDeg]) from where it last rested, unless it sits in a holder;
  *  - a hand-held call ([PhoneSignals.handheldCall]);
- *  - it comes out of a pocket (proximity clears and the light jumps from dark to bright).
+ *  - it comes out of a pocket (proximity clears and the light jumps from dark to bright);
+ *  - on the seat, it turned more than [PhoneStateConfig.seatSlideDeg] from where it rests (it slid or tipped).
  * It ends after [PhoneStateConfig.calmMs] without any of them, or once the phone has rested in one place for
  * [PhoneStateConfig.resettleMs] (not while the screen is on and it is turned past [PhoneStateConfig.tiltDeg]: held
  * still in a hand, it looks the same). Put back where it rested before, it keeps its mounted or loose standing; anywhere
@@ -162,7 +176,7 @@ class PhoneStateConfig {
  * Feed it from one thread, like the engine. Times are the sensor clock, milliseconds.
  */
 class PhoneStateDetector(val cfg: PhoneStateConfig = PhoneStateConfig(), val signals: PhoneSignals = PhoneSignals()) {
-    /** Where the user says the phone sits: mounted | cupholder | pocket | unknown. [DrivingMonitor] sets it. */
+    /** Where the user says the phone sits: mounted | cupholder | pocket | seat | unknown. [DrivingMonitor] sets it. */
     @Volatile var placement = "unknown"
 
     var state = PhoneState.STABLE_LOOSE
@@ -201,6 +215,9 @@ class PhoneStateDetector(val cfg: PhoneStateConfig = PhoneStateConfig(), val sig
         private set
     /** The phone sat in a holder when the episode began. */
     var fromMount = false
+        private set
+    /** The episode began as a slide on the seat ([PhoneStateConfig.seatSlideDeg]). */
+    var slideStart = false
         private set
 
     /** Pocket mode: placement "pocket", or a phone that kept jostling while driving on this trip. */
@@ -247,6 +264,9 @@ class PhoneStateDetector(val cfg: PhoneStateConfig = PhoneStateConfig(), val sig
     private var prevFix: Fix? = null
     /** GPS heading rate, rad/s, of the last few fixes (fix time, rate). */
     private val gpsTurns = ArrayDeque<Pair<Long, Double>>()
+    /** Fix times the GPS showed the car braking, speeding up or turning ([PhoneStateConfig.seatSlideGpsMs2]). */
+    private val manoeuvres = ArrayDeque<Long>()
+    private var slideSince = NEVER
     private var gpsTurnRads = 0.0
     private var gpsSteady = true
     private var carSteady = true
@@ -259,6 +279,8 @@ class PhoneStateDetector(val cfg: PhoneStateConfig = PhoneStateConfig(), val sig
     // Recent episodes (start, end; end = Long.MAX_VALUE while going on), for [handledDuring].
     private val starts = LongArray(HISTORY); private val ends = LongArray(HISTORY); private var count = 0
     private val wasJostle = BooleanArray(HISTORY)
+    /** The episode was a seat slide that landed: no margin after it, like a jostle. */
+    private val wasSlide = BooleanArray(HISTORY)
 
     /** True if the phone was HANDLED at any time from [fromMs] to [toMs]. */
     fun handledDuring(fromMs: Long, toMs: Long): Boolean {
@@ -284,7 +306,19 @@ class PhoneStateDetector(val cfg: PhoneStateConfig = PhoneStateConfig(), val sig
         return true
     }
 
-    private fun margin(i: Int) = if (ends[i] != Long.MAX_VALUE && wasJostle[i]) cfg.jostleMarginMs else cfg.marginMs
+    private fun margin(i: Int) = if (ends[i] != Long.MAX_VALUE && (wasJostle[i] || wasSlide[i])) cfg.jostleMarginMs else cfg.marginMs
+
+    /**
+     * The episode is a seat slide while the car braked or cornered ([PhoneStateConfig.seatSlideGpsMs2]) with nothing
+     * but motion: true, false, or null while a later fix (as of [nowMs]) could still show the manoeuvre.
+     */
+    fun seatSlideExcused(nowMs: Long): Boolean? {
+        if (!slideStart || (causes and NOT_MOTION) != 0 || outOfPocket) return false
+        val from = episodeStartMs - cfg.seatSlideBeforeMs
+        val to = episodeStartMs + cfg.seatSlideAfterMs
+        if (manoeuvres.any { it in from..to }) return true
+        return if (nowMs > to) false else null
+    }
 
     fun onFix(f: Fix) {
         speedKmh = (if (f.speedMps.isNaN()) 0.0 else f.speedMps) * 3.6
@@ -304,6 +338,8 @@ class PhoneStateDetector(val cfg: PhoneStateConfig = PhoneStateConfig(), val sig
         val v1 = if (f.speedMps.isNaN()) 0.0 else f.speedMps
         val v0 = if (p.speedMps.isNaN()) 0.0 else p.speedMps
         gpsSteady = abs(v1 - v0) / dt < cfg.steadyLongMs2
+        if (abs(v1 - v0) / dt >= cfg.seatSlideGpsMs2 || gpsTurnRads >= cfg.seatSlideTurnRads) manoeuvres.addLast(f.timeMs)
+        while (manoeuvres.isNotEmpty() && manoeuvres.first() < f.timeMs - MANOEUVRE_KEEP_MS) manoeuvres.removeFirst()
     }
 
     /** Rotation rate, rad/s, phone axes. */
@@ -419,6 +455,10 @@ class PhoneStateDetector(val cfg: PhoneStateConfig = PhoneStateConfig(), val sig
         } else screenSince = NEVER
         if (signals.handheldCall) signs = signs or CALL
         if (pocketExit(t)) signs = signs or POCKET_EXIT
+        if (placement == "seat" && tiltDeg > cfg.seatSlideDeg) {
+            if (slideSince == NEVER) slideSince = t
+            signs = signs or SLIDE
+        } else slideSince = NEVER
         val moving = speedKmh >= cfg.movingKmh
 
         var began = false
@@ -429,6 +469,7 @@ class PhoneStateDetector(val cfg: PhoneStateConfig = PhoneStateConfig(), val sig
                 if ((signs and GYRO) != 0) start = min(start, gyroSince)
                 if ((signs and SCREEN) != 0) start = min(start, screenSince)
                 if ((signs and UNLOCK) != 0) start = min(start, max(signals.unlockedAtMs, t - cfg.unlockMs))
+                if ((signs and SLIDE) != 0) start = min(start, slideSince)
                 begin(start, t, signs, moving)
                 handled = true
                 began = true
@@ -462,7 +503,12 @@ class PhoneStateDetector(val cfg: PhoneStateConfig = PhoneStateConfig(), val sig
             // Rested in one place for a while (put down, slipped in its holder): that is where it is now. Not while the
             // screen is on and the phone is turned past tiltDeg: a hand held still looks the same, and the hand wins.
             val rested = t - anchorMs >= cfg.resettleMs && !(signals.screenOn && tiltOver)
-            if (signs != 0 && (signs and (GYRO or TURN or CALL)) == 0 && rested) end(t)
+            // A seat slide in a brake or corner that has landed (still for restMs where it lies): it rests there now,
+            // at once, so the bumps after it are trusted again ([seatSlideExcused]: nothing but motion).
+            val landed = slideStart && t - stillSinceMs >= cfg.restMs && t - anchorMs >= cfg.restMs &&
+                (signs and (GYRO or TURN or CALL)) == 0 && seatSlideExcused(t) == true
+            if (landed) end(t)
+            else if (signs != 0 && (signs and (GYRO or TURN or CALL)) == 0 && rested) end(t)
             else if (if (jostle) t - lastMotionMs >= cfg.jostleCalmMs else t - lastSignMs >= cfg.calmMs) end(t)
         } else {
             val dt = dtMs / 1000.0
@@ -482,6 +528,7 @@ class PhoneStateDetector(val cfg: PhoneStateConfig = PhoneStateConfig(), val sig
 
     private fun begin(start: Long, t: Long, signs: Int, moving: Boolean) {
         fromMount = state == PhoneState.STABLE_MOUNTED
+        slideStart = (signs and SLIDE) != 0
         state = PhoneState.HANDLED
         episode++
         episodeStartMs = start
@@ -503,6 +550,7 @@ class PhoneStateDetector(val cfg: PhoneStateConfig = PhoneStateConfig(), val sig
         starts[i] = start
         ends[i] = Long.MAX_VALUE
         wasJostle[i] = false
+        wasSlide[i] = false
         count++
     }
 
@@ -510,6 +558,7 @@ class PhoneStateDetector(val cfg: PhoneStateConfig = PhoneStateConfig(), val sig
         pendingTiltMs = 0L
         ends[(count - 1) % HISTORY] = t
         wasJostle[(count - 1) % HISTORY] = jostle
+        wasSlide[(count - 1) % HISTORY] = slideStart && seatSlideExcused(t) == true
         lastHandledEndMs = t
         handledSinceMs = NEVER
         // Put back where it rested before (the holder): it keeps its standing. Anywhere else: learned from scratch.
@@ -518,15 +567,15 @@ class PhoneStateDetector(val cfg: PhoneStateConfig = PhoneStateConfig(), val sig
             stableSinceMs = t
         }
         bx = cx; by = cy; bz = cz
-        tiltSince = NEVER; gyroSince = NEVER; screenSince = NEVER
+        tiltSince = NEVER; gyroSince = NEVER; screenSince = NEVER; slideSince = NEVER
         if (movedDriving && jostle) noteJostle(t)
         state = stableState(t)
     }
 
-    /** Mounted when its tilt has been steady for the whole window; pocket and cup holder are never mounted. */
+    /** Mounted when its tilt has been steady for the whole window; pocket, cup holder and seat are never mounted. */
     private fun stableState(t: Long): PhoneState {
         val limit = when (placement) {
-            "pocket", "cupholder" -> return PhoneState.STABLE_LOOSE
+            "pocket", "cupholder", "seat" -> return PhoneState.STABLE_LOOSE
             "mounted" -> cfg.mountedTiltDegPlaced
             else -> if (signals.charging) cfg.mountedTiltDegCharging else cfg.mountedTiltDeg
         }
@@ -573,10 +622,13 @@ class PhoneStateDetector(val cfg: PhoneStateConfig = PhoneStateConfig(), val sig
         const val SCREEN = 16
         const val CALL = 32
         const val POCKET_EXIT = 64
+        /** Placement "seat": the phone slid or tipped on the seat ([PhoneStateConfig.seatSlideDeg]). */
+        const val SLIDE = 128
         /** Signs that are not the phone's motion. */
         private const val NOT_MOTION = UNLOCK or SCREEN or CALL or POCKET_EXIT
         private const val NEVER = PhoneSignals.NEVER
         private const val HISTORY = 8
+        private const val MANOEUVRE_KEEP_MS = 10_000L
         private const val G = 9.81
         /** Sanity checks, not tuning: the slow low-pass must look like gravity, the fast one must not be near 0 (free fall). */
         private const val MIN_G = 5.0

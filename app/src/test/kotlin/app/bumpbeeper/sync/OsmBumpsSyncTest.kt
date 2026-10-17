@@ -148,12 +148,11 @@ class OsmBumpsSyncTest {
         // A database from before: today's schema without osm_bumps (it takes no version step, BumpDb.onOpen).
         val file = ctx.getDatabasePath("bumps.db")
         SQLiteDatabase.openDatabase(file.path, null, SQLiteDatabase.OPEN_READWRITE).use { old ->
-            old.execSQL("DROP TABLE osm_bumps")
-            old.version = 10
+            old.execSQL("DROP TABLE osm_bumps")   // same version: no upgrade step brings it back, the open does
         }
         db = BumpDb(ctx)
         store = SyncStore(db)
-        assertEquals(10, db.writableDatabase.version)
+        assertTrue(db.writableDatabase.version >= 10)
         assertEquals(0, store.osmBumpCount())
         assertEquals("the rest is kept", 1, store.outboxCount())
         store.replaceOsmBumps(lat0, lon0, 10_000.0, SupabaseApi.parseOsmBumps(rows), 2L)

@@ -698,7 +698,7 @@ class BumpService : Service(), SensorEventListener, LocationListener, EngineList
             // "Help improve detection" (separate opt-in): jolt samples with their signal window, no coordinates uploaded.
             training = if (Prefs.trainingActive(this)) TrainingSink(Prefs.placement(this), System.currentTimeMillis(), batteryPercent()) else null
             val eng = BumpEngine(cfg, store, this, { System.currentTimeMillis() }, tripId, CachedSpotSource(syncStore), outbox,
-                training ?: JoltSampleSink.NONE, Prefs.vehicle(this), CachedOsmSource(syncStore))
+                training ?: JoltSampleSink.NONE, Prefs.vehicle(this), Prefs.calibration(this), CachedOsmSource(syncStore))
             eng.cfg.groupWarnings = voice?.speaks == true
             engine = eng
             val logStore = store
@@ -786,7 +786,7 @@ class BumpService : Service(), SensorEventListener, LocationListener, EngineList
             confirm = null
             val short = tc == null || !tc.keep(endMs - startMs, distM)
             // The car's wheelbase learned on this trip carries over to the next one (also from a short trip: the car is the same).
-            engine?.let { Prefs.setVehicle(this, it.vehicle) }
+            engine?.let { Prefs.setVehicle(this, it.vehicle); Prefs.setCalibration(this, it.calibration) }
             if (short) {
                 try {
                     database.deleteSpotsOnlyFrom(tripId)
@@ -1094,7 +1094,7 @@ class BumpService : Service(), SensorEventListener, LocationListener, EngineList
             LiveState.accuracyM = f.accuracyM
             LiveState.lastFixAtMs = SystemClock.elapsedRealtime()
         }
-        LiveState.bumpsOnMap = eng.bumps.size
+        LiveState.bumpsOnMap = eng.bumps.count { !it.isRetired(eng.cfg) }
         LiveState.mutedBumps = eng.mutedCount
         val tr = eng.trip
         LiveState.tripHits = tr.hits
