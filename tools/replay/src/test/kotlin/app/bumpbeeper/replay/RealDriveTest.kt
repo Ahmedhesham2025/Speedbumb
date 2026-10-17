@@ -56,9 +56,11 @@ class RealDriveCalibrationTest {
 
     @Test fun drive01ScalesToAboutOne() {
         val samples = TraceReader.read(readLines(f).asSequence())
-        val c = PhoneCalibration()
+        // One 18-minute drive gives few steady straight windows; judge it on what it has (at least 5).
+        val c = PhoneCalibration(CalibrationConfig().apply { minWindows = 5.0 })
         Replayer.replay(samples, MemStore(), drivingCfg = DrivingConfig().apply { placement = "pocket" }, calibration = c)
         println("drive01 calibration: ${c.describe()}, floor ${formatFixed(c.floor("pocket"), 3)} m/s²")
+        assertFalse("drive01 must give a floor: ${c.describe()}", c.floor("pocket").isNaN())
         val scale = c.learnedScale("pocket")
         assertTrue("drive01 (pocket) scale ${formatFixed(scale, 2)}: ${c.describe()}", scale in 0.9..1.1)
     }
