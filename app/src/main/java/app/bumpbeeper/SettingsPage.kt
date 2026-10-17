@@ -191,6 +191,9 @@ class SettingsPage(private val a: MainActivity) : Page, BackHandler {
                 sp.edit().putBoolean(Prefs.LOUD, it).apply()
             },
             Ui.toggle(a, a.getString(R.string.settings_click_new), null, Prefs.clickOnNew(a)) { sp.edit().putBoolean(Prefs.CLICK_ON_NEW, it).apply() },
+            Ui.toggle(a, a.getString(R.string.settings_osm_title), a.getString(R.string.settings_osm_desc), Prefs.osmWarnings(a)) {
+                sp.edit().putBoolean(Prefs.OSM_WARNINGS, it).apply()
+            },
             Ui.row(a, Ui.button(a, a.getString(R.string.settings_test_beep)) { Beeper(a).beep(2) }, Ui.button(a, a.getString(R.string.settings_test_voice)) { testVoice() }),
         )
 
@@ -338,7 +341,8 @@ class SettingsPage(private val a: MainActivity) : Page, BackHandler {
             },
         )
 
-        card(a.getString(R.string.settings_section_help), Ui.text(a, 14f, Ui.TEXT, value = a.getString(R.string.settings_help)).apply { setLineSpacing(0f, 1.2f) })
+        card(a.getString(R.string.settings_section_help), Ui.text(a, 14f, Ui.TEXT, value = a.getString(R.string.settings_help)).apply { setLineSpacing(0f, 1.2f) },
+            hint(a.getString(R.string.settings_osm_credit)))   // the ODbL credit for the OSM bumps
         sharedPage = subPage(a.getString(R.string.settings_section_shared_map), sharedCol)
         researchPage = subPage(a.getString(R.string.settings_research_page), researchCol)
         return ScrollView(a).apply {

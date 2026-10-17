@@ -95,6 +95,9 @@
     <string name="settings_loud_title">Loud beeps</string>
     <string name="settings_loud_desc">Alarm volume through the phone speaker, instead of media volume / car audio.</string>
     <string name="settings_click_new">Tick when a new bump is recorded</string>
+    <string name="settings_osm_title">Warn for OpenStreetMap bumps</string>
+    <string name="settings_osm_desc">One soft beep for speed bumps mapped on OpenStreetMap that this phone hasn\'t felt yet. It stops for a bump you pass 3 times without feeling anything. © OpenStreetMap contributors</string>
+    <string name="settings_osm_credit">Speed bumps mapped on OpenStreetMap: © OpenStreetMap contributors, under the Open Database License (ODbL).</string>
     <string name="settings_test_beep">Test beep</string>
     <string name="settings_test_voice">Test the voice</string>
     <string name="settings_section_voice">Voice</string>
@@ -201,6 +204,10 @@
     <string name="map_chip_old">Old</string>
     <string name="map_chip_harsh">Strong</string>
     <string name="map_chip_maybe">Maybe</string>
+    <string name="map_chip_osm">OpenStreetMap</string>
+    <string name="map_osm_row">Speed bump on OpenStreetMap</string>
+    <string name="map_osm_none">No OpenStreetMap bumps downloaded yet. They come with the shared map.</string>
+    <string name="osm_attribution" translatable="false">© OpenStreetMap contributors</string>
     <string name="map_spot_strong">Strong bump</string>
     <string name="map_spot_mute">Mute</string>
     <string name="map_spot_maps">Maps</string>
