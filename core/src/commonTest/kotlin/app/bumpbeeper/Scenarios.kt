@@ -788,8 +788,8 @@ object Scenarios {
         val bump = Simulator(64).drive(store, DriveSpec(bumpsAt = listOf(1100.0), bumpKmh = 55.0, cruiseKmh = 55.0, slowZonesAt = listOf(350.0)))
         describe("bump at 55", bump)
         store.events.filter { it.type == "new_bump" || it.type == "rejected" }.forEach { log("    ${it.type} ${f1(it.speedKmh)} km/h ${it.note}") }
-        check(bump.newBumps == 1 && "too_fast" !in bump.rejected, "a speed bump at 55 km/h should be learned: new=${bump.newBumps} ${bump.rejected}")
-        check(store.saved.single().severity(EngineConfig()) == Severity.STRONG, "at 55 km/h it hits hard: strong, got ${store.saved.single().sevIndex}")
+        // Its clear shape gets it past too_fast; but at 55 km/h with no braking and no axle pair it is no NEW spot (E5).
+        check(bump.newBumps == 0 && bump.rejected == listOf("fast_unconfirmed"), "a lone hump at 55 km/h is fast_unconfirmed: new=${bump.newBumps} ${bump.rejected}")
 
         val store2 = MemoryStore()
         val seam = Simulator(65).drive(store2, DriveSpec(seamsAt = listOf(1100.0), cruiseKmh = 55.0, slowZonesAt = listOf(350.0)))
