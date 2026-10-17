@@ -95,6 +95,16 @@ class TrainingSampleTest {
         assertEquals(null, TrainingJson.brand(null))
     }
 
+    @Test fun seatUploadsAsUnknownUntilTheServerTakesIt() {
+        assertFalse("flip only after the hosted migration", TrainingJson.SERVER_ACCEPTS_SEAT)
+        assertEquals("unknown", TrainingJson.serverPlacement("seat"))
+        assertEquals("seat", TrainingJson.serverPlacement("seat", acceptsSeat = true))
+        for (p in listOf("mounted", "cupholder", "pocket", "unknown")) assertEquals(p, TrainingJson.serverPlacement(p))
+        assertEquals("unknown", TrainingJson.serverPlacement("sofa"))
+        val trip = TrainingJson.trip("t2", 1_759_000_000_000L, 1_759_000_600_000L, "seat", emptyMap(), null, null, 50, 49)
+        assertEquals("unknown", trip.getString("placement"))
+    }
+
     @Test fun tripSummaryAndBatch() {
         val d = DrivingStats().apply { harshBrakes = 2; swerves = 1; speedingS = 33.4; distanceM = 12_345.0 }
         val t = TripStats().apply { beeps = 4; distanceM = 12_000.0 }

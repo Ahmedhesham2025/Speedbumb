@@ -6,10 +6,15 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.os.Build
 import android.os.SystemClock
+import android.view.View
+import android.view.ViewGroup
+import android.widget.ScrollView
+import android.widget.TextView
 import androidx.lifecycle.Lifecycle
 import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -64,6 +69,7 @@ class ScreenshotTest {
             }
 
             redesignStates(scenario, dir, "")
+            placementPicker(scenario, dir)
 
             // The street map needs the internet: on for these shots only. The shared-map choice goes back to "not
             // answered" first, so nothing is sent to our server (Sync stays offline until it is answered).
@@ -138,7 +144,7 @@ class ScreenshotTest {
         }
         fakeFix(false)
         val files = dir.listFiles { f -> f.name.endsWith(".png") }.orEmpty()
-        assertTrue("expected 26 screenshots in $dir, got ${files.size}: ${files.map { it.name }.sorted()}", files.size == 26)
+        assertTrue("expected 27 screenshots in $dir, got ${files.size}: ${files.map { it.name }.sorted()}", files.size == 27)
     }
 
     /**
@@ -196,6 +202,48 @@ class ScreenshotTest {
         scenario.onActivity { (it.pages[MainActivity.TAB_SETTINGS] as SettingsPage).back() }
         scenario.onActivity { it.select(MainActivity.TAB_DRIVE) }
         settle(800)
+    }
+
+    /**
+     * Settings → "Where is the phone?" with "On a seat" picked: the settings scrolled to the picker and its cell
+     * tapped (its own click listener saves the placement), as a user would.
+     */
+    private fun placementPicker(scenario: ActivityScenario<MainActivity>, dir: File) {
+        scenario.onActivity { a ->
+            a.select(MainActivity.TAB_SETTINGS)
+            val page = (a.pages[MainActivity.TAB_SETTINGS] as SettingsPage).view
+            val cell = findText(page, a.getString(R.string.settings_place_seat))
+            assertNotNull("no \"On a seat\" in Settings", cell)
+            var p = cell!!.parent
+            while (p != null && p !is ScrollView) p = p.parent
+            (p as? ScrollView)?.let { sv ->
+                val r = android.graphics.Rect()
+                cell.getDrawingRect(r)
+                sv.offsetDescendantRectToMyCoords(cell, r)
+                sv.scrollTo(0, maxOf(0, r.top - sv.height / 3))
+            }
+            cell.performClick()
+        }
+        settle(1200)
+        assertEquals("tapping \"On a seat\" saves it", "seat", Prefs.placement(ctx))
+        shot(dir, "16-settings-placement")
+        scenario.onActivity { a ->
+            ((a.pages[MainActivity.TAB_SETTINGS] as SettingsPage).view as? ViewGroup)?.let { scrollTop(it) }
+            a.select(MainActivity.TAB_DRIVE)
+        }
+        Prefs.setPlacement(ctx, "unknown")
+        settle(800)
+    }
+
+    private fun findText(v: View, text: String): View? {
+        if (v is TextView && v.text?.toString() == text && v.isShown) return v
+        if (v is ViewGroup) for (i in 0 until v.childCount) findText(v.getChildAt(i), text)?.let { return it }
+        return null
+    }
+
+    private fun scrollTop(v: View) {
+        if (v is ScrollView) v.scrollTo(0, 0)
+        if (v is ViewGroup) for (i in 0 until v.childCount) scrollTop(v.getChildAt(i))
     }
 
     /**

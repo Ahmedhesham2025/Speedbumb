@@ -14,6 +14,7 @@ migrations/20261008000001_bump_severity.sql   v2 bumps: severity band + confiden
 migrations/20261008000002_severity_average.sql   spot severity averaged like the app's (first 10 hits equally, then 1/10)
 migrations/20261014000001_confirm_hits.sql   a spot is confirmed only after confirm_hits (2) hits in total
 migrations/20261017000001_osm_bumps.sql   OpenStreetMap speed bumps (ODbL) as a prior, read via osm_bumps_near
+migrations/20261017000002_training_placement_seat.sql   training placement "seat" (the two placement CHECKs widen)
 functions/speed-limits/              Edge Function: road speed limits from TomTom (lib.ts logic, lib_test.ts Deno tests)
 tools/research/                      owner tool (Deno): download, clear and erase research files, plus its smoke test
 tools/osm/                           owner tool (Deno): weekly import of OSM speed bumps from Overpass, plus its test
@@ -168,7 +169,8 @@ sample: {"client_sample_id": uuid, "day": "YYYY-MM-DD" (local drive day, last 31
          "decision": "learned"|"hit"|"rejected"|"miss"|"pass_clear"|"user_mute", "reason": [a-z_]{1,24}|null,
          "classification": "mild"|"moderate"|"strong"|null (the severity band, since v2; "bump"|"pothole"|"unsure"
                            stay valid for samples queued by older builds),
-         "placement": "mounted"|"cupholder"|"pocket"|"unknown",
+         "placement": "mounted"|"cupholder"|"pocket"|"seat"|"unknown" ("seat" once
+                      20261017000002_training_placement_seat.sql is applied; until then the app sends "unknown"),
          "speed_kmh": 0..250, "heading_change_deg": -180..180|null, "gps_accuracy_m": 0..500|null,
          "peak": 0..100 (m/s²)|null, "shape_score": -1..1|null, "first_down": bool|null,
          "roll_pitch_ratio": 0..1000|null, "side_score": -1..1|null,
@@ -335,7 +337,8 @@ candidate, two hits from one or two phones confirm, the pass ratio and `confirm_
 fallback, server-only grants), `10_research.sql` (consent,
 reservations and caps, the Storage policy against foreign folders, missing or oversized Content-Length, signed-URL and S3
 uploads, no client read/update/delete, clearing, forget_me queueing), `12_osm_bumps.sql` (RLS and grants, the
-idempotent import upsert, prune, validation, `osm_bumps_near` nearest first with the 10 km cap, anon refused).
+idempotent import upsert, prune, validation, `osm_bumps_near` nearest first with the 10 km cap, anon refused), `13_training_placement_seat.sql` (samples and trips
+accept placement `seat`, the old ones still pass, an unknown one still rejects the batch).
 The same job runs `deno test`, `deno check` and `deno lint` on `functions/`.
 
 ## Fleets
@@ -391,6 +394,15 @@ Agents never link or push to the hosted project. When the owner approves:
    Check: `select public.osm_bumps_status();` shows about 5,800 bumps. Rollback: `drop function public.osm_bumps_near(
    double precision, double precision, int), public.osm_bumps_import(jsonb, timestamptz), public.osm_bumps_prune(
    timestamptz), public.osm_bumps_status(); drop type public.osm_bump; drop table public.osm_bumps;`.
+9. Placement "seat": apply `migrations/20261017000002_training_placement_seat.sql` (any time after step 6; it only
+   widens the two training `placement` CHECKs, so every build keeps working). Pre-check:
+   `select conname from pg_constraint where conname in ('training_samples_placement_check', 'training_trips_placement_check');`
+   returns both names. Check afterwards: `select pg_get_constraintdef(oid) from pg_constraint where conname =
+   'training_trips_placement_check';` lists `'seat'`. **Then** flip `TrainingJson.SERVER_ACCEPTS_SEAT` to `true` in the
+   app (until then it uploads "seat" as "unknown"; a build that sent "seat" before this migration would have its whole
+   batch refused with `22023` and dropped). Rollback: first ship the app with the flag `false` again, then
+   `update public.training_samples set placement = 'unknown' where placement = 'seat';` (same for `training_trips`) and
+   re-create both CHECKs without `'seat'`.
 
 Rollback (nothing depends on it yet): `drop schema public cascade` is too broad; instead drop the tables listed above,
 the eight functions and the `memberships_keep_last_owner` trigger, and `select cron.unschedule('aggregate-observations');`.

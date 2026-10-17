@@ -358,8 +358,21 @@ class BumpEngine(
     private val sampleSink: JoltSampleSink = JoltSampleSink.NONE,
     /** The car's wheelbase, learned from both-axle hits ([VehicleProfile.learn]); the app keeps it between trips. */
     val vehicle: VehicleProfile = VehicleProfile(),
+    /** The phone's own vibration level per placement ([PhoneCalibration]); the app keeps it between trips. */
+    val calibration: PhoneCalibration = PhoneCalibration(),
 ) {
     val bumps: MutableList<Bump> = store.loadBumps().toMutableList()
+
+    init { calibration.freeze() }
+
+    /** How the phone sits, for its calibration ([PhoneCalibration.keyFor]): the setting, or what it is doing. */
+    private val calKey: String? get() = PhoneCalibration.keyFor(phone.placement, phone.pocketMode, phone.state)
+
+    /** This trip's jolt scale for how the phone sits now ([PhoneCalibration.scaleFor]): severity ÷ it. */
+    val joltScale: Double get() = calibration.scaleFor(calKey)
+
+    /** The jolt trigger now: [EngineConfig.joltThreshold] × [joltScale], never lowered below 1.8 m/s². */
+    val joltTrigger: Double get() = calibration.trigger(cfg.joltThreshold, calKey)
     val trip = TripStats()
 
     /**
@@ -572,6 +585,11 @@ class BumpEngine(
         // The rest, measured against gravity alone, is horizontal (speeding up, braking, cornering).
         // Averaged and matched with GPS speed changes, it shows which way is forward.
         val horNow = sqrt(horX * horX + horY * horY + horZ * horZ)
+        // Learn the phone's noise floor on steady straight road with the phone at rest (for the next trip).
+        calibration.onSample(
+            tMs, v, (lastFix?.speedMps ?: 0.0) * 3.6, gpsSteadyFixes >= 2 && horNow < 0.4 && phone.state != PhoneState.HANDLED,
+            abs(v) >= cfg.joltThreshold, calKey,
+        )
         val steady = (gpsSteadyFixes >= 1 && horNow < 0.4) ||   // steady speed and nothing pushing sideways
             (gravSettledS < 3.0 && gpsSteadyFixes >= 3)          // first time: trust a few seconds of steady GPS
         val aGrav = dt / ((if (steady) 3.0 else 60.0) + dt)
@@ -614,7 +632,7 @@ class BumpEngine(
                 joltStartMs = -1
                 decide(start, joltPeak)
             }
-        } else if (abs(v) >= cfg.joltThreshold && (tMs >= refractoryUntilMs || (phoneJolt && !phone.untrusted(tMs, tMs)))) {
+        } else if (abs(v) >= joltTrigger && (tMs >= refractoryUntilMs || (phoneJolt && !phone.untrusted(tMs, tMs)))) {
             // A rejected jostle has no rear axle to wait for: a bump right after it (braking before it) still counts.
             joltStartMs = tMs
             joltPeak = abs(v)
@@ -1084,7 +1102,7 @@ class BumpEngine(
             // First time here → record it. No beep: we are already on top of it.
             val b = Bump(0, lat, lon, heading, hits = 1, passes = 1, misses = 0, nPos = 1, firstSeen = now, lastSeen = now)
             b.addPeak(peak, 0)
-            b.addSeverity(peak, 0, cfg)   // E2: the vibration index instead of the peak
+            b.addSeverity(peak / joltScale, 0, cfg)   // E2: the vibration index instead of the peak
             if (grade >= 2) b.axleHits = 1
             b.shape = info.shape
             b.weakDownHits = if (downWeak) 1 else -1
@@ -1147,7 +1165,7 @@ class BumpEngine(
         b.heading = Geo.blendAngle(b.heading, heading, w)
         b.nPos++
         b.addPeak(peak, b.hits)
-        b.addSeverity(peak, b.hits, cfg)
+        b.addSeverity(peak / joltScale, b.hits, cfg)
         b.hits++
         val wasRetired = b.isRetired(cfg)
         b.missStreak = 0

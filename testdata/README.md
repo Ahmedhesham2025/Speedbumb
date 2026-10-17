@@ -18,7 +18,7 @@ fake origin, or metadata other than the four above. It also fails if the clock d
 catches an untrimmed clock (rows cut from a file after it was anonymized, without restarting the clock), not a raw file:
 a raw recording's clock can start at 0 too. Labels, when a drive has them, are the passenger's `label` event rows
 inside the recording; with labels the accuracy table (`docs/validation/metrics.md`) is printed too. A `<name>.expected.properties` next to a drive turns its counts into a
-regression guard (ranges are explained in that file); a `placement=` line there (mounted, cupholder, pocket) sets the
+regression guard (ranges are explained in that file); a `placement=` line there (mounted, cupholder, pocket, seat) sets the
 phone placement the drive is replayed with, unknown without it. An rr2 file in `real/` is checked the same way: positions
 near the fake origin, the fake clocks, no identifying header keys, the clock starting at 0.
 
