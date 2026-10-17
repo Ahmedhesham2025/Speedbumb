@@ -128,13 +128,14 @@
     <string name="settings_place_mounted">Mounted</string>
     <string name="settings_place_cupholder">Cup holder</string>
     <string name="settings_place_pocket">Pocket</string>
+    <string name="settings_place_seat">On a seat</string>
     <string name="settings_section_road_testing">Road testing</string>
     <string name="settings_label_mode_title">Label mode</string>
     <string name="settings_beta_updates">Beta updates</string>
     <string name="settings_beta_updates_hint">Also tell me about test versions (betas) of the app. Checked on GitHub at most once a day.</string>
     <string name="settings_label_mode_desc">For a passenger helping test the app: while recording, the Drive tab shows big buttons to mark each bump and rough patch as you drive over it. Saved with a sensor recording to tune detection.</string>
     <string name="settings_phone_where">Where is the phone?</string>
-    <string name="settings_phone_hint">A phone in a holder feels the road differently from one in a cup holder or pocket. Saved with recordings.</string>
+    <string name="settings_phone_hint">A phone in a holder feels the road differently from one in a cup holder, a pocket or lying on a seat. Saved with recordings.</string>
     <string name="settings_section_debug">Debug recording</string>
     <string name="settings_debug_title">Record raw sensor data while driving</string>
     <string name="settings_debug_desc">About 12 MB per hour. The last %1$d drives are kept.</string>
@@ -549,6 +550,7 @@
     <string name="diag_sync_result">Last sync result: %1$s</string>
     <string name="diag_sync_queue">Observations waiting for upload: %1$d</string>
     <string name="diag_research">Research recordings: %1$s</string>
+    <string name="diag_calibration">Phone calibration (jolt scale): %1$s</string>
     <string name="diag_training">Help improve detection: %1$s, %2$d waiting</string>
     <string name="diag_start_log">Auto start, newest first:</string>
     <string name="start_motion_check">Motion: checking speed</string>

@@ -149,9 +149,10 @@ class MapPage(private val a: MainActivity) : Page {
         Thread {
             val db = BumpDb(a.applicationContext)
             var mapped: List<OsmBump> = emptyList()
+            // Retired spots (passed clean too often in a row) are off the map until they are felt again.
             val loaded = try {
                 mapped = try { SyncStore(db).osmBumpsAll() } catch (_: Exception) { emptyList() }
-                db.loadBumps()
+                db.loadBumps().filter { !it.isRetired(cfg) }
             } finally { db.close() }
             ui.post { all = loaded; osm = mapped; show() }
         }.start()

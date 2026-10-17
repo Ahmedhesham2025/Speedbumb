@@ -180,7 +180,8 @@ class DrivePage(private val a: MainActivity) : Page {
     private fun loadMap() {
         Thread {
             val db = BumpDb(a.applicationContext)
-            val (loaded, newest) = try { db.loadBumps() to db.trips(1).firstOrNull() } finally { db.close() }
+            val ecfg = Prefs.engineConfig(a)
+            val (loaded, newest) = try { db.loadBumps().filter { !it.isRetired(ecfg) } to db.trips(1).firstOrNull() } finally { db.close() }
             a.runOnUiThread {
                 savedLastScore = newest?.score ?: -1
                 map.bumps = loaded
@@ -585,6 +586,7 @@ class DrivePage(private val a: MainActivity) : Page {
         "mounted" -> a.getString(R.string.settings_place_mounted)
         "cupholder" -> a.getString(R.string.settings_place_cupholder)
         "pocket" -> a.getString(R.string.settings_place_pocket)
+        "seat" -> a.getString(R.string.settings_place_seat)
         else -> ""
     }
 
