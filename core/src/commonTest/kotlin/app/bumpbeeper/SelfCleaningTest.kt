@@ -11,7 +11,7 @@ class SelfCleaningTest {
     private val store = MemoryStore()
     private var trip = 1L
 
-    private fun pass(spec: DriveSpec): TripResult = Simulator(100 + trip.toInt()).drive(store, spec, tripId = trip++)
+    private fun pass(spec: DriveSpec): TripResult = Simulator(100L + trip).drive(store, spec, tripId = trip++)
     private fun felt() = pass(DriveSpec(bumpsAt = listOf(700.0)))
     private fun clean() = pass(DriveSpec(silentBumpsAt = listOf(700.0)))
     private fun spot(): Bump = store.saved.single()
@@ -75,7 +75,7 @@ class SelfCleaningTest {
         val obs = ArrayList<Observation>()
         felt(); felt()
         repeat(3) {
-            Simulator(200 + it).drive(store, DriveSpec(silentBumpsAt = listOf(700.0)), tripId = trip++,
+            Simulator(200L + it).drive(store, DriveSpec(silentBumpsAt = listOf(700.0)), tripId = trip++,
                 observationSink = object : ObservationSink { override fun record(o: Observation) { obs.add(o) } })
         }
         assertEquals(3, obs.count { it.kind == "pass_clear" })
