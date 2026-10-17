@@ -1,5 +1,6 @@
 package app.bumpbeeper
 
+import kotlin.math.abs
 import kotlin.math.max
 
 /** The car's geometry and how its axes are found in the phone ([VehicleProfile], [VehicleFrame]). Units: metres, m/s². */
@@ -12,8 +13,16 @@ class VehicleConfig {
     /** One axle hit's Δt × speed outside this is a wrong pairing or a bad speed: ignored. */
     var measuredMinM = 1.8
     var measuredMaxM = 3.8
-    /** The newest hit keeps at least this weight, so another car (a shared phone) is learned within about 10 hits. */
+    /** The newest hit keeps at least this weight: another car (a shared phone) is mostly learned in about 15 hits. */
     var minWeight = 0.1
+    /**
+     * Once [lockAfterHits] hits are learned, only a measurement within [lockTolerance] of the wheelbase is: two humps
+     * of a row a few metres apart must not drag it (E4c). [relearnAfter] such misses in a row mean another car: it is
+     * learned afresh from there.
+     */
+    var lockAfterHits = 3
+    var lockTolerance = 0.15
+    var relearnAfter = 5
     /** Forward must lean at least this far from up (sine of the angle) to tell where the nose points... */
     var forwardMinSine = 0.25
     /** ...and gravity be at least this strong; less is free fall or garbage. */
@@ -32,6 +41,8 @@ class VehicleProfile(val cfg: VehicleConfig = VehicleConfig()) {
     /** Axle hits learned from. */
     var hits = 0
         private set
+    /** Measurements in a row the lock turned away ([VehicleConfig.relearnAfter]). */
+    private var outliers = 0
 
     /**
      * One hit with both axles felt, [dtMs] apart at [speedMps]. False (and nothing learned) when the measurement is
@@ -40,6 +51,11 @@ class VehicleProfile(val cfg: VehicleConfig = VehicleConfig()) {
     fun learn(dtMs: Double, speedMps: Double): Boolean {
         val m = dtMs / 1000.0 * speedMps
         if (!(m >= cfg.measuredMinM && m <= cfg.measuredMaxM)) return false
+        if (hits >= cfg.lockAfterHits && abs(m - wheelbaseM) > cfg.lockTolerance * wheelbaseM) {
+            if (++outliers < cfg.relearnAfter) return false
+            hits = 0   // another car
+        }
+        outliers = 0
         val w = max(1.0 / (hits + 2), cfg.minWeight)
         wheelbaseM = (wheelbaseM + (m - wheelbaseM) * w).coerceIn(cfg.wheelbaseMinM, cfg.wheelbaseMaxM)
         hits++

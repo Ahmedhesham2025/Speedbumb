@@ -18,27 +18,30 @@ class JoltGraphView(ctx: Context) : View(ctx) {
 
     private val density = resources.displayMetrics.density
     private val path = Path()
-    private val bgPaint = Paint().apply { color = 0xFF1C1F24.toInt() }
+    private val bgPaint = Paint().apply { color = Ui.SURFACE2 }
     private val linePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = 0xFF4FC3F7.toInt()
+        color = Ui.PRIMARY
         strokeWidth = 2f * density
         style = Paint.Style.STROKE
         strokeJoin = Paint.Join.ROUND
     }
     private val thresholdPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = 0xFFFFB74D.toInt()
+        color = Ui.SEV_MOD
         strokeWidth = 1.5f * density
         style = Paint.Style.STROKE
         pathEffect = DashPathEffect(floatArrayOf(10f * density, 6f * density), 0f)
     }
     private val hitPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = 0xFFFF5252.toInt()
+        color = Ui.SEV_STRONG
         style = Paint.Style.FILL
     }
     private val textPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = 0xFFB0BEC5.toInt()
+        color = Ui.DIM
         textSize = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_SP, 11f, resources.displayMetrics)
     }
+
+    private val trigger = ctx.getString(R.string.diag_meter_trigger)
+    private val idle = ctx.getString(R.string.diag_meter_idle)
 
     override fun onDraw(canvas: Canvas) {
         val w = width.toFloat()
@@ -50,11 +53,11 @@ class JoltGraphView(ctx: Context) : View(ctx) {
         canvas.drawRoundRect(0f, 0f, w, h, 10f * density, 10f * density, bgPaint)
         val ty = y(threshold)
         canvas.drawLine(pad, ty, w - pad, ty, thresholdPaint)
-        canvas.drawText(String.format(Locale.US, "trigger %.1f m/s²", threshold), pad + 4 * density, ty - 4 * density, textPaint)
+        canvas.drawText(String.format(Locale.US, trigger, threshold), pad + 4 * density, ty - 4 * density, textPaint)
 
         val data = LiveState.graphSnapshot()
         if (data.isEmpty()) {
-            canvas.drawText("Moves while recording", pad + 4 * density, h - pad - 4 * density, textPaint)
+            canvas.drawText(idle, pad + 4 * density, h - pad - 4 * density, textPaint)
             return
         }
         val n = LiveState.GRAPH_POINTS

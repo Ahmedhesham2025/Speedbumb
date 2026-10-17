@@ -2,6 +2,8 @@ package app.bumpbeeper.auto
 
 import android.content.Context
 import android.hardware.Sensor
+import android.hardware.SensorEvent
+import android.hardware.SensorEventListener
 import android.hardware.SensorManager
 import android.hardware.TriggerEvent
 import android.hardware.TriggerEventListener
@@ -20,8 +22,12 @@ import android.util.Log
  * Runs inside BumpService while it is in the foreground with the quiet "ready to detect driving" notification:
  *
  *  - The significant-motion sensor (a hardware trigger that costs next to nothing) wakes us when the phone moves.
- *  - Then a short GPS check (2 s fixes, at most 3.5 min per window, under a wake lock) asks [DriveDetector] whether
- *    it is a drive: 20 km/h or more for 60 s. Walking around ends the check and backs off.
+ *  - Before any GPS check, 4 s of accelerometer: a phone lying still never checks. In a pause after a miss (walking
+ *    around), only vehicle-like vibration counts: a short check anyway, retried a minute later while it keeps moving.
+ *    Three checks in a row without a vehicle back off for 10, 20, then 30 min ([DriveDetector]).
+ *  - Then a short GPS check (2 s fixes, at most 2.5 min per window, under a wake lock) asks [DriveDetector] whether
+ *    it is a drive: 20 km/h or more (two fixes in a row). Recording then starts silently and BumpService
+ *    confirms the trip after 30 s of driving ([TripConfirm]). Walking around ends the check and backs off.
  *  - Fixes other apps ask for (the passive provider, free) at driving speed start a check too; on phones without a
  *    significant-motion sensor they are, with the car's Bluetooth, the only trigger.
  *
@@ -33,7 +39,8 @@ class DriveWatcher(
     private val onDriving: () -> Unit,
     private val detector: DriveDetector = DriveDetector(),
 ) {
-    constructor(ctx: Context, onDriving: () -> Unit) : this(AndroidHardware(ctx), onDriving)
+    constructor(ctx: Context, onDriving: () -> Unit) :
+        this(AndroidHardware(ctx), onDriving, DriveDetector(log = { StartLog.add(ctx, it) }))
 
     /** The sensors, GPS and wake lock this needs. Fix callbacks get (fix time on the elapsedRealtime clock, km/h). */
     interface Hardware {
@@ -45,6 +52,9 @@ class DriveWatcher(
         fun stopGps()
         fun acquireWake(timeoutMs: Long)
         fun releaseWake()
+        /** A few seconds of accelerometer (own short wake lock), then [onDone] with its kind, on the main thread. */
+        fun sampleMotion(ms: Long, onDone: (MotionKind.Kind) -> Unit)
+        fun cancelSample()
     }
 
     private val main = Handler(Looper.getMainLooper())
@@ -66,6 +76,9 @@ class DriveWatcher(
     fun stop() {
         active = false
         hw.cancelMotion()
+        hw.cancelSample()
+        sampling = false
+        main.removeCallbacks(retry)
         hw.stopPassive()
         endCheck()
     }
@@ -77,9 +90,24 @@ class DriveWatcher(
     private fun arm() {
         if (active) hw.armMotion {
             if (active) {
-                act(detector.onMotion(SystemClock.elapsedRealtime()))
+                motion()
                 arm()   // one-shot sensor: arm it again for the next movement
             }
+        }
+    }
+
+    private var sampling = false
+    private val retry = Runnable { if (active) motion() }
+
+    /** Movement. A few seconds of accelerometer tell still, vehicle or walking before any GPS is spent on it. */
+    private fun motion() {
+        val now = SystemClock.elapsedRealtime()
+        if (!detector.wantsMotionKind(now)) return act(detector.onMotion(now))
+        if (sampling) return
+        sampling = true
+        hw.sampleMotion(SAMPLE_MS) { kind ->
+            sampling = false
+            if (active) act(detector.onMotion(SystemClock.elapsedRealtime(), kind))
         }
     }
 
@@ -92,13 +120,18 @@ class DriveWatcher(
                 stop()           // once per drive, even if more fixes are already queued
                 onDriving()
             }
+            DriveDetector.Action.RETRY_LATER -> {
+                // Moving, but the last check only just ended: try again then (the phone keeps moving in a car).
+                main.removeCallbacks(retry)
+                main.postDelayed(retry, maxOf(0L, detector.retryAtMs - SystemClock.elapsedRealtime()))
+            }
             DriveDetector.Action.NONE -> {}
         }
     }
 
     private fun beginCheck() {
         // GPS fixes alone would wake the phone, but the timer must run on time to end the check and free the GPS.
-        hw.acquireWake(detector.checkMs * (detector.maxFastRechecks + 1) + detector.gate.sustainMs + 10_000L)
+        hw.acquireWake(detector.checkMs * (detector.maxFastRechecks + 1) + 10_000L)
         hw.startGps { t, kmh -> act(detector.onFix(t, kmh)) }
         main.removeCallbacks(tick)
         main.postDelayed(tick, TICK_MS)
@@ -170,6 +203,41 @@ class DriveWatcher(
             wake = null
         }
 
+        private val accel: Sensor? = sm.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
+        private val sampleEnd = Handler(Looper.getMainLooper())
+        private var sampler: SensorEventListener? = null
+        private var sampleWake: PowerManager.WakeLock? = null
+
+        override fun sampleMotion(ms: Long, onDone: (MotionKind.Kind) -> Unit) {
+            cancelSample()
+            val s = accel ?: return onDone(MotionKind.Kind.MOVED)
+            val mags = ArrayList<Double>()
+            val l = object : SensorEventListener {
+                override fun onSensorChanged(e: SensorEvent) {
+                    val (x, y, z) = e.values
+                    mags.add(Math.sqrt((x * x + y * y + z * z).toDouble()))
+                }
+                override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {}
+            }
+            sampler = l
+            sampleWake = (ctx.getSystemService(Context.POWER_SERVICE) as PowerManager)
+                .newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "BumpBeeper:motion-kind")
+                .apply { setReferenceCounted(false); acquire(ms + 2_000L) }
+            sm.registerListener(l, s, 40_000, sampleEnd)   // 25 Hz for a few seconds
+            sampleEnd.postDelayed({
+                cancelSample()
+                onDone(MotionKind.of(mags))
+            }, ms)
+        }
+
+        override fun cancelSample() {
+            sampleEnd.removeCallbacksAndMessages(null)
+            sampler?.let { sm.unregisterListener(it) }
+            sampler = null
+            sampleWake?.let { if (it.isHeld) it.release() }
+            sampleWake = null
+        }
+
         private fun request(provider: String, everyMs: Long, onFix: (Long, Double) -> Unit): LocationListener? {
             val l = Fixes { onFix(it.elapsedRealtimeNanos / 1_000_000, if (it.hasSpeed()) it.speed * 3.6 else Double.NaN) }
             return try {
@@ -195,5 +263,6 @@ class DriveWatcher(
     private companion object {
         const val TAG = "BumpBeeper"
         const val TICK_MS = 10_000L
+        const val SAMPLE_MS = 4_000L
     }
 }

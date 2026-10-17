@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Follows the system's light / dark setting (MainActivity applies it before building the screen).
+         Dialogs pick up the primary colour for their buttons. -->
+    <style name="Theme.BumpBeeper" parent="android:Theme.DeviceDefault.DayNight">
+        <item name="android:windowNoTitle">true</item>
+        <item name="android:windowActionBar">false</item>
+        <item name="android:colorAccent">@color/bb_primary</item>
+        <item name="android:colorPrimary">@color/bb_primary</item>
+        <item name="android:windowBackground">@color/bb_bg</item>
+        <item name="android:statusBarColor">@color/bb_bg</item>
+        <item name="android:navigationBarColor">@color/bb_surface</item>
+        <item name="android:windowLightStatusBar">@bool/bb_light_bars</item>
+        <item name="android:windowLightNavigationBar">@bool/bb_light_bars</item>
+    </style>
+</resources>

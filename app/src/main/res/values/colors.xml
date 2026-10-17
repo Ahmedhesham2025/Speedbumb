@@ -1,4 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <color name="ic_launcher_background">#FFB300</color>
+    <!-- Theme tokens for what Android draws itself (window, dialogs, system bars). The screens use Ui.kt's tokens,
+         which hold the same values; values-night has the dark set. -->
+    <color name="bb_primary">#1A6BE0</color>
+    <color name="bb_bg">#F3F4F7</color>
+    <color name="bb_surface">#FFFFFF</color>
+    <color name="bb_text">#14181F</color>
+    <bool name="bb_light_bars">true</bool>
 </resources>

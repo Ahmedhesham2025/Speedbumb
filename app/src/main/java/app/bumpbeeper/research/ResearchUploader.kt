@@ -179,6 +179,8 @@ object ResearchUploader {
             if (quiet < STALE_MS) return emptyList()    // still recording
             if (t.optBoolean("guessed")) { ResearchQueue.edit(ctx) { it.skip(stamp, "unended") }; return emptyList() }   // never asked
         }
+        // An automatic start never confirmed (killed before its 30 s of driving, auto.TripConfirm): never.
+        if (t.optBoolean("pending")) { ResearchQueue.edit(ctx) { it.skip(stamp, "unconfirmed") }; return emptyList() }
         if (TripHold.mustHold(ctx, t.optLong("id", -1L))) return emptyList()   // "Was this a drive?" not answered yet
         val segments = files.sortedBy { ResearchFiles.parse(it.name)?.seg ?: Int.MAX_VALUE }
         var stats: List<ResearchTrim.Stats>? = null
@@ -257,7 +259,8 @@ object ResearchUploader {
 
     private fun isMetered(ctx: Context): Boolean = ctx.getSystemService(ConnectivityManager::class.java)?.isActiveNetworkMetered ?: true
 
-    private fun publish(ctx: Context) {
+    /** Loads [status] from the queue (any thread but main: file I/O); also for the Diagnostics screen. */
+    fun publish(ctx: Context) {
         try {
             val (n, b) = ResearchQueue.waiting(ctx)
             status = ResearchQueue.read(ctx) { Status(n, b, it.lastUpload, it.pausedUntil, it.pausedWhy, it.ids()) }

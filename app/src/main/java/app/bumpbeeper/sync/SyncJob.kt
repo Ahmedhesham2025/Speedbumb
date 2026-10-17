@@ -18,7 +18,9 @@ class SyncJob : JobService() {
         Thread({
             val retry = try {
                 val research = extras.getInt(ResearchConsent.EXTRA_JOB, 0)
-                if (research == ResearchConsent.JOB_CONSENT) ResearchConsent.run(app)
+                // The daily update check: once a day at most (shared with the app's start), never retried.
+                if (extras.getInt(UpdateCheck.EXTRA_JOB, 0) == 1) { UpdateCheck.run(app); false }
+                else if (research == ResearchConsent.JOB_CONSENT) ResearchConsent.run(app)
                 // Uploads go only over the job's (unmetered) network: if Wi-Fi drops, nothing falls back to mobile data.
                 else if (research == ResearchConsent.JOB_UPLOAD) params.network.let { net ->
                     ResearchUploader.run(app, HttpTransport(10_000, net), HttpFileTransport(network = net))

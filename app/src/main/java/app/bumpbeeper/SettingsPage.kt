@@ -1,6 +1,7 @@
 package app.bumpbeeper
 
 import android.app.AlertDialog
+import android.app.Dialog
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
@@ -8,9 +9,12 @@ import android.content.res.ColorStateList
 import android.os.Handler
 import android.os.Looper
 import android.util.TypedValue
+import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
 import android.widget.CheckBox
+import android.widget.FrameLayout
+import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.RadioButton
 import android.widget.RadioGroup
@@ -23,6 +27,7 @@ import app.bumpbeeper.research.ResearchUploader
 import app.bumpbeeper.sync.SpeedLimitSync
 import app.bumpbeeper.sync.Sync
 import app.bumpbeeper.sync.TrainingConsent
+import app.bumpbeeper.sync.UpdateCheck
 import app.bumpbeeper.ui.AutoDetectText
 import app.bumpbeeper.ui.LiveLimitText
 import app.bumpbeeper.ui.ResearchChoice
@@ -33,7 +38,7 @@ import java.util.Date
 import java.util.Locale
 
 /** All settings, grouped. Every change takes effect right away, even during a trip. */
-class SettingsPage(private val a: MainActivity) : Page {
+class SettingsPage(private val a: MainActivity) : Page, BackHandler {
     private fun dp(v: Int) = Ui.dp(a, v)
     private val ui = Handler(Looper.getMainLooper())
     private val sp = Prefs.sp(a)
@@ -79,12 +84,65 @@ class SettingsPage(private val a: MainActivity) : Page {
     /** True while the screen itself moves the radio (so it isn't taken as the user's choice). */
     private var settingRadio = false
 
-    override val view: View = build()
+    // Two sub-pages over the main list: the shared map, and research & recordings (help improve detection,
+    // research recordings, debug recordings), so the main list stays short.
+    private lateinit var mainView: View
+    private lateinit var sharedPage: View
+    private lateinit var researchPage: View
+    private lateinit var sharedSub: TextView
+
+    override val view: View = FrameLayout(a).apply {
+        mainView = build()
+        for (v in listOf(mainView, sharedPage, researchPage)) addView(v,
+            FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
+        sharedPage.visibility = View.GONE
+        researchPage.visibility = View.GONE
+    }
+
+    private fun openSub(page: View) {
+        mainView.visibility = View.GONE
+        page.visibility = View.VISIBLE
+    }
+
+    /** The research and recordings sub-page, or the shared map one (also used by the screenshot test). */
+    internal fun openResearch() = openSub(researchPage)
+    internal fun openSharedMap() = openSub(sharedPage)
+
+    override fun back(): Boolean {
+        if (mainView.visibility == View.VISIBLE) return false
+        sharedPage.visibility = View.GONE
+        researchPage.visibility = View.GONE
+        mainView.visibility = View.VISIBLE
+        return true
+    }
+
+    /** A sub-page: an app bar with back and the title, then [col] scrolling. */
+    private fun subPage(title: String, col: LinearLayout): View = LinearLayout(a).apply {
+        orientation = LinearLayout.VERTICAL
+        setBackgroundColor(Ui.BG)
+        addView(LinearLayout(a).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(4), 0, dp(4), 0)
+            addView(ImageView(a).apply {
+                setImageResource(R.drawable.ic_back)
+                imageTintList = ColorStateList.valueOf(Ui.DIM)
+                scaleType = ImageView.ScaleType.CENTER
+                contentDescription = a.getString(R.string.trips_back)
+                isClickable = true
+                setOnClickListener { back() }
+            }, LinearLayout.LayoutParams(dp(48), dp(48)))
+            addView(Ui.text(a, 20f, Ui.TEXT, bold = true, value = title),
+                LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { marginStart = dp(8) })
+        }, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(64)))
+        addView(ScrollView(a).apply { addView(col) }, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f))
+    }
 
     private var forgetDialog: AlertDialog? = null
     private var limitsDialog: AlertDialog? = null
     private var liveDialog: AlertDialog? = null
     private var trainDialog: AlertDialog? = null
+    private var diagDialog: Dialog? = null
 
     fun release() {
         trainDialog?.dismiss()
@@ -96,15 +154,21 @@ class SettingsPage(private val a: MainActivity) : Page {
         limitsDialog = null
         liveDialog?.dismiss()
         liveDialog = null
+        diagDialog?.dismiss()
+        diagDialog = null
     }
 
     private fun build(): View {
-        val col = LinearLayout(a).apply {
+        fun column() = LinearLayout(a).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(16), dp(20), dp(16), dp(32))
+            setPadding(dp(16), 0, dp(16), dp(32))
         }
+        val col = column()
+        val sharedCol = column()
+        val researchCol = column()
+        var target = col
         fun add(v: View, top: Int = 0) =
-            col.addView(v, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { topMargin = dp(top) })
+            target.addView(v, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { topMargin = dp(top) })
         fun card(title: String, vararg items: View) {
             add(Ui.section(a, title))
             val c = Ui.card(a)
@@ -113,7 +177,10 @@ class SettingsPage(private val a: MainActivity) : Page {
         }
         fun hint(s: String) = Ui.text(a, 13f, Ui.DIM, value = s).apply { setPadding(0, dp(2), 0, dp(6)) }
 
-        add(Ui.text(a, 22f, Ui.TEXT, bold = true, value = a.getString(R.string.settings_title)))
+        add(Ui.text(a, Ui.Type.HEADLINE, Ui.TEXT, bold = true, value = a.getString(R.string.settings_title)).apply {
+            gravity = Gravity.CENTER_VERTICAL
+            minHeight = dp(64)
+        })
 
         card(a.getString(R.string.settings_section_warnings),
             Ui.slider(a, 4, 12, 1, Prefs.leadSeconds(a), { a.getString(R.string.settings_warn_before, it) }) { sp.edit().putInt(Prefs.LEAD_SECONDS, it).apply() },
@@ -137,12 +204,10 @@ class SettingsPage(private val a: MainActivity) : Page {
             if (code == Prefs.voiceLang(a)) rb.isChecked = true
         }
         lang.setOnCheckedChangeListener { g, id -> sp.edit().putString(Prefs.VOICE_LANG, g.findViewById<RadioButton>(id)?.tag as? String ?: "en").apply() }
-        card(a.getString(R.string.settings_section_potholes),
-            hint(a.getString(R.string.settings_potholes_hint)),
-            Ui.toggle(a, a.getString(R.string.settings_potholes_voice), null, Prefs.warnPotholes(a)) { sp.edit().putBoolean(Prefs.WARN_POTHOLES, it).apply() },
-            Ui.slider(a, 4, 10, 1, Prefs.harshMs2(a), {
-                a.getString(R.string.settings_harsh, it, a.getString(when { it <= 5 -> R.string.settings_harsh_most; it <= 7 -> R.string.settings_harsh_feel; else -> R.string.settings_harsh_worst }))
-            }) { sp.edit().putInt(Prefs.HARSH_MS2, it).apply() },
+        // The old pothole voice switch and "harsh" slider are gone: since v2 every spot is a bump, and the voice is
+        // for strong ones (Prefs.WARN_POTHOLES / HARSH_MS2 are no longer read).
+        card(a.getString(R.string.settings_section_voice),
+            hint(a.getString(R.string.settings_voice_hint)),
             Ui.text(a, 15f, Ui.TEXT, value = a.getString(R.string.settings_voice_language)),
             lang,
         )
@@ -155,37 +220,44 @@ class SettingsPage(private val a: MainActivity) : Page {
                 if (on) { showLimitsSwitch(false); askLimits() }   // only the consent dialog turns it on
                 else { SpeedLimitSync.setEnabled(a, false); showLimitsSwitch(false) }
             }.also { limitsBox = ((it as? ViewGroup)?.getChildAt(0) ?: it) as? CheckBox },
-            Ui.text(a, 13f, Ui.ORANGE).also { limitsStatus = it; it.setPadding(dp(32), 0, 0, dp(6)) },
+            Ui.text(a, 13f, Ui.ORANGE).also { limitsStatus = it; it.setPadding(0, 0, 0, dp(6)) },
             Ui.toggle(a, a.getString(R.string.live_limit_switch), a.getString(R.string.live_limit_switch_hint), Prefs.liveLimits(a)) { on ->
                 if (settingLive) return@toggle
                 if (on) { showLive(false); askLive() }   // only "Turn on" in the consent dialog turns it on
                 else { sp.edit().putBoolean(Prefs.LIVE_LIMITS, false).apply(); showLive() }
             }.also { liveBox = ((it as? ViewGroup)?.getChildAt(0) ?: it) as? CheckBox },
-            Ui.text(a, 13f, Ui.ORANGE).also { liveStatus = it; it.setPadding(dp(32), 0, 0, dp(6)) },
+            Ui.text(a, 13f, Ui.ORANGE).also { liveStatus = it; it.setPadding(0, 0, 0, dp(6)) },
             buildLiveExtras(),
         )
 
-        val sens = RadioGroup(a).apply { orientation = RadioGroup.HORIZONTAL }
-        listOf(R.string.settings_sens_low, R.string.settings_sens_normal, R.string.settings_sens_high).forEachIndexed { i, nameRes ->
-            val rb = RadioButton(a).apply {
-                text = a.getString(nameRes); tag = i; id = View.generateViewId()
-                setTextColor(Ui.TEXT); buttonTintList = ColorStateList.valueOf(Ui.ACCENT)
-            }
-            sens.addView(rb, RadioGroup.LayoutParams(0, RadioGroup.LayoutParams.WRAP_CONTENT, 1f))
-            if (i == Prefs.sensitivity(a)) rb.isChecked = true
+        val sens = Ui.segmented(a, listOf(R.string.settings_sens_low, R.string.settings_sens_normal, R.string.settings_sens_high).map { a.getString(it) },
+            Prefs.sensitivity(a)) { sp.edit().putInt(Prefs.SENSITIVITY, it).apply() }
+        val places = listOf("mounted" to R.string.settings_place_mounted, "cupholder" to R.string.settings_place_cupholder, "pocket" to R.string.settings_place_pocket)
+        val place = Ui.segmented(a, places.map { a.getString(it.second) }, places.indexOfFirst { it.first == Prefs.placement(a) }) {
+            Prefs.setPlacement(a, places[it].first)
         }
-        sens.setOnCheckedChangeListener { g, id -> sp.edit().putInt(Prefs.SENSITIVITY, g.findViewById<RadioButton>(id)?.tag as? Int ?: 1).apply() }
         card(a.getString(R.string.settings_section_detection),
             sens,
             hint(a.getString(R.string.settings_detection_hint)),
             Ui.slider(a, 30, 80, 5, Prefs.maxBumpKmh(a), { a.getString(R.string.settings_max_bump, it) }) {
                 sp.edit().putInt(Prefs.MAX_BUMP_KMH, it).apply()
             },
+            Ui.divider(a),
+            Ui.text(a, 16f, Ui.TEXT, value = a.getString(R.string.settings_phone_where)).apply { setPadding(0, 0, 0, dp(8)) },
+            place,
+            hint(a.getString(R.string.settings_phone_hint)),
         )
+
+        // Shared map and privacy: two rows that open their sub-pages.
+        val (sharedRow, sharedLine) = Ui.navRow(a, R.drawable.ic_people, a.getString(R.string.settings_section_shared_map)) { openSub(sharedPage) }
+        sharedSub = sharedLine
+        val (researchRow, researchLine) = Ui.navRow(a, R.drawable.ic_flask, a.getString(R.string.settings_research_page)) { openSub(researchPage) }
+        researchLine.text = a.getString(R.string.settings_research_page_sub)
+        card(a.getString(R.string.settings_section_privacy), sharedRow, researchRow)
 
         autoText = Ui.text(a, 15f, Ui.TEXT)
         autoBtn = Ui.button(a, "", Ui.Style.PRIMARY) { if (a.autoStartOn()) a.disableAuto() else a.setupAuto() }
-        detectStatus = Ui.text(a, 14f, Ui.DIM).apply { setPadding(dp(32), 0, 0, dp(6)) }
+        detectStatus = Ui.text(a, 14f, Ui.DIM).apply { setPadding(0, 0, 0, dp(6)) }
         detectFix = Ui.button(a, a.getString(R.string.auto_fix), Ui.Style.PRIMARY) { a.fixAutoDetect() }
         card(a.getString(R.string.settings_section_auto),
             Ui.toggle(a, a.getString(R.string.auto_detect_switch), a.getString(R.string.auto_detect_hint), AutoDetect.enabled(a)) { on ->
@@ -208,7 +280,9 @@ class SettingsPage(private val a: MainActivity) : Page {
             },
         )
 
+        target = sharedCol
         buildSharedMap { title, items -> card(title, *items) }
+        target = researchCol
 
         trainNeedMap = hint(a.getString(R.string.train_need_map))
         trainChoose = Ui.button(a, a.getString(R.string.limits_need_map_open)) {
@@ -219,12 +293,12 @@ class SettingsPage(private val a: MainActivity) : Page {
             if (on) { showTraining(false); askTraining() }   // only the consent dialog turns it on
             else { TrainingConsent.setEnabled(a, false); a.toast(a.getString(R.string.train_off_toast)); showTraining() }
         }.also { trainBox = ((it as? ViewGroup)?.getChildAt(0) ?: it) as? CheckBox }
-        trainInfo = Ui.text(a, 13f, Ui.DIM).apply { setPadding(dp(32), 0, 0, dp(4)) }
-        trainProblem = Ui.text(a, 13f, Ui.ORANGE).apply { setPadding(dp(32), 0, 0, dp(4)) }
+        trainInfo = Ui.text(a, 13f, Ui.DIM).apply { setPadding(0, 0, 0, dp(4)) }
+        trainProblem = Ui.text(a, 13f, Ui.ORANGE).apply { setPadding(0, 0, 0, dp(4)) }
         card(a.getString(R.string.settings_section_training), trainNeedMap, trainChoose, trainToggle, trainInfo, trainProblem)
 
-        researchInfo = Ui.text(a, 13f, Ui.DIM).apply { setPadding(dp(32), 0, 0, dp(4)) }
-        researchProblem = Ui.text(a, 13f, Ui.ORANGE).apply { setPadding(dp(32), 0, 0, dp(4)) }
+        researchInfo = Ui.text(a, 13f, Ui.DIM).apply { setPadding(0, 0, 0, dp(4)) }
+        researchProblem = Ui.text(a, 13f, Ui.ORANGE).apply { setPadding(0, 0, 0, dp(4)) }
         researchId = Ui.text(a, 14f, Ui.TEXT).apply { setTextIsSelectable(true); setPadding(0, dp(10), 0, dp(4)) }
         card(a.getString(R.string.settings_section_research),
             Ui.toggle(a, a.getString(R.string.research_switch), a.getString(R.string.research_hint), Prefs.researchRecording(a)) { on ->
@@ -240,6 +314,9 @@ class SettingsPage(private val a: MainActivity) : Page {
             hint(a.getString(R.string.research_id_hint)),
         )
 
+        // Debug recordings join research and recordings (built here, shown on that sub-page).
+        buildDebug { title, items -> card(title, *items) }
+        target = col
         card(a.getString(R.string.settings_section_data),
             Ui.row(a, Ui.button(a, a.getString(R.string.settings_share), Ui.Style.PRIMARY) { Sharing.chooseAndShare(a) }, Ui.button(a, a.getString(R.string.settings_import)) { a.pickImportFile() }),
             hint(a.getString(R.string.settings_data_hint)),
@@ -247,27 +324,33 @@ class SettingsPage(private val a: MainActivity) : Page {
             Ui.button(a, a.getString(R.string.settings_clear_map), Ui.Style.DANGER) { confirmClear() },
         )
 
-        val place = RadioGroup(a).apply { orientation = RadioGroup.HORIZONTAL }
-        listOf("mounted" to R.string.settings_place_mounted, "cupholder" to R.string.settings_place_cupholder, "pocket" to R.string.settings_place_pocket).forEach { (code, nameRes) ->
-            val rb = RadioButton(a).apply {
-                text = a.getString(nameRes); tag = code; id = View.generateViewId()
-                setTextColor(Ui.TEXT); buttonTintList = ColorStateList.valueOf(Ui.ACCENT)
-            }
-            place.addView(rb, RadioGroup.LayoutParams(0, RadioGroup.LayoutParams.WRAP_CONTENT, 1f))
-            if (code == Prefs.placement(a)) rb.isChecked = true
-        }
-        place.setOnCheckedChangeListener { g, id -> Prefs.setPlacement(a, g.findViewById<RadioButton>(id)?.tag as? String ?: "unknown") }
         card(a.getString(R.string.settings_section_road_testing),
             Ui.toggle(a, a.getString(R.string.settings_label_mode_title),
                 a.getString(R.string.settings_label_mode_desc),
                 Prefs.labelMode(a)) { Prefs.setLabelMode(a, it) },
-            Ui.text(a, 15f, Ui.TEXT, value = a.getString(R.string.settings_phone_where)),
-            place,
-            hint(a.getString(R.string.settings_phone_hint)),
+            Ui.navRow(a, R.drawable.ic_wave, a.getString(R.string.settings_diagnostics)) { openDiagnostics() }
+                .also { it.second.text = a.getString(R.string.settings_diagnostics_hint) }.first,
+            Ui.toggle(a, a.getString(R.string.settings_beta_updates), a.getString(R.string.settings_beta_updates_hint),
+                Prefs.betaUpdates(a)) { on ->
+                Prefs.setBetaUpdates(a, on)
+                if (on) UpdateCheck.latest(a, force = true) {}   // look now (it counts as the day's check), not in up to 24 h
+            },
         )
 
+        card(a.getString(R.string.settings_section_help), Ui.text(a, 14f, Ui.TEXT, value = a.getString(R.string.settings_help)).apply { setLineSpacing(0f, 1.2f) })
+        sharedPage = subPage(a.getString(R.string.settings_section_shared_map), sharedCol)
+        researchPage = subPage(a.getString(R.string.settings_research_page), researchCol)
+        return ScrollView(a).apply {
+            setBackgroundColor(Ui.BG)
+            addView(col)
+        }
+    }
+
+    /** Debug sensor recordings (built into the research and recordings sub-page). */
+    private fun buildDebug(card: (String, Array<View>) -> Unit) {
+        fun hint(s: String) = Ui.text(a, 13f, Ui.DIM, value = s).apply { setPadding(0, dp(2), 0, dp(6)) }
         traceInfo = hint("")
-        card(a.getString(R.string.settings_section_debug),
+        card(a.getString(R.string.settings_section_debug), arrayOf(
             Ui.toggle(a, a.getString(R.string.settings_debug_title), a.getString(R.string.settings_debug_desc, TraceWriter.KEEP), Prefs.debugRecording(a)) {
                 sp.edit().putBoolean(Prefs.DEBUG_RECORDING, it).apply()
                 showTraces()
@@ -277,10 +360,7 @@ class SettingsPage(private val a: MainActivity) : Page {
             Ui.button(a, a.getString(R.string.settings_delete_recordings), Ui.Style.QUIET) { deleteTraces() }.also {
                 (it.layoutParams as? LinearLayout.LayoutParams)?.topMargin = dp(8)
             },
-        )
-
-        card(a.getString(R.string.settings_section_help), Ui.text(a, 14f, Ui.TEXT, value = a.getString(R.string.settings_help)).apply { setLineSpacing(0f, 1.2f) })
-        return ScrollView(a).apply { addView(col) }
+        ))
     }
 
     /** Settings → Shared map: the choice, how the sync is doing, and "delete my shared data". */
@@ -366,7 +446,7 @@ class SettingsPage(private val a: MainActivity) : Page {
         }
         liveExtras = LinearLayout(a).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(32), 0, 0, 0)
+            setPadding(0, 0, 0, 0)
             addView(Ui.text(a, 14f, Ui.TEXT, value = a.getString(R.string.live_limit_margin_title)))
             addView(margins)
             addView(Ui.toggle(a, a.getString(R.string.live_limit_sound), null, Prefs.limitSound(a)) {
@@ -461,6 +541,12 @@ class SettingsPage(private val a: MainActivity) : Page {
         }
     }
 
+    /** Settings → Diagnostics, full screen (DiagnosticsPage). */
+    internal fun openDiagnostics() {
+        diagDialog?.dismiss()
+        diagDialog = DiagnosticsPage.open(a).also { d -> d.setOnCancelListener { diagDialog = null } }
+    }
+
     private fun copyResearchId() {
         val id = ResearchChoice.researchId(a) ?: return a.toast(a.getString(R.string.research_id_none))
         (a.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager).setPrimaryClip(ClipData.newPlainText("Research ID", id))
@@ -481,6 +567,8 @@ class SettingsPage(private val a: MainActivity) : Page {
 
     /** Status lines from LiveState; cheap, so it runs with every tick while Settings is open. */
     override fun tick() {
+        val shared = SyncChoice.choiceName(a, Prefs.syncChoice(a))
+        if (sharedSub.text.toString() != shared) sharedSub.text = shared
         val choice = Prefs.syncChoice(a)
         val on = choice != Prefs.SYNC_UNSET
         fun set(v: TextView, s: String, show: Boolean = s.isNotEmpty()) {

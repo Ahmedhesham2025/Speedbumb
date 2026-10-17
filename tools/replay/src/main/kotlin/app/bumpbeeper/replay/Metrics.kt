@@ -128,7 +128,9 @@ object Metrics {
      */
     fun labels(samples: List<TraceSample>): List<Label> {
         val fixes = samples.filterIsInstance<TraceSample.Gps>().sortedBy { it.tMs }
-        return TraceReader.labels(samples).map { l ->
+        // A label row reading `mark` is a handling marker ([MarkReport]), never a label, and no undo takes it back.
+        val taps = samples.filterNot { it is TraceSample.Event && it.type == "label" && it.note.trim() == MarkReport.MARK }
+        return TraceReader.labels(taps).map { l ->
             val p = positionAt(fixes, l.tMs) ?: return@map l
             Label(l.tMs, l.kind, p[0], p[1])
         }
