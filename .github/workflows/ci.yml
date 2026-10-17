@@ -199,6 +199,14 @@ jobs:
         run: deno check supabase/functions/*/index.ts
       - name: Edge Function lint (Deno)
         run: deno lint supabase/functions/
+      # Owner tools (supabase/tools/**, e.g. research/download_and_clear.ts): type check, lint and their tests. The tests
+      # run the tool against a fake of the Supabase endpoints on 127.0.0.1: no secrets, and no network beyond loopback.
+      - name: Owner tools type check (Deno)
+        run: deno check $(find supabase/tools -name '*.ts' | sort)
+      - name: Owner tools lint (Deno)
+        run: deno lint supabase/tools/
+      - name: Owner tools tests (Deno, local fakes only)
+        run: deno test --allow-net=127.0.0.1 --allow-run --allow-read --allow-write supabase/tools/
       - name: Is there a backend yet?
         id: present
         run: |

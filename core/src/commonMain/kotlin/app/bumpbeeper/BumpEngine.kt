@@ -197,6 +197,17 @@ class EngineConfig {
     val axle = AxleConfig()
     var speedBeforeMs = 5000L
     var speedEvidenceKmh = 5.0
+
+    /**
+     * E5 (tuned on a real drive scored against server-confirmed spots). In a pocket, crossing at [pocketSlowEvidenceKmh]
+     * or slower is evidence too: a driver crawls over a hump, so the slowdown came before the speed window. Faster than
+     * [fastNewMinKmh], a NEW spot needs both axles or a slowdown by GPS (rejected "fast_unconfirmed"): road joints,
+     * manholes and potholes taken at speed were most of the unconfirmed spots, and the braking a pocketed phone
+     * "feels" along its forward axis was the only slowdown for several of them. A known spot (your own, or a shared one being
+     * approached) is hit as before.
+     */
+    var pocketSlowEvidenceKmh = 20.0
+    var fastNewMinKmh = 35.0
     var axleEvidenceMin = 0.3
     var strongJoltMs2 = 5.0
     var overrideMinScore = 0.9
@@ -665,11 +676,12 @@ class BumpEngine(
         if (phone.pocketMode && ax?.verdict == AxleVerdict.ONE) { reject(tMs, peak, "no_axle", fix, note.trim(), shape); return }
         if (pol == Polarity.DOWN) { reject(tMs, peak, "down_first", fix, note.trim(), shape); return }
         val up = pol == Polarity.UP
-        if (phone.pocketMode && !axleSeen && !slowed && !blind && !up) { reject(tMs, peak, "no_evidence", fix, note.trim(), shape); return }
+        val crawled = phone.pocketMode && speedKmh <= cfg.pocketSlowEvidenceKmh
+        if (phone.pocketMode && !axleSeen && !slowed && !blind && !up && !crawled) { reject(tMs, peak, "no_evidence", fix, note.trim(), shape); return }
         val grade = when {
             pol == Polarity.DOWN_WEAK -> 0   // down first: at most a maybe, never a confirmation
             ax?.verdict == AxleVerdict.BOTH || (peak >= cfg.strongJoltMs2 && axleSeen && slowed) -> 2
-            axleSeen || slowed || blind || up -> 1
+            axleSeen || slowed || blind || up || crawled -> 1
             else -> 0
         }
         if (ax?.verdict == AxleVerdict.BOTH) vehicle.learn(ax.dtMs, fix.speedMps)
@@ -678,7 +690,10 @@ class BumpEngine(
         val hump = ax?.let { bumpShape(tMs, it) }
         val hitInfo = HitInfo(sev.takeIf { !it.isNaN() }, ax?.score?.takeIf { !it.isNaN() }?.coerceIn(0.0, 1.0), hump?.first)
         val humpNote = " hump=" + (hump?.let { it.first.name.lowercase() + it.second } ?: "unknown")
-        registerHit(tMs, pos[0], pos[1], speedKmh, peak, slowdownKmh, shape, grade, note + humpNote, hitInfo, pol == Polarity.DOWN_WEAK)
+        val newOk = speedKmh <= cfg.fastNewMinKmh || ax?.verdict == AxleVerdict.BOTH || profile == CrossProfile.SLOWDOWN ||
+            gpsDropKmh(tMs) >= cfg.speedEvidenceKmh
+        val rejectNew = if (newOk) null else { { reject(tMs, peak, "fast_unconfirmed", fix, (note + humpNote).trim(), shape) } }
+        registerHit(tMs, pos[0], pos[1], speedKmh, peak, slowdownKmh, shape, grade, note + humpNote, hitInfo, rejectNew, pol == Polarity.DOWN_WEAK)
         val spot = lastSpot
         if (spot != null && profile == CrossProfile.SLOWDOWN && (up || ax?.verdict == AxleVerdict.BOTH)) {
             pendingV.add(PendingV(spot.id, tMs, minKmh))
@@ -842,11 +857,14 @@ class BumpEngine(
     }
 
     /** Speed lost before and through the jolt at [tMs], km/h: by GPS, or felt along the forward axis ([EngineConfig.axle]). */
-    private fun speedDropKmh(tMs: Long): Double {
+    private fun speedDropKmh(tMs: Long): Double =
+        max(gpsDropKmh(tMs), (fwdBrakeAt(lastAccelMs) - fwdBrakeAt(tMs - cfg.speedBeforeMs)) * 3.6)
+
+    /** [speedDropKmh] by GPS alone. */
+    private fun gpsDropKmh(tMs: Long): Double {
         val top = fixes.filter { it.timeMs in tMs - cfg.speedBeforeMs..tMs }.maxOfOrNull { it.speedMps }
         val low = fixes.filter { it.timeMs >= tMs - 1000 }.minOfOrNull { it.speedMps }
-        val gps = if (top == null || low == null) 0.0 else max(0.0, top - low) * 3.6
-        return max(gps, (fwdBrakeAt(lastAccelMs) - fwdBrakeAt(tMs - cfg.speedBeforeMs)) * 3.6)
+        return if (top == null || low == null) 0.0 else max(0.0, top - low) * 3.6
     }
 
     /** Why a jolt while the phone is handled stays the phone's, or null: a clear two-axle pair of the car ([EngineConfig.axle]). */
@@ -1019,6 +1037,8 @@ class BumpEngine(
         tMs: Long, lat: Double, lon: Double, speedKmh: Double, peak: Double, slowdownKmh: Double, shape: JoltShape,
         /** 2: confirmed by the car's signature, 1: some evidence, 0: none ([EngineConfig.axle]); [evidence] for the log. */
         grade: Int, evidence: String, info: HitInfo,
+        /** Not null: this jolt may only hit a known spot; a new one is rejected by calling it ([EngineConfig.fastNewMinKmh]). */
+        rejectNew: (() -> Unit)? = null,
         /** A weak, down-first jolt ([Polarity.DOWN_WEAK]): counts towards [Bump.weakDownHits]. */
         downWeak: Boolean = false,
     ) {
@@ -1057,6 +1077,7 @@ class BumpEngine(
             val short = b0.shape == BumpShape.SHORT_STEEP
             if (samePass && short && bestD >= cfg.rowMinGapM && speedKmh <= cfg.rowMaxKmh && !sameHump) best = null
         }
+        if (best == null && rejectNew != null && !sharedFelt) { rejectNew(); return }
         if (best == null) {
             // First time here → record it. No beep: we are already on top of it.
             val b = Bump(0, lat, lon, heading, hits = 1, passes = 1, misses = 0, nPos = 1, firstSeen = now, lastSeen = now)
