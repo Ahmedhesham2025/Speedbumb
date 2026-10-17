@@ -22,11 +22,11 @@ class CalibrationConfig {
     /** A window more than this × the floor learned so far is a rough road, not the phone: left out. */
     var roughFactor = 2.0
     /**
-     * The floor the engine's thresholds were tuned on (m/s² RMS): scale 1. Measured on real phones: drive01 (a pocket
-     * phone) has a 20th percentile of 0.061 on steady smooth road (median 0.090). The simulator's phone is much noisier
-     * (0.35); its tests use that as their reference.
+     * The floor the engine's thresholds were tuned on (m/s² RMS): scale 1. Measured on real phones with these windows:
+     * drive01 (a pocket phone) gives 0.075 (its 8 qualifying windows; 0.061 / median 0.090 over all its smooth steady
+     * road). The simulator's phone is much noisier (0.35); its tests use that as their reference.
      */
-    var refRms = 0.06
+    var refRms = 0.075
     /** The scale stays in this range... */
     var minScale = 0.5
     var maxScale = 1.5
