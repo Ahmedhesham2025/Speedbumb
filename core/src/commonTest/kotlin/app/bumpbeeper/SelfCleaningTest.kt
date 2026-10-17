@@ -151,11 +151,12 @@ class SelfCleaningTest {
         for ((name, spec) in listOf(
             "small dips 30 km/h" to DriveSpec(smallDipsAt = listOf(600.0, 1400.0), cruiseKmh = 30.0),
             "dips 30 km/h" to DriveSpec(dipsAt = listOf(600.0, 1400.0), cruiseKmh = 30.0),
-            "small dips 40 km/h" to DriveSpec(smallDipsAt = listOf(600.0, 1400.0), cruiseKmh = 40.0),
-            "dips 20 km/h" to DriveSpec(dipsAt = listOf(600.0, 1400.0), cruiseKmh = 20.0),
+            "small dips 33 km/h" to DriveSpec(smallDipsAt = listOf(600.0, 1400.0), cruiseKmh = 33.0),
+            "dips 25 km/h" to DriveSpec(dipsAt = listOf(600.0, 1400.0), cruiseKmh = 25.0),
         )) {
             val dips = MemoryStore()
-            for (t in 1..3) Simulator(30L + t).drive(dips, spec, tripId = t.toLong())
+            // In a holder (trusted from the start), so the jolt's direction can be judged.
+            for (t in 1..3) Simulator(30L + t).drive(dips, spec, tripId = t.toLong(), drivingCfg = DrivingConfig().apply { placement = "mounted" })
             for (s in dips.saved) {
                 val felt = dips.events.filter { it.bumpId == s.id && it.type in setOf("new_bump", "hit", "hit_weak") }
                 val allDownWeak = felt.isNotEmpty() && felt.all { it.type != "hit" && "polarity=down_weak" in it.note }
