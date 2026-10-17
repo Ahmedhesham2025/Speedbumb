@@ -542,6 +542,7 @@
     <string name="diag_sync_result">Last sync result: %1$s</string>
     <string name="diag_sync_queue">Observations waiting for upload: %1$d</string>
     <string name="diag_research">Research recordings: %1$s</string>
+    <string name="diag_calibration">Phone calibration (jolt scale): %1$s</string>
     <string name="diag_training">Help improve detection: %1$s, %2$d waiting</string>
     <string name="diag_start_log">Auto start, newest first:</string>
     <string name="start_motion_check">Motion: checking speed</string>

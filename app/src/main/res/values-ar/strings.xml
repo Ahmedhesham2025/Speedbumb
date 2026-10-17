@@ -558,6 +558,7 @@
     <string name="diag_sync_result">نتيجة آخر مزامنة: %1$s</string>
     <string name="diag_sync_queue">ملاحظات مستنية الرفع: %1$d</string>
     <string name="diag_research">تسجيلات البحث: %1$s</string>
+    <string name="diag_calibration">معايرة الموبايل (مقياس الهزة): %1$s</string>
     <string name="diag_training">ساعد في تحسين الكشف: %1$s، %2$d مستنيين</string>
     <string name="diag_start_log">التشغيل التلقائي، الأحدث الأول:</string>
     <string name="start_motion_check">حركة: بنشوف السرعة</string>
