@@ -129,6 +129,19 @@ class DriveSpec(
     val bodyBounce: Boolean = false,
     /** The car's wheelbase: the rear wheels cross a bump this far after the front ones. */
     val wheelbaseM: Double = 2.6,
+    /**
+     * The phone lies flat, screen up, on the seat foam: the foam is a spring under it ([seatFoamHz], damping
+     * [seatFoamDamping]), so a jolt reaches it softened and rings on (it can bounce back past zero).
+     */
+    val onSeat: Boolean = false,
+    val seatFoamHz: Double = 6.0,
+    val seatFoamDamping: Double = 0.6,
+    /**
+     * The phone slides forward on the seat and tips that many degrees (position, degrees): for 0.4 s it slides (it
+     * feels a third of the car's braking), then it knocks into the seat back (6 m/s² back, a 6 m/s² jolt) and lies
+     * there tipped. Put it where the car brakes ([hardBrakesAt]) or turns.
+     */
+    val seatSlidesAt: List<Pair<Double, Double>> = emptyList(),
     /** Sets the phone's own signals on every sample: (seconds driven, metres driven, speed m/s, the signals, sensor time ms). */
     val phoneSignals: ((Double, Double, Double, PhoneSignals, Long) -> Unit)? = null,
 )
@@ -304,6 +317,10 @@ class Simulator(seed: Long) {
         val stops = spec.stopsAt.map { doubleArrayOf(travel(it.first), it.second, -1.0, 0.0) }   // (where, seconds, leave at, gone)
         val slips = spec.slipsAt.map { Pair(travel(it.first), it.second) }
         val slipStart = DoubleArray(slips.size) { -1.0 }
+        val seatSlides = spec.seatSlidesAt.map { Pair(travel(it.first), it.second) }
+        val seatSlideStart = DoubleArray(seatSlides.size) { -1.0 }
+        var foamX = 0.0   // the phone's height on the foam, relative to the seat, m
+        var foamV = 0.0
         val wiggles = spec.wigglesAt.map { travel(it) }
         var wiggleStart = -1.0
         var samplesAfter1Min = 0
@@ -328,8 +345,8 @@ class Simulator(seed: Long) {
         val maxDecel = 3.5
         val maxAccel = 1.5
         val yaw0 = degToRad(25.0)
-        val pitch0 = degToRad(-65.0)
-        val roll0 = degToRad(12.0)
+        val pitch0 = degToRad(if (spec.onSeat) -3.0 else -65.0)   // on the seat: flat, screen up, the cushion's slope
+        val roll0 = degToRad(if (spec.onSeat) 2.0 else 12.0)
         val gpsLag = 0.8
 
         val history = ArrayList<DoubleArray>()   // (t, s, v)
@@ -369,6 +386,7 @@ class Simulator(seed: Long) {
                 }
             }
             for ((i, sl) in slips.withIndex()) if (s < sl.first && s + v * dt >= sl.first) slipStart[i] = t
+            for ((i, sl) in seatSlides.withIndex()) if (s < sl.first && s + v * dt >= sl.first) seatSlideStart[i] = t
             for (sw in wiggles) if (s < sw && s + v * dt >= sw) wiggleStart = t
             val vNew = when {
                 t < forceBrakeUntil -> max(0.5, v - spec.hardBrakeMs2 * dt)
@@ -537,6 +555,28 @@ class Simulator(seed: Long) {
             }
             var spike = 0.0
             if (spikeStart >= 0 && t - spikeStart < 1.2) spike = -5.0 * minOf(1.0, (t - spikeStart) / 0.15, (1.2 - (t - spikeStart)) / 0.15)
+            for ((i, st) in seatSlideStart.withIndex()) {
+                if (st < 0) continue
+                val k = t - st
+                extraTilt += degToRad(seatSlides[i].second) * min(1.0, k / 0.4)
+                if (k < 0.4) spike -= 2.0 / 3.0 * aLong   // sliding: it feels only a third of the braking
+                else if (k < 0.6) {
+                    spike -= 6.0 * sin(PI * (k - 0.4) / 0.2)   // the knock into the seat back
+                    av += pulse(k - 0.4, 6.0)
+                }
+                if (k < 0.8) shake = max(shake, 1.0)
+            }
+            if (spec.onSeat) {
+                // The foam under the phone: x'' = -w²x - 2ζw x' - a_seat; the phone feels a_seat + x'' (10 sub-steps).
+                val w = 2 * PI * spec.seatFoamHz
+                var acc = 0.0
+                repeat(10) {
+                    acc = -w * w * foamX - 2 * spec.seatFoamDamping * w * foamV - av
+                    foamV += acc * dt / 10
+                    foamX += foamV * dt / 10
+                }
+                av += acc
+            }
             // The phone's own turning when it is tipped (the gyroscope feels it), about the axis the tilt turns around.
             val tiltRate = (extraTilt - prevTilt) / dt
             prevTilt = extraTilt
