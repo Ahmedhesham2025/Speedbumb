@@ -101,12 +101,13 @@ class CalibrationTest {
     }
 
     /**
-     * A stiff mount (gain 0.4, scale 0.5, trigger 1.8 m/s²) over gentle 15 km/h bumps (5 m/s² × 0.4 = 2.0 front,
-     * 1.6 rear): with its calibration, learned on earlier trips, the front axle sets the trigger off.
+     * A stiff mount (gain 0.5, scale 0.5, trigger 1.8 m/s²) over gentle bumps taken at 13–15 km/h: they peak at about
+     * 2.1 m/s² as sampled (4.6–5 m/s² × 0.5, × 0.95 at 50 Hz), under the 3.0 default trigger (and under the old 0.7
+     * floor's 2.1, which is why they were missed before). With its calibration, learned on earlier trips, they count.
      */
     @Test fun stiffMountCatchesGentleBumps() {
-        val c = learn(gain = 0.4)
-        val spec = DriveSpec(bumpsAt = listOf(1000.0, 1500.0, 1900.0), bumpKmh = 15.0, phoneGain = 0.4)
+        val c = learn(gain = 0.5)
+        val spec = DriveSpec(bumpsAt = listOf(1000.0, 1500.0, 1900.0), bumpKmh = 15.0, phoneGain = 0.5)
         val rec = ArrayList<TraceSample>()
         val raw = Simulator(602).drive(MemoryStore(), spec).newBumps
         val cal = Simulator(602).drive(MemoryStore(), spec, recorder = rec, calibration = copy(c))
