@@ -101,6 +101,9 @@ class ScreenshotTest {
                 settle(1500)   // short: the GPS counts as live for 5 s after the demo's fix
                 shot(dir, "15-drive-streets-strong")
                 mapCheck(scenario, MainActivity.TAB_DRIVE, File(dir, "15-drive-streets-strong.txt"))
+                // 20 s of driving on the street map (a new fix each second, a strong bump ahead): frame times and
+                // how often the maps were updated, for the smoothness work.
+                perfDrive(scenario, File(dir, "perf-drive-streets.txt"))
                 // The map engine's own log lines (requests for tiles and label fonts), to explain missing labels.
                 instr.uiAutomation.executeShellCommand("logcat -d -t 5000").use { fd ->
                     val all = android.os.ParcelFileDescriptor.AutoCloseInputStream(fd).use { String(it.readBytes()) }
@@ -207,6 +210,47 @@ class ScreenshotTest {
         scenario.onActivity { (it.pages[MainActivity.TAB_SETTINGS] as SettingsPage).back() }
         scenario.onActivity { it.select(MainActivity.TAB_DRIVE) }
         settle(800)
+    }
+
+    /**
+     * Drives 20 s on the Drive tab: the fake GPS moves north-east at 47 km/h (a fix a second) with a strong bump
+     * coming closer, as BumpService would publish it. Writes the frame-time summary (`dumpsys gfxinfo`) and the map
+     * updates per second ([app.bumpbeeper.ui.MapStats]) to [out].
+     */
+    private fun perfDrive(scenario: ActivityScenario<MainActivity>, out: File) {
+        val demo = BumpDb(ctx).let { db -> try { db.loadBumps().first() } finally { db.close() } }
+        scenario.onActivity { it.select(MainActivity.TAB_DRIVE) }
+        liveDemo(recording = true)
+        settle(1500)
+        fun sh(cmd: String): String = instr.uiAutomation.executeShellCommand(cmd).let { fd ->
+            android.os.ParcelFileDescriptor.AutoCloseInputStream(fd).use { String(it.readBytes()) }
+        }
+        sh("dumpsys gfxinfo ${ctx.packageName} reset")
+        val before = app.bumpbeeper.ui.MapStats.snapshot()
+        val t0 = SystemClock.elapsedRealtime()
+        val lm = ctx.getSystemService(Context.LOCATION_SERVICE) as android.location.LocationManager
+        for (i in 0 until 20) {
+            val step = i * 13.0   // metres driven
+            try {
+                lm.setTestProviderLocation(android.location.LocationManager.GPS_PROVIDER, android.location.Location(android.location.LocationManager.GPS_PROVIDER).apply {
+                    latitude = 30.0490 + step * Math.cos(Math.toRadians(40.0)) / 111_000.0
+                    longitude = 31.2360 + step * Math.sin(Math.toRadians(40.0)) / 96_000.0
+                    bearing = 40f; speed = 13f; accuracy = 4f
+                    time = System.currentTimeMillis(); elapsedRealtimeNanos = SystemClock.elapsedRealtimeNanos()
+                })
+            } catch (_: Exception) {}
+            LiveState.lastFixAtMs = SystemClock.elapsedRealtime()
+            LiveState.spotsAhead = listOf(SpotAhead(demo, 300.0 - step, Severity.STRONG, Confidence.FULL, WarnSound.STRONG))
+            SystemClock.sleep(1000)
+        }
+        val s = (SystemClock.elapsedRealtime() - t0) / 1000.0
+        val after = app.bumpbeeper.ui.MapStats.snapshot()
+        val names = listOf("geojson", "camera", "queries", "offlineDraws")
+        val rates = names.indices.joinToString(" ") { "${names[it]}/s=" + String.format(java.util.Locale.US, "%.1f", (after[it] - before[it]) / s) }
+        val keep = Regex("(?i)total frames|janky|percentile|slow ui|slow bitmap|slow issue|frame deadline|gpu")
+        val gfx = sh("dumpsys gfxinfo ${ctx.packageName}").lineSequence().map { it.trim() }.filter { keep.containsMatchIn(it) }.take(16)
+        out.writeText((listOf("seconds=" + String.format(java.util.Locale.US, "%.1f", s), rates) + gfx.toList()).joinToString(System.lineSeparator()) + System.lineSeparator())
+        LiveState.spotsAhead = emptyList()
     }
 
     /** The Map tab with its "OpenStreetMap" filter chip on ([on]) or back to "All", through the page's own reload. */

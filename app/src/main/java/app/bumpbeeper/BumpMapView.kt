@@ -80,6 +80,7 @@ class BumpMapView(ctx: Context) : View(ctx) {
     private fun toY(lat: Double): Float = (height / 2.0 - (lat - centerLat) * 110_540.0 * pxPerM()).toFloat()
 
     override fun onDraw(canvas: Canvas) {
+        app.bumpbeeper.ui.MapStats.offlineDraws++
         val w = width.toFloat()
         val h = height.toFloat()
         canvas.drawRoundRect(0f, 0f, w, h, 10f * density, 10f * density, bg)

@@ -66,6 +66,18 @@ import org.maplibre.geojson.MultiLineString
 import org.maplibre.geojson.Point
 
 /**
+ * How much work the maps did on the main thread (counted since the app started): GeoJSON source updates, camera
+ * moves, rendered-feature queries and redraws of the offline map. The screenshot test's perf check reads them.
+ */
+object MapStats {
+    @Volatile var geojson = 0
+    @Volatile var camera = 0
+    @Volatile var queries = 0
+    @Volatile var offlineDraws = 0
+    fun snapshot() = intArrayOf(geojson, camera, queries, offlineDraws)
+}
+
+/**
  * The street map: MapLibre Native with free OpenFreeMap tiles (Positron in the light theme, Dark in the dark one),
  * your spots as severity pins on the roads, and you as a dot or a heading arrow. Based on #104's StreetMap, moved onto
  * the redesign's tokens. [SpotMap] puts it over the old offline map and falls back to that one when this can't load
@@ -257,7 +269,7 @@ class StreetMap(private val ctx: Context, private val interactive: Boolean) {
     }
 
     private fun pushOsm() {
-        style?.getSourceAs<GeoJsonSource>(SRC_OSM)?.setGeoJson(FeatureCollection.fromFeatures(osm))
+        style?.getSourceAs<GeoJsonSource>(SRC_OSM)?.setGeoJson(FeatureCollection.fromFeatures(osm))?.also { MapStats.geojson++ }
     }
 
     /** Your position (dot, or an arrow when [bearing] is known); NaN lat hides it. */
@@ -277,6 +289,7 @@ class StreetMap(private val ctx: Context, private val interactive: Boolean) {
     private fun pushAhead() {
         val src = style?.getSourceAs<GeoJsonSource>(SRC_AHEAD) ?: return
         val a = ahead
+        MapStats.geojson++
         src.setGeoJson(FeatureCollection.fromFeatures(if (a == null) emptyList() else listOf(Feature.fromGeometry(
             LineString.fromLngLats(listOf(Point.fromLngLat(a[1], a[0]), Point.fromLngLat(a[3], a[2]))),
         ))))
@@ -293,6 +306,7 @@ class StreetMap(private val ctx: Context, private val interactive: Boolean) {
         val p = m.projection.toScreenLocation(LatLng(lat, lon))
         val r = dp(24).toFloat()
         val keys = if (arabic) listOf("name:ar", "name") else listOf("name:latin", "name:en", "name")
+        MapStats.queries++
         return try {
             m.queryRenderedFeatures(RectF(p.x - r, p.y - r, p.x + r, p.y + r))
                 .filter { it.geometry() is LineString || it.geometry() is MultiLineString }
@@ -301,12 +315,13 @@ class StreetMap(private val ctx: Context, private val interactive: Boolean) {
     }
 
     private fun pushSpots() {
-        style?.getSourceAs<GeoJsonSource>(SRC_SPOTS)?.setGeoJson(FeatureCollection.fromFeatures(features))
+        style?.getSourceAs<GeoJsonSource>(SRC_SPOTS)?.setGeoJson(FeatureCollection.fromFeatures(features))?.also { MapStats.geojson++ }
     }
 
     private fun pushMe() {
         val src = style?.getSourceAs<GeoJsonSource>(SRC_ME) ?: return
         val m = me
+        MapStats.geojson++
         src.setGeoJson(FeatureCollection.fromFeatures(if (m == null) emptyList() else listOf(
             Feature.fromGeometry(Point.fromLngLat(m[1], m[0])).apply {
                 addStringProperty("icon", if (m[2].isNaN()) ME_DOT else ME_ARROW)
@@ -342,6 +357,7 @@ class StreetMap(private val ctx: Context, private val interactive: Boolean) {
             animateMs > 0 -> m.animateCamera(CameraUpdateFactory.newCameraPosition(pos), animateMs)
             else -> m.cameraPosition = pos
         }
+        MapStats.camera++
     }
 
     /** Where the camera is: lat, lon, zoom (null before the map is ready). */
