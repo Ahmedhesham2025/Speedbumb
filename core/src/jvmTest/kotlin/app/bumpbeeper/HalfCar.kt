@@ -54,6 +54,8 @@ object HalfCarDrive {
     private const val LON0 = 31.2357
     private const val DT = 0.0005
     private const val GPS_LAG_S = 0.8
+    private const val IDLE_S = 6.0
+    private const val WARMUP_STOP_M = 90.0
 
     /** The phone's samples and the GPS fixes for [c] in [car] with [phone]; [rnd] makes noise and GPS errors. */
     fun samples(c: Crossing, car: HalfCar, phone: PhoneVariant, rnd: Random): List<TraceSample> {
@@ -69,7 +71,10 @@ object HalfCarDrive {
         fun road(x: Double) = (-2..2).sumOf { c.road(x + it * 0.0375) } / 5   // the tyre's contact patch
         while (s < c.lengthM) {
             // The driver: up to cruise, down to the crossing speed 3 m before each feature, then back up.
-            var target = c.cruiseKmh / 3.6
+            // A warm-up like a real trip's: parked for [IDLE_S] (the phone settles), then a slowdown to 10 km/h at
+            // [WARMUP_STOP_M] and back up, so the engine has learned gravity and the forward axis before any feature.
+            var target = if (t < IDLE_S) 0.0 else c.cruiseKmh / 3.6
+            run { val ds = WARMUP_STOP_M - s; if (ds > -5 && ds < 120) target = min(target, sqrt((10 / 3.6).let { it * it } + 2 * 2.5 * max(0.0, ds))) }
             for (f in c.featuresAt) {
                 val ds = f - s
                 if (ds > -wb - 1 && ds < 120) target = min(target, sqrt((c.crossKmh / 3.6).let { it * it } + 2 * 2.5 * max(0.0, ds - 3)))
