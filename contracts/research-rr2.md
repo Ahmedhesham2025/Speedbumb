@@ -80,7 +80,7 @@ Comment lines start with `#`. The text after `# ` is `key=value`, split at the f
 | `app_version` | app versionName, e.g. `1.8.0-beta1` |
 | `android_sdk` | Android API level, e.g. `34` (another platform writes its own `os=…`) |
 | `device` | `manufacturer/model`, e.g. `samsung/SM-A546E` (owner decision: sensor quirks are per model) |
-| `placement` | `mounted`, `cupholder`, `pocket` or `unknown` (the user's setting) |
+| `placement` | `mounted`, `cupholder`, `pocket`, `seat` or `unknown` (the user's setting) |
 | `start_source` | who started the trip: `user`, `car` (car Bluetooth), `vehicle` (Google activity recognition), `motion` (built-in detection) |
 | `trip_id` | the app's local trip id. P0-4 holds the files of a trip that "Was this a drive?" still asks about, and deletes them on "no" |
 | `start_utc_ms` | wall clock at the trip start, ms since 1970-01-01 UTC |

@@ -567,6 +567,7 @@ class DrivePage(private val a: MainActivity) : Page {
         "mounted" -> a.getString(R.string.settings_place_mounted)
         "cupholder" -> a.getString(R.string.settings_place_cupholder)
         "pocket" -> a.getString(R.string.settings_place_pocket)
+        "seat" -> a.getString(R.string.settings_place_seat)
         else -> ""
     }
 

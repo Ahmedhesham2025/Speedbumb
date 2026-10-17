@@ -167,6 +167,22 @@ object TrainingJson {
     /** The jolt's severity band since E1 (issue #114); the server takes these since B1. Anything else uploads as null. */
     private val CLASSES = setOf("mild", "moderate", "strong")
 
+    /**
+     * The hosted server takes placement "seat" only once `20261017000002_training_placement_seat.sql` is applied there
+     * (its CHECK would refuse the whole batch). Until then "seat" uploads as "unknown". The lead flips this to true
+     * after applying that migration (supabase/README.md, step 9).
+     */
+    const val SERVER_ACCEPTS_SEAT = false
+    /** What the server's placement CHECK takes, "seat" aside. */
+    private val SERVER_PLACEMENTS = setOf("mounted", "cupholder", "pocket", "unknown")
+
+    /** The placement as the server takes it ([SERVER_ACCEPTS_SEAT]); anything it doesn't know uploads as "unknown". */
+    fun serverPlacement(placement: String, acceptsSeat: Boolean = SERVER_ACCEPTS_SEAT): String = when {
+        placement == "seat" -> if (acceptsSeat) "seat" else "unknown"
+        placement in SERVER_PLACEMENTS -> placement
+        else -> "unknown"
+    }
+
     /** Local drive date, no time of day. */
     fun day(wallMs: Long): String = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date(wallMs))
 
@@ -197,7 +213,7 @@ object TrainingJson {
             .put("decision", s.decision)
             .put("reason", s.reason?.takeIf { REASON.matches(it) } ?: JSONObject.NULL)
             .put("classification", s.classification?.takeIf { it in CLASSES } ?: JSONObject.NULL)
-            .put("placement", placement)
+            .put("placement", serverPlacement(placement))
             .put("speed_kmh", num(if (s.speedKmh.isNaN()) 0.0 else s.speedKmh, 0.0, 250.0, 1))
             .put("heading_change_deg", num(s.headingChangeDeg, -180.0, 180.0, 1))
             .put("gps_accuracy_m", num(s.gpsAccuracyM, 0.0, 500.0, 1))
@@ -224,7 +240,7 @@ object TrainingJson {
         val o = JSONObject()
             .put("client_trip_id", id)
             .put("day", day(startWallMs))
-            .put("placement", placement)
+            .put("placement", serverPlacement(placement))
             .put("duration_s", ((endWallMs - startWallMs) / 1000).coerceIn(0, 86_400))
             .put("distance_m", distance.roundToInt().coerceIn(0, 2_000_000))
         for (k in listOf("learned", "hit", "rejected", "miss", "pass_clear", "user_mute")) o.put("n_$k", n(counts[k] ?: 0))
