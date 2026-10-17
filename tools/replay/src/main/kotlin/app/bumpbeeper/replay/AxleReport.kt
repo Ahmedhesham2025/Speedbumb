@@ -18,7 +18,7 @@ object AxleReport {
 
     /** History kept before a trigger: the backward window at slow speed plus the filters' settling. */
     private const val PRE_MS = 3000L
-    /** A decision is logged at the first sample after decideAfterMs: within this much of it. */
+    /** A decision is logged once the engine's axle wait is over (decideAfterMs up to crawlDecideMaxMs): this much after. */
     private const val DECISION_SLACK_MS = 200L
     /** The engine keeps this much GPS history. */
     private const val FIX_HISTORY_MS = 12_000L
@@ -83,7 +83,7 @@ object AxleReport {
             val trig = t[i]
             until = trig + cfg.refractoryMs
             val due = trig + cfg.decideAfterMs
-            val d = decided.firstOrNull { it.first >= due && it.first <= due + DECISION_SLACK_MS }
+            val d = decided.firstOrNull { it.first >= due && it.first <= trig + cfg.crawlDecideMaxMs + DECISION_SLACK_MS }
             val speed = speedAt(fixes, trig)
             // The fixes the engine holds when it decides; later ones haven't arrived yet.
             val known = fixes.filter { it.timeMs in trig - FIX_HISTORY_MS..due }
