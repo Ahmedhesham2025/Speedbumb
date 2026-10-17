@@ -214,6 +214,14 @@ class SyncStore(internal val helper: SQLiteOpenHelper) {
 
     fun osmBumpCount(): Int = count("osm_bumps")
 
+    /** Every cached OSM bump (the Map screen), at most [limit]. */
+    fun osmBumpsAll(limit: Int = 20_000): List<OsmBump> =
+        db.rawQuery("SELECT osm_id, lat, lon, kind, clean_passes FROM osm_bumps LIMIT $limit", null).use { c ->
+            val out = ArrayList<OsmBump>()
+            while (c.moveToNext()) out.add(OsmBump(c.getString(0), c.getDouble(1), c.getDouble(2), c.getString(3), c.getInt(4)))
+            out
+        }
+
     // ---------------- key/value
 
     fun get(key: String): String? =

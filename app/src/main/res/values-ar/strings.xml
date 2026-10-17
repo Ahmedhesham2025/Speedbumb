@@ -100,6 +100,9 @@
     <string name="settings_loud_title">صفّارات عالية</string>
     <string name="settings_loud_desc">بصوت المنبّه من سبيكر الموبايل، بدل صوت الميديا / صوت العربية.</string>
     <string name="settings_click_new">تكّة لما مطبّ جديد يتسجّل</string>
+    <string name="settings_osm_title">نبّهني لمطبات OpenStreetMap</string>
+    <string name="settings_osm_desc">صفّارة واحدة خفيفة للمطبات المرسومة على OpenStreetMap اللي الموبايل لسه ما حسّش بيها. بتسكت لمطب عدّيت عليه 3 مرات من غير ما تحس بحاجة. © OpenStreetMap contributors</string>
+    <string name="settings_osm_credit">المطبات المرسومة على OpenStreetMap: © OpenStreetMap contributors، برخصة Open Database License ‏(ODbL).</string>
     <string name="settings_test_beep">جرّب الصفّارة</string>
     <string name="settings_test_voice">جرّب الصوت</string>
     <string name="settings_section_voice">الصوت</string>
@@ -205,6 +208,9 @@
     <string name="map_chip_old">قديمة</string>
     <string name="map_chip_harsh">قوية</string>
     <string name="map_chip_maybe">ممكن</string>
+    <string name="map_chip_osm">OpenStreetMap</string>
+    <string name="map_osm_row">مطب على OpenStreetMap</string>
+    <string name="map_osm_none">لسه ما نزلتش مطبات OpenStreetMap. بتنزل مع الخريطة المشتركة.</string>
     <string name="map_spot_strong">مطبّ قوي</string>
     <string name="map_spot_mute">اكتم</string>
     <string name="map_spot_maps">الخرائط</string>

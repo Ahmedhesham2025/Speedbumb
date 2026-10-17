@@ -183,6 +183,11 @@ class StreetMap(private val ctx: Context, private val interactive: Boolean) {
         s.addLayer(LineLayer(L_AHEAD, SRC_AHEAD).withProperties(
             lineColor(Ui.SEV_STRONG), lineWidth(9f), lineOpacity(0.55f), lineCap(Property.LINE_CAP_ROUND),
         ))
+        // OpenStreetMap bumps: small grey dots under our pins, never clustered with them.
+        s.addSource(GeoJsonSource(SRC_OSM))
+        s.addLayer(CircleLayer(L_OSM, SRC_OSM).withProperties(
+            circleRadius(4.5f), circleColor(Ui.SEV_MUTED), circleStrokeColor(Ui.SURFACE), circleStrokeWidth(1.5f),
+        ))
         val z = SpotMarks.CLUSTER_SIZES
         s.addLayer(CircleLayer(L_CLUSTERS, SRC_SPOTS).withFilter(has("point_count")).withProperties(
             circleColor(Ui.PRIMARY), circleStrokeColor(Ui.SURFACE), circleStrokeWidth(3f),
@@ -211,6 +216,7 @@ class StreetMap(private val ctx: Context, private val interactive: Boolean) {
             circleRadius(10f), circleColor(Ui.PRIMARY), circleStrokeColor(0xFFFFFFFF.toInt()), circleStrokeWidth(3.5f),
         ))
         pushSpots()
+        pushOsm()
         pushMe()
         pushAhead()
         onReady()
@@ -240,6 +246,18 @@ class StreetMap(private val ctx: Context, private val interactive: Boolean) {
             }
         }
         pushSpots()
+    }
+
+    private var osm: List<Feature> = emptyList()
+
+    /** OpenStreetMap bumps as (lat, lon): grey dots, not tappable. */
+    fun setOsm(points: List<Pair<Double, Double>>) {
+        osm = points.map { Feature.fromGeometry(Point.fromLngLat(it.second, it.first)) }
+        pushOsm()
+    }
+
+    private fun pushOsm() {
+        style?.getSourceAs<GeoJsonSource>(SRC_OSM)?.setGeoJson(FeatureCollection.fromFeatures(osm))
     }
 
     /** Your position (dot, or an arrow when [bearing] is known); NaN lat hides it. */
@@ -334,12 +352,15 @@ class StreetMap(private val ctx: Context, private val interactive: Boolean) {
         val drawn = try {
             m?.queryRenderedFeatures(RectF(0f, 0f, view.width.toFloat(), view.height.toFloat()), L_SPOTS, L_CLUSTERS, L_ME)?.size
         } catch (_: Exception) { null }
+        val osmDrawn = try {
+            m?.queryRenderedFeatures(RectF(0f, 0f, view.width.toFloat(), view.height.toFloat()), L_OSM)?.size
+        } catch (_: Exception) { null }
         val labels = try {
             val ids = style?.layers?.map { it.id }?.filter { it.contains("name") || it.contains("label") }?.toTypedArray() ?: emptyArray()
             if (ids.isEmpty()) 0 else m?.queryRenderedFeatures(RectF(0f, 0f, view.width.toFloat(), view.height.toFloat()), *ids)?.size
         } catch (_: Exception) { null }
         return "labels=$labels idle=$idle style=${style != null} failed=$failed spots=${features.size} me=${me?.toList()} " +
-            "camera=${camera()?.toList()} drawn=$drawn"
+            "camera=${camera()?.toList()} drawn=$drawn osm=${osm.size} osmDrawn=$osmDrawn"
     }
 
     /** Fewer frames when nothing moves saves battery. */
@@ -479,6 +500,8 @@ class StreetMap(private val ctx: Context, private val interactive: Boolean) {
         private const val L_ME = "bb-me"
         private const val L_ME_HALO = "bb-me-halo"
         private const val SRC_AHEAD = "bb-ahead"
+        private const val SRC_OSM = "bb-osm"
+        private const val L_OSM = "bb-osm-pins"
         private const val L_AHEAD = "bb-ahead"
         private const val ME_ARROW = "bb-me-arrow"
         private const val ME_DOT = "bb-me-dot"

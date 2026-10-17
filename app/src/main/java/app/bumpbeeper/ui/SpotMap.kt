@@ -9,6 +9,7 @@ import app.bumpbeeper.BumpMapView
 import app.bumpbeeper.Confidence
 import app.bumpbeeper.EngineConfig
 import app.bumpbeeper.Geo
+import app.bumpbeeper.OsmBump
 import app.bumpbeeper.R
 import app.bumpbeeper.Severity
 import app.bumpbeeper.Ui
@@ -39,6 +40,16 @@ class SpotMap(ctx: Context, interactive: Boolean) : FrameLayout(ctx) {
         set(v) { field = v; offline.bumps = v; pushPins() }
     var selectedId: Long = -1L
         set(v) { field = v; offline.selectedId = v; pushPins() }
+    /** OpenStreetMap bumps to show as grey dots (the credit then shows too, [creditView]). */
+    var osm: List<OsmBump> = emptyList()
+        set(v) {
+            field = v; offline.osm = v
+            if (street.available) street.setOsm(v.map { it.lat to it.lon })
+            showCredits()
+        }
+    /** Show "© OpenStreetMap contributors" even without streets or dots: OSM bumps warn on this screen (Drive). */
+    var osmCredit = false
+        set(v) { if (field != v) { field = v; showCredits() } }
 
     var centerLat: Double
         get() = offline.centerLat
@@ -116,11 +127,17 @@ class SpotMap(ctx: Context, interactive: Boolean) : FrameLayout(ctx) {
                     android.net.Uri.parse(StreetMap.COPYRIGHT_URL)))
             } catch (_: Exception) {}
         }
-        visibility = if (streetsOn) View.VISIBLE else View.GONE
         credits.add(this)
+        showCredits()
     }
 
-    private fun showCredits() = credits.forEach { it.visibility = if (streetsOn) View.VISIBLE else View.GONE }
+    /** The streets' credit (it names OSM) while they show; else "© OpenStreetMap contributors" while OSM bumps do. */
+    private fun showCredits() = credits.forEach {
+        it.visibility = if (streetsOn || osm.isNotEmpty() || osmCredit) View.VISIBLE else View.GONE
+        if (it is android.widget.TextView) {
+            it.text = context.getString(if (streetsOn) R.string.map_attribution else R.string.osm_attribution)
+        }
+    }
 
     /** The street map has drawn everything (tiles, labels) and is not moving; false while the offline map shows. */
     val idle: Boolean get() = streetsOn && street.idle

@@ -63,6 +63,11 @@ class ScreenshotTest {
                 shot(dir, name)
             }
 
+            // The Map's "OpenStreetMap" filter: the downloaded OSM bumps as grey dots, with their credit.
+            osmFilter(scenario, true)
+            shot(dir, "16-map-osm")
+            osmFilter(scenario, false)
+
             redesignStates(scenario, dir, "")
 
             // The street map needs the internet: on for these shots only. The shared-map choice goes back to "not
@@ -76,6 +81,11 @@ class ScreenshotTest {
                     shot(dir, name)
                     mapCheck(scenario, tab, File(dir, "$name.txt"))
                 }
+                osmFilter(scenario, true)
+                waitForMap(scenario, MainActivity.TAB_MAP)
+                shot(dir, "17-map-osm-streets")
+                mapCheck(scenario, MainActivity.TAB_MAP, File(dir, "17-map-osm-streets.txt"))
+                osmFilter(scenario, false)
                 // Driving on the street map with a strong bump close ahead (the screen the owner asked for).
                 val demo = BumpDb(ctx).let { db -> try { db.loadBumps().first() } finally { db.close() } }
                 liveDemo(recording = true)
@@ -138,7 +148,7 @@ class ScreenshotTest {
         }
         fakeFix(false)
         val files = dir.listFiles { f -> f.name.endsWith(".png") }.orEmpty()
-        assertTrue("expected 26 screenshots in $dir, got ${files.size}: ${files.map { it.name }.sorted()}", files.size == 26)
+        assertTrue("expected 28 screenshots in $dir, got ${files.size}: ${files.map { it.name }.sorted()}", files.size == 28)
     }
 
     /**
@@ -196,6 +206,17 @@ class ScreenshotTest {
         scenario.onActivity { (it.pages[MainActivity.TAB_SETTINGS] as SettingsPage).back() }
         scenario.onActivity { it.select(MainActivity.TAB_DRIVE) }
         settle(800)
+    }
+
+    /** The Map tab with its "OpenStreetMap" filter chip on ([on]) or back to "All", through the page's own reload. */
+    private fun osmFilter(scenario: ActivityScenario<MainActivity>, on: Boolean) {
+        scenario.onActivity { a ->
+            a.select(MainActivity.TAB_MAP)
+            val page = a.pages[MainActivity.TAB_MAP]!!
+            page.javaClass.getDeclaredField("filter").apply { isAccessible = true }.setInt(page, if (on) 5 else 0)
+            page.onShow()
+        }
+        settle(1500)
     }
 
     /**
@@ -316,6 +337,12 @@ class ScreenshotTest {
                 Spot(30.0525, 31.2489, 160.0, 2, 2, 0.0, 0.0, 3.1),
                 Spot(30.0599, 31.2372, 75.0, 1, 8, -0.4, 0.0, 3.0, muted = true),
             )
+            // OpenStreetMap bumps as the sync caches them: some where the demo knows a spot, most where it doesn't.
+            val osm = listOf(
+                30.0445 to 31.2359, 30.0512 to 31.2292, 30.0462 to 31.2310, 30.0490 to 31.2420, 30.0530 to 31.2365,
+                30.0560 to 31.2405, 30.0438 to 31.2392, 30.0505 to 31.2252, 30.0575 to 31.2320, 30.0470 to 31.2455,
+            ).mapIndexed { i, (lat, lon) -> OsmBump("n${9_000_000 + i}", lat, lon, "hump") }
+            app.bumpbeeper.sync.SyncStore(db).replaceOsmBumps(30.05, 31.237, 10_000.0, osm, now)
             spots.forEachIndexed { i, s ->
                 db.insertBump(Bump(
                     0, s.lat, s.lon, s.heading, s.hits, s.passes, s.passes - s.hits, s.hits,

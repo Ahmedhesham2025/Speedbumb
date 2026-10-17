@@ -21,6 +21,7 @@ import android.view.View
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
+import app.bumpbeeper.sync.SyncStore
 import app.bumpbeeper.ui.SpotMap
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -42,7 +43,9 @@ class MapPage(private val a: MainActivity) : Page {
     private lateinit var chips: List<TextView>
     private var cfg = EngineConfig()
     private var all: List<Bump> = emptyList()
-    private var filter = 0      // 0 all, 1 strong, 2 bumps (confirmed), 3 maybe (incl. old spots), 4 muted
+    /** OpenStreetMap bumps from the cache: grey dots with "All" and "OpenStreetMap" ([OSM]). */
+    private var osm: List<OsmBump> = emptyList()
+    private var filter = 0      // 0 all, 1 strong, 2 bumps (confirmed), 3 maybe (incl. old spots), 4 muted, 5 OpenStreetMap
     private var firstLoad = true
 
     override val view: View = build()
@@ -82,7 +85,7 @@ class MapPage(private val a: MainActivity) : Page {
         val names = listOf(
             a.getString(R.string.map_chip_all) to null, a.getString(R.string.map_chip_harsh) to Ui.SEV_STRONG,
             a.getString(R.string.map_chip_bumps) to Ui.SEV_MOD, a.getString(R.string.map_chip_maybe) to Ui.SEV_MAYBE,
-            a.getString(R.string.map_tile_muted) to Ui.SEV_MUTED,
+            a.getString(R.string.map_tile_muted) to Ui.SEV_MUTED, a.getString(R.string.map_chip_osm) to null,
         )
         chips = names.mapIndexed { i, (n, dot) -> Ui.tappable(Ui.chip(a, n, dot = dot)) { filter = i; show() } }
         val chipRow = LinearLayout(a).apply {
@@ -145,8 +148,12 @@ class MapPage(private val a: MainActivity) : Page {
         cfg = Prefs.engineConfig(a)
         Thread {
             val db = BumpDb(a.applicationContext)
-            val loaded = try { db.loadBumps() } finally { db.close() }
-            ui.post { all = loaded; show() }
+            var mapped: List<OsmBump> = emptyList()
+            val loaded = try {
+                mapped = try { SyncStore(db).osmBumpsAll() } catch (_: Exception) { emptyList() }
+                db.loadBumps()
+            } finally { db.close() }
+            ui.post { all = loaded; osm = mapped; show() }
         }.start()
     }
 
@@ -156,6 +163,7 @@ class MapPage(private val a: MainActivity) : Page {
         2 -> b.confidence(cfg) == Confidence.FULL
         3 -> b.confidence(cfg) == Confidence.SOFT
         4 -> b.isMuted(cfg)
+        OSM -> false
         else -> true
     }
 
@@ -191,8 +199,10 @@ class MapPage(private val a: MainActivity) : Page {
             map.radiusM = if (near.isEmpty()) 1000.0 else (near[minOf(4, near.size - 1)] * 1.3).coerceAtLeast(200.0)
         }
         map.bumps = shown
+        map.osm = if (filter == 0 || filter == OSM) osm else emptyList()
 
         list.removeAllViews()
+        if (filter == OSM) return showOsm(me?.latitude ?: map.centerLat, me?.longitude ?: map.centerLon)
         if (shown.isEmpty()) {
             list.addView(Ui.text(a, 14f, Ui.DIM, value = a.getString(if (all.isEmpty()) R.string.map_nothing_yet else R.string.map_nothing_filter))
                 .apply { setPadding(0, dp(8), 0, dp(8)) })
@@ -228,6 +238,41 @@ class MapPage(private val a: MainActivity) : Page {
             })
         }
         if (sorted.size > 200) list.addView(Ui.text(a, 13f, Ui.DIM, value = a.getString(R.string.map_more, sorted.size - 200)))
+    }
+
+    /** The OpenStreetMap filter's list: the nearest mapped bumps (grey), tap to go there; their credit at the end. */
+    private fun showOsm(refLat: Double, refLon: Double) {
+        if (osm.isEmpty()) {
+            list.addView(Ui.text(a, 14f, Ui.DIM, value = a.getString(R.string.map_osm_none)).apply { setPadding(0, dp(8), 0, dp(8)) })
+            return
+        }
+        for (o in osm.sortedBy { Geo.distance(refLat, refLon, it.lat, it.lon) }.take(200)) {
+            list.addView(LinearLayout(a).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                minimumHeight = dp(Ui.Space.ROW)
+                isClickable = true
+                setOnClickListener { map.centerLat = o.lat; map.centerLon = o.lon; map.radiusM = minOf(map.radiusM, 400.0) }
+                addView(View(a).apply {
+                    background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(Ui.SEV_MUTED) }
+                }, LinearLayout.LayoutParams(dp(10), dp(10)).apply { marginStart = dp(2); marginEnd = dp(2) })
+                addView(LinearLayout(a).apply {
+                    orientation = LinearLayout.VERTICAL
+                    setPadding(dp(16), 0, dp(8), 0)
+                    addView(Ui.text(a, 15f, Ui.TEXT, value = a.getString(R.string.map_osm_row)))
+                    addView(Ui.text(a, 13f, Ui.DIM, value = distDir(refLat, refLon, o.lat, o.lon)))
+                }, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+            })
+        }
+        list.addView(Ui.text(a, 12f, Ui.DIM, value = a.getString(R.string.osm_attribution)).apply { setPadding(0, dp(8), 0, dp(4)) })
+    }
+
+    /** "320 m NE". */
+    private fun distDir(refLat: Double, refLon: Double, lat: Double, lon: Double): String {
+        val d = Geo.distance(refLat, refLon, lat, lon)
+        val dist = if (d >= 1000) a.getString(R.string.map_dist_km, String.format(Locale.US, "%.1f", d / 1000))
+            else a.getString(R.string.map_dist_m, String.format(Locale.US, "%.0f", d))
+        return dist + " " + compass(Geo.bearing(refLat, refLon, lat, lon))
     }
 
     /** "320 m NE · felt 4/5". */
@@ -349,6 +394,7 @@ class MapPage(private val a: MainActivity) : Page {
     }
 
     private companion object {
+        const val OSM = 5
         val COMPASS = intArrayOf(
             R.string.map_compass_n, R.string.map_compass_ne, R.string.map_compass_e, R.string.map_compass_se,
             R.string.map_compass_s, R.string.map_compass_sw, R.string.map_compass_w, R.string.map_compass_nw,

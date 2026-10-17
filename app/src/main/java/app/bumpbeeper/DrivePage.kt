@@ -677,6 +677,8 @@ class DrivePage(private val a: MainActivity) : Page {
 
     override fun tick() {
         val rec = LiveState.recording
+        // OSM bumps can warn here ("Maybe a bump" ahead): their credit shows with the map's.
+        map.osmCredit = LiveState.osmBumps > 0 && Prefs.osmWarnings(a)
         if (wasRecording != rec) {
             wasRecording = rec
             map.radiusM = if (rec) 400.0 else 600.0
