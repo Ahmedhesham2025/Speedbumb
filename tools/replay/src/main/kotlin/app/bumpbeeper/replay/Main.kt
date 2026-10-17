@@ -70,7 +70,11 @@ fun readLines(f: File): List<String> {
 }
 
 /** One drive to replay: its samples and the phone placement to replay it with (mounted, cupholder, pocket, seat, unknown). */
-class Recording(val name: String, val samples: List<TraceSample>, val placement: String = "unknown")
+class Recording(
+    val name: String, val samples: List<TraceSample>, val placement: String = "unknown",
+    /** A research trip's phone signals ([Rr2Trip.phone]) and header (for the proximity sensor's range); none for a CSV trace. */
+    val phone: List<PhoneLine> = emptyList(), val meta: Map<String, String> = emptyMap(),
+)
 
 /** The phone placements the app knows (Prefs.placement). */
 val PLACEMENTS = listOf("mounted", "cupholder", "pocket", "seat", "unknown")
@@ -103,7 +107,7 @@ fun loadRecordings(
         val trip = Rr2.read(segments, sensorPeriodUs)
         if (!trip.complete || trip.truncated) System.err.println("${r.name}: cut short (no footer or a truncated segment)")
         if (trip.missingSegments.isNotEmpty()) System.err.println("${r.name}: segment ${trip.missingSegments.joinToString()} missing")
-        Recording(r.name, trip.samples, pick(trip.meta["placement"]))
+        Recording(r.name, trip.samples, pick(trip.meta["placement"]), trip.phone, trip.meta)
     }
 }
 
@@ -121,11 +125,10 @@ fun replaySamples(recordings: List<Recording>): List<Run> {
     val store = MemStore()
     return recordings.mapIndexed { k, rec ->
         val samples = rec.samples
-        // TODO(E3 #123/#125): replay research trips' phone signals (Rr2Trip.phone) into engine.phone.signals once E3 has
-        //  merged: scr → screenOn, unl → unlockedAtMs, px → proximityNear (< min(sensor max, 5 cm)), lx → lux,
-        //  aud → handheldCall (mode 2 or 3 with call_device 1, the earpiece). Needs a per-sample hook in Replayer.
+        // A research trip's own signals (screen, unlock, proximity, light, call, lock screen, charging), as on the phone.
+        val feed = PhoneSignalFeed(rec.phone, rec.meta)
         val driving = DrivingConfig().apply { placement = rec.placement }
-        val result = Replayer.replay(samples, store, drivingCfg = driving, tripId = k + 1L)
+        val result = Replayer.replay(samples, store, drivingCfg = driving, tripId = k + 1L, signals = feed::apply)
         Run(rec.name, Metrics.labels(samples), result, samples, rec.placement)
     }
 }

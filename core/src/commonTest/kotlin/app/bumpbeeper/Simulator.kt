@@ -50,6 +50,8 @@ class ProfileHump(val at: Double, val kind: String, val heightM: Double, val len
 /** What happens on one simulated drive. Positions are metres from the west end of a 2 km east–west road. */
 class DriveSpec(
     val westbound: Boolean = false,
+    /** The road runs this far to the right of the usual one (a parallel road, a far lane), m. */
+    val sideOffsetM: Double = 0.0,
     /** Real speed bumps: the driver sees them and slows to 15 km/h. */
     val bumpsAt: List<Double> = emptyList(),
     /** One-off jolts that are NOT real bumps (something on the road, something dropped). Felt only on this drive. */
@@ -184,8 +186,11 @@ class Simulator(seed: Long) {
     val roadLen = 2000.0
 
     /** Road position → lat/lon. Westbound lane is 10 m south of the eastbound one (divided road). */
+    private var sideM = 0.0
+
     fun point(p: Double, westbound: Boolean): DoubleArray {
-        val base = Geo.move(lat0, lon0, 90.0, p)
+        var base = Geo.move(lat0, lon0, 90.0, p)
+        if (sideM != 0.0) base = Geo.move(base[0], base[1], 180.0, sideM)
         return if (westbound) Geo.move(base[0], base[1], 180.0, 10.0) else base
     }
 
@@ -240,6 +245,7 @@ class Simulator(seed: Long) {
     ): TripResult {
         val len = spec.roadM
         fun travel(p: Double) = if (spec.westbound) len - p else p   // road position ↔ distance travelled
+        sideM = spec.sideOffsetM
         val bumps = spec.bumpsAt.map { travel(it) }
         // (position, speed the driver slows to)
         val slowFor = (spec.bumpsAt + spec.silentBumpsAt + spec.roundHumpsAt + spec.profileHumps.map { it.at }).map { Pair(travel(it), spec.bumpKmh / 3.6) } +
