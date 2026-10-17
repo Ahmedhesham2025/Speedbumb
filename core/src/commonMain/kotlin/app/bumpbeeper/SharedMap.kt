@@ -93,3 +93,32 @@ data class Observation(
 interface ObservationSink {
     fun record(o: Observation)
 }
+
+/**
+ * A speed bump mapped on OpenStreetMap (`traffic_calming`; ODbL, "© OpenStreetMap contributors"), as the app's cache
+ * holds it: a prior, not a spot. It has no direction and no severity. A jolt near one is evidence, and one that no
+ * spot of yours or the shared map matches warns as a soft "maybe" ([EngineConfig.osmWarnings]).
+ */
+data class OsmBump(
+    /** OpenStreetMap's element: "n<id>" (a node) or "w<id>" (a way). */
+    val osmId: String,
+    val lat: Double,
+    val lon: Double,
+    /** OSM's `traffic_calming` value ("hump", "bump", "table"...); never read by the engine. */
+    val kind: String? = null,
+    /** Clean passes on this phone ([OsmSource.osmCleanPass]); it warns no more from [EngineConfig.osmQuietAfterPasses]. */
+    val cleanPasses: Int = 0,
+)
+
+/**
+ * Where the engine gets OpenStreetMap bumps from: like [SpotSource], a local cache read on the engine thread, never
+ * the network. It also keeps what this phone learned about them.
+ */
+interface OsmSource {
+    /** OSM bumps within [radiusM] metres of the given point. */
+    fun osmBumpsNear(lat: Double, lon: Double, radiusM: Double): List<OsmBump>
+    /** [osmId] was passed once more at an informative speed with nothing felt and the phone not handled. */
+    fun osmCleanPass(osmId: String) {}
+    /** "Mute last warning" after [osmId] warned: it never warns on this phone again. */
+    fun osmMuted(osmId: String) {}
+}

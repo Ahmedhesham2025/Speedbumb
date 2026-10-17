@@ -178,6 +178,18 @@ class EngineConfig {
     var remoteRadiusM = 1500.0
 
     /**
+     * OpenStreetMap bumps ([OsmSource], asked with the shared map): a jolt within [osmEvidenceM] of one is not
+     * rejected for want of evidence in a pocket, but it only ever makes a "maybe": it never grades or confirms a hit. One that no spot of yours or the shared map has within [osmMatchM] (any direction: OSM has
+     * none) warns with the soft "maybe" beep, whichever way you drive, until this phone has passed it
+     * [osmQuietAfterPasses] times at [minInformativeKmh] or faster with nothing felt and the phone not handled.
+     * (setting: Warn for OpenStreetMap bumps; the evidence stays when it is off)
+     */
+    @Volatile var osmWarnings = true
+    var osmEvidenceM = 15.0
+    var osmMatchM = 20.0
+    var osmQuietAfterPasses = 3
+
+    /**
      * E2: the car's own signature. Every jolt is checked for both axles ([AxleSignature], with [axle]) and for a
      * slowdown: the speed lost from the top GPS fix in the [speedBeforeMs] before the jolt to the lowest fix through it
      * (from 1 s before up to the decision), or the braking the accelerometer felt along the learned forward axis over
@@ -346,6 +358,8 @@ class JoltShape(
  *    No privacy filtering happens here: the app drops the 300 m around trip start and end before upload.
  *  - [sampleSink] ("Help improve detection"): a [JoltSample] with the signal window for every jolt it judged
  *    (learned, hit, rejected), every miss and shared-spot pass_clear, and every mute. The default keeps nothing.
+ *  - [osmSource]: OpenStreetMap bumps ([EngineConfig.osmWarnings]). A jolt near one is evidence; one no spot matches
+ *    warns as a soft "maybe" (logged with bumpId -1 and "osm <id>" in the note), never stored, never confirmed.
  */
 class BumpEngine(
     val cfg: EngineConfig,
@@ -360,6 +374,8 @@ class BumpEngine(
     val vehicle: VehicleProfile = VehicleProfile(),
     /** The phone's own vibration level per placement ([PhoneCalibration]); the app keeps it between trips. */
     val calibration: PhoneCalibration = PhoneCalibration(),
+    /** OpenStreetMap bumps ([EngineConfig.osmWarnings]); null = none. */
+    private val osmSource: OsmSource? = null,
 ) {
     val bumps: MutableList<Bump> = store.loadBumps().toMutableList()
 
@@ -532,6 +548,11 @@ class BumpEngine(
     private var remoteAskedMs = Long.MIN_VALUE / 4
     private var remoteAskedLat = Double.NaN
     private var remoteAskedLon = Double.NaN
+    /** OSM bumps near the car, and stand-ins ([isOsmKey] ids) for the ones that warn: no spot matches, not quiet yet. */
+    private var osmAll: List<OsmBump> = emptyList()
+    private var osmActive: List<Bump> = emptyList()
+    private val osmKeys = HashMap<String, Long>()
+    private val osmIds = HashMap<Long, String>()
 
     private val approaches = HashMap<Long, Approach>()
     private val recentMissMs = HashMap<Long, Long>()
@@ -683,6 +704,9 @@ class BumpEngine(
 
         // E2: the car's own signature (EngineConfig.axle): both axles, and a slowdown.
         val drop = speedDropKmh(tMs)
+        // A bump mapped on OpenStreetMap right here (no direction to check): enough for a "maybe" in a pocket, never a
+        // grade. It must not confirm a spot, so the hit grades below stay on the car's own signature and the GPS.
+        val osm = osmAll.any { Geo.distance(pos[0], pos[1], it.lat, it.lon) <= cfg.osmEvidenceM }
         val slowed = drop >= cfg.speedEvidenceKmh
         val axleSeen = ax != null && ax.score >= cfg.axleEvidenceMin
         // The axle check could not look (rear past the decision at a crawl, too fast, no data, the hit still ringing
@@ -692,12 +716,12 @@ class BumpEngine(
         val pol = polarityOf(tMs, shape, ax, fix.speedMps * 3.6)
         val (profile, minKmh) = crossProfile(tMs)
         val note = "$axNote slow=${formatFixed(drop, 1)} polarity=${pol.name.lowercase()} profile=${profile.name.lowercase()}" +
-            if (overridden) " over_handled" else ""
+            (if (osm) " osm" else "") + if (overridden) " over_handled" else ""
         if (phone.pocketMode && ax?.verdict == AxleVerdict.ONE) { reject(tMs, peak, "no_axle", fix, note.trim(), shape); return }
         if (pol == Polarity.DOWN) { reject(tMs, peak, "down_first", fix, note.trim(), shape); return }
         val up = pol == Polarity.UP
         val crawled = phone.pocketMode && speedKmh <= cfg.pocketSlowEvidenceKmh
-        if (phone.pocketMode && !axleSeen && !slowed && !blind && !up && !crawled) { reject(tMs, peak, "no_evidence", fix, note.trim(), shape); return }
+        if (phone.pocketMode && !axleSeen && !slowed && !blind && !up && !crawled && !osm) { reject(tMs, peak, "no_evidence", fix, note.trim(), shape); return }
         val grade = when {
             pol == Polarity.DOWN_WEAK -> 0   // down first: at most a maybe, never a confirmation
             ax?.verdict == AxleVerdict.BOTH || (peak >= cfg.strongJoltMs2 && axleSeen && slowed) -> 2
@@ -1084,6 +1108,11 @@ class BumpEngine(
                 sharedFelt = true
             }
         }
+        // An OSM bump felt on this pass: not a clean pass.
+        for (o in osmActive) {
+            val oa = approaches[o.id] ?: continue
+            if (Geo.distance(lat, lon, o.lat, o.lon) <= cfg.osmMatchM) oa.hit = true
+        }
 
         // Humps in a row: the same pass, a few metres on, but not a wheelbase on (that is the rear axle).
         best?.let { b0 ->
@@ -1261,7 +1290,7 @@ class BumpEngine(
         if (!brg.isNaN() && speed >= 1.5) heading = brg
         val joltSinceFix = maxVertSinceFix
         maxVertSinceFix = 0.0
-        if (spotSource != null && f.accuracyM <= cfg.maxAccuracyM) maybeAskRemote(f)
+        if ((spotSource != null || osmSource != null) && f.accuracyM <= cfg.maxAccuracyM) maybeAskRemote(f)
         if (f.accuracyM > cfg.maxAccuracyM || heading.isNaN()) return
         updateApproaches(f, joltSinceFix)
     }
@@ -1278,11 +1307,14 @@ class BumpEngine(
         remoteAskedMs = f.timeMs
         remoteAskedLat = f.lat
         remoteAskedLon = f.lon
+        // A broken cache must not stop the engine: keep what we had.
+        try { osmSource?.let { osmAll = it.osmBumpsNear(f.lat, f.lon, cfg.remoteRadiusM) } } catch (e: Exception) {}
         val spots = try {
-            spotSource!!.spotsNear(f.lat, f.lon, cfg.remoteRadiusM)
+            spotSource?.spotsNear(f.lat, f.lon, cfg.remoteRadiusM)
         } catch (e: Exception) {
-            return   // a broken cache must not stop the engine; keep what we had
+            null
         }
+        if (spots == null) { dedupRemote(); return }
         remoteAll = spots.filter { it.id in 0 until Long.MAX_VALUE / 2 }.map { r ->
             // v2: its hits (one phone twice counts) and the server's confidence and band, where it gives them; an old
             // pothole spot (legacy) is soft until felt. Without v2 fields: one hit per phone, the band from the index.
@@ -1309,7 +1341,18 @@ class BumpEngine(
                     Geo.angleDiff(b.heading, r.heading) <= cfg.headingTolDeg
             }
         }
+        // OSM bumps that no spot matches (yours or shared, any direction) and this phone hasn't found clean 3 times.
+        osmActive = osmAll.filter { o ->
+            o.cleanPasses < cfg.osmQuietAfterPasses && (bumps.asSequence() + remoteAll.asSequence()).none { b ->
+                abs(b.lat - o.lat) <= 0.0005 && abs(b.lon - o.lon) <= 0.0006 && Geo.distance(b.lat, b.lon, o.lat, o.lon) <= cfg.osmMatchM
+            }
+        }.map { o ->
+            val key = osmKeys.getOrPut(o.osmId) { (Long.MIN_VALUE + 1 + osmKeys.size).also { osmIds[it] = o.osmId } }
+            // Only ever a "maybe" (legacy keeps it soft); its heading follows the car's (OSM has no direction).
+            Bump(key, o.lat, o.lon, heading, hits = 0, passes = 0, misses = 0, nPos = 0, firstSeen = 0, lastSeen = 0, legacy = true)
+        }
         val keep = remoteActive.mapTo(HashSet()) { it.id }
+        osmActive.mapTo(keep) { it.id }
         approaches.keys.removeAll { it <= -2L && it !in keep }
         grouped.keys.removeAll { it <= -2L && it !in keep }
     }
@@ -1415,7 +1458,7 @@ class BumpEngine(
     private fun updateSpotsAhead(f: Fix) {
         if (f.speedMps < 1.5 || heading.isNaN()) return
         val out = ArrayList<SpotAhead>()
-        for (s in bumps.asSequence() + remoteActive.asSequence()) {
+        for (s in bumps.asSequence() + remoteActive.asSequence() + osmWarning()) {
             if (abs(s.lat - f.lat) > 0.01 || abs(s.lon - f.lon) > 0.012) continue   // more than ~1 km away
             if (!warnable(s) || Geo.angleDiff(heading, s.heading) > cfg.headingTolDeg) continue
             val d = Geo.distance(f.lat, f.lon, s.lat, s.lon)
@@ -1428,12 +1471,17 @@ class BumpEngine(
         spotsAhead = out.take(2)
     }
 
+    /** The OSM stand-ins that warn now (none while the setting is off). */
+    private fun osmWarning(): Sequence<Bump> = if (cfg.osmWarnings) osmActive.asSequence() else emptySequence()
+
     private fun updateApproaches(f: Fix, joltSinceFix: Double) {
+        for (o in osmActive) o.heading = heading   // no direction of its own: whichever way the car goes
         updateSpotsAhead(f)
         val moving = f.speedMps >= 1.5
         val alertDist = (f.speedMps * cfg.leadSeconds).coerceIn(cfg.minAlertDistM, cfg.maxAlertDistM)
         for (b in bumps) watch(b, false, f, joltSinceFix, moving, alertDist)
         for (b in remoteActive) watch(b, true, f, joltSinceFix, moving, alertDist)
+        for (b in osmWarning()) watch(b, true, f, joltSinceFix, moving, alertDist)
     }
 
     /** One spot (your own, or a shared one if [remote]) on this fix: start or stop watching it, count the pass, beep. */
@@ -1468,7 +1516,7 @@ class BumpEngine(
         // Drove over it (came close, now moving away or it is behind us) → count the pass.
         val passed = a.minDist <= cfg.passRadiusM && (d >= a.minDist + 25.0 || (d > 15.0 && aheadDiff > 110.0))
         if (passed) {
-            if (remote) finishRemotePass(b, a, f) else finishPass(b, a, f)
+            if (isOsmKey(b.id)) finishOsmPass(b, a, osmIds[b.id] ?: "") else if (remote) finishRemotePass(b, a, f) else finishPass(b, a, f)
             approaches.remove(b.id)
             grouped.remove(b.id)
             return
@@ -1499,13 +1547,15 @@ class BumpEngine(
             aheadDiff <= 45.0 && crossTrack <= cfg.maxCrossTrackM && warnable(b)
         ) {
             val speedKmh = f.speedMps * 3.6
-            val logId = if (remote) remoteSpotId(b.id)!! else b.id   // shared spots are logged with their server id
+            // Shared spots are logged with their server id, OSM bumps with -1 and their OSM id in the note.
+            val logId = if (isOsmKey(b.id)) -1L else if (remote) remoteSpotId(b.id)!! else b.id
+            val tag = osmIds[b.id]?.let { "osm $it" } ?: "remote"
             if (speedKmh < cfg.quietBelowKmh) {
                 // Already slow: you have seen it. Stay quiet, but keep checking in case you speed up again.
                 if (!a.quietLogged) {
                     a.quietLogged = true
                     val why = "slower than ${cfg.quietBelowKmh.toInt()} km/h"
-                    log("beep_quiet", logId, f.lat, f.lon, speedKmh, Double.NaN, Double.NaN, d, if (remote) "remote, $why" else why)
+                    log("beep_quiet", logId, f.lat, f.lon, speedKmh, Double.NaN, Double.NaN, d, if (remote) "$tag, $why" else why)
                 }
                 return
             }
@@ -1513,7 +1563,7 @@ class BumpEngine(
             val groupedUntil = grouped[b.id]
             if (groupedUntil != null && f.timeMs <= groupedUntil) {
                 // Already announced with the group in front of it ("3 bumps ahead"): stay silent.
-                log("beep_grouped", logId, f.lat, f.lon, speedKmh, Double.NaN, Double.NaN, d, if (remote) "remote" else "")
+                log("beep_grouped", logId, f.lat, f.lon, speedKmh, Double.NaN, Double.NaN, d, if (remote) tag else "")
                 return
             }
             if (f.timeMs - lastBeepMs >= cfg.minBeepGapMs) {
@@ -1524,7 +1574,7 @@ class BumpEngine(
                 trip.beeps++
                 val sound = soundFor(b)
                 val cluster = clusterAhead(b, d, f)
-                val note = (if (remote) "remote " else "") + sound.name.lowercase() + (if (cluster != null) " group of ${cluster.count}" else "")
+                val note = (if (remote) "$tag " else "") + sound.name.lowercase() + (if (cluster != null) " group of ${cluster.count}" else "")
                 log("beep", logId, f.lat, f.lon, speedKmh, Double.NaN, Double.NaN, d, note)
                 // Approach beeps wait for this warning: a voice until it is spoken, beeps for a fixed hold.
                 val voice = sound.voice || cluster != null
@@ -1728,12 +1778,30 @@ class BumpEngine(
     }
 
     /**
+     * Passed an OSM bump: a clean pass counts towards [EngineConfig.osmQuietAfterPasses] (the app keeps the count,
+     * [OsmSource.osmCleanPass]). Clean as for your own spots ([notClean]: on it, not beside it, good GPS, no jolt felt
+     * or rejected, no other spot hit), at an informative speed, the phone not handled.
+     */
+    private fun finishOsmPass(b: Bump, a: Approach, osmId: String) {
+        val near = phone.cfg.marginMs
+        if (a.hit || notClean(b, a) != null || a.minSpeedNearMps * 3.6 < cfg.minInformativeKmh ||
+            phone.untrusted(a.minDistMs - near, a.minDistMs + near)) return
+        val o = osmAll.firstOrNull { it.osmId == osmId } ?: return
+        osmAll = osmAll.map { if (it === o) it.copy(cleanPasses = it.cleanPasses + 1) else it }
+        log("osm_clear", -1, o.lat, o.lon, a.minSpeedNearMps * 3.6, a.maxJoltNear, Double.NaN, a.minDist,
+            "osm $osmId clean ${o.cleanPasses + 1}/${cfg.osmQuietAfterPasses}")
+        try { osmSource?.osmCleanPass(osmId) } catch (e: Exception) {}
+        if (o.cleanPasses + 1 >= cfg.osmQuietAfterPasses) dedupRemote()
+    }
+
+    /**
      * "Mute last beep": silence this bump for good (it stays on the map and in the export).
      * For a shared spot (negative stand-in id) a muted spot of your own is stored at its place, so it stays
      * silent on every later trip, whatever the shared-map cache says.
      */
     fun muteBump(id: Long): Bump? {
         if (remoteSpotId(id) != null) return muteRemote(id)
+        osmIds[id]?.let { return muteOsm(id, it) }
         val b = bumps.firstOrNull { it.id == id } ?: return null
         b.userMuted = true
         store.updateBump(b)
@@ -1757,6 +1825,16 @@ class BumpEngine(
         return b
     }
 
+    /** An OSM bump muted: quiet on this phone for good (the app stores it, [OsmSource.osmMuted]). */
+    private fun muteOsm(key: Long, osmId: String): Bump? {
+        val b = osmActive.firstOrNull { it.id == key } ?: return null
+        osmAll = osmAll.map { if (it.osmId == osmId) it.copy(cleanPasses = Int.MAX_VALUE) else it }
+        try { osmSource?.osmMuted(osmId) } catch (e: Exception) {}
+        dedupRemote()
+        log("user_mute", -1, b.lat, b.lon, Double.NaN, Double.NaN, Double.NaN, Double.NaN, "osm $osmId")
+        return b
+    }
+
     private fun log(
         type: String, bumpId: Long, lat: Double, lon: Double, speedKmh: Double,
         peak: Double, slowdownKmh: Double, distM: Double, note: String,
@@ -1772,7 +1850,10 @@ class BumpEngine(
          * of your own. Shared spots are not in [bumps]; [muteBump] with the stand-in id stores a muted spot of
          * your own in their place. Server ids must be below Long.MAX_VALUE / 2 (larger ones are ignored).
          */
-        fun remoteSpotId(bumpId: Long): Long? = if (bumpId <= -2L) -2L - bumpId else null
+        fun remoteSpotId(bumpId: Long): Long? = if (bumpId <= -2L && !isOsmKey(bumpId)) -2L - bumpId else null
+
+        /** A stand-in for an OpenStreetMap bump ([OsmSource]): ids below every shared spot's stand-in. */
+        fun isOsmKey(bumpId: Long): Boolean = bumpId < Long.MIN_VALUE / 2
 
         /** Sample buffer size: ≥ 7.5 s even at 200 samples per second (the axle signature's span at a crawl, E4b). */
         private const val BUF = 1536

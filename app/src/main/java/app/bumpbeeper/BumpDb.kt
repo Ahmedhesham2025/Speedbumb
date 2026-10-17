@@ -18,7 +18,7 @@ import kotlin.math.roundToInt
  *  bumps  – the learned map
  *  events – everything that happened (new bump, hit, miss, beep, rejected jolt) → for tuning
  *  trips  – one row per Start…Stop
- * plus the shared-map sync tables (outbox, remote_spots, sync_state), see [SyncStore], and the training outbox
+ * plus the shared-map sync tables (outbox, remote_spots, osm_bumps, sync_state), see [SyncStore], and the training outbox
  * ("Help improve detection"), see [TrainingStore].
  */
 class BumpDb(ctx: Context) : SQLiteOpenHelper(ctx, "bumps.db", null, 11), BumpStore {
@@ -60,6 +60,7 @@ class BumpDb(ctx: Context) : SQLiteOpenHelper(ctx, "bumps.db", null, 11), BumpSt
         addBreakdownColumns(db)
         addShapeColumn(db)
         addMissStreakColumn(db)
+        SyncStore.createOsmTable(db)
     }
 
     /** Version 9: the most over the fixed speeding threshold, for the score breakdown ([DrivingStats.scoreBreakdown]). */
@@ -101,6 +102,16 @@ class BumpDb(ctx: Context) : SQLiteOpenHelper(ctx, "bumps.db", null, 11), BumpSt
             "harsh_brakes INTEGER", "harsh_accels INTEGER", "harsh_corners INTEGER", "swerves INTEGER",
             "bumps_fast INTEGER", "phone_use INTEGER", "potholes INTEGER", "score INTEGER",
         )) db.execSQL("ALTER TABLE trips ADD COLUMN $c")
+    }
+
+    /**
+     * The OpenStreetMap bump cache ([SyncStore.createOsmTable]) is made on every open when it is missing, not by a
+     * version step: a cache table of public data, added to a database of any version (and whichever other migration
+     * takes the next version number), filled again by the next sync.
+     */
+    override fun onOpen(db: SQLiteDatabase) {
+        super.onOpen(db)
+        if (!db.isReadOnly) SyncStore.createOsmTable(db)
     }
 
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {

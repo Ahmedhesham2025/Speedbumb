@@ -68,6 +68,11 @@ class ScreenshotTest {
                 shot(dir, name)
             }
 
+            // The Map's "OpenStreetMap" filter: the downloaded OSM bumps as grey dots, with their credit.
+            osmFilter(scenario, true)
+            shot(dir, "16-map-osm")
+            osmFilter(scenario, false)
+
             redesignStates(scenario, dir, "")
             placementPicker(scenario, dir)
 
@@ -82,6 +87,12 @@ class ScreenshotTest {
                     shot(dir, name)
                     mapCheck(scenario, tab, File(dir, "$name.txt"))
                 }
+                osmFilter(scenario, true)
+                waitForMap(scenario, MainActivity.TAB_MAP)
+                shot(dir, "17-map-osm-streets")
+                mapCheck(scenario, MainActivity.TAB_MAP, File(dir, "17-map-osm-streets.txt"))
+                osmFilter(scenario, false)
+                scenario.onActivity { it.select(MainActivity.TAB_DRIVE) }   // the next shots are the Drive tab's
                 // Driving on the street map with a strong bump close ahead (the screen the owner asked for).
                 val demo = BumpDb(ctx).let { db -> try { db.loadBumps().first() } finally { db.close() } }
                 liveDemo(recording = true)
@@ -96,6 +107,9 @@ class ScreenshotTest {
                 settle(1500)   // short: the GPS counts as live for 5 s after the demo's fix
                 shot(dir, "15-drive-streets-strong")
                 mapCheck(scenario, MainActivity.TAB_DRIVE, File(dir, "15-drive-streets-strong.txt"))
+                // 20 s of driving on the street map (a new fix each second, a strong bump ahead): frame times and
+                // how often the maps were updated, for the smoothness work.
+                perfDrive(scenario, File(dir, "perf-drive-streets.txt"))
                 // The map engine's own log lines (requests for tiles and label fonts), to explain missing labels.
                 instr.uiAutomation.executeShellCommand("logcat -d -t 5000").use { fd ->
                     val all = android.os.ParcelFileDescriptor.AutoCloseInputStream(fd).use { String(it.readBytes()) }
@@ -144,7 +158,7 @@ class ScreenshotTest {
         }
         fakeFix(false)
         val files = dir.listFiles { f -> f.name.endsWith(".png") }.orEmpty()
-        assertTrue("expected 27 screenshots in $dir, got ${files.size}: ${files.map { it.name }.sorted()}", files.size == 27)
+        assertTrue("expected 30 screenshots in $dir, got ${files.size}: ${files.map { it.name }.sorted()}", files.size == 30)
     }
 
     /**
@@ -202,6 +216,62 @@ class ScreenshotTest {
         scenario.onActivity { (it.pages[MainActivity.TAB_SETTINGS] as SettingsPage).back() }
         scenario.onActivity { it.select(MainActivity.TAB_DRIVE) }
         settle(800)
+    }
+
+    /**
+     * Drives 20 s on the Drive tab: the fake GPS moves north-east at 47 km/h (a fix a second) with a strong bump
+     * coming closer, as BumpService would publish it. Writes the frame-time summary (`dumpsys gfxinfo`) and the map
+     * updates per second ([app.bumpbeeper.ui.MapStats]) to [out].
+     */
+    private fun perfDrive(scenario: ActivityScenario<MainActivity>, out: File) {
+        val demo = BumpDb(ctx).let { db -> try { db.loadBumps().first() } finally { db.close() } }
+        scenario.onActivity { it.select(MainActivity.TAB_DRIVE) }
+        liveDemo(recording = true)
+        settle(1500)
+        fun sh(cmd: String): String = instr.uiAutomation.executeShellCommand(cmd).let { fd ->
+            android.os.ParcelFileDescriptor.AutoCloseInputStream(fd).use { String(it.readBytes()) }
+        }
+        sh("dumpsys gfxinfo ${ctx.packageName} reset")
+        val before = app.bumpbeeper.ui.MapStats.snapshot()
+        val t0 = SystemClock.elapsedRealtime()
+        val lm = ctx.getSystemService(Context.LOCATION_SERVICE) as android.location.LocationManager
+        for (i in 0 until 20) {
+            val step = i * 13.0   // metres driven
+            try {
+                lm.setTestProviderLocation(android.location.LocationManager.GPS_PROVIDER, android.location.Location(android.location.LocationManager.GPS_PROVIDER).apply {
+                    latitude = 30.0490 + step * Math.cos(Math.toRadians(40.0)) / 111_000.0
+                    longitude = 31.2360 + step * Math.sin(Math.toRadians(40.0)) / 96_000.0
+                    bearing = 40f; speed = 13f; accuracy = 4f
+                    time = System.currentTimeMillis(); elapsedRealtimeNanos = SystemClock.elapsedRealtimeNanos()
+                })
+            } catch (_: Exception) {}
+            LiveState.lastFixAtMs = SystemClock.elapsedRealtime()
+            LiveState.spotsAhead = listOf(SpotAhead(demo, 300.0 - step, Severity.STRONG, Confidence.FULL, WarnSound.STRONG))
+            SystemClock.sleep(1000)
+        }
+        val s = (SystemClock.elapsedRealtime() - t0) / 1000.0
+        val after = app.bumpbeeper.ui.MapStats.snapshot()
+        val names = listOf("geojson", "camera", "queries", "offlineDraws")
+        val rates = names.indices.joinToString(" ") { "${names[it]}/s=" + String.format(java.util.Locale.US, "%.1f", (after[it] - before[it]) / s) }
+        val keep = Regex("(?i)total frames|janky|percentile|slow ui|slow bitmap|slow issue|frame deadline|gpu")
+        val gfx = sh("dumpsys gfxinfo ${ctx.packageName}").lineSequence().map { it.trim() }.filter { keep.containsMatchIn(it) }.take(16)
+        out.writeText((listOf("seconds=" + String.format(java.util.Locale.US, "%.1f", s), rates) + gfx.toList()).joinToString(System.lineSeparator()) + System.lineSeparator())
+        // The Drive screen as it is after Start, mid-drive: a fresh fix a moment ago, the puck following it.
+        settle(800)
+        shot(out.parentFile!!, "18-drive-nav")
+        mapCheck(scenario, MainActivity.TAB_DRIVE, File(out.parentFile, "18-drive-nav.txt"))
+        LiveState.spotsAhead = emptyList()
+    }
+
+    /** The Map tab with its "OpenStreetMap" filter chip on ([on]) or back to "All", through the page's own reload. */
+    private fun osmFilter(scenario: ActivityScenario<MainActivity>, on: Boolean) {
+        scenario.onActivity { a ->
+            a.select(MainActivity.TAB_MAP)
+            val page = a.pages[MainActivity.TAB_MAP]!!
+            page.javaClass.getDeclaredField("filter").apply { isAccessible = true }.setInt(page, if (on) 5 else 0)
+            page.onShow()
+        }
+        settle(1500)
     }
 
     /**
@@ -264,12 +334,20 @@ class ScreenshotTest {
 
     /** Waits (up to 25 s) until the street map has drawn everything, labels included, and stopped moving. */
     private fun waitForMap(scenario: ActivityScenario<MainActivity>, tab: Int) {
-        val tmp = File(ctx.cacheDir, "map-check.txt")
         val until = SystemClock.elapsedRealtime() + 25_000
         settle(3000)
+        // Polls the map's idle flag only: querying rendered features while tiles still load sometimes crashes
+        // MapLibre's render thread (SIGSEGV answering the query); the check file is written once it is idle.
         while (SystemClock.elapsedRealtime() < until) {
-            mapCheck(scenario, tab, tmp)
-            if (tmp.readText().contains("idle=true")) break
+            var idle = false
+            scenario.onActivity { a ->
+                idle = try {
+                    val page = a.pages[tab]!!
+                    val map = page.javaClass.getDeclaredField("map").apply { isAccessible = true }.get(page)!!
+                    map.javaClass.methods.first { it.name == "getIdle" }.invoke(map) == true
+                } catch (_: Exception) { false }
+            }
+            if (idle) break
             SystemClock.sleep(500)
         }
         settle(1000)
@@ -364,6 +442,12 @@ class ScreenshotTest {
                 Spot(30.0525, 31.2489, 160.0, 2, 2, 0.0, 0.0, 3.1),
                 Spot(30.0599, 31.2372, 75.0, 1, 8, -0.4, 0.0, 3.0, muted = true),
             )
+            // OpenStreetMap bumps as the sync caches them: some where the demo knows a spot, most where it doesn't.
+            val osm = listOf(
+                30.0445 to 31.2359, 30.0512 to 31.2292, 30.0462 to 31.2310, 30.0490 to 31.2420, 30.0530 to 31.2365,
+                30.0560 to 31.2405, 30.0438 to 31.2392, 30.0505 to 31.2252, 30.0575 to 31.2320, 30.0470 to 31.2455,
+            ).mapIndexed { i, (lat, lon) -> OsmBump("n${9_000_000 + i}", lat, lon, "hump") }
+            app.bumpbeeper.sync.SyncStore(db).replaceOsmBumps(30.05, 31.237, 10_000.0, osm, now)
             spots.forEachIndexed { i, s ->
                 db.insertBump(Bump(
                     0, s.lat, s.lon, s.heading, s.hits, s.passes, s.passes - s.hits, s.hits,

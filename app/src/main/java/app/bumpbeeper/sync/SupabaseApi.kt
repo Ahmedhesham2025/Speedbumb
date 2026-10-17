@@ -3,6 +3,7 @@ package app.bumpbeeper.sync
 import android.net.Network
 import app.bumpbeeper.Confidence
 import app.bumpbeeper.Observation
+import app.bumpbeeper.OsmBump
 import app.bumpbeeper.Severity
 import org.json.JSONArray
 import org.json.JSONObject
@@ -295,6 +296,19 @@ class SupabaseApi(
         return parseSpotsV2(body)
     }
 
+    /**
+     * `osm_bumps_near`: OpenStreetMap speed bumps, nearest first (at most 10 km and [SyncStore.OSM_MAX_ROWS] rows). Null when
+     * this server has none ([ApiException.missingRpc]): then there are no OSM bumps.
+     */
+    fun osmBumpsNear(lat: Double, lon: Double, radiusM: Int): List<OsmBump>? {
+        val body = try {
+            rpc("osm_bumps_near", JSONObject().put("lat", lat).put("lon", lon).put("radius_m", radiusM))
+        } catch (e: ApiException) {
+            if (e.missingRpc) return null else throw e
+        }
+        return parseOsmBumps(body)
+    }
+
     fun submitCrashReport(appVersion: String, model: String, stack: String) {
         rpc("submit_crash_report", JSONObject().put("app_version", appVersion.take(40)).put("model", model.take(40))
             .put("stack", stack.take(8192)))
@@ -341,6 +355,18 @@ class SupabaseApi(
 
         private fun JSONObject.numOrNull(k: String): Double? = if (isNull(k) || !has(k)) null else optDouble(k).takeIf { !it.isNaN() }
         private fun JSONObject.strOrNull(k: String): String? = if (isNull(k) || !has(k)) null else optString(k)
+
+        /** An `osm_bumps_near` answer: rows without an id or a position are skipped. */
+        fun parseOsmBumps(body: String): List<OsmBump> {
+            val arr = parseArray(body) ?: return emptyList()
+            val out = ArrayList<OsmBump>(arr.length())
+            for (i in 0 until arr.length()) {
+                val o = arr.optJSONObject(i) ?: continue
+                val id = o.strOrNull("osm_id")?.takeIf { it.isNotEmpty() } ?: continue
+                out.add(OsmBump(id, o.numOrNull("lat") ?: continue, o.numOrNull("lon") ?: continue, o.strOrNull("kind")))
+            }
+            return out
+        }
 
         fun parseSpots(body: String): List<SpotRow> {
             val arr = parseArray(body) ?: return emptyList()
