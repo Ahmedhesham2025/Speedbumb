@@ -89,11 +89,12 @@ class OsmPriorTest {
     }
 
     @Test fun anOsmBumpNeverConfirmsASpot() {
-        // Two strong knocks with only a weak axle reading, no slowdown, right on an OSM node: still a "maybe".
+        // Two strong knocks with only a weak axle reading, no slowdown, right on an OSM node: still a "maybe". At
+        // 30 km/h: faster than 35 a new spot needs the GPS slowdown or both axles (E5), never OSM.
         val store = MemoryStore()
         val sim = Simulator(3)
         val src = ListOsmSource(listOf(osmAt(sim, 900.0)))
-        val spec = DriveSpec(oneOffJoltsAt = listOf(900.0), cruiseKmh = 40.0)
+        val spec = DriveSpec(oneOffJoltsAt = listOf(900.0), cruiseKmh = 30.0)
         sim.drive(store, spec, tripId = 1, osmSource = src)
         Simulator(4).drive(store, spec, tripId = 2, osmSource = src)
         val b = store.saved.single()
@@ -106,7 +107,7 @@ class OsmPriorTest {
         // Without OSM a lone knock in a pocket is rejected (BumpEvidenceTest); next to an OSM node it is at most a maybe.
         val sim = Simulator(3)
         val store = MemoryStore()
-        val r = sim.drive(store, DriveSpec(oneOffJoltsAt = listOf(900.0), cruiseKmh = 40.0),
+        val r = sim.drive(store, DriveSpec(oneOffJoltsAt = listOf(900.0), cruiseKmh = 30.0),
             drivingCfg = DrivingConfig().apply { placement = "pocket" }, osmSource = ListOsmSource(listOf(osmAt(sim, 900.0))))
         assertTrue("no_evidence" !in r.rejected, "${r.rejected}")
         store.saved.forEach { assertEquals(Confidence.SOFT, it.confidence(EngineConfig())) }
