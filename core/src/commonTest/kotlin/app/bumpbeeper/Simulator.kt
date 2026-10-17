@@ -132,8 +132,8 @@ class DriveSpec(
      * [seatFoamDamping]), so a jolt reaches it softened and rings on (it can bounce back past zero).
      */
     val onSeat: Boolean = false,
-    val seatFoamHz: Double = 9.0,
-    val seatFoamDamping: Double = 0.35,
+    val seatFoamHz: Double = 6.0,
+    val seatFoamDamping: Double = 0.6,
     /**
      * The phone slides forward on the seat and tips that many degrees (position, degrees): for 0.4 s it slides (it
      * feels a third of the car's braking), then it knocks into the seat back (6 m/s² back, a 6 m/s² jolt) and lies
@@ -561,11 +561,14 @@ class Simulator(seed: Long) {
                 if (k < 0.8) shake = max(shake, 1.0)
             }
             if (spec.onSeat) {
-                // The foam under the phone: x'' = -w²x - 2ζw x' - a_seat; the phone feels a_seat + x''.
+                // The foam under the phone: x'' = -w²x - 2ζw x' - a_seat; the phone feels a_seat + x'' (10 sub-steps).
                 val w = 2 * PI * spec.seatFoamHz
-                val acc = -w * w * foamX - 2 * spec.seatFoamDamping * w * foamV - av
-                foamV += acc * dt
-                foamX += foamV * dt
+                var acc = 0.0
+                repeat(10) {
+                    acc = -w * w * foamX - 2 * spec.seatFoamDamping * w * foamV - av
+                    foamV += acc * dt / 10
+                    foamX += foamV * dt / 10
+                }
                 av += acc
             }
             // The phone's own turning when it is tipped (the gyroscope feels it), about the axis the tilt turns around.
