@@ -193,6 +193,10 @@ class DrivePage(private val a: MainActivity) : Page {
         }.start()
     }
 
+    /** What the next-bump glyph and the speed circle show now, so the tick only redraws them on a change. */
+    private var glyphLook = ""
+    private var speedBgShown = 0
+
     /** The fix [updateMe] last gave the map (its time), so an unchanged one costs the map nothing. */
     private var meAt = Long.MIN_VALUE
 
@@ -491,12 +495,18 @@ class DrivePage(private val a: MainActivity) : Page {
         banner.setBackgroundColor(if (near) STRONG_BANNER else bannerBg)
         val band = if (n.maybe) Ui.SEV_MAYBE else Ui.sevColor(n.severity)
         val accent = if (near) 0xFFFFFFFF.toInt() else band
-        nextGlyph.setImageResource(if (near) R.drawable.ic_warning else R.drawable.ic_bump)
-        nextGlyph.imageTintList = ColorStateList.valueOf(if (near) Ui.SEV_STRONG else if (n.maybe) Ui.SEV_MAYBE else Ui.sevInk(n.severity))
-        nextGlyph.background = GradientDrawable().apply {
-            cornerRadius = Ui.dpf(a, 14f)
-            setColor(if (near) 0xFFFFFFFF.toInt() else if (n.maybe) bannerBg else band)
-            if (n.maybe) setStroke(dp(2), Ui.SEV_MAYBE, Ui.dpf(a, 6f), Ui.dpf(a, 4f))
+        // The glyph and beep dots are new drawables: only when their look changes, not 4 times a second.
+        val look = "$near ${n.maybe} ${n.severity} ${n.beeps}"
+        val newLook = look != glyphLook
+        glyphLook = look
+        if (newLook) {
+            nextGlyph.setImageResource(if (near) R.drawable.ic_warning else R.drawable.ic_bump)
+            nextGlyph.imageTintList = ColorStateList.valueOf(if (near) Ui.SEV_STRONG else if (n.maybe) Ui.SEV_MAYBE else Ui.sevInk(n.severity))
+            nextGlyph.background = GradientDrawable().apply {
+                cornerRadius = Ui.dpf(a, 14f)
+                setColor(if (near) 0xFFFFFFFF.toInt() else if (n.maybe) bannerBg else band)
+                if (n.maybe) setStroke(dp(2), Ui.SEV_MAYBE, Ui.dpf(a, 6f), Ui.dpf(a, 4f))
+            }
         }
         nextDist.text = distText(n.distanceM)
         nextDist.setTextSize(TypedValue.COMPLEX_UNIT_SP, if (near) Ui.Type.NEXT_NEAR else Ui.Type.NEXT)
@@ -504,7 +514,7 @@ class DrivePage(private val a: MainActivity) : Page {
         nextWhat.text = if (near) a.getString(R.string.drive_slow_to, EngineConfig().approachFastKmh.toInt()) + " · " + sevName(n)
             else if (road != null) sevName(n) + " · " + road else sevName(n)
         nextWhat.setTextColor(accent)
-        for (i in 0 until nextBeeps.childCount) {
+        if (newLook) for (i in 0 until nextBeeps.childCount) {
             nextBeeps.getChildAt(i).background = GradientDrawable().apply {
                 shape = GradientDrawable.OVAL
                 setColor(if (i < n.beeps) accent else 0x4DFFFFFF)
@@ -721,9 +731,10 @@ class DrivePage(private val a: MainActivity) : Page {
 
         speed.text = if (gpsOk) String.format(Locale.US, "%.0f", LiveState.speedKmh) else if (rec) "–" else ""
         showNext(rec)
-        (speed.parent as? View)?.background = GradientDrawable().apply {
-            shape = GradientDrawable.OVAL
-            setColor(if (rec && gpsOk && speedoAlarm()) Ui.SEV_STRONG else bannerBg)
+        val speedBg = if (rec && gpsOk && speedoAlarm()) Ui.SEV_STRONG else bannerBg
+        if (speedBg != speedBgShown) {
+            speedBgShown = speedBg
+            (speed.parent as? View)?.background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(speedBg) }
         }
         val sc = LiveState.liveScore
         if (scoreRing.score != sc) scoreRing.score = sc
