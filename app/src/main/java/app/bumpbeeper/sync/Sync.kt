@@ -28,7 +28,8 @@ import kotlin.math.roundToLong
  *
  * Nothing touches the network until the user answered the first-run screen ([Prefs.syncChoice] not "unset").
  * One run: sign in (anonymous) → register_device → upload the outbox and crash reports (choice "share" only)
- * → download confirmed spots within 10 km of the last trip position into the cache.
+ * → download confirmed spots within 10 km of the last trip position into the cache. Then, in the same job, [runOsm]
+ * downloads the OpenStreetMap bumps of that circle.
  */
 object Sync {
     private const val TAG = "BumpBeeper"
@@ -373,6 +374,38 @@ object Sync {
     }
 
     /**
+     * Right after [run], in the same job (same cadence): OpenStreetMap bumps for the circle of the shared spots, unless
+     * that download failed (offline: the cache stays). Its own step, so it never changes the run's status or retries.
+     */
+    fun runOsm(ctx: Context, transport: Transport = UrlTransport) = synchronized(lock) {
+        if (Prefs.syncChoice(ctx) == Prefs.SYNC_UNSET) return@synchronized
+        withDb(ctx) { db ->
+            val store = SyncStore(db)
+            val lat = store.getDouble(POS_LAT)
+            val lon = store.getDouble(POS_LON)
+            if (lat.isNaN() || lon.isNaN() || store.get(SPOTS_FAILED) != null) return@withDb
+            val api = SupabaseApi(BuildConfig.SUPABASE_URL, BuildConfig.SUPABASE_KEY, newAuth(ctx, transport), transport)
+            pullOsm(api, store, lat, lon, System.currentTimeMillis())
+            LiveState.osmBumps = store.osmBumpCount()
+        }
+    }
+
+    /**
+     * OpenStreetMap bumps in the same circle as the shared spots ([runOsm]). A server
+     * without `osm_bumps_near` has none: the cache empties there. Any other failure keeps the cache as it was and
+     * never fails the run: the shared map is what the status and the offline banner are about.
+     */
+    internal fun pullOsm(api: SupabaseApi, store: SyncStore, lat: Double, lon: Double, now: Long) {
+        val rows = try {
+            api.osmBumpsNear(lat, lon, PULL_RADIUS_M) ?: emptyList()
+        } catch (e: ApiException) {
+            Log.w(TAG, "osm bumps: ${e.message}")
+            return
+        }
+        store.replaceOsmBumps(lat, lon, PULL_RADIUS_M.toDouble(), rows, now)
+    }
+
+    /**
      * `spots_near_v2`, or `spots_near` from a server without it (not migrated yet, or rolled back). That is remembered
      * for [SPOTS_V1_MS], so the runs in between don't ask v2 first each time; a phone clock moved back doesn't stretch it.
      */
@@ -390,6 +423,7 @@ object Sync {
         LiveState.syncLastError = store.get(LAST_ERROR) ?: ""
         LiveState.syncPending = store.outboxCount()
         LiveState.syncRemoteSpots = store.remoteSpotCount()
+        LiveState.osmBumps = store.osmBumpCount()
         LiveState.spotsOkAt = store.getLong(SPOTS_OK_AT)
         LiveState.spotsFailed = store.get(SPOTS_FAILED) != null
         LiveState.trainingQueued = try { TrainingStore(store.helper).count() } catch (_: Exception) { 0 }

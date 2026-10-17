@@ -1,6 +1,10 @@
 package app.bumpbeeper.ui
 
+import android.Manifest
+import android.annotation.SuppressLint
 import android.content.Context
+import android.content.pm.PackageManager
+import android.location.Location
 import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.Canvas
@@ -20,6 +24,12 @@ import org.maplibre.android.MapLibre
 import org.maplibre.android.camera.CameraPosition
 import org.maplibre.android.camera.CameraUpdateFactory
 import org.maplibre.android.geometry.LatLng
+import org.maplibre.android.location.LocationComponent
+import org.maplibre.android.location.LocationComponentActivationOptions
+import org.maplibre.android.location.LocationComponentOptions
+import org.maplibre.android.location.OnCameraTrackingChangedListener
+import org.maplibre.android.location.modes.CameraMode
+import org.maplibre.android.location.modes.RenderMode
 import org.maplibre.android.maps.MapLibreMap
 import org.maplibre.android.maps.MapLibreMapOptions
 import org.maplibre.android.maps.MapView
@@ -64,6 +74,19 @@ import org.maplibre.geojson.FeatureCollection
 import org.maplibre.geojson.LineString
 import org.maplibre.geojson.MultiLineString
 import org.maplibre.geojson.Point
+import kotlin.math.abs
+
+/**
+ * How much work the maps did on the main thread (counted since the app started): GeoJSON source updates, camera
+ * moves, rendered-feature queries and redraws of the offline map. The screenshot test's perf check reads them.
+ */
+object MapStats {
+    @Volatile var geojson = 0
+    @Volatile var camera = 0
+    @Volatile var queries = 0
+    @Volatile var offlineDraws = 0
+    fun snapshot() = intArrayOf(geojson, camera, queries, offlineDraws)
+}
 
 /**
  * The street map: MapLibre Native with free OpenFreeMap tiles (Positron in the light theme, Dark in the dark one),
@@ -71,17 +94,18 @@ import org.maplibre.geojson.Point
  * the redesign's tokens. [SpotMap] puts it over the old offline map and falls back to that one when this can't load
  * ([onFailed]: no network and nothing cached, or no map engine). The owner calls [resume] / [pause] / [destroy].
  */
-class StreetMap(private val ctx: Context, private val interactive: Boolean) {
+class StreetMap(private val ctx: Context, private val interactive: Boolean, private val pan: Boolean = interactive) {
     private fun dp(v: Int) = Ui.dp(ctx, v)
+    private val touch = interactive || pan
 
-    /** Interactive (Map tab): takes the touches first. Not interactive (Drive): never takes a touch. */
+    /** Interactive (Map tab): takes the touches first. [pan] (Drive): moved and zoomed by a finger, no taps. */
     val view: FrameLayout = object : FrameLayout(ctx) {
         override fun dispatchTouchEvent(e: MotionEvent): Boolean {
-            if (interactive && e.actionMasked == MotionEvent.ACTION_DOWN) parent?.requestDisallowInterceptTouchEvent(true)
+            if (touch && e.actionMasked == MotionEvent.ACTION_DOWN) parent?.requestDisallowInterceptTouchEvent(true)
             return super.dispatchTouchEvent(e)
         }
-        override fun onInterceptTouchEvent(e: MotionEvent): Boolean = !interactive || super.onInterceptTouchEvent(e)
-        override fun onTouchEvent(e: MotionEvent): Boolean = interactive && super.onTouchEvent(e)
+        override fun onInterceptTouchEvent(e: MotionEvent): Boolean = !touch || super.onInterceptTouchEvent(e)
+        override fun onTouchEvent(e: MotionEvent): Boolean = touch && super.onTouchEvent(e)
     }
 
     /** A spot pin was tapped: its key ("m<id>"). */
@@ -133,6 +157,11 @@ class StreetMap(private val ctx: Context, private val interactive: Boolean) {
             if (style == null && !failed) { failed = true; onFailed() }
         }
         mv.addOnDidBecomeIdleListener { idle = true }
+        mv.addOnDidFinishRenderingFrameListener(object : MapView.OnDidFinishRenderingFrameListener {
+            override fun onDidFinishRenderingFrame(fully: Boolean, frameEncodingTime: Double, frameRenderingTime: Double) {
+                if (fully) drawnSinceResume = true
+            }
+        })
         mv.addOnCameraWillChangeListener { idle = false }
         mv.getMapAsync { m -> setUp(m) }
         return mv
@@ -148,6 +177,7 @@ class StreetMap(private val ctx: Context, private val interactive: Boolean) {
             setCompassGravity(Gravity.TOP or Gravity.START)
             setCompassMargins(dp(8), dp(8), 0, 0)
             if (!interactive) setAllGesturesEnabled(false)
+            if (pan && !interactive) { setScrollGesturesEnabled(true); setZoomGesturesEnabled(true) }
         }
         m.setMinZoomPreference(2.0)
         m.setMaxZoomPreference(19.0)
@@ -183,6 +213,12 @@ class StreetMap(private val ctx: Context, private val interactive: Boolean) {
         s.addLayer(LineLayer(L_AHEAD, SRC_AHEAD).withProperties(
             lineColor(Ui.SEV_STRONG), lineWidth(9f), lineOpacity(0.55f), lineCap(Property.LINE_CAP_ROUND),
         ))
+        // OpenStreetMap bumps: small grey dots under our pins, never clustered with them.
+        s.addSource(GeoJsonSource(SRC_OSM))
+        // Only from street level: thousands of dots on a country-wide view draw slowly and say nothing.
+        s.addLayer(CircleLayer(L_OSM, SRC_OSM).withProperties(
+            circleRadius(4.5f), circleColor(Ui.SEV_MUTED), circleStrokeColor(Ui.SURFACE), circleStrokeWidth(1.5f),
+        ).apply { minZoom = OSM_MIN_ZOOM })
         val z = SpotMarks.CLUSTER_SIZES
         s.addLayer(CircleLayer(L_CLUSTERS, SRC_SPOTS).withFilter(has("point_count")).withProperties(
             circleColor(Ui.PRIMARY), circleStrokeColor(Ui.SURFACE), circleStrokeWidth(3f),
@@ -211,8 +247,10 @@ class StreetMap(private val ctx: Context, private val interactive: Boolean) {
             circleRadius(10f), circleColor(Ui.PRIMARY), circleStrokeColor(0xFFFFFFFF.toInt()), circleStrokeWidth(3.5f),
         ))
         pushSpots()
+        pushOsm()
         pushMe()
         pushAhead()
+        puckReady(s)
         onReady()
     }
 
@@ -242,6 +280,18 @@ class StreetMap(private val ctx: Context, private val interactive: Boolean) {
         pushSpots()
     }
 
+    private var osm: List<Feature> = emptyList()
+
+    /** OpenStreetMap bumps as (lat, lon): grey dots, not tappable. */
+    fun setOsm(points: List<Pair<Double, Double>>) {
+        osm = points.map { Feature.fromGeometry(Point.fromLngLat(it.second, it.first)) }
+        pushOsm()
+    }
+
+    private fun pushOsm() {
+        style?.getSourceAs<GeoJsonSource>(SRC_OSM)?.setGeoJson(FeatureCollection.fromFeatures(osm))?.also { MapStats.geojson++ }
+    }
+
     /** Your position (dot, or an arrow when [bearing] is known); NaN lat hides it. */
     fun setMe(lat: Double, lon: Double, bearing: Double = Double.NaN) {
         me = if (lat.isNaN()) null else doubleArrayOf(lat, lon, bearing)
@@ -259,6 +309,7 @@ class StreetMap(private val ctx: Context, private val interactive: Boolean) {
     private fun pushAhead() {
         val src = style?.getSourceAs<GeoJsonSource>(SRC_AHEAD) ?: return
         val a = ahead
+        MapStats.geojson++
         src.setGeoJson(FeatureCollection.fromFeatures(if (a == null) emptyList() else listOf(Feature.fromGeometry(
             LineString.fromLngLats(listOf(Point.fromLngLat(a[1], a[0]), Point.fromLngLat(a[3], a[2]))),
         ))))
@@ -270,10 +321,12 @@ class StreetMap(private val ctx: Context, private val interactive: Boolean) {
      */
     fun roadNameAt(lat: Double, lon: Double, arabic: Boolean): String? {
         val m = map ?: return null
-        if (style == null) return null
+        // A paused map's render thread never answers: the query would block the main thread for good.
+        if (style == null || !queryable) return null
         val p = m.projection.toScreenLocation(LatLng(lat, lon))
         val r = dp(24).toFloat()
         val keys = if (arabic) listOf("name:ar", "name") else listOf("name:latin", "name:en", "name")
+        MapStats.queries++
         return try {
             m.queryRenderedFeatures(RectF(p.x - r, p.y - r, p.x + r, p.y + r))
                 .filter { it.geometry() is LineString || it.geometry() is MultiLineString }
@@ -282,12 +335,114 @@ class StreetMap(private val ctx: Context, private val interactive: Boolean) {
     }
 
     private fun pushSpots() {
-        style?.getSourceAs<GeoJsonSource>(SRC_SPOTS)?.setGeoJson(FeatureCollection.fromFeatures(features))
+        style?.getSourceAs<GeoJsonSource>(SRC_SPOTS)?.setGeoJson(FeatureCollection.fromFeatures(features))?.also { MapStats.geojson++ }
     }
+
+    /**
+     * A frame was fully drawn since the map last resumed. Until then its render thread may still be starting: a
+     * rendered-feature query answered then crashes MapLibre's render thread (SIGSEGV, seen on the CI emulator right
+     * after switching back to the Drive tab).
+     */
+    private var drawnSinceResume = false
+    private val queryable: Boolean get() = resumed && drawnSinceResume
+
+    // ---------------------------------------------------------------- the location puck (Drive)
+
+    private var puck: LocationComponent? = null
+    private var puckFix: Location? = null
+    private var navigating = false
+    private var navZoom = Double.NaN
+
+    /**
+     * Drive: MapLibre's own location puck, fed with [setLocation] (no location engine of its own). It animates between
+     * fixes on the render thread, so the arrow and the following camera glide instead of jumping once a second.
+     * Activated once per map; the component keeps itself across style reloads. Needs the location permission.
+     */
+    @SuppressLint("MissingPermission")
+    private fun puckReady(s: Style) {
+        val m = map ?: return
+        if (puckFix == null) return   // only maps that get fixes (Drive) have one
+        if (ctx.checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED &&
+            ctx.checkSelfPermission(Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED) return
+        try {
+            val lc = m.locationComponent
+            if (!lc.isLocationComponentActivated) {
+                lc.activateLocationComponent(LocationComponentActivationOptions.builder(ctx, s)
+                    .useDefaultLocationEngine(false)
+                    .locationComponentOptions(LocationComponentOptions.builder(ctx)
+                        .foregroundTintColor(Ui.PRIMARY).bearingTintColor(Ui.PRIMARY).accuracyAlpha(0.12f)
+                        .trackingGesturesManagement(false).build())
+                    .build())
+                lc.addOnCameraTrackingChangedListener(object : OnCameraTrackingChangedListener {
+                    override fun onCameraTrackingDismissed() { onUserMove() }   // a finger moved the map
+                    override fun onCameraTrackingChanged(currentMode: Int) {}
+                })
+            }
+            lc.isLocationComponentEnabled = true
+            lc.setMaxAnimationFps(DRIVE_FPS)
+            puck = lc
+            pushMe()   // our own dot gives way to the puck
+            puckFix?.let { lc.forceLocationUpdate(it) }
+            setNavigation(navigating, force = true)
+        } catch (e: Exception) {
+            puck = null
+        }
+    }
+
+    /** A new fix for the puck (Drive). The first one makes the map get its puck. */
+    fun setLocation(loc: Location) {
+        val first = puckFix == null
+        puckFix = loc
+        val lc = puck
+        if (lc != null) lc.forceLocationUpdate(loc) else if (first) style?.let { puckReady(it) }
+    }
+
+    /** The puck is drawn by MapLibre (no dot of our own). */
+    val hasPuck: Boolean get() = puck != null
+
+    /**
+     * Navigation (recording): the arrow turned to the GPS bearing, the camera following it heading-up, tilted, the puck
+     * low ([topPaddingPx]); off: a dot and a camera of our own. [zoom] while following.
+     */
+    fun setNavigation(on: Boolean, zoom: Double = navZoom, force: Boolean = false) {
+        val lc = puck
+        val changed = on != navigating || force
+        navigating = on
+        if (lc == null) { navZoom = zoom; return }
+        try {
+            if (changed) {
+                lc.renderMode = if (on) RenderMode.GPS else RenderMode.NORMAL
+                if (on) {
+                    // The puck low on the screen, then one transition to it with zoom, bearing and tilt: the
+                    // ...WhileTracking calls are ignored while a mode transition runs.
+                    map?.moveCamera(CameraUpdateFactory.paddingTo(0.0, topPaddingPx, 0.0, 0.0))
+                    if (!zoom.isNaN()) navZoom = zoom
+                    val bearing = puckFix?.takeIf { it.hasBearing() }?.bearing?.toDouble()
+                    lc.setCameraMode(CameraMode.TRACKING_GPS, 750, navZoom.takeIf { !it.isNaN() }, bearing, NAV_TILT, null)
+                } else {
+                    lc.cameraMode = CameraMode.NONE
+                    map?.animateCamera(CameraUpdateFactory.tiltTo(0.0), 600)
+                }
+                return
+            }
+            if (on && !zoom.isNaN() && (navZoom.isNaN() || abs(zoom - navZoom) >= 0.25)) {
+                navZoom = zoom
+                lc.zoomWhileTracking(zoom, 1500)   // ignored mid-transition: the next fix tries again
+            }
+        } catch (_: Exception) {}
+    }
+
+    /** Following the car right now (the puck's camera; false after a finger moved the map). */
+    val tracking: Boolean get() = try { puck?.cameraMode == CameraMode.TRACKING_GPS } catch (_: Exception) { false }
+
+    private var meHidden = false
 
     private fun pushMe() {
         val src = style?.getSourceAs<GeoJsonSource>(SRC_ME) ?: return
-        val m = me
+        // With the puck our own dot is emptied once, not again on every fix.
+        if (puck != null) { if (meHidden) return; meHidden = true } else meHidden = false
+        val m = if (puck != null) null else me
+        MapStats.geojson++
         src.setGeoJson(FeatureCollection.fromFeatures(if (m == null) emptyList() else listOf(
             Feature.fromGeometry(Point.fromLngLat(m[1], m[0])).apply {
                 addStringProperty("icon", if (m[2].isNaN()) ME_DOT else ME_ARROW)
@@ -323,6 +478,7 @@ class StreetMap(private val ctx: Context, private val interactive: Boolean) {
             animateMs > 0 -> m.animateCamera(CameraUpdateFactory.newCameraPosition(pos), animateMs)
             else -> m.cameraPosition = pos
         }
+        MapStats.camera++
     }
 
     /** Where the camera is: lat, lon, zoom (null before the map is ready). */
@@ -330,16 +486,25 @@ class StreetMap(private val ctx: Context, private val interactive: Boolean) {
 
     /** What the street map has, for the screenshot test's check file: style, spots, you, camera, pins drawn. */
     internal fun debug(): String {
-        val m = map
+        val m = map?.takeIf { queryable }   // never query a paused or restarting map (see roadNameAt)
         val drawn = try {
             m?.queryRenderedFeatures(RectF(0f, 0f, view.width.toFloat(), view.height.toFloat()), L_SPOTS, L_CLUSTERS, L_ME)?.size
+        } catch (_: Exception) { null }
+        val puckDrawn = try {
+            val ids = style?.layers?.map { it.id }?.filter { it.contains("location") }?.toTypedArray() ?: emptyArray()
+            if (ids.isEmpty()) 0 else m?.queryRenderedFeatures(RectF(0f, 0f, view.width.toFloat(), view.height.toFloat()), *ids)?.size
+        } catch (_: Exception) { null }
+        val osmDrawn = try {
+            m?.queryRenderedFeatures(RectF(0f, 0f, view.width.toFloat(), view.height.toFloat()), L_OSM)?.size
         } catch (_: Exception) { null }
         val labels = try {
             val ids = style?.layers?.map { it.id }?.filter { it.contains("name") || it.contains("label") }?.toTypedArray() ?: emptyArray()
             if (ids.isEmpty()) 0 else m?.queryRenderedFeatures(RectF(0f, 0f, view.width.toFloat(), view.height.toFloat()), *ids)?.size
         } catch (_: Exception) { null }
         return "labels=$labels idle=$idle style=${style != null} failed=$failed spots=${features.size} me=${me?.toList()} " +
-            "camera=${camera()?.toList()} drawn=$drawn"
+            "puck=${puck != null} tracking=$tracking render=${try { puck?.renderMode } catch (_: Exception) { null }} " +
+            "tilt=${m?.cameraPosition?.tilt} bearing=${m?.cameraPosition?.bearing} " +
+            "camera=${camera()?.toList()} drawn=$drawn osm=${osm.size} osmDrawn=$osmDrawn puckDrawn=$puckDrawn"
     }
 
     /** Fewer frames when nothing moves saves battery. */
@@ -350,7 +515,7 @@ class StreetMap(private val ctx: Context, private val interactive: Boolean) {
     fun resume() {
         val mv = mapView ?: return
         if (!started) { mv.onStart(); started = true }
-        if (!resumed) { mv.onResume(); resumed = true }
+        if (!resumed) { drawnSinceResume = false; mv.onResume(); resumed = true }
         // Last time there was no network: try the streets again.
         if (failed && style == null) { failed = false; map?.setStyle(Style.Builder().fromUri(styleUrl())) { styleReady(it) } }
         // Loaded from the cache while offline, and online now: load again, so the tiles that were missing get fetched.
@@ -479,6 +644,11 @@ class StreetMap(private val ctx: Context, private val interactive: Boolean) {
         private const val L_ME = "bb-me"
         private const val L_ME_HALO = "bb-me-halo"
         private const val SRC_AHEAD = "bb-ahead"
+        private const val SRC_OSM = "bb-osm"
+        private const val OSM_MIN_ZOOM = 11f
+        private const val NAV_TILT = 45.0
+        private const val DRIVE_FPS = 30
+        private const val L_OSM = "bb-osm-pins"
         private const val L_AHEAD = "bb-ahead"
         private const val ME_ARROW = "bb-me-arrow"
         private const val ME_DOT = "bb-me-dot"

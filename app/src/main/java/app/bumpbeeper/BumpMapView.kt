@@ -25,6 +25,9 @@ class BumpMapView(ctx: Context) : View(ctx) {
         set(v) { field = v; invalidate() }
     var selectedId = -1L
         set(v) { field = v; invalidate() }
+    /** OpenStreetMap bumps: small grey dots under the pins. */
+    var osm: List<OsmBump> = emptyList()
+        set(v) { field = v; invalidate() }
     var onSelect: (Bump) -> Unit = {}
     private val cfg = EngineConfig()
 
@@ -77,6 +80,7 @@ class BumpMapView(ctx: Context) : View(ctx) {
     private fun toY(lat: Double): Float = (height / 2.0 - (lat - centerLat) * 110_540.0 * pxPerM()).toFloat()
 
     override fun onDraw(canvas: Canvas) {
+        app.bumpbeeper.ui.MapStats.offlineDraws++
         val w = width.toFloat()
         val h = height.toFloat()
         canvas.drawRoundRect(0f, 0f, w, h, 10f * density, 10f * density, bg)
@@ -96,6 +100,12 @@ class BumpMapView(ctx: Context) : View(ctx) {
         )
 
         val dot = 7f * density
+        for (o in osm) {
+            val x = toX(o.lon); val y = toY(o.lat)
+            if (x < -dot || x > w + dot || y < -dot || y > h + dot) continue
+            fill.color = Ui.SEV_MUTED
+            canvas.drawCircle(x, y, dot * 0.6f, fill)
+        }
         for (b in bumps) {
             val x = toX(b.lon); val y = toY(b.lat)
             if (x < -dot * 2 || x > w + dot * 2 || y < -dot * 2 || y > h + dot * 2) continue

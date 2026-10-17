@@ -30,7 +30,10 @@ class SyncJob : JobService() {
                 else Sync.run(
                     app, extras.getInt(Sync.EXTRA_PULL_ONLY, 0) == 1,
                     extras.getDouble(Sync.EXTRA_LAT, Double.NaN), extras.getDouble(Sync.EXTRA_LON, Double.NaN),
-                )
+                ).also {
+                    // OpenStreetMap bumps for the same circle: never a reason to retry the job.
+                    try { Sync.runOsm(app) } catch (e: Exception) { Log.w("BumpBeeper", "osm bumps failed", e) }
+                }
             } catch (e: Exception) {
                 Log.w("BumpBeeper", "sync run failed", e)
                 true

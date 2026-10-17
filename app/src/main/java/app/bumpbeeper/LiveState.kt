@@ -53,6 +53,8 @@ object LiveState {
      *  for upload, and the last problem in a few words ("" = none). Filled by app.bumpbeeper.sync.Sync. */
     @Volatile var syncLastAt = 0L
     @Volatile var syncRemoteSpots = 0
+    /** OpenStreetMap bumps in the cache: the screens show the "© OpenStreetMap contributors" credit when there are any. */
+    @Volatile var osmBumps = 0
     @Volatile var syncPending = 0
     @Volatile var syncLastError = ""
     /** Shared spots: the last successful download (wall ms, 0 = never), and whether the last try failed. By Sync. */
