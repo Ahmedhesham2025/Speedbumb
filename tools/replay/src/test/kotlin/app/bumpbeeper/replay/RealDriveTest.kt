@@ -50,6 +50,20 @@ class RealDriveTest {
     }
 }
 
+/** Per-phone calibration on a real phone: drive01's pocket phone is the real-phone reference (scale about 1). */
+class RealDriveCalibrationTest {
+    private val f = File(File(System.getProperty("testdata.dir") ?: "../../testdata", "real"), "drive01_pocket.csv.gz")
+
+    @Test fun drive01ScalesToAboutOne() {
+        val samples = TraceReader.read(readLines(f).asSequence())
+        val c = PhoneCalibration()
+        Replayer.replay(samples, MemStore(), drivingCfg = DrivingConfig().apply { placement = "pocket" }, calibration = c)
+        println("drive01 calibration: ${c.describe()}, floor ${formatFixed(c.floor("pocket"), 3)} m/s²")
+        val scale = c.learnedScale("pocket")
+        assertTrue("drive01 (pocket) scale ${formatFixed(scale, 2)}: ${c.describe()}", scale in 0.9..1.1)
+    }
+}
+
 /** The checks RealDriveTest runs on each drive, kept apart so they can be unit-tested (RealDriveChecksTest). */
 object RealDriveChecks {
     private const val FAKE = 0.5

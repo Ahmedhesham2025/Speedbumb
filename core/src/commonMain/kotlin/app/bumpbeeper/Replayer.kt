@@ -22,6 +22,8 @@ object Replayer {
         cfg: EngineConfig = EngineConfig(),
         drivingCfg: DrivingConfig = DrivingConfig(),
         tripId: Long = 1L,
+        /** The phone's calibration to replay with (learns as it goes); a fresh one (scale 1) by default. */
+        calibration: PhoneCalibration = PhoneCalibration(),
     ): ReplayResult {
         val events = ArrayList<BumpEvent>()
         val logging = object : BumpStore by store {
@@ -38,7 +40,7 @@ object Replayer {
             override fun onNewBump(b: Bump) { monitor?.onBumpHit(b, (engine?.lastFix?.speedMps ?: 0.0) * 3.6) }
             override fun onKnownBumpHit(b: Bump) { monitor?.onBumpHit(b, (engine?.lastFix?.speedMps ?: 0.0) * 3.6) }
         }
-        val eng = BumpEngine(cfg, logging, listener, { WALL_BASE_MS + nowMs }, tripId)
+        val eng = BumpEngine(cfg, logging, listener, { WALL_BASE_MS + nowMs }, tripId, calibration = calibration)
         engine = eng
         val mon = DrivingMonitor(drivingCfg, eng) { type, lat, lon, kmh, value, note ->
             logging.logEvent(BumpEvent(WALL_BASE_MS + nowMs, tripId, type, -1, lat, lon, kmh, Double.NaN, value, Double.NaN, Double.NaN, note))

@@ -8,9 +8,12 @@ import kotlin.test.assertTrue
 
 /** Per-phone calibration: the noise floor is learned on smooth road and scales the jolt trigger and severity. */
 class CalibrationTest {
+    /** The simulator's phone is the reference here (its floor is 0.35 m/s², real phones about 0.06). */
+    private val sim = CalibrationConfig().apply { refRms = 0.35 }
+
     /** Learn on [trips] 5 km trips at 50 km/h with this phone (placement "unknown": the holder is detected). */
     private fun learn(
-        gain: Double = 1.0, noise: Double = 0.0, trips: Int = 3, c: PhoneCalibration = PhoneCalibration(),
+        gain: Double = 1.0, noise: Double = 0.0, trips: Int = 3, c: PhoneCalibration = PhoneCalibration(sim),
         rough: List<Pair<Double, Double>> = emptyList(),
     ): PhoneCalibration {
         for (seed in 1..trips) {
@@ -19,7 +22,7 @@ class CalibrationTest {
         return c
     }
 
-    private fun copy(c: PhoneCalibration) = PhoneCalibration.decode(c.encode())
+    private fun copy(c: PhoneCalibration) = PhoneCalibration.decode(c.encode(), sim)
 
     @Test fun learnsTheNoiseFloorPerPhone() {
         val base = learn()
@@ -39,7 +42,7 @@ class CalibrationTest {
 
     /** Placement "unknown": pocket and holder trips each keep their own scale. */
     @Test fun pocketAndHolderKeepTheirOwnScale() {
-        val c = PhoneCalibration()
+        val c = PhoneCalibration(sim)
         repeat(3) { i ->
             // In the pocket: it keeps jostling (pocket mode turns on by itself) and rattles.
             Simulator(700L + i).drive(MemoryStore(), DriveSpec(roadM = 5000.0, phoneNoise = 0.8, jostlesAt = listOf(150.0, 300.0, 450.0, 600.0)), calibration = c)
@@ -59,14 +62,14 @@ class CalibrationTest {
     /** The scale a trip uses is the one learned before it; a lowered trigger stays at 1.8 m/s² or more. */
     @Test fun aTripUsesWhatWasLearnedBefore() {
         val learned = learn(noise = 0.8)
-        val eng = BumpEngine(EngineConfig(), MemoryStore(), object : EngineListener {}, { 0L }, calibration = PhoneCalibration())
+        val eng = BumpEngine(EngineConfig(), MemoryStore(), object : EngineListener {}, { 0L }, calibration = PhoneCalibration(sim))
         eng.phone.placement = "mounted"
         assertEquals(1.0, eng.joltScale)
         val next = BumpEngine(EngineConfig(), MemoryStore(), object : EngineListener {}, { 0L }, calibration = copy(learned))
         next.phone.placement = "mounted"
         assertEquals(1.5, next.joltScale, 1e-9)
         assertEquals(4.5, next.joltTrigger, 1e-9)
-        val stiff = PhoneCalibration.decode("mounted:10=200")
+        val stiff = PhoneCalibration.decode("mounted:10=200", sim)
         stiff.freeze()
         assertEquals(1.8, stiff.trigger(3.0, "mounted"), 1e-9, "0.5 × 3.0 = 1.5 would be too close to the noise")
     }
@@ -74,7 +77,7 @@ class CalibrationTest {
     @Test fun encodeDecodeKeepsTheScale() {
         val c = learn(noise = 0.3)
         assertEquals(c.learnedScale("mounted"), copy(c).learnedScale("mounted"), 0.01)
-        assertEquals(1.0, PhoneCalibration.decode("garbage;x:;:1,2;mounted:a=b").learnedScale("mounted"))
+        assertEquals(1.0, PhoneCalibration.decode("garbage;x:;:1,2;mounted:a=b", sim).learnedScale("mounted"))
     }
 
     /** Jolts that set the trigger off (learned or rejected) after the first minute, on 5 bump-free trips. */
@@ -87,7 +90,7 @@ class CalibrationTest {
     /** A noisy phone, calibrated, sets the trigger off no more often than the reference phone; uncalibrated it would. */
     @Test fun noisyPhoneDoesNotOverTrigger() {
         val baseline = falseJolts(0.0, learn())
-        val noisyRaw = falseJolts(0.8, PhoneCalibration())
+        val noisyRaw = falseJolts(0.8, PhoneCalibration(sim))
         val noisyCal = falseJolts(0.8, learn(noise = 0.8))
         assertTrue(noisyRaw > baseline, "uncalibrated, the rattle triggers: $noisyRaw vs $baseline")
         assertTrue(noisyCal <= baseline, "calibrated: $noisyCal false jolts, reference phone $baseline")
@@ -126,9 +129,9 @@ class CalibrationTest {
 
     /** The same, fed straight to the engine: three 2.5 m/s² jolts set the stiff mount's trigger off, not the default one. */
     @Test fun stiffMountTriggerDirect() {
-        val stiff = PhoneCalibration.decode("mounted:10=200")
+        val stiff = PhoneCalibration.decode("mounted:10=200", sim)
         assertEquals(0.5, stiff.learnedScale("mounted"), 1e-9)
-        assertEquals(0, gentleJolts(PhoneCalibration()), "uncalibrated")
+        assertEquals(0, gentleJolts(PhoneCalibration(sim)), "uncalibrated")
         assertEquals(3, gentleJolts(stiff), "calibrated stiff mount")
     }
 
