@@ -1,12 +1,14 @@
 package app.bumpbeeper
 
 import kotlin.concurrent.Volatile
+import kotlin.math.PI
 import kotlin.math.abs
 import kotlin.math.acos
 import kotlin.math.cos
 import kotlin.math.ln
 import kotlin.math.max
 import kotlin.math.min
+import kotlin.math.pow
 import kotlin.math.sin
 import kotlin.math.sqrt
 
@@ -42,8 +44,12 @@ class EngineConfig {
     var decideAfterMs = 1200L
     /** Ignore further jolts for this long (rear axle, suspension rebound). */
     var refractoryMs = 2500L
-    /** Angle between the fast and slow "down" estimates that means the phone is being moved. */
-    var tiltRejectDeg = 25.0
+    /**
+     * ...unless the jolt was rejected as the phone's: then only while the phone is untrusted, if its handling began no
+     * later than this after the jolt (a jostle's own jolt comes slightly first). A jolt well before the handling (a
+     * real bump that shook the phone) keeps its refractory time.
+     */
+    var phoneJoltLeadMs = 250L
 
     /** A hit this close to a known bump (same direction) is that bump. */
     var matchRadiusM = 20.0
@@ -56,6 +62,48 @@ class EngineConfig {
     var minAlertDistM = 40.0
     /** ...or further than this. */
     var maxAlertDistM = 250.0
+    /**
+     * The Drive card's next spots ([BumpEngine.spotsAhead]): spots in the same direction within [aheadRangeM], straight
+     * ahead within [aheadNearDeg] of the heading up to [approachRadiusM] away and within [aheadFarDeg] beyond it.
+     */
+    var aheadRangeM = 1000.0
+    var aheadNearDeg = 60.0
+    var aheadFarDeg = 25.0
+    /**
+     * Approach beeps ([EngineListener.onApproachBeep]): after a confirmed spot's warning, while the driver is still at
+     * [approachFastKmh] or faster (the "bump taken fast" speed, [DrivingConfig.bumpFastKmh]), short beeps from
+     * [approachDelayMs] after the warning (its sound or voice first) until the spot is [approachEndM] away. The gap
+     * between beeps shrinks from [approachStartMs] at [approachFarM] or further to [approachEndMs] at [approachNearM]
+     * or closer, along (distance fraction)^[approachCurve]. At most one sequence per spot and pass; once it stops (slower
+     * than [approachFastKmh], reached, muted, turned away) it does not start again. Never for a "maybe" spot.
+     * The speed is judged on every sensor sample: the last fix's GPS speed, which is [approachGpsLagS] late, less the
+     * braking the accelerometer felt since then (along the learned forward axis; before it is learned, any horizontal
+     * push above [approachBrakeDeadMs2] while the GPS speed isn't rising), or less the GPS deceleration carried on
+     * over the lag, whichever is lower.
+     * Every warning holds them for [approachHoldMs]; one with a voice (a strong bump, a group line) until the app
+     * says it was spoken ([warningSpoken]), at most [approachVoiceMaxMs], then [approachAfterVoiceMs] more.
+     */
+    @Volatile var approachBeeps = true
+    var approachFastKmh = 25.0
+    var approachDelayMs = 2500L
+    var approachStartMs = 1200L
+    var approachEndMs = 250L
+    var approachFarM = 100.0
+    var approachNearM = 10.0
+    var approachCurve = 1.0
+    var approachEndM = 5.0
+    var approachGpsLagS = 1.0
+    var approachBrakeDeadMs2 = 0.5
+    var approachHoldMs = 2000L
+    var approachVoiceMaxMs = 6000L
+    var approachAfterVoiceMs = 400L
+
+    /** Gap before the next approach beep with the spot [distanceM] away, ms. */
+    fun approachIntervalMs(distanceM: Double): Long {
+        val frac = ((distanceM - approachNearM) / (approachFarM - approachNearM)).coerceIn(0.0, 1.0)
+        return approachEndMs + ((approachStartMs - approachEndMs) * frac.pow(approachCurve)).toLong()
+    }
+
     /** Don't beep if you are already slower than this: you have clearly seen it. 0 = always beep. (setting) */
     @Volatile var quietBelowKmh = 20.0
     /**
@@ -108,7 +156,118 @@ class EngineConfig {
      * replaces a shared one: the same radius that decides a jolt belongs to a known spot, so the two can't drift apart.
      */
     var remoteRadiusM = 1500.0
+
+    /**
+     * E2: the car's own signature. Every jolt is checked for both axles ([AxleSignature], with [axle]) and for a
+     * slowdown: the speed lost from the top GPS fix in the [speedBeforeMs] before the jolt to the lowest fix through it
+     * (from 1 s before up to the decision), or the braking the accelerometer felt along the learned forward axis over
+     * the same time, whichever is more; [speedEvidenceKmh] or more is a slowdown. The decision waits for the rear
+     * axle: [AxleSignature.decideWindowMs] at the lag-corrected speed, at least [decideAfterMs].
+     *  - Confirmed on its own (counts in [Bump.axleHits]): both axles felt, or a jolt of [strongJoltMs2] or more with
+     *    an axle score of at least [axleEvidenceMin] and a slowdown.
+     *  - Some evidence (an axle score of at least [axleEvidenceMin], or a slowdown): an ordinary hit.
+     *  - Neither, where the axle check could look ([AXLE_BLIND] it could not): rejected in a pocket ("no_evidence"); otherwise a new spot is only a maybe, and on a known spot the
+     *    jolt counts the pass as felt but not as a hit ("hit_weak"), so it never confirms a spot.
+     *  - "No axle" ([AxleVerdict.ONE]) is rejected in a pocket ("no_axle"); elsewhere it is no axle evidence.
+     * A jolt while the phone is handled stays the phone's unless both axles show so clearly that it can only be the
+     * car: a pair scoring [overrideMinScore] or more, Δt of at least [overrideMinDtMs], pitch order +1 with the phone
+     * itself turning less than [overrideMaxRotRads] over the pair, braking before it, a handling that began after the
+     * front impulse and, once the car has [overrideMinProfileHits] axle hits, Δt × speed within
+     * [overrideWheelbaseTolM] of the learned wheelbase. Never without a gyroscope, never after an unlock, the screen,
+     * a call or out of a pocket.
+     */
+    val axle = AxleConfig()
+    var speedBeforeMs = 5000L
+    var speedEvidenceKmh = 5.0
+    var axleEvidenceMin = 0.3
+    var strongJoltMs2 = 5.0
+    var overrideMinScore = 0.9
+    var overrideMinDtMs = 250.0
+    var overrideMaxRotRads = 0.6
+    var overrideMinProfileHits = 3
+    var overrideWheelbaseTolM = 0.3
+
+    /**
+     * E4, Egyptian raised humps. **Polarity**: a raised hump lifts the car first, the nose up as the front wheels climb;
+     * a pothole, drain, dip or manhole drops it first, nose down. Only with a trusted car frame: the phone resting in a
+     * holder ([PhoneState.STABLE_MOUNTED]) at the trigger and not handled at the decision, the forward direction known
+     * (a loose or pocketed phone turns on its own). The vertical's first big movement ([JoltShape.firstDown]) and the
+     * pitch turned in the [polarityPitchMs] after the trigger, less its average rate over the [polarityBaselineMs]
+     * before (braking pitches the car too), at least [polarityMinPitchRad] (else the axle pair's pitch order), give UP
+     * (evidence, like a slowdown), DOWN (never a bump: rejected "down_first") or, down first with the pitch unknown,
+     * DOWN_WEAK (at most a maybe). Anything else is UNCLEAR, which is neutral; so is a down-first jolt below
+     * [vMaxMinKmh] without a nose-down pitch (a rounded hump crawled over can show its crest first).
+     * **Crossing profile** (GPS speed, [axle]'s lag taken off the fix times): SLOWDOWN when the slowest speed within
+     * [vNearMs] of the jolt is [vMaxMinKmh] or less and at least [vMinDropFraction] below the top speed [vBeforeFromMs]
+     * to [vBeforeToMs] before it, which was at least [vMinApproachKmh] or that much faster by [vMinDropKmh] (not a
+     * start from standstill over a ramp or kerb); V when the speed then rises [vRiseKmh] above that minimum within [vAfterMs]. A V with
+     * UP or both axles confirms the spot ([Bump.axleHits] at least 2: FULL).
+     */
+    var polarityPitchMs = 200L
+    var polarityBaselineMs = 300L
+    var vMinApproachKmh = 25.0
+    var vMinDropKmh = 10.0
+    var polarityMinPitchRad = 0.004
+    var vBeforeFromMs = 8000L
+    var vBeforeToMs = 5000L
+    var vNearMs = 3000L
+    var vMaxMinKmh = 15.0
+    var vMinDropFraction = 0.4
+    var vAfterMs = 8000L
+    var vRiseKmh = 8.0
+
+    /**
+     * E4b, crawling over a hump: below [crawlKmh] (the lag-corrected low speed, [AxleSignature.lowSpeedMps]) the rear
+     * axle comes after [AxleConfig.decideMaxMs]; the decision then waits for it, Δt at that speed (learned wheelbase)
+     * + [AxleConfig.dtTolerance] + [AxleConfig.decideMarginMs], at most [crawlDecideMaxMs]. The refractory time is at
+     * least that wait, so the rear axle never triggers a jolt of its own. Warnings don't wait for decisions.
+     */
+    var crawlKmh = 10.0
+    var crawlDecideMaxMs = 3000L
+
+    /**
+     * E4c, a hump's shape, from the front wheels' impulse alone, before the rear ones arrive: only with a clear axle
+     * pair ([AxleVerdict.BOTH]; in a pocket a score of at least [shapePocketMinScore]), whose Δt also gives the speed
+     * (wheelbase / Δt, no GPS lag). In the band-passed vertical ([shapeLowHz]..[shapeHighHz]) from the front impulse
+     * to just before the rear one, the strong samples (at least [shapeStrongFraction] of the peak) form lobes. A short
+     * hump climbs, crests and comes down: three lobes or more. A long flat top only climbs onto it (up, then a balanced
+     * stop, the two within [shapeBalance]) and then stays quiet for [shapeQuietM] or more before the rear axle: a
+     * LONG_FLAT top the car stands on (3 beeps and the voice, like a strong bump). With three lobes or more within
+     * [shapeCompactM], then [shapeCompactQuietM] quiet before the rear axle, height
+     * (relative only: the first lobe's velocity step × the front impulse's length / (pi/2 × speed)) under [shapeLowM]
+     * is LOW, else SHORT_STEEP. Anything else is UNKNOWN (null), which keeps the band's sound: missing a long top is
+     * fine, a short hard hump must never read LONG_FLAT.
+     */
+    var shapeLowHz = 0.1
+    var shapeHighHz = 15.0
+    var shapeStrongFraction = 0.35
+    var shapeQuietM = 1.2
+    var shapeBalance = 0.15
+    var shapeTyreM = 0.2
+    var shapeLowM = 0.04
+    var shapePocketMinScore = 0.8
+    var shapeCompactM = 1.5
+    var shapeCompactQuietM = 0.3
+
+    /**
+     * E4c, humps in a row: at [rowMaxKmh] or slower the refractory time ends with the decision, so the next hump of a
+     * row is felt; a jolt on the same pass [rowMinGapM] or more from a SHORT_STEEP spot just felt is a hump of its own
+     * (never after a long, low or unknown one), unless it
+     * is a wheelbase away (± [AxleConfig.dtTolerance]: the rear axle) or, after a long flat top, within a wheelbase +
+     * [rowLongHumpM] (its far end and rear axle). Spots within [rowMaxGapM] of each other ahead
+     * warn as one group ("2 bumps ahead"), even when fewer than [clusterMinExtra] follow.
+     */
+    var rowMaxKmh = 20.0
+    var rowMinGapM = 3.0
+    var rowMaxGapM = 25.0
+    var rowLongHumpM = 4.5
 }
+
+/** How a jolt started, in the car's frame (E4, [EngineConfig.polarityPitchMs]). */
+enum class Polarity { UP, DOWN, DOWN_WEAK, UNCLEAR }
+
+/** The speed around a jolt (E4, [EngineConfig.vMaxMinKmh]): slowed to a crawl and sped up again (V), or only slowed. */
+enum class CrossProfile { V, SLOWDOWN, NONE }
 
 /**
  * How one jolt looked: diagnostics for the event log, training samples and research. Nothing decides a spot's type
@@ -166,9 +325,17 @@ class BumpEngine(
     private val spotSource: SpotSource? = null,
     private val observationSink: ObservationSink? = null,
     private val sampleSink: JoltSampleSink = JoltSampleSink.NONE,
+    /** The car's wheelbase, learned from both-axle hits ([VehicleProfile.learn]); the app keeps it between trips. */
+    val vehicle: VehicleProfile = VehicleProfile(),
 ) {
     val bumps: MutableList<Bump> = store.loadBumps().toMutableList()
     val trip = TripStats()
+
+    /**
+     * Whether the phone rests in a holder, rests loose or is being handled ([PhoneStateDetector]), fed with the same
+     * samples as the engine. The app fills in its [PhoneStateDetector.signals] (screen, unlock, calls, proximity, light).
+     */
+    val phone = PhoneStateDetector()
 
     /** Latest vertical acceleration with gravity removed, m/s². For the live graph. */
     var lastVertical = 0.0
@@ -216,12 +383,25 @@ class BumpEngine(
     private var fastZ = 0.0
     private var accelReady = false
     private var lastAccelMs = 0L
-    /** Last time the phone was being moved (picked up, adjusted). */
-    var lastUnstableMs = Long.MIN_VALUE / 4
-        private set
     private var joltStartMs = -1L
     private var joltPeak = 0.0
+    /** How long after the trigger the jolt is decided: long enough for its rear axle ([axleWaitMs]). */
+    private var joltWaitMs = 0L
+    /** The car's left axis when the jolt triggered (a pick-up before the decision makes the frame be learned again). */
+    private var joltLeft: DoubleArray? = null
+    /** The car frame could be trusted when the jolt triggered (E4 polarity): the phone resting in a holder. */
+    private var joltFrameTrusted = false
+    /** Spots felt with a slowdown and UP or both axles, waiting for the speed to rise again (a V, E4). */
+    private class PendingV(val bumpId: Long, val tMs: Long, val minKmh: Double)
+    private val pendingV = ArrayList<PendingV>()
+    /** The spot the last [registerHit] learned or hit, null for a repeat or a weak hit. */
+    private var lastSpot: Bump? = null
     private var refractoryUntilMs = Long.MIN_VALUE / 4
+    /**
+     * The last jolt was the phone's ([handledReason]) and its handling had begun by then ([EngineConfig.phoneJoltLeadMs]):
+     * it holds the next one off only while the phone is untrusted.
+     */
+    private var phoneJolt = false
     /** Strongest vertical jolt since the last GPS fix (to report how close a "miss" came). */
     private var maxVertSinceFix = 0.0
 
@@ -281,6 +461,16 @@ class BumpEngine(
         var minSpeedNearMps = Double.MAX_VALUE   // slowest speed seen within 30 m of the bump
         var maxJoltNear = 0.0                     // strongest jolt felt within 40 m of the bump
         var minDistMs = startMs                   // fix time of the closest approach
+        // Approach beeps: the spot, from the last fix (distance, speed, time); next beep due; the sequence ended.
+        var seqSpot: Bump? = null
+        var seqDist = 0.0
+        var seqMps = 0.0
+        var seqFixMs = 0L
+        var seqDecel = 0.0   // m/s², from the last two fixes (> 0 braking)
+        var seqBrakeAtLag = 0.0   // [brakeInt] when the last fix's speed was true (fix time − GPS lag)
+        var seqRising = false     // the GPS speed rose at the last fix
+        var nextBeepMs = 0L
+        var seqDone = false
     }
 
     /** The bump that beeped most recently (for "Mute last beep"), or -1. */
@@ -309,12 +499,14 @@ class BumpEngine(
 
     /** Rotation rate in rad/s, phone axes. Optional: without it, a jolt's shape is judged from the jolt alone. */
     fun onGyro(tMs: Long, x: Double, y: Double, z: Double) {
+        phone.onGyro(tMs, x, y, z)
         gyroX = x; gyroY = y; gyroZ = z
         gyroSeen = true
     }
 
     /** [tMs] monotonic milliseconds; x, y, z raw accelerometer in m/s² (gravity included). */
     fun onAccel(tMs: Long, x: Double, y: Double, z: Double) {
+        phone.onAccel(tMs, x, y, z)
         if (!accelReady) {
             slowX = x; slowY = y; slowZ = z
             fastX = x; fastY = y; fastZ = z
@@ -357,7 +549,9 @@ class BumpEngine(
             val hy = y - alongG * gravY / gg
             val hz = z - alongG * gravZ / gg
             horX += aSlow * (hx - horX); horY += aSlow * (hy - horY); horZ += aSlow * (hz - horZ)
+            noteBraking(tMs, dt, hx, hy, hz, aFast)
         }
+        approachBeep(tMs)
 
         bufT[bufHead] = tMs
         bufV[bufHead] = v
@@ -368,10 +562,9 @@ class BumpEngine(
         if (bufCount < BUF) bufCount++
         ring?.let { addToRing(it, tMs, v) }
 
-        // Is the phone being moved (picked up, dropped, adjusted)?
+        // Is the phone turning (picked up, dropped, adjusted)? Whether it is handled is [phone]'s call; the angle is its fast turn.
         val cosTilt = ((slowX * fastX + slowY * fastY + slowZ * fastZ) / (g * f)).coerceIn(-1.0, 1.0)
-        if (radToDeg(acos(cosTilt)) > cfg.tiltRejectDeg) {
-            lastUnstableMs = tMs
+        if (radToDeg(acos(cosTilt)) > phone.cfg.turnDeg) {
             // It may sit differently when it is put back: learn gravity and "forward" again.
             gravX = slowX; gravY = slowY; gravZ = slowZ
             gravSettledS = 0.0
@@ -381,15 +574,21 @@ class BumpEngine(
 
         if (joltStartMs >= 0) {
             if (tMs - joltStartMs <= cfg.peakWindowMs) joltPeak = max(joltPeak, abs(v))
-            if (tMs - joltStartMs >= cfg.decideAfterMs) {
+            if (tMs - joltStartMs >= joltWaitMs) {
                 val start = joltStartMs
                 joltStartMs = -1
                 decide(start, joltPeak)
             }
-        } else if (abs(v) >= cfg.joltThreshold && tMs >= refractoryUntilMs) {
+        } else if (abs(v) >= cfg.joltThreshold && (tMs >= refractoryUntilMs || (phoneJolt && !phone.untrusted(tMs, tMs)))) {
+            // A rejected jostle has no rear axle to wait for: a bump right after it (braking before it) still counts.
             joltStartMs = tMs
             joltPeak = abs(v)
-            refractoryUntilMs = tMs + cfg.refractoryMs
+            joltWaitMs = axleWaitMs(tMs)
+            joltLeft = leftUnit()
+            joltFrameTrusted = joltLeft != null && !phone.pocketMode && phone.state == PhoneState.STABLE_MOUNTED
+            val crawl = (lastFix?.speedMps ?: Double.MAX_VALUE) * 3.6 <= cfg.rowMaxKmh
+            refractoryUntilMs = tMs + if (crawl) joltWaitMs else max(cfg.refractoryMs, joltWaitMs)
+            phoneJolt = false
         }
     }
 
@@ -397,7 +596,18 @@ class BumpEngine(
     private fun decide(tMs: Long, peak: Double) {
         // The decision comes 1.2 s after the jolt, so a newer fix may already be in. Use the one closest in time.
         val fix = fixes.minByOrNull { abs(it.timeMs - tMs) }
-        if (lastUnstableMs >= tMs - 1500) { reject(tMs, peak, "phone_moving", fix); return }
+        val ax = if (fix != null && abs(tMs - fix.timeMs) <= cfg.maxFixAgeMs) axleOf(tMs, fix.speedMps) else null
+        val axNote = ax?.let { " axle=${it.verdict.name.lowercase()} ${formatFixed(it.score, 2)} ${it.reason} dt=${formatFixed(it.dtMs, 0)} pitch=${it.pitchOrder}" } ?: ""
+        val overridden = handledReason(tMs)?.let {
+            val refused = refusedOverride(tMs, ax, fix)
+            if (refused != null) {
+                phoneJolt = phone.episodeStartMs <= tMs + cfg.phoneJoltLeadMs
+                val why = if (ax?.verdict == AxleVerdict.BOTH) " kept=$refused" else ""
+                reject(tMs, peak, it, fix, (axNote + why).trim())
+                return
+            }
+            true
+        } ?: false
         if (fix == null || abs(tMs - fix.timeMs) > cfg.maxFixAgeMs) { reject(tMs, peak, "no_gps", fix); return }
         if (fix.accuracyM > cfg.maxAccuracyM) { reject(tMs, peak, "weak_gps", fix); return }
         val speedKmh = fix.speedMps * 3.6
@@ -407,7 +617,7 @@ class BumpEngine(
         val shape = shapeOf(tMs, peak)
         // Too fast for a speed bump: kept only if, not much faster, it has a clear shape (needs the gyroscope).
         if (speedKmh > cfg.maxSpeedKmh && !clearFastJolt(speedKmh, peak, shape)) {
-            reject(tMs, peak, "too_fast", fix, shape.describe(), shape); return
+            reject(tMs, peak, "too_fast", fix, shape.describe() + axNote, shape); return
         }
 
         // GPS comes once a second; move that fix forward (or back, if it came after) to the moment of the jolt.
@@ -418,7 +628,243 @@ class BumpEngine(
         val maxRecent = fixes.filter { tMs - it.timeMs <= 10_000 }.maxOfOrNull { it.speedMps } ?: fix.speedMps
         val slowdownKmh = max(0.0, (maxRecent - fix.speedMps) * 3.6)
 
-        registerHit(tMs, pos[0], pos[1], speedKmh, peak, slowdownKmh, shape)
+        // E2: the car's own signature (EngineConfig.axle): both axles, and a slowdown.
+        val drop = speedDropKmh(tMs)
+        val slowed = drop >= cfg.speedEvidenceKmh
+        val axleSeen = ax != null && ax.score >= cfg.axleEvidenceMin
+        // The axle check could not look (rear past the decision at a crawl, too fast, no data, the hit still ringing
+        // where the rear would be): that is no evidence
+        // against it, so the jolt is an ordinary hit (a steady crawl has no slowdown either).
+        val blind = ax == null || ax.reason in AXLE_BLIND
+        val pol = polarityOf(tMs, shape, ax, fix.speedMps * 3.6)
+        val (profile, minKmh) = crossProfile(tMs)
+        val note = "$axNote slow=${formatFixed(drop, 1)} polarity=${pol.name.lowercase()} profile=${profile.name.lowercase()}" +
+            if (overridden) " over_handled" else ""
+        if (phone.pocketMode && ax?.verdict == AxleVerdict.ONE) { reject(tMs, peak, "no_axle", fix, note.trim(), shape); return }
+        if (pol == Polarity.DOWN) { reject(tMs, peak, "down_first", fix, note.trim(), shape); return }
+        val up = pol == Polarity.UP
+        if (phone.pocketMode && !axleSeen && !slowed && !blind && !up) { reject(tMs, peak, "no_evidence", fix, note.trim(), shape); return }
+        val grade = when {
+            pol == Polarity.DOWN_WEAK -> 0   // down first: at most a maybe, never a confirmation
+            ax?.verdict == AxleVerdict.BOTH || (peak >= cfg.strongJoltMs2 && axleSeen && slowed) -> 2
+            axleSeen || slowed || blind || up -> 1
+            else -> 0
+        }
+        if (ax?.verdict == AxleVerdict.BOTH) vehicle.learn(ax.dtMs, fix.speedMps)
+        // For the shared map: the hit's vibration dose (SeverityIndex) and how clearly both axles showed.
+        val sev = SeverityIndex.of(bufTimes(), bufVerticals(), tMs, fix.speedMps).index
+        val hump = ax?.let { bumpShape(tMs, it) }
+        val hitInfo = HitInfo(sev.takeIf { !it.isNaN() }, ax?.score?.takeIf { !it.isNaN() }?.coerceIn(0.0, 1.0), hump?.first)
+        val humpNote = " hump=" + (hump?.let { it.first.name.lowercase() + it.second } ?: "unknown")
+        registerHit(tMs, pos[0], pos[1], speedKmh, peak, slowdownKmh, shape, grade, note + humpNote, hitInfo)
+        val spot = lastSpot
+        if (spot != null && profile == CrossProfile.SLOWDOWN && (up || ax?.verdict == AxleVerdict.BOTH)) {
+            pendingV.add(PendingV(spot.id, tMs, minKmh))
+        }
+    }
+
+    /** [EngineConfig.polarityPitchMs]: UP, DOWN, DOWN_WEAK or UNCLEAR; UNCLEAR whenever the car frame isn't trusted. */
+    private fun polarityOf(tMs: Long, shape: JoltShape, ax: AxleResult?, speedKmh: Double): Polarity {
+        val left = joltLeft
+        if (!joltFrameTrusted || left == null || phone.state == PhoneState.HANDLED) return Polarity.UNCLEAR
+        fun noseUp(k: Int) = -(bufGx[k] * left[0] + bufGy[k] * left[1] + bufGz[k] * left[2])
+        // The rate before the jolt (braking, a curve's slope, gyro bias) is not the jolt's.
+        var sum = 0.0
+        var m = 0
+        for (i in 0 until bufCount) {
+            val k = (bufHead - bufCount + i + BUF) % BUF
+            if (bufT[k] >= tMs - 50 - cfg.polarityBaselineMs && bufT[k] < tMs - 50) { sum += noseUp(k); m++ }
+        }
+        val base = if (m >= 3) sum / m else 0.0
+        // Already climbing nose-up before a down-first trigger: the crest of a rounded hump, not a drop.
+        val climbing = base * cfg.polarityPitchMs / 1000.0 >= cfg.polarityMinPitchRad
+        var turn = 0.0
+        var prevT = -1L
+        for (i in 0 until bufCount) {
+            val k = (bufHead - bufCount + i + BUF) % BUF
+            val t = bufT[k]
+            if (t < tMs - 50 || t > tMs + cfg.polarityPitchMs) continue
+            if (prevT >= 0) turn += (noseUp(k) - base) * (t - prevT) / 1000.0
+            prevT = t
+        }
+        val pitch = when {
+            turn >= cfg.polarityMinPitchRad -> 1
+            turn <= -cfg.polarityMinPitchRad -> -1
+            else -> ax?.pitchOrder ?: 0
+        }
+        return when {
+            !shape.firstDown && pitch > 0 -> Polarity.UP
+            shape.firstDown && climbing -> Polarity.UNCLEAR
+            shape.firstDown && pitch < 0 -> Polarity.DOWN
+            shape.firstDown && speedKmh < cfg.vMaxMinKmh -> Polarity.UNCLEAR   // a rounded hump's crest can come first
+            shape.firstDown && pitch == 0 -> Polarity.DOWN_WEAK
+            else -> Polarity.UNCLEAR
+        }
+    }
+
+    /** The speed profile so far around the jolt at [tMs] (V needs the rise, [checkV]) and its slowest speed, km/h. */
+    private fun crossProfile(tMs: Long): Pair<CrossProfile, Double> {
+        val lag = cfg.axle.gpsLagMs.toLong()
+        val before = fixes.filter { it.timeMs - lag in tMs - cfg.vBeforeFromMs..tMs - cfg.vBeforeToMs }.maxOfOrNull { it.speedMps }
+        val min = fixes.filter { abs(it.timeMs - lag - tMs) <= cfg.vNearMs }.minOfOrNull { it.speedMps }
+        if (before == null || min == null) return CrossProfile.NONE to Double.NaN
+        val approached = before * 3.6 >= cfg.vMinApproachKmh || (before - min) * 3.6 >= cfg.vMinDropKmh
+        val slowed = approached && min * 3.6 <= cfg.vMaxMinKmh && (before - min) >= cfg.vMinDropFraction * before
+        return (if (slowed) CrossProfile.SLOWDOWN else CrossProfile.NONE) to min * 3.6
+    }
+
+    /** On each fix: a spot whose crossing sped up again ([EngineConfig.vRiseKmh]) is confirmed (a V with UP or both axles). */
+    private fun checkV(f: Fix) {
+        if (pendingV.isEmpty()) return
+        val t = f.timeMs - cfg.axle.gpsLagMs.toLong()
+        val it = pendingV.iterator()
+        while (it.hasNext()) {
+            val p = it.next()
+            if (t > p.tMs + cfg.vAfterMs) { it.remove(); continue }
+            if (t < p.tMs || f.speedMps * 3.6 < p.minKmh + cfg.vRiseKmh) continue
+            it.remove()
+            val b = bumps.firstOrNull { s -> s.id == p.bumpId } ?: continue
+            b.axleHits = max(b.axleHits + 1, 2)
+            store.updateBump(b)
+            log("cross_v", b.id, b.lat, b.lon, f.speedMps * 3.6, Double.NaN, Double.NaN, Double.NaN,
+                "speed ${formatFixed(p.minKmh, 0)} -> ${formatFixed(f.speedMps * 3.6, 0)} km/h, now ${bandNote(b)}")
+        }
+    }
+
+    /** The decision wait for a trigger at [tMs]: [AxleSignature.decideWindowMs] at the lag-corrected speed. */
+    private fun axleWaitMs(tMs: Long): Long {
+        val f = lastFix ?: return cfg.decideAfterMs
+        val low = AxleSignature.lowSpeedMps(fixes.toList(), tMs, f.speedMps, cfg.axle)
+        val wait = max(cfg.decideAfterMs, AxleSignature.decideWindowMs(low, vehicle.wheelbaseM, cfg.axle))
+        if (low * 3.6 >= cfg.crawlKmh) return wait
+        // A crawl (E4b): wait for the rear axle at the slowest plausible speed, past the usual cap.
+        val rear = vehicle.wheelbaseM / low * 1000.0 * (1 + cfg.axle.dtTolerance) + cfg.axle.decideMarginMs
+        return rear.toLong().coerceIn(wait, max(wait, cfg.crawlDecideMaxMs))
+    }
+
+    /** The two-axle signature of the jolt at [trig], from the sample buffer (pitch nose-up; none until the frame is known). */
+    private fun axleOf(trig: Long, speedMps: Double): AxleResult {
+        val n = bufCount
+        val left = joltLeft
+        val p = if (left == null) null else DoubleArray(n) { i ->
+            val k = (bufHead - n + i + BUF) % BUF
+            -(bufGx[k] * left[0] + bufGy[k] * left[1] + bufGz[k] * left[2])
+        }
+        return AxleSignature.analyze(bufTimes(), bufVerticals(), p, trig, speedMps, vehicle.wheelbaseM, fixes.toList(), cfg.axle)
+    }
+
+    /** The sample buffer's times and vertical jolts, oldest first. */
+    private fun bufTimes() = LongArray(bufCount) { bufT[(bufHead - bufCount + it + BUF) % BUF] }
+    private fun bufVerticals() = DoubleArray(bufCount) { bufV[(bufHead - bufCount + it + BUF) % BUF] }
+
+    /** What a hit tells the shared map besides its peak ([Observation.sevIndex], [Observation.axle]); null = unknown. */
+    private class HitInfo(val sevIndex: Double?, val axle: Double?, val shape: BumpShape? = null)
+
+    /** The hump's shape from its front impulse ([EngineConfig.shapeQuietM]) and its numbers for the log; null: unknown. */
+    private fun bumpShape(trigMs: Long, ax: AxleResult): Pair<BumpShape, String>? {
+        if (ax.verdict != AxleVerdict.BOTH || !(ax.dtMs > 0)) return null
+        if (phone.pocketMode && ax.score < cfg.shapePocketMinScore) return null
+        val speed = vehicle.wheelbaseM / (ax.dtMs / 1000.0)
+        val front = if (ax.rearFirst) trigMs - ax.dtMs.toLong() else trigMs
+        val end = front + ax.dtMs.toLong() - max(60L, (ax.dtMs * 0.1).toLong())   // just before the rear impulse
+        val t = bufTimes()
+        val rate = Biquad.rateHz(t)
+        if (t.size < 20 || rate < 20.0 || t[0] > front - 1000) return null
+        val x = Biquad.bandPass(bufVerticals(), cfg.shapeLowHz, cfg.shapeHighHz, rate)
+        val w = t.indices.filter { t[it] >= front - 100 && t[it] <= end }
+        if (w.size < 5) return null
+        val peak = w.maxOf { abs(x[it]) }
+        val strong = w.filter { abs(x[it]) >= cfg.shapeStrongFraction * peak }
+        // Lobes: runs of one sign among the strong samples, each with the velocity step of its whole run.
+        val lobes = ArrayList<Double>()
+        var lastSign = 0
+        for (k in strong) {
+            val sign = if (x[k] > 0) 1 else -1
+            if (sign == lastSign) continue
+            lastSign = sign
+            var a = k
+            while (a > w.first() && x[a - 1] * sign > 0) a--
+            var b = k
+            while (b < w.last() && x[b + 1] * sign > 0) b++
+            var area = 0.0
+            for (q in a + 1..b) area += 0.5 * (x[q] + x[q - 1]) * (t[q] - t[q - 1]) / 1000.0
+            lobes.add(area)
+        }
+        val frontM = (t[strong.last()] - t[strong.first()]) / 1000.0 * speed + cfg.shapeTyreM
+        val quietM = (end - t[strong.last()]) / 1000.0 * speed
+        val heightM = abs(lobes.first()) * frontM / (PI / 2 * speed)
+        val flatTop = lobes.size == 2 && lobes[0] > 0 && lobes[1] < 0 &&
+            abs(lobes[0] + lobes[1]) <= cfg.shapeBalance * lobes[0] && quietM >= cfg.shapeQuietM
+        val shape = when {
+            flatTop -> BumpShape.LONG_FLAT
+            lobes.size < 3 -> return null   // climbed and stopped, but not clearly onto a flat top: unknown
+            // Short only when compact: the strong part within shapeCompactM, then quiet until the rear axle (body
+            // bounce on a long top adds lobes of its own).
+            frontM > cfg.shapeCompactM || quietM < cfg.shapeCompactQuietM -> return null
+            heightM < cfg.shapeLowM -> BumpShape.LOW
+            else -> BumpShape.SHORT_STEEP
+        }
+        return shape to " lobes=${lobes.size} quiet=${formatFixed(quietM, 1)}m height~${formatFixed(heightM * 100, 0)}cm"
+    }
+
+    /** The car's left axis (up × forward) in phone axes; null without gyroscope or a known forward direction. */
+    private fun leftUnit(): DoubleArray? {
+        val fwd = forwardUnit()
+        if (!gyroSeen || fwd == null) return null
+        val g = sqrt(gravX * gravX + gravY * gravY + gravZ * gravZ)
+        val ux = gravX / g
+        val uy = gravY / g
+        val uz = gravZ / g
+        val (fx, fy, fz) = fwd
+        return doubleArrayOf(uy * fz - uz * fy, uz * fx - ux * fz, ux * fy - uy * fx)
+    }
+
+    /** Speed lost before and through the jolt at [tMs], km/h: by GPS, or felt along the forward axis ([EngineConfig.axle]). */
+    private fun speedDropKmh(tMs: Long): Double {
+        val top = fixes.filter { it.timeMs in tMs - cfg.speedBeforeMs..tMs }.maxOfOrNull { it.speedMps }
+        val low = fixes.filter { it.timeMs >= tMs - 1000 }.minOfOrNull { it.speedMps }
+        val gps = if (top == null || low == null) 0.0 else max(0.0, top - low) * 3.6
+        return max(gps, (fwdBrakeAt(lastAccelMs) - fwdBrakeAt(tMs - cfg.speedBeforeMs)) * 3.6)
+    }
+
+    /** Why a jolt while the phone is handled stays the phone's, or null: a clear two-axle pair of the car ([EngineConfig.axle]). */
+    private fun refusedOverride(tMs: Long, ax: AxleResult?, fix: Fix?): String? {
+        if (ax == null || fix == null || ax.verdict != AxleVerdict.BOTH) return "no_pair"
+        if (!gyroSeen) return "no_gyro"
+        val never = PhoneStateDetector.UNLOCK or PhoneStateDetector.SCREEN or PhoneStateDetector.CALL or
+            PhoneStateDetector.POCKET_EXIT
+        if ((phone.causes and never) != 0 || phone.outOfPocketSeen) return "signal"
+        if (ax.score < cfg.overrideMinScore) return "score"
+        if (ax.dtMs < cfg.overrideMinDtMs) return "short_dt"
+        if (ax.pitchOrder != 1) return "pitch"
+        if (ax.braked != true) return "no_braking"
+        val front = if (ax.rearFirst) tMs - ax.dtMs.toLong() else tMs
+        if (phone.episodeStartMs <= front) return "handled_first"
+        if (maxRotation(front - 100, front + ax.dtMs.toLong() + 200) > cfg.overrideMaxRotRads) return "phone_turned"
+        val agrees = vehicle.hits < cfg.overrideMinProfileHits ||
+            abs(ax.dtMs / 1000.0 * fix.speedMps - vehicle.wheelbaseM) <= cfg.overrideWheelbaseTolM
+        return if (agrees) null else "wheelbase"
+    }
+
+    /** The phone's fastest rotation from [fromMs] to [toMs], rad/s (0 without gyroscope samples there). */
+    private fun maxRotation(fromMs: Long, toMs: Long): Double {
+        var m = 0.0
+        for (i in 0 until bufCount) {
+            val k = (bufHead - bufCount + i + BUF) % BUF
+            if (bufT[k] in fromMs..toMs) m = max(m, sqrt(bufGx[k] * bufGx[k] + bufGy[k] * bufGy[k] + bufGz[k] * bufGz[k]))
+        }
+        return m
+    }
+
+    /**
+     * Why a jolt at [tMs] is the phone's and not the road's, or null: its readings were not trusted from the jolt until
+     * now ([PhoneStateDetector.untrusted]: handled, or within 2 s after a handling; a jostle ends 0.5 s after its motion,
+     * with no margin). The decision waits [EngineConfig.decideAfterMs], so a pick-up that starts with the jolt is seen.
+     * A jostle in pocket mode is "phone_moving", anything else "handled". No new spot, no hit, in someone's hand.
+     */
+    private fun handledReason(tMs: Long): String? {
+        if (!phone.untrusted(tMs, lastAccelMs)) return null
+        return if (phone.pocketMode && phone.onlyJostles(tMs, lastAccelMs)) "phone_moving" else "handled"
     }
 
     /**
@@ -522,7 +968,10 @@ class BumpEngine(
 
     private fun registerHit(
         tMs: Long, lat: Double, lon: Double, speedKmh: Double, peak: Double, slowdownKmh: Double, shape: JoltShape,
+        /** 2: confirmed by the car's signature, 1: some evidence, 0: none ([EngineConfig.axle]); [evidence] for the log. */
+        grade: Int, evidence: String, info: HitInfo,
     ) {
+        lastSpot = null
         // Nearest known bump within matchRadius, same direction of travel.
         var best: Bump? = null
         var bestD = Double.MAX_VALUE
@@ -545,11 +994,25 @@ class BumpEngine(
             }
         }
 
+        // Humps in a row: the same pass, a few metres on, but not a wheelbase on (that is the rear axle).
+        best?.let { b0 ->
+            val a0 = approaches[b0.id]
+            val last0 = lastHitMs[b0.id]
+            val samePass = (a0 != null && a0.hit) || (a0 == null && last0 != null && tMs - last0 < 15_000)
+            // A wheelbase on is the rear axle; anywhere over a long flat top and its rear axle is still that hump.
+            val sameHump = abs(bestD - vehicle.wheelbaseM) <= cfg.axle.dtTolerance * vehicle.wheelbaseM ||
+                (b0.shape == BumpShape.LONG_FLAT && bestD <= vehicle.wheelbaseM + cfg.rowLongHumpM)
+            // Only after a hump known to be short and steep: a long, low or unknown one may still be under the car.
+            val short = b0.shape == BumpShape.SHORT_STEEP
+            if (samePass && short && bestD >= cfg.rowMinGapM && speedKmh <= cfg.rowMaxKmh && !sameHump) best = null
+        }
         if (best == null) {
             // First time here → record it. No beep: we are already on top of it.
             val b = Bump(0, lat, lon, heading, hits = 1, passes = 1, misses = 0, nPos = 1, firstSeen = now, lastSeen = now)
             b.addPeak(peak, 0)
             b.addSeverity(peak, 0, cfg)   // E2: the vibration index instead of the peak
+            if (grade >= 2) b.axleHits = 1
+            b.shape = info.shape
             b.id = store.insertBump(b)
             countSpot(b)
             bumps.add(b)
@@ -559,8 +1022,8 @@ class BumpEngine(
             lastHitMs[b.id] = tMs
             trip.newBumps++
             trip.hits++
-            log("new_bump", b.id, lat, lon, speedKmh, peak, slowdownKmh, 0.0, "bump ${bandNote(b)} ${shape.describe()}")
-            observe("jolt", lat, lon, speedKmh, peak, shape.score, now)
+            log("new_bump", b.id, lat, lon, speedKmh, peak, slowdownKmh, 0.0, "bump ${bandNote(b)} ${shape.describe()}$evidence")
+            observe("jolt", lat, lon, speedKmh, peak, shape.score, now, info = info)
             sample("learned", null, tMs, speedKmh, peak, shape, null, lat, lon, b.id)
             if (remoteAll.isNotEmpty()) dedupRemote()   // the new spot of your own replaces its shared twin from now on
             listener.onNewBump(b)
@@ -569,6 +1032,7 @@ class BumpEngine(
                 lastTickMs = tMs
                 listener.onNewSpotTick(b)
             }
+            lastSpot = b
             return
         }
 
@@ -582,6 +1046,17 @@ class BumpEngine(
             return
         }
         lastHitMs[b.id] = tMs
+        if (grade == 0) {
+            // Felt, but nothing of a car going over a bump: the pass counts as felt, the hit doesn't (it never confirms).
+            if (a != null) {
+                a.hit = true
+                if (!a.counted) { a.counted = true; b.passes++ }
+            } else b.passes++
+            store.updateBump(b)
+            log("hit_weak", b.id, lat, lon, speedKmh, peak, slowdownKmh, bestD, "hits ${b.hits}/${b.passes}$evidence")
+            sample("hit", "weak", tMs, speedKmh, peak, shape, null, lat, lon, b.id)
+            return
+        }
 
         // Refine the position: running average of all readings (the newest one always keeps ≥10% weight).
         val w = 1.0 / (min(b.nPos, 9) + 1)
@@ -592,6 +1067,8 @@ class BumpEngine(
         b.addPeak(peak, b.hits)
         b.addSeverity(peak, b.hits, cfg)
         b.hits++
+        if (grade >= 2) b.axleHits++
+        info.shape?.let { b.shape = it }
         b.legacy = false   // felt again: an old pothole spot is an ordinary bump from now on
         b.lastSeen = now
         countSpot(b)
@@ -613,11 +1090,12 @@ class BumpEngine(
         trip.hits++
         log(
             "hit", b.id, lat, lon, speedKmh, peak, slowdownKmh, bestD,
-            "hits ${b.hits}/${b.passes} now=bump ${bandNote(b)} ${shape.describe()}",
+            "hits ${b.hits}/${b.passes} now=bump ${bandNote(b)} ${shape.describe()}$evidence",
         )
-        observe("known_hit", lat, lon, speedKmh, peak, shape.score, now)
+        observe("known_hit", lat, lon, speedKmh, peak, shape.score, now, info = HitInfo(info.sevIndex, info.axle, info.shape ?: b.shape))
         sample("hit", null, tMs, speedKmh, peak, shape, null, lat, lon, b.id)
         listener.onKnownBumpHit(b)
+        lastSpot = b
     }
 
     /** For the event log: the spot's band and confidence after this hit ("sev=moderate conf=soft"). */
@@ -672,6 +1150,8 @@ class BumpEngine(
         fixes.addLast(f)
         while (fixes.size > 1 && f.timeMs - fixes.first().timeMs > 12_000) fixes.removeFirst()
         lastFix = f
+        phone.onFix(f)
+        checkV(f)
 
         // GPS bearing is garbage when crawling; keep the last good one.
         if (!brg.isNaN() && speed >= 1.5) heading = brg
@@ -700,11 +1180,17 @@ class BumpEngine(
             return   // a broken cache must not stop the engine; keep what we had
         }
         remoteAll = spots.filter { it.id in 0 until Long.MAX_VALUE / 2 }.map { r ->
-            // Felt once per phone that confirmed it: two phones make it FULL. A shared pothole is an old (soft) spot.
-            @Suppress("DEPRECATION") val old = r.kind == BumpKind.POTHOLE
+            // v2: its hits (one phone twice counts) and the server's confidence and band, where it gives them; an old
+            // pothole spot (legacy) is soft until felt. Without v2 fields: one hit per phone, the band from the index.
+            @Suppress("DEPRECATION") val old = r.legacy || r.kind == BumpKind.POTHOLE
+            val hits = when (r.confidence) {
+                Confidence.FULL -> max(r.nHits, 2)
+                Confidence.SOFT -> min(r.nHits, 1)
+                null -> r.nHits
+            }.coerceAtLeast(0)
             Bump(
-                -2L - r.id, r.lat, r.lon, r.heading, hits = r.nDevices.coerceAtLeast(0), passes = 0, misses = 0, nPos = 0,
-                firstSeen = 0, lastSeen = 0, peakAvg = r.severity, sevIndex = r.severity, legacy = old,
+                -2L - r.id, r.lat, r.lon, r.heading, hits = hits, passes = 0, misses = 0, nPos = 0,
+                firstSeen = 0, lastSeen = 0, peakAvg = r.severity, sevIndex = r.severity, legacy = old, lastBand = r.band,
             )
         }
         dedupRemote()
@@ -726,12 +1212,12 @@ class BumpEngine(
 
     private fun observe(
         kind: String, lat: Double, lon: Double, speedKmh: Double, peak: Double, shapeScore: Double, now: Long,
-        dir: Double = heading,
+        dir: Double = heading, info: HitInfo? = null,
     ) {
         val sink = observationSink ?: return
         try {
             // The shape score goes up as a diagnostic in the old kind_score field; bumps have no side (0).
-            sink.record(Observation(randomUuid(), kind, lat, lon, dir, speedKmh, peak, shapeScore, 0.0, now))
+            sink.record(Observation(randomUuid(), kind, lat, lon, dir, speedKmh, peak, shapeScore, 0.0, now, info?.sevIndex, info?.axle, info?.shape))
         } catch (e: Exception) {
             // A full or broken outbox must not stop detection.
         }
@@ -815,7 +1301,31 @@ class BumpEngine(
         return ((now.bearingDeg - before.bearingDeg) % 360.0 + 540.0) % 360.0 - 180.0
     }
 
+    /**
+     * The next spots on the road ahead, nearest first (at most two: "Strong bump in 120 m. Then: mild bump in 650 m"),
+     * your own and shared, not muted. Updated on every fix while moving; empty until the heading is known.
+     */
+    var spotsAhead: List<SpotAhead> = emptyList()
+        private set
+
+    private fun updateSpotsAhead(f: Fix) {
+        if (f.speedMps < 1.5 || heading.isNaN()) return
+        val out = ArrayList<SpotAhead>()
+        for (s in bumps.asSequence() + remoteActive.asSequence()) {
+            if (abs(s.lat - f.lat) > 0.01 || abs(s.lon - f.lon) > 0.012) continue   // more than ~1 km away
+            if (!warnable(s) || Geo.angleDiff(heading, s.heading) > cfg.headingTolDeg) continue
+            val d = Geo.distance(f.lat, f.lon, s.lat, s.lon)
+            if (d > cfg.aheadRangeM || d < 1.0) continue
+            val off = Geo.angleDiff(heading, Geo.bearing(f.lat, f.lon, s.lat, s.lon))
+            if (off > (if (d <= cfg.approachRadiusM) cfg.aheadNearDeg else cfg.aheadFarDeg)) continue
+            out.add(SpotAhead(s, d, s.severity(cfg), s.confidence(cfg), soundFor(s)))
+        }
+        out.sortBy { it.distanceM }
+        spotsAhead = out.take(2)
+    }
+
     private fun updateApproaches(f: Fix, joltSinceFix: Double) {
+        updateSpotsAhead(f)
         val moving = f.speedMps >= 1.5
         val alertDist = (f.speedMps * cfg.leadSeconds).coerceIn(cfg.minAlertDistM, cfg.maxAlertDistM)
         for (b in bumps) watch(b, false, f, joltSinceFix, moving, alertDist)
@@ -864,6 +1374,16 @@ class BumpEngine(
             return
         }
 
+        // Approach beeps going on: follow the spot, or end them (slower, muted, turned away).
+        if (a.seqSpot != null && !a.seqDone) {
+            val dt = (f.timeMs - a.seqFixMs) / 1000.0
+            a.seqDecel = if (dt > 0 && dt <= 3.0) (a.seqMps - f.speedMps) / dt else 0.0
+            a.seqRising = f.speedMps > a.seqMps + 0.3
+            a.seqSpot = b; a.seqDist = d; a.seqMps = f.speedMps; a.seqFixMs = f.timeMs
+            a.seqBrakeAtLag = brakeIntAt(f.timeMs - (cfg.approachGpsLagS * 1000).toLong())
+            if (!warnable(b) || aheadDiff > 90.0 || !cfg.approachBeeps) a.seqDone = true
+        }
+
         // Beep: close enough for our speed, straight ahead, on our side of the road, not muted.
         val crossTrack = d * sin(degToRad(aheadDiff))
         if (!a.beeped && moving && dirDiff <= cfg.headingTolDeg && d <= alertDist &&
@@ -897,9 +1417,91 @@ class BumpEngine(
                 val cluster = clusterAhead(b, d, f)
                 val note = (if (remote) "remote " else "") + sound.name.lowercase() + (if (cluster != null) " group of ${cluster.count}" else "")
                 log("beep", logId, f.lat, f.lon, speedKmh, Double.NaN, Double.NaN, d, note)
+                // Approach beeps wait for this warning: a voice until it is spoken, beeps for a fixed hold.
+                val voice = sound.voice || cluster != null
+                approachHoldUntilMs = f.timeMs + if (voice) cfg.approachVoiceMaxMs else cfg.approachHoldMs
+                if (cfg.approachBeeps && sound != WarnSound.SOFT && speedKmh >= cfg.approachFastKmh) {
+                    a.seqSpot = b; a.seqDist = d; a.seqMps = f.speedMps; a.seqFixMs = f.timeMs; a.seqDecel = 0.0
+                    a.seqBrakeAtLag = brakeIntAt(f.timeMs - (cfg.approachGpsLagS * 1000).toLong()); a.seqRising = false
+                    a.nextBeepMs = if (voice) f.timeMs else f.timeMs + cfg.approachDelayMs
+                }
                 listener.onWarning(Warning(b, d, speedKmh, sound, cluster))
             }
         }
+    }
+
+    /**
+     * Approach beeps, on the sensor clock: the nearest spot with a sequence going on beeps when it is due. Its distance
+     * is carried on from the last fix at that fix's speed.
+     */
+    private fun approachBeep(tMs: Long) {
+        var best: Approach? = null
+        var bestD = Double.MAX_VALUE
+        var bestMps = 0.0
+        for (a in approaches.values) {
+            if (a.seqSpot == null || a.seqDone) continue
+            val sinceS = (tMs - a.seqFixMs) / 1000.0
+            val d = a.seqDist - a.seqMps * sinceS
+            // The GPS speed is ~1 s late: take off the deceleration over that lag and since the fix.
+            val byGps = a.seqMps - max(0.0, a.seqDecel) * (cfg.approachGpsLagS + sinceS)
+            val felt = if (a.seqRising && fwdBrake == null) 0.0 else brakeInt - a.seqBrakeAtLag
+            val mps = min(byGps, a.seqMps - felt)
+            if (d <= cfg.approachEndM || mps * 3.6 < cfg.approachFastKmh) { a.seqDone = true; continue }
+            if (d < bestD) { bestD = d; best = a; bestMps = mps }
+        }
+        val a = best ?: return
+        if (tMs < a.nextBeepMs || tMs < approachHoldUntilMs) return
+        a.nextBeepMs = tMs + cfg.approachIntervalMs(bestD)
+        listener.onApproachBeep(a.seqSpot!!, bestD, bestMps * 3.6)
+    }
+
+    // Braking felt by the accelerometer, integrated (m/s), with its recent history for [brakeIntAt].
+    private var brakeInt = 0.0
+    private var brkX = 0.0; private var brkY = 0.0; private var brkZ = 0.0   // horizontal push, fast low-pass
+    private var fwdBrake: Double? = null   // the last sample's braking along the learned forward axis, if learned
+    private val brakeHist = ArrayDeque<Pair<Long, Double>>()
+    private val brkFwd = DoubleArray(3)
+
+    private fun noteBraking(tMs: Long, dt: Double, hx: Double, hy: Double, hz: Double, aFast: Double) {
+        brkX += aFast * (hx - brkX); brkY += aFast * (hy - brkY); brkZ += aFast * (hz - brkZ)
+        val f = brkFwd
+        fwdBrake = if (forwardInto(f)) max(0.0, -(brkX * f[0] + brkY * f[1] + brkZ * f[2])) else null
+        val push = fwdBrake ?: sqrt(brkX * brkX + brkY * brkY + brkZ * brkZ).let { if (it >= cfg.approachBrakeDeadMs2) it else 0.0 }
+        brakeInt += push * dt
+        brakeHist.addLast(tMs to brakeInt)
+        while (brakeHist.size > 1 && brakeHist.first().first < tMs - 5000) brakeHist.removeFirst()
+        fwdBrake?.let { fwdBrakeInt += it * dt }
+        fwdHist.addLast(tMs to fwdBrakeInt)
+        while (fwdHist.size > 1 && fwdHist.first().first < tMs - 10_000) fwdHist.removeFirst()
+    }
+
+    // Braking felt along the learned forward axis only, integrated (m/s), for [speedDropKmh].
+    private var fwdBrakeInt = 0.0
+    private val fwdHist = ArrayDeque<Pair<Long, Double>>()
+
+    /** [fwdBrakeInt] as it was at [tMs] (the oldest kept if earlier). */
+    private fun fwdBrakeAt(tMs: Long): Double {
+        var v = fwdHist.firstOrNull()?.second ?: fwdBrakeInt
+        for ((t, i) in fwdHist) { if (t > tMs) break; v = i }
+        return v
+    }
+
+    /** [brakeInt] as it was at [tMs] (the oldest kept if earlier). */
+    private fun brakeIntAt(tMs: Long): Double {
+        var v = brakeHist.firstOrNull()?.second ?: brakeInt
+        for ((t, i) in brakeHist) { if (t > tMs) break; v = i }
+        return v
+    }
+
+    /** Until then no approach beep (a warning is playing). */
+    private var approachHoldUntilMs = Long.MIN_VALUE / 4
+
+    /**
+     * The app finished speaking a warning (or its sound fell back to beeps): approach beeps may follow
+     * [EngineConfig.approachAfterVoiceMs] from now. Call on the engine thread.
+     */
+    fun warningSpoken() {
+        approachHoldUntilMs = min(approachHoldUntilMs, lastAccelMs + cfg.approachAfterVoiceMs)
     }
 
     /**
@@ -914,6 +1516,7 @@ class BumpEngine(
     /** A "maybe" spot gets one soft beep whatever its severity; a confirmed one the sound of its band. */
     private fun soundFor(b: Bump): WarnSound =
         if (b.confidence(cfg) == Confidence.SOFT) WarnSound.SOFT
+        else if (b.shape == BumpShape.LONG_FLAT) WarnSound.STRONG   // "very hard or long": 3 beeps and the voice
         else when (b.severity(cfg)) {
             Severity.MILD -> WarnSound.MILD
             Severity.MODERATE -> WarnSound.MODERATE
@@ -945,7 +1548,19 @@ class BumpEngine(
             if (along < -cfg.matchRadiusM || along > cfg.clusterRangeM || gap * sin(off) > cfg.maxCrossTrackM) continue
             members.add(s to ds)
         }
-        if (members.size < cfg.clusterMinExtra) return null
+        if (members.size < cfg.clusterMinExtra) {
+            // A row of humps: each within rowMaxGapM of the one before it, from the warned one on.
+            val row = ArrayList<Pair<Bump, Double>>()
+            var prev = firstDist
+            for (m in members.sortedBy { it.second }) {
+                if (m.second - prev > cfg.rowMaxGapM) break
+                row.add(m)
+                prev = m.second
+            }
+            if (row.isEmpty()) return null
+            members.clear()
+            members.addAll(row)
+        }
 
         // Silent until about when you get there (twice the time at today's speed, plus a margin); cleared
         // earlier if you turn round or drive away from it.
@@ -957,6 +1572,13 @@ class BumpEngine(
     private fun finishPass(b: Bump, a: Approach, f: Fix) {
         if (ring != null && !a.hit) nearMs[b.id] = Near(a.minDistMs, passKmh(a, f), a.maxJoltNear)
         val nearNote = "strongest jolt nearby ${formatFixed(a.maxJoltNear, 1)} m/s²"
+        val near = phone.cfg.marginMs
+        if (!a.counted && !a.hit && phone.untrusted(a.minDistMs - near, a.minDistMs + near)) {
+            // The phone was in someone's hand over the spot: its jolts weren't trusted, so the pass says nothing.
+            log("pass_handled", b.id, f.lat, f.lon, passKmh(a, f), a.maxJoltNear, Double.NaN, a.minDist, "not counted, phone handled")
+            listener.onPassed(b, false)
+            return
+        }
         if (!a.counted && !a.hit && a.minSpeedNearMps * 3.6 < cfg.minInformativeKmh) {
             // Crawled over it without feeling anything: can't tell, so it counts neither way.
             log("pass_slow", b.id, f.lat, f.lon, a.minSpeedNearMps * 3.6, a.maxJoltNear, Double.NaN, a.minDist, "not counted, $nearNote")
@@ -1040,7 +1662,10 @@ class BumpEngine(
          */
         fun remoteSpotId(bumpId: Long): Long? = if (bumpId <= -2L) -2L - bumpId else null
 
-        /** Sample buffer size: ≥ 2.5 s even if the phone delivers 200 samples per second. */
-        private const val BUF = 512
+        /** Sample buffer size: ≥ 7.5 s even at 200 samples per second (the axle signature's span at a crawl, E4b). */
+        private const val BUF = 1536
+
+        /** [AxleResult.reason]s where the axle check could not look: no evidence either way. */
+        val AXLE_BLIND = setOf("window", "slow", "no_data", "fast", "ringing")
     }
 }

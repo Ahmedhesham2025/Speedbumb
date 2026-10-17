@@ -18,7 +18,8 @@ import kotlin.math.roundToLong
  *  - **trim:** every line outside the app's own upload window ([ResearchTrim.window], #115: the first and last 300 m
  *    driven and 300 m around where the trip started and ended; never less);
  *  - **place:** the first kept fix moves to the fake origin (0.5, 0.5); every other one keeps its distance and bearing
- *    from it ([Anonymizer.shift]), so headings and distances stay true. Altitude becomes relative to that fix;
+ *    from it ([Anonymizer.shift]), so headings and distances stay true. Altitude becomes relative to that fix, and
+ *    barometric pressure (`pa`, which gives the elevation away) relative to the first kept reading;
  *  - **time:** the kept part starts at t = 0; the wall clock starts at [FAKE_START_UTC_MS], the monotonic one at 0;
  *  - **header:** only [KEEP_META], the code table, and of each sensor its rates and ranges ([KEEP_SENSOR]); never the
  *    research id, trip id, device or the sensor chips' names;
@@ -50,6 +51,8 @@ object Rr2Anonymizer {
         val fixes = kept.filter { it.code == ResearchFormat.GPS.code && !it.value(0).isNaN() && !it.value(1).isNaN() }
         val origin = fixes.minByOrNull { it.tDms } ?: throw IllegalArgumentException("no GPS fix in the kept part")
         val alt0 = fixes.sortedBy { it.tDms }.map { it.value(2) }.firstOrNull { !it.isNaN() } ?: Double.NaN
+        val pa0 = kept.filter { it.code == ResearchFormat.PRESSURE.code }.sortedBy { it.tDms }
+            .map { it.value(0) }.firstOrNull { !it.isNaN() } ?: Double.NaN
 
         val out = ArrayList<String>()
         for ((k, v) in parts.first().second.meta) {
@@ -76,6 +79,9 @@ object Rr2Anonymizer {
                     f[1] = (p[1] * 1e7).roundToLong().toString()
                 }
                 if (f.size >= 3) f[2] = r.value(2).let { if (it.isNaN() || alt0.isNaN()) "" else ((it - alt0) * 100).roundToLong().toString() }
+            }
+            if (r.code == ResearchFormat.PRESSURE.code && f.isNotEmpty()) {
+                f[0] = r.value(0).let { if (it.isNaN() || pa0.isNaN()) "" else ((it - pa0) * ResearchFormat.PRESSURE.scales[0]).roundToLong().toString() }
             }
             out.add((listOf((r.tDms - w.fromT).toString(), r.code) + f).joinToString(","))
         }
@@ -107,6 +113,10 @@ object Rr2Anonymizer {
         val fields = out.filter { !it.startsWith("#") }.flatMap { it.split(',').drop(2) }
         val n = fields.count { it in coords }
         if (n > 0) bad.add("$n field(s) equal to an original latitude or longitude")
+        val pressures = HashSet<String>()
+        for (p in parts) for (r in p.records) if (r.code == ResearchFormat.PRESSURE.code) r.fields.firstOrNull()?.takeIf { it.length >= 5 }?.let { pressures.add(it) }
+        val np = out.filter { !it.startsWith("#") }.map { it.split(',') }.count { it.getOrNull(1) == ResearchFormat.PRESSURE.code && it.getOrNull(2) in pressures }
+        if (np > 0) bad.add("$np absolute pressure reading(s)")
         val text = out.joinToString("\n")
         val meta = parts.first().meta
         val secrets = listOf(ResearchFormat.RESEARCH_ID, ResearchFormat.TRIP_ID, "device", ResearchFormat.START_UTC_MS, ResearchFormat.START_ELAPSED_NS)
@@ -127,6 +137,7 @@ object Rr2Anonymizer {
     fun problems(lines: List<String>): List<String> {
         val out = ArrayList<String>()
         var minT = Long.MAX_VALUE
+        var firstPa: Long? = null
         for ((n, line) in lines.withIndex()) {
             if (line.isBlank()) continue
             if (line.startsWith("#")) {
@@ -145,6 +156,10 @@ object Rr2Anonymizer {
             val p = line.split(',')
             val t = p.getOrNull(0)?.toLongOrNull() ?: continue
             if (t < minT) minT = t
+            if (p.getOrNull(1) == ResearchFormat.PRESSURE.code && firstPa == null) {
+                firstPa = p.getOrNull(2)?.toLongOrNull()
+                if (firstPa != null && firstPa != 0L) out.add("line ${n + 1}: an absolute pressure (the elevation)")
+            }
             if (p.getOrNull(1) != ResearchFormat.GPS.code) continue
             val lat = p.getOrNull(2)?.toLongOrNull()?.div(1e7)
             val lon = p.getOrNull(3)?.toLongOrNull()?.div(1e7)

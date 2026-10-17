@@ -29,6 +29,16 @@ enum class Severity(val label: String) {
     }
 }
 
+/**
+ * A hump's shape (E4c, [EngineConfig.shapeQuietM]): short and steep, long with a flat top (a plateau the car stands
+ * on, warned like a strong bump), or low.
+ */
+enum class BumpShape { SHORT_STEEP, LONG_FLAT, LOW;
+    companion object {
+        fun of(name: String?): BumpShape? = entries.firstOrNull { it.name == name }
+    }
+}
+
 /** How sure the app is about a spot: a [SOFT] one warns with one soft beep ("maybe"), a [FULL] one by its severity. */
 enum class Confidence(val label: String) {
     /** Felt once, or an old pothole spot ([Bump.legacy]) not felt since. */
@@ -63,12 +73,17 @@ class Bump(
      * as [peakAvg] (m/s²); E2 feeds it a speed-normalised vibration index instead.
      */
     var sevIndex: Double = 0.0,
-    /** Hits where both axles were felt (front wheels, then the rear ones a wheelbase later). 0 until E2 detects them. */
+    /**
+     * Confirmations by the car's own signature: 1 per hit with both axles felt (or a strong jolt with axle evidence and a
+     * slowdown, E2); a crossing with the V speed profile and UP or both axles (E4) brings it to at least 2.
+     */
     var axleHits: Int = 0,
     /** An old pothole spot (from before v2, your own or shared): only a soft "maybe" until it is felt again. */
     var legacy: Boolean = false,
     /** The band [severity] settled on when [sevIndex] last changed: the memory for its hysteresis. Null = none yet. */
     var lastBand: Severity? = null,
+    /** Its shape as the last hit that could tell showed it (E4c); null = unknown. */
+    var shape: BumpShape? = null,
 ) {
     val hitRate: Double get() = if (passes <= 0) 1.0 else hits.toDouble() / passes
 
@@ -81,7 +96,7 @@ class Bump(
      */
     fun confidence(cfg: EngineConfig): Confidence = when {
         legacy -> Confidence.SOFT
-        hits >= 2 || (axleHits >= 1 && severity(cfg) == Severity.STRONG) -> Confidence.FULL
+        hits >= 2 || axleHits >= 2 || (axleHits >= 1 && severity(cfg) == Severity.STRONG) -> Confidence.FULL
         else -> Confidence.SOFT
     }
 
@@ -115,7 +130,7 @@ class Bump(
 
     fun copy() = Bump(
         id, lat, lon, heading, hits, passes, misses, nPos, firstSeen, lastSeen, userMuted,
-        peakAvg, sevIndex, axleHits, legacy, lastBand,
+        peakAvg, sevIndex, axleHits, legacy, lastBand, shape,
     )
 }
 
@@ -135,7 +150,7 @@ class Fix(
 class BumpEvent(
     val wallTime: Long,
     val tripId: Long,
-    /** new_bump, hit, hit_repeat, miss, pass_slow, beep, beep_quiet, beep_grouped, rejected, user_mute */
+    /** new_bump, hit, hit_repeat, miss, pass_slow, pass_handled, beep, beep_quiet, beep_grouped, rejected, user_mute */
     val type: String,
     val bumpId: Long,
     val lat: Double,
@@ -175,16 +190,27 @@ interface BumpStore {
     fun logEvent(e: BumpEvent)
 }
 
-/** How a warning should sound. The engine picks it (so it can be tested); the app plays it. */
-enum class WarnSound {
+/** How a warning should sound: [beeps] beeps, then the voice if [voice]. The engine picks it (so it can be tested); the app plays it. */
+enum class WarnSound(val beeps: Int, val voice: Boolean = false) {
     /** A spot that is only a "maybe" ([Confidence.SOFT]), whatever its severity: one soft, short beep. */
-    SOFT,
+    SOFT(1),
     /** Mild bump: one beep. */
-    MILD,
+    MILD(1),
     /** Moderate bump: two beeps. */
-    MODERATE,
-    /** Strong bump: the voice says "Strong bump ahead." ([Phrases.strongBump]). */
-    STRONG,
+    MODERATE(2),
+    /**
+     * Strong bump: three beeps, then the voice says "Strong bump ahead." ([Phrases.strongBump]). A long flat-topped hump
+     * ([BumpShape.LONG_FLAT], E4c) gets the same, whatever its band.
+     */
+    STRONG(3, voice = true),
+}
+
+/**
+ * A spot coming up on the road ahead, for the Drive card ([BumpEngine.spotsAhead]): how far, its band, whether it is
+ * confirmed or only a "maybe", and how many beeps its warning plays ([WarnSound.beeps]).
+ */
+class SpotAhead(val spot: Bump, val distanceM: Double, val severity: Severity, val confidence: Confidence, val sound: WarnSound) {
+    val beeps: Int get() = sound.beeps
 }
 
 /** Several known spots close together ahead: announced once by voice ("3 bumps ahead") instead of one sound each. */
@@ -218,6 +244,12 @@ interface EngineListener {
     /** A warning ahead, with the sound to play. By default it is handed on to [onBeep]. */
     fun onWarning(w: Warning) { onBeep(w.spot, w.distanceM, w.speedKmh) }
     fun onBeep(b: Bump, distanceM: Double, speedKmh: Double) {}
+    /**
+     * Approach beep: after its warning, the driver is still too fast for spot [b] ([EngineConfig.approachFastKmh]):
+     * play one short beep now. They come faster as the spot nears ([EngineConfig.approachIntervalMs]), parking-sensor
+     * style, and stop for good once the driver slows down, the spot is reached or it is muted. Bumps only.
+     */
+    fun onApproachBeep(b: Bump, distanceM: Double, speedKmh: Double) {}
     fun onPassed(b: Bump, felt: Boolean) {}
     fun onJoltRejected(peak: Double, reason: String) {}
 }

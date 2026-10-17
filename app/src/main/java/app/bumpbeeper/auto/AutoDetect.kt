@@ -16,8 +16,8 @@ import app.bumpbeeper.Prefs
  *
  * How it detects:
  *  - play edition with Google Play services and the "physical activity" permission: Google's IN_VEHICLE enter/exit
- *    ([VehicleActivity]). Nothing of ours runs in between; Android lets an activity transition start recording.
- *  - otherwise (foss edition, or no Google): BumpService stays in the foreground with a quiet "ready to detect
+ *    ([VehicleActivity]). Android lets an activity transition start recording.
+ *  - always (foss and play): BumpService stays in the foreground with a quiet "ready to detect
  *    driving" notification and [DriveWatcher] waits for the significant-motion sensor, then checks speed by GPS.
  * Both need background location ("Allow all the time"): recording then starts while the app is closed.
  */
@@ -77,10 +77,10 @@ object AutoDetect {
             return
         }
         // Requested again on every call (app resume, boot, update): Google drops it when its data is cleared.
-        VehicleActivity.start(app) { ok ->
-            if (ok) BumpService.unwatch(app)   // Google watches; no need to keep our service up
-            else BumpService.watch(app)
-        }
+        VehicleActivity.start(app) {}
+        // Our own detection runs too, also next to Google's: Google's in-vehicle transition comes late or not at all
+        // on some phones (Doze, low confidence), and without the car's Bluetooth that was a missed trip.
+        BumpService.watch(app)
     }
 
     private fun hasMotionSensor(ctx: Context): Boolean =
