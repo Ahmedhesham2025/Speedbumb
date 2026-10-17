@@ -1093,7 +1093,7 @@ class BumpService : Service(), SensorEventListener, LocationListener, EngineList
             LiveState.accuracyM = f.accuracyM
             LiveState.lastFixAtMs = SystemClock.elapsedRealtime()
         }
-        LiveState.bumpsOnMap = eng.bumps.size
+        LiveState.bumpsOnMap = eng.bumps.count { !it.isRetired(eng.cfg) }
         LiveState.mutedBumps = eng.mutedCount
         val tr = eng.trip
         LiveState.tripHits = tr.hits
