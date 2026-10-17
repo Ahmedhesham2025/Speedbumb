@@ -109,6 +109,15 @@ class SelfCleaningTest {
             "passes beside it are not clean")
     }
 
+    /** The closest fix must also be within 12 m: a road 15 m off with its heading noise never counts. */
+    @Test fun theClosestFixMustBeNear() {
+        confirmed()
+        repeat(5) { pass(DriveSpec(sideOffsetM = 13.0)) }
+        assertEquals(0, spot().missStreak, store.events.filter { it.type == "miss" }.joinToString { it.note })
+        assertEquals(5, EngineConfig().retireAfterMisses)
+        assertEquals(12.0, cfg.cleanMaxDistM)
+    }
+
     /** A bump taken at 70 km/h every day (its jolt rejected as too fast) is not passed clean. */
     @Test fun aBumpTakenTooFastIsNotPassedClean() {
         stored(700.0)

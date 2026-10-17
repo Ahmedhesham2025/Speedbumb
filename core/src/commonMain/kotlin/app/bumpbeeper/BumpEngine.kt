@@ -157,6 +157,8 @@ class EngineConfig {
      * Other passes still count as passes and misses, but hold the streak.
      */
     var cleanMaxCrossM = 8.0
+    /** ...and the closest fix came within this of it at all (heading noise can make a road 15 m off look on-track). */
+    var cleanMaxDistM = 12.0
     var cleanMaxAccM = 10.0
     var cleanAfterHitMs = 5500L
     /** Felt this many times only as a weak, down-first jolt, and never otherwise: retired ([Bump.weakDownHits]). */
@@ -941,7 +943,7 @@ class BumpEngine(
 
     /** Why the pass of [b] is not clean, or null if it is. */
     private fun notClean(b: Bump, a: Approach): String? = when {
-        a.minCross > cfg.cleanMaxCrossM || a.minCrossAccM > cfg.cleanMaxAccM -> "beside it"
+        a.minCross > cfg.cleanMaxCrossM || a.minCrossAccM > cfg.cleanMaxAccM || a.minDist > cfg.cleanMaxDistM -> "beside it"
         a.feltRejected -> "jolt rejected"
         a.maxJoltNear >= cfg.joltThreshold -> "jolt nearby"
         recentHits.any { it.second != b.id && abs(a.minDistMs - it.first) <= cfg.cleanAfterHitMs } -> "another spot hit"
