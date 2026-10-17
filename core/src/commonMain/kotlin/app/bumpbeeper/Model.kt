@@ -150,7 +150,7 @@ class Fix(
 class BumpEvent(
     val wallTime: Long,
     val tripId: Long,
-    /** new_bump, hit, hit_repeat, miss, pass_slow, pass_handled, beep, beep_quiet, beep_grouped, rejected, user_mute */
+    /** new_bump, hit, hit_repeat, miss, pass_slow, pass_handled, beep, beep_quiet, beep_grouped, rejected, user_mute, osm_clear (a clean pass over an OpenStreetMap bump) */
     val type: String,
     val bumpId: Long,
     val lat: Double,

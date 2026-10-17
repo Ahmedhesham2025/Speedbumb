@@ -224,6 +224,8 @@ class Simulator(seed: Long) {
         muteEveryBeep: Boolean = false,
         /** The engine's learned car (E2); a fresh one by default. */
         vehicle: VehicleProfile = VehicleProfile(),
+        /** OpenStreetMap bumps (off by default). */
+        osmSource: OsmSource? = null,
     ): TripResult {
         val len = spec.roadM
         fun travel(p: Double) = if (spec.westbound) len - p else p   // road position ↔ distance travelled
@@ -274,7 +276,7 @@ class Simulator(seed: Long) {
             override fun onJoltRejected(peak: Double, reason: String) { rejected.add(reason) }
         }
         val engine = BumpEngine(cfg, sink, listener, { 1_700_000_000_000L + (t * 1000).toLong() }, tripId, spotSource, observationSink,
-            vehicle = vehicle)
+            vehicle = vehicle, osmSource = osmSource)
         monitor = DrivingMonitor(drivingCfg, engine) { type, lat, lon, kmh, value, note ->
             sink.logEvent(BumpEvent(1_700_000_000_000L + (t * 1000).toLong(), tripId, type, -1, lat, lon, kmh, Double.NaN, value, Double.NaN, Double.NaN, note))
         }
