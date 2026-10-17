@@ -22,6 +22,11 @@ object Replayer {
         cfg: EngineConfig = EngineConfig(),
         drivingCfg: DrivingConfig = DrivingConfig(),
         tripId: Long = 1L,
+        /**
+         * Before each sample: set the phone's own signals ([PhoneStateDetector.signals]: screen, unlock, proximity,
+         * light, call, …) as they were at that time, like the app's PhoneFeed. Default: none (a trace without them).
+         */
+        signals: (tMs: Long, s: PhoneSignals) -> Unit = { _, _ -> },
     ): ReplayResult {
         val events = ArrayList<BumpEvent>()
         val logging = object : BumpStore by store {
@@ -50,6 +55,7 @@ object Replayer {
         var gyroSeen = false
         for (s in samples.sortedBy { it.tMs }) {   // stable: rows with the same time keep their order
             nowMs = s.tMs
+            signals(s.tMs, eng.phone.signals)
             when (s) {
                 is TraceSample.Accel -> {
                     val hasGyro = !s.gx.isNaN() && !s.gy.isNaN() && !s.gz.isNaN()

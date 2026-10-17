@@ -10,7 +10,7 @@ import java.io.File
 import java.io.InputStream
 import java.util.zip.GZIPInputStream
 
-/** A phone-state line of a research recording (`scr`, `unl`, `aud`, `px`, `lx`), in the contract's units; NaN = empty. */
+/** A phone-state line of a research recording ([Rr2.PHONE_CODES]), in the contract's units; NaN = empty. */
 class PhoneLine(val tMs: Long, val code: String, val values: List<Double>)
 
 /**
@@ -24,7 +24,7 @@ class Rr2Trip(
     val meta: Map<String, String>,
     /** In time order: accelerometer bins carrying the latest gyroscope bin, GPS fixes, labels. For core's Replayer. */
     val samples: List<TraceSample>,
-    /** `scr`, `unl`, `aud`, `px`, `lx` in time order. */
+    /** [Rr2.PHONE_CODES] lines in time order: replayed into the engine's PhoneSignals ([PhoneSignalFeed]). */
     val phone: List<PhoneLine>,
     /** The gravity sensor (`gr`): time ms, x, y, z in m/s². The engine finds gravity itself; kept for comparison. */
     val gravity: List<DoubleArray>,
@@ -41,8 +41,8 @@ class Rr2Trip(
 }
 
 object Rr2 {
-    /** Codes of the phone's own state, for E3's PhoneSignals. */
-    val PHONE_CODES = setOf("scr", "unl", "aud", "px", "lx")
+    /** Codes of the phone's own state, for E3's PhoneSignals ([PhoneSignalFeed]). */
+    val PHONE_CODES = setOf("scr", "unl", "aud", "px", "lx", "lk", "bat")
 
     /** The engine's default sensor period (Prefs.sensorPeriodUs): 50 Hz asked, ≤ 100 Hz while research records. */
     const val DEFAULT_SENSOR_PERIOD_US = 20_000
