@@ -63,8 +63,10 @@ class CalibrationTest {
             calibration = PhoneCalibration.decode(learn(noise = 0.8).encode()))
         assertTrue(noisy.newBumps >= 3, "noisy phone, calibrated: ${noisy.newBumps} bumps, rejected ${noisy.rejected}")
         val stiff = DriveSpec(bumpsAt = bumps, bumpKmh = 15.0, phoneGain = 0.5)
-        val raw = Simulator(602).drive(MemoryStore(), stiff).newBumps
-        val cal = Simulator(602).drive(MemoryStore(), stiff, calibration = PhoneCalibration.decode(learn(gain = 0.5).encode())).newBumps
-        assertTrue(cal >= raw && cal >= 3, "stiff mount: $cal bumps calibrated, $raw without")
+        val rawR = Simulator(602).drive(MemoryStore(), stiff)
+        val calR = Simulator(602).drive(MemoryStore(), stiff, calibration = PhoneCalibration.decode(learn(gain = 0.5).encode()))
+        val raw = rawR.newBumps
+        val cal = calR.newBumps
+        assertTrue(cal >= raw && cal >= 3, "stiff mount: $cal bumps calibrated (rejected ${calR.rejected}), $raw without (rejected ${rawR.rejected})")
     }
 }
