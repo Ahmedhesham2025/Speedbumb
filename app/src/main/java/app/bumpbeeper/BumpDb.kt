@@ -21,7 +21,7 @@ import kotlin.math.roundToInt
  * plus the shared-map sync tables (outbox, remote_spots, osm_bumps, sync_state), see [SyncStore], and the training outbox
  * ("Help improve detection"), see [TrainingStore].
  */
-class BumpDb(ctx: Context) : SQLiteOpenHelper(ctx, "bumps.db", null, 11), BumpStore {
+class BumpDb(ctx: Context) : SQLiteOpenHelper(ctx, "bumps.db", null, 10), BumpStore {
 
     init {
         setWriteAheadLoggingEnabled(true)
@@ -103,6 +103,16 @@ class BumpDb(ctx: Context) : SQLiteOpenHelper(ctx, "bumps.db", null, 11), BumpSt
         )) db.execSQL("ALTER TABLE trips ADD COLUMN $c")
     }
 
+    /**
+     * The OpenStreetMap bump cache ([SyncStore.createOsmTable]) is made on every open when it is missing, not by a
+     * version step: a cache table of public data, added to a database of any version (and whichever other migration
+     * takes the next version number), filled again by the next sync.
+     */
+    override fun onOpen(db: SQLiteDatabase) {
+        super.onOpen(db)
+        if (!db.isReadOnly) SyncStore.createOsmTable(db)
+    }
+
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
         if (oldVersion < 2) {
             // Version 2: speed bump / pothole score. Existing bumps start as "unsure" and learn on the next pass.
@@ -137,8 +147,6 @@ class BumpDb(ctx: Context) : SQLiteOpenHelper(ctx, "bumps.db", null, 11), BumpSt
         if (oldVersion < 9) addBreakdownColumns(db)
         // Version 10: a hump's shape (E4c); spots saved before have none until they are hit again.
         if (oldVersion < 10) addShapeColumn(db)
-        // Version 11: the OpenStreetMap bump cache (filled by the next sync). New table only.
-        if (oldVersion < 11) SyncStore.createOsmTable(db)
     }
 
     private fun addShapeColumn(db: SQLiteDatabase) {

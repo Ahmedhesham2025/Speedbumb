@@ -20,7 +20,7 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
 import org.robolectric.annotation.Config
 
-/** OpenStreetMap bumps, phone side: download with the shared spots, the cache table (v11), fallback and the setting. */
+/** OpenStreetMap bumps, phone side: download after the shared spots, the cache table, fallback and the setting. */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34])
 class OsmBumpsSyncTest {
@@ -72,6 +72,7 @@ class OsmBumpsSyncTest {
         Prefs.setSyncChoice(ctx, Prefs.SYNC_RECEIVE)
         val net = Backend(HttpResult(200, rows))
         assertFalse("no retry", Sync.run(ctx, true, lat0, lon0, net))
+        Sync.runOsm(ctx, net)   // the same job, right after the run
         assertTrue(net.calls.indexOf("osm_bumps_near") > net.calls.indexOf("spots_near_v2"))
         assertEquals("rows without an id or a position are skipped", listOf("n11", "w12"), ids())
         assertEquals("hump", store.osmBumpsInBox(30.0401, 31.2401, 10.0).single().kind)
@@ -89,9 +90,22 @@ class OsmBumpsSyncTest {
     @Test fun anyOtherFailureKeepsTheCacheAndNeverFailsTheRun() {
         Prefs.setSyncChoice(ctx, Prefs.SYNC_RECEIVE)
         store.replaceOsmBumps(lat0, lon0, 10_000.0, SupabaseApi.parseOsmBumps(rows), 1L)
-        assertFalse("no retry", Sync.run(ctx, true, lat0, lon0, Backend(HttpResult(503, "busy"))))
+        val net = Backend(HttpResult(503, "busy"))
+        assertFalse("no retry", Sync.run(ctx, true, lat0, lon0, net))
+        Sync.runOsm(ctx, net)
+        assertTrue("osm_bumps_near" in net.calls)
         assertEquals(listOf("n11", "w12"), ids())
         assertFalse("the shared spots still count as downloaded", LiveState.spotsFailed)
+    }
+
+    @Test fun offlineOrUnansweredAsksNothing() {
+        val net = Backend(HttpResult(200, rows))
+        Sync.runOsm(ctx, net)   // shared map not answered yet: no network at all
+        Prefs.setSyncChoice(ctx, Prefs.SYNC_RECEIVE)
+        Sync.runOsm(ctx, net)   // no trip position yet
+        store.put("pos_lat", lat0); store.put("pos_lon", lon0); store.put("spots_failed", 1)
+        Sync.runOsm(ctx, net)   // the shared spots failed (offline): the cache stays
+        assertEquals(emptyList<String>(), net.calls)
     }
 
     @Test fun aRefreshKeepsCleanPassesAndDropsWhatTheServerNoLongerHas() {
@@ -127,11 +141,11 @@ class OsmBumpsSyncTest {
         assertEquals(0, store.osmBumpCount())
     }
 
-    @Test fun upgradeFromV10AddsTheTable() {
+    @Test fun anOlderDatabaseGetsTheTableOnOpen() {
         store.replaceOsmBumps(lat0, lon0, 10_000.0, SupabaseApi.parseOsmBumps(rows), 1L)
         store.outboxAdd(listOf("obs-1" to "{}"), 1, 1L)
         db.close()
-        // A version 10 database: today's schema without osm_bumps.
+        // A database from before: today's schema without osm_bumps (it takes no version step, BumpDb.onOpen).
         val file = ctx.getDatabasePath("bumps.db")
         SQLiteDatabase.openDatabase(file.path, null, SQLiteDatabase.OPEN_READWRITE).use { old ->
             old.execSQL("DROP TABLE osm_bumps")
@@ -139,7 +153,7 @@ class OsmBumpsSyncTest {
         }
         db = BumpDb(ctx)
         store = SyncStore(db)
-        assertEquals(11, db.writableDatabase.version)
+        assertEquals(10, db.writableDatabase.version)
         assertEquals(0, store.osmBumpCount())
         assertEquals("the rest is kept", 1, store.outboxCount())
         store.replaceOsmBumps(lat0, lon0, 10_000.0, SupabaseApi.parseOsmBumps(rows), 2L)

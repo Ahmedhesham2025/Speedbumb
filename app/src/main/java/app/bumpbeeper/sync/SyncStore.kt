@@ -10,10 +10,10 @@ import org.json.JSONObject
 import kotlin.math.cos
 
 /**
- * The sync tables inside bumps.db (database version 5; v8 added the spots_near_v2 columns of remote_spots, v11 osm_bumps):
+ * The sync tables inside bumps.db (database version 5; v8 added the spots_near_v2 columns of remote_spots):
  *  outbox       – hazard observations waiting for upload (already privacy-filtered), one JSON element each
  *  remote_spots – the cache of confirmed shared-map spots the engine warns for (filled in the background)
- *  osm_bumps    – the cache of OpenStreetMap speed bumps (v11): a prior the engine warns softly for ([CachedOsmSource]),
+ *  osm_bumps    – the cache of OpenStreetMap speed bumps (made on open, [BumpDb.onOpen]): a prior the engine warns softly for ([CachedOsmSource]),
  *                 with this phone's clean passes over each
  *  sync_state   – small key/value notes (last sync time, back-off, last position for the download), and the
  *                 held observations of unconfirmed trips ([holdAdd])
@@ -250,7 +250,7 @@ class SyncStore(internal val helper: SQLiteOpenHelper) {
         /** The clean passes a muted OSM bump gets: far past [app.bumpbeeper.EngineConfig.osmQuietAfterPasses]. */
         const val OSM_MUTED = 1000
 
-        /** Version 11: the OpenStreetMap bump cache. New table only; safe to repeat. */
+        /** The OpenStreetMap bump cache: a new table only, made on open when missing ([BumpDb.onOpen]); safe to repeat. */
         fun createOsmTable(db: SQLiteDatabase) {
             db.execSQL(
                 """CREATE TABLE IF NOT EXISTS osm_bumps(

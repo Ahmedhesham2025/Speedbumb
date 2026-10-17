@@ -28,7 +28,8 @@ import kotlin.math.roundToLong
  *
  * Nothing touches the network until the user answered the first-run screen ([Prefs.syncChoice] not "unset").
  * One run: sign in (anonymous) → register_device → upload the outbox and crash reports (choice "share" only)
- * → download confirmed spots within 10 km of the last trip position into the cache, and OpenStreetMap bumps ([pullOsm]).
+ * → download confirmed spots within 10 km of the last trip position into the cache. Then, in the same job, [runOsm]
+ * downloads the OpenStreetMap bumps of that circle.
  */
 object Sync {
     private const val TAG = "BumpBeeper"
@@ -370,11 +371,27 @@ object Sync {
         store.replaceRemoteSpots(lat, lon, PULL_RADIUS_M.toDouble(), rows, now)
         store.put(SPOTS_OK_AT, now)
         store.put(SPOTS_FAILED, null)
-        pullOsm(api, store, lat, lon, now)
     }
 
     /**
-     * OpenStreetMap bumps in the same circle, right after the shared spots (same runs, same offline cache). A server
+     * Right after [run], in the same job (same cadence): OpenStreetMap bumps for the circle of the shared spots, unless
+     * that download failed (offline: the cache stays). Its own step, so it never changes the run's status or retries.
+     */
+    fun runOsm(ctx: Context, transport: Transport = UrlTransport) = synchronized(lock) {
+        if (Prefs.syncChoice(ctx) == Prefs.SYNC_UNSET) return@synchronized
+        withDb(ctx) { db ->
+            val store = SyncStore(db)
+            val lat = store.getDouble(POS_LAT)
+            val lon = store.getDouble(POS_LON)
+            if (lat.isNaN() || lon.isNaN() || store.get(SPOTS_FAILED) != null) return@withDb
+            val api = SupabaseApi(BuildConfig.SUPABASE_URL, BuildConfig.SUPABASE_KEY, newAuth(ctx, transport), transport)
+            pullOsm(api, store, lat, lon, System.currentTimeMillis())
+            LiveState.osmBumps = store.osmBumpCount()
+        }
+    }
+
+    /**
+     * OpenStreetMap bumps in the same circle as the shared spots ([runOsm]). A server
      * without `osm_bumps_near` has none: the cache empties there. Any other failure keeps the cache as it was and
      * never fails the run: the shared map is what the status and the offline banner are about.
      */
