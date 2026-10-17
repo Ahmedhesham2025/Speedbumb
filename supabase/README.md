@@ -247,8 +247,11 @@ their own table, `osm_bumps`, and are **never mixed into `spots`** (crowd data s
   under the ODbL too (share-alike); the app's warnings are a *produced work* and need only the credit.
 - **Import** (owner, at most weekly, never in CI): `supabase/tools/osm/import_osm_bumps.ts` makes **one** Overpass query
   (`https://overpass-api.de/api/interpreter`, a descriptive User-Agent, no retry loop), refuses to run if the last
-  import is under 6 days old (`--force` overrides) or if fewer than half of the stored bumps came back, upserts in
-  batches of 5000 (`osm_bumps_import(batch, run_at)`, idempotent) and then deletes what the run no longer saw
+  import is under 6 days old (`--force` overrides; this holds for `--dry-run` too, which then queries nothing). It
+  imports **nothing and prunes nothing** when the answer is incomplete (Overpass can answer HTTP 200 with a `remark`,
+  e.g. a timeout, and only part of the elements) or has the wrong shape, or when fewer than 1,000 bumps or fewer than
+  90 % of the stored ones came back. Otherwise it upserts in batches of 5000 (`osm_bumps_import(batch, run_at)`,
+  idempotent; a repeated `osm_id` in one batch is `22023`) and then deletes what the run no longer saw
   (`osm_bumps_prune(run_at)`). `--dry-run` only counts. Size: ~5,800 rows, under 2 MB with the index.
 
   ```powershell

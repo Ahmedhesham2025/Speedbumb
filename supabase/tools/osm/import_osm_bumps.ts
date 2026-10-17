@@ -13,10 +13,25 @@ export const QUERY = `[out:json][timeout:180][bbox:${BBOX}];
 (node[traffic_calming~"${CALMING}"];way[traffic_calming~"${CALMING}"];node[highway=speed_bump];way[highway=speed_bump];);
 out center;`;
 const MIN_GAP_MS = 6 * 24 * 3600 * 1000;
+// Egypt had 5,803 in October 2026; an answer far below that is broken, even on the first import.
+export const MIN_BUMPS = 1000;
 
 export type OsmBump = { osm_id: string; lat: number; lon: number; kind: string };
 type Element = { type?: string; id?: number; lat?: number; lon?: number; center?: { lat?: number; lon?: number };
   tags?: Record<string, string> };
+
+/**
+ * Throws unless [json] is a complete Overpass answer. Overpass can answer HTTP 200 with a `remark` (timeout, out of
+ * memory) and only part of the elements; importing that would make the prune delete the rest.
+ */
+export function checkAnswer(json: unknown): { elements: Element[] } {
+  const j = json as { remark?: unknown; elements?: unknown; osm3s?: unknown } | null;
+  if (!j || typeof j !== "object" || !Array.isArray(j.elements) || typeof j.osm3s !== "object" || j.osm3s === null) {
+    throw new Error("Overpass answer has the wrong shape; not importing");
+  }
+  if (j.remark !== undefined) throw new Error(`Overpass answer is incomplete (${String(j.remark).slice(0, 200)}); not importing`);
+  return j as { elements: Element[] };
+}
 
 /** Overpass JSON -> rows for osm_bumps_import: nodes by position, ways by their centre; duplicates and others dropped. */
 export function toBumps(json: { elements?: Element[] }): OsmBump[] {
@@ -65,7 +80,7 @@ async function main() {
     return JSON.parse(text) as T;
   };
 
-  // Weekly at most: Overpass is a shared, donated service.
+  // Weekly at most: Overpass is a shared, donated service. This also holds for --dry-run (no query) unless --force.
   const status = await rpc<{ count: number; last_import: string | null }>("osm_bumps_status", {});
   const last = status.last_import ? Date.parse(status.last_import) : 0;
   if (!force && Date.now() - last < MIN_GAP_MS) {
@@ -79,10 +94,12 @@ async function main() {
     body: new URLSearchParams({ data: QUERY }),
   });
   if (!res.ok) throw new Error(`Overpass: HTTP ${res.status} (busy? try again in a few hours, not in a loop)`);
-  const bumps = toBumps(await res.json());
+  const bumps = toBumps(checkAnswer(await res.json()));
   console.log(`Overpass: ${bumps.length} bumps in the box (${status.count} stored now)`);
-  // A broken or empty answer must not wipe the table.
-  if (bumps.length < 0.5 * status.count) throw new Error("fewer than half of the stored bumps came back; not importing");
+  // A broken or short answer must not wipe the table (nor fill an empty one with a fraction).
+  if (bumps.length < MIN_BUMPS || bumps.length < 0.9 * status.count) {
+    throw new Error(`only ${bumps.length} bumps came back (${status.count} stored); not importing`);
+  }
   if (dryRun) return;
   let taken = 0;
   for (let i = 0; i < bumps.length; i += 5000) {

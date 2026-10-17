@@ -2,7 +2,7 @@
 -- (signed-in only, nearest first, radius capped at 10 km, at most 2000).
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(17);
+select plan(18);
 
 insert into auth.users (id, aud, role, email)
 values ('0b000000-0000-0000-0000-000000000001', 'authenticated', 'authenticated', 'osm@test.local');
@@ -50,6 +50,10 @@ select throws_ok($$ select public.osm_bumps_import(jsonb_build_array(
 select throws_ok($$ select public.osm_bumps_import(jsonb_build_array(
                       jsonb_build_object('osm_id', 'r9', 'lat', 30, 'lon', 31, 'kind', 'chicane')), now()) $$,
                  '22023', null, 'an unknown element type or kind rejects the batch');
+select throws_ok($$ select public.osm_bumps_import(jsonb_build_array(
+                      jsonb_build_object('osm_id', 'n8', 'lat', 30, 'lon', 31, 'kind', 'hump'),
+                      jsonb_build_object('osm_id', 'n8', 'lat', 30.1, 'lon', 31, 'kind', 'bump')), now()) $$,
+                 '22023', null, 'the same osm_id twice in one batch rejects the batch');
 -- A later run that no longer sees n4 (removed in OSM) and moves n1: prune drops what the run didn't see.
 select is(public.osm_bumps_import(jsonb_build_array(
             jsonb_build_object('osm_id', 'n1', 'lat', 30.0002, 'lon', 31.0, 'kind', 'cushion'),

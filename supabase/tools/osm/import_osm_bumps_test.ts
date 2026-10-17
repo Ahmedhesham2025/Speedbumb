@@ -1,5 +1,5 @@
 // Offline test of the Overpass -> osm_bumps parsing (no network). Run: deno test supabase/tools/osm/
-import { QUERY, toBumps } from "./import_osm_bumps.ts";
+import { checkAnswer, QUERY, toBumps } from "./import_osm_bumps.ts";
 
 function assertEquals(actual: unknown, expected: unknown) {
   const a = JSON.stringify(actual), e = JSON.stringify(expected);
@@ -27,4 +27,19 @@ Deno.test("nodes by position, ways by centre, legacy highway=speed_bump, others 
 Deno.test("one query, ways with their centre", () => {
   assertEquals(QUERY.includes("out center;") && QUERY.includes("highway=speed_bump"), true);
   assertEquals(toBumps({}), []);
+});
+
+function throws(f: () => unknown, what: string) {
+  try { f(); } catch { return; }
+  throw new Error(`expected a throw: ${what}`);
+}
+
+Deno.test("a partial (remark) or malformed Overpass answer is refused", () => {
+  const osm3s = { timestamp_osm_base: "2026-10-17T09:43:06Z" };
+  throws(() => checkAnswer({ osm3s, remark: "runtime error: Query timed out", elements: [] }), "remark");
+  throws(() => checkAnswer({ osm3s }), "no elements");
+  throws(() => checkAnswer({ elements: [] }), "no osm3s");
+  throws(() => checkAnswer(null), "null");
+  throws(() => checkAnswer("<html>busy</html>"), "not JSON object");
+  assertEquals(checkAnswer({ osm3s, elements: [] }).elements, []);
 });
