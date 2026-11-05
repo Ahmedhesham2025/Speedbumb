@@ -34,6 +34,7 @@ object Scenarios {
         describe("trip 1", t1)
         check(t1.beepBumpIds.isEmpty(), "trip 1 must not beep (nothing known yet), got ${t1.beepBumpIds.size}")
         check(t1.newBumps == 4, "trip 1 should record 3 bumps + the one-off jolt, got ${t1.newBumps}")
+        confirmAll(store)   // felt once: still silent "maybes"; these checks are about confirmed spots
 
         for (trip in 2..4) {
             val r = sim.drive(store, DriveSpec(bumpsAt = real, slowZonesAt = zone), tripId = trip.toLong())
@@ -69,6 +70,7 @@ object Scenarios {
         val store = MemoryStore()
         val real = listOf(500.0, 1100.0, 1600.0)
         sim.drive(store, DriveSpec(bumpsAt = real), tripId = 1)
+        confirmAll(store)   // felt once: still silent "maybes"; these checks are about confirmed spots
         val e2 = sim.drive(store, DriveSpec(bumpsAt = real), tripId = 2)
         describe("east 2", e2)
         check(e2.beepBumpIds.size == 3, "east trip 2 should beep 3 times, got ${e2.beepBumpIds.size}")
@@ -77,6 +79,7 @@ object Scenarios {
         describe("west 1", w1)
         check(w1.beepBumpIds.isEmpty(), "first westbound trip must not beep for eastbound bumps, got ${w1.beepBumpIds.size}")
         check(w1.newBumps == 3, "first westbound trip should record 3 new bumps, got ${w1.newBumps}")
+        confirmAll(store)
 
         val w2 = sim.drive(store, DriveSpec(westbound = true, bumpsAt = real), tripId = 4)
         describe("west 2", w2)
@@ -190,6 +193,7 @@ object Scenarios {
         val sim = Simulator(11)
         val store = MemoryStore()
         sim.drive(store, DriveSpec(bumpsAt = listOf(500.0, 1100.0)), tripId = 1)
+        confirmAll(store)   // felt once: still silent "maybes"; these checks are about confirmed spots
         for (trip in 2..5) {
             // 500: crawled over at 8 km/h, nothing felt. 1100: removed; driver still slows to 15 but nothing is there.
             val r = sim.drive(store, DriveSpec(crawlAt = listOf(500.0), silentBumpsAt = listOf(1100.0)), tripId = trip.toLong())
@@ -210,6 +214,7 @@ object Scenarios {
         val store = MemoryStore()
         val real = listOf(500.0, 1100.0)
         sim.drive(store, DriveSpec(bumpsAt = real), tripId = 1)
+        confirmAll(store)   // felt once: still silent "maybes"; these checks are about confirmed spots
         val listener = object : EngineListener {}
         val eng = BumpEngine(EngineConfig(), store, listener, { 0L })
         val target = store.saved.first()
@@ -255,7 +260,7 @@ object Scenarios {
         val t2 = sim.drive(store, DriveSpec(silentBumpsAt = listOf(800.0)), tripId = 2)   // driven over, nothing felt
         describe("trip 2 (not felt)", t2)
         val s2 = store.saved.single()
-        check(t2.warnings.size == 1 && s2.legacy && s2.confidence(cfg) == Confidence.SOFT, "warned, still soft: legacy=${s2.legacy} ${s2.hits}/${s2.passes}")
+        check(t2.warnings.isEmpty() && s2.legacy && s2.confidence(cfg) == Confidence.SOFT, "silent (a maybe), still soft: legacy=${s2.legacy} ${s2.hits}/${s2.passes}")
 
         val t3 = sim.drive(store, DriveSpec(bumpsAt = listOf(800.0)), tripId = 3)   // felt again
         describe("trip 3 (felt)", t3)
@@ -263,6 +268,12 @@ object Scenarios {
         check(t3.knownHits == 1 && !s3.legacy && s3.confidence(cfg) == Confidence.FULL, "felt again: an ordinary full bump, legacy=${s3.legacy} ${s3.hits}/${s3.passes}")
         check(t3.stats.full == 1 && t3.stats.soft == 0, "counted as full: full=${t3.stats.full} soft=${t3.stats.soft}")
     }
+
+    /**
+     * Marks every learned spot confirmed, as if both axles were felt. A spot felt once is a silent "maybe" (owner,
+     * beta9); the scenarios that call this are about how a confirmed spot warns.
+     */
+    private fun confirmAll(store: MemoryStore) { for (b in store.saved) b.axleHits = maxOf(b.axleHits, 2) }
 
     private fun nearest(store: MemoryStore, sim: Simulator, p: Double, westbound: Boolean = false): Bump {
         val truth = sim.point(p, westbound)
@@ -386,6 +397,7 @@ object Scenarios {
         val t1 = sim.drive(store, spec, tripId = 1)
         describe("trip 1", t1)
         check(t1.newBumps == 2, "trip 1 should learn 2 bumps, got ${t1.newBumps}")
+        confirmAll(store)   // felt once: still silent "maybes"; these checks are about confirmed spots
 
         val t2 = sim.drive(store, spec, tripId = 2)
         describe("trip 2 (quiet below 20)", t2)
@@ -824,14 +836,16 @@ object Scenarios {
             remoteAt(sim, 4, 1500.0, BumpKind.POTHOLE, severity = 7.0),
             remoteAt(sim, 5, 1800.0, severity = 4.2, devices = 1),
         )
-        val t1 = sim.drive(MemoryStore(), DriveSpec(), tripId = 1, spotSource = ListSpotSource(spots))
+        val store = MemoryStore()
+        val t1 = sim.drive(store, DriveSpec(), tripId = 1, spotSource = ListSpotSource(spots))
         describe("trip 1", t1)
-        check(t1.warnings.map { BumpEngine.remoteSpotId(it.spot.id) } == listOf(1L, 2L, 3L, 4L, 5L), "each shared spot warns once: ${t1.beepBumpIds}")
+        check(t1.warnings.map { BumpEngine.remoteSpotId(it.spot.id) } == listOf(1L, 2L, 3L), "each confirmed shared spot warns once: ${t1.beepBumpIds}")
+        val maybes = store.events.filter { it.type == "beep_maybe" }.map { it.bumpId }
+        check(maybes == listOf(4L, 5L), "the old pothole and the one-phone spot are silent maybes: $maybes")
         val got = t1.warnings.map { Triple(it.spot.severity(cfg), it.spot.confidence(cfg), it.spot.legacy) }
         val want = listOf(
             Triple(Severity.MILD, Confidence.FULL, false), Triple(Severity.MODERATE, Confidence.FULL, false),
-            Triple(Severity.STRONG, Confidence.FULL, false), Triple(Severity.STRONG, Confidence.SOFT, true),
-            Triple(Severity.MODERATE, Confidence.SOFT, false),
+            Triple(Severity.STRONG, Confidence.FULL, false),
         )
         check(got == want, "band, confidence, old pothole: $got")
     }
@@ -1083,6 +1097,7 @@ object Scenarios {
         val t1 = sim.drive(store, spec, EngineConfig().apply { vMaxMinKmh = 0.0 }, tripId = 1)
         describe("trip 1", t1)
         check(t1.newBumps == 4, "trip 1 should learn 4 bumps, got ${t1.newBumps}")
+        confirmAll(store)   // felt once: a group of maybes would be silent
 
         // Quiet-below off, so without grouping all 4 would warn even at bump speed.
         val always = EngineConfig().apply { quietBelowKmh = 0.0; vMaxMinKmh = 0.0 }
@@ -1090,7 +1105,7 @@ object Scenarios {
         describe("trip 2", t2)
         check(t2.warnings.size == 2, "a group warning + the lone bump expected, got ${t2.warnings.size}")
         val g = t2.warnings[0].cluster
-        check(g != null && g.count == 3 && !g.anyFull, "first warning should be a group of 3 bumps, each felt once so far")
+        check(g != null && g.count == 3 && g.anyFull, "first warning should be a group of 3 confirmed bumps")
         check(t2.warnings[1].cluster == null, "the lone bump is not a group")
         val grouped = store.events.count { it.tripId == 2L && it.type == "beep_grouped" }
         check(grouped == 2, "the 2 following bumps stay silent (beep_grouped), got $grouped")
@@ -1108,7 +1123,7 @@ object Scenarios {
         val spots = listOf(
             remoteAt(sim, 1, 800.0, severity = 3.0),
             remoteAt(sim, 2, 860.0, severity = 7.0),
-            remoteAt(sim, 3, 920.0, BumpKind.POTHOLE, severity = 4.2),
+            remoteAt(sim, 3, 920.0, severity = 4.2),
         )
         val store = MemoryStore()
         val t1 = sim.drive(store, DriveSpec(cruiseKmh = 50.0), tripId = 1, spotSource = ListSpotSource(spots))

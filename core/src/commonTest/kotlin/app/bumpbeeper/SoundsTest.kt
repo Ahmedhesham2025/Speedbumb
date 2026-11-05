@@ -100,8 +100,8 @@ class SoundsTest {
      */
     @Test fun aMixedGroupCountsOnlyItsConfirmedSpots() {
         val r = Run(listOf(
-            shared(31, 800.0, BumpKind.BUMP, severity = 3.0), shared(32, 860.0, BumpKind.BUMP, severity = 7.0, devices = 1),
-            shared(33, 920.0, BumpKind.BUMP, severity = 3.0), shared(34, 980.0, BumpKind.BUMP, severity = 3.0),
+            shared(31, 800.0, BumpKind.BUMP, severity = 3.0), shared(32, 830.0, BumpKind.BUMP, severity = 7.0, devices = 1),
+            shared(33, 860.0, BumpKind.BUMP, severity = 3.0), shared(34, 920.0, BumpKind.BUMP, severity = 3.0),
         ))
         r.drive(0.0, 1300.0)
         assertEquals(1, r.warnings.size, r.describe())

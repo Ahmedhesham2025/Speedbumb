@@ -50,6 +50,7 @@ class SharedMapTest {
         val store = MemoryStore()
         val real = listOf(500.0, 1100.0)
         sim.drive(store, DriveSpec(bumpsAt = real), tripId = 1)
+        for (b in store.saved) b.axleHits = maxOf(b.axleHits, 2)   // confirmed: a spot felt once is a silent maybe
         val broken = object : SpotSource {
             override fun spotsNear(lat: Double, lon: Double, radiusM: Double): List<RemoteSpot> = throw IllegalStateException("db closed")
         }

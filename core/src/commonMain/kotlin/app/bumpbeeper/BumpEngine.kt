@@ -1465,7 +1465,7 @@ class BumpEngine(
             if (d > cfg.aheadRangeM || d < 1.0) continue
             val off = Geo.angleDiff(heading, Geo.bearing(f.lat, f.lon, s.lat, s.lon))
             if (off > (if (d <= cfg.approachRadiusM) cfg.aheadNearDeg else cfg.aheadFarDeg)) continue
-            out.add(SpotAhead(s, d, s.severity(cfg), s.confidence(cfg), if (s.confidence(cfg) == Confidence.FULL) soundFor(s) else WarnSound.SOFT))
+            out.add(if (alerts(s)) SpotAhead(s, d, s.severity(cfg), Confidence.FULL, soundFor(s)) else SpotAhead(s, d, s.severity(cfg), s.confidence(cfg), WarnSound.SOFT))
         }
         out.sortBy { it.distanceM }
         spotsAhead = out.take(2)
@@ -1550,7 +1550,7 @@ class BumpEngine(
             // Shared spots are logged with their server id, OSM bumps with -1 and their OSM id in the note.
             val logId = if (isOsmKey(b.id)) -1L else if (remote) remoteSpotId(b.id)!! else b.id
             val tag = osmIds[b.id]?.let { "osm $it" } ?: "remote"
-            if (b.confidence(cfg) != Confidence.FULL) {
+            if (!alerts(b)) {
                 // A "maybe" never alerts: no sound, voice, approach beeps, banner or beep count. It stays on the map
                 // and keeps learning; only the log says it was there.
                 a.beeped = true
@@ -1676,6 +1676,15 @@ class BumpEngine(
      */
     fun ungroup() = grouped.clear()
 
+    /**
+     * Does this spot alert (sound, voice, approach beeps, groups)? Only a confirmed one: [Confidence.FULL], or a spot of
+     * your own that is still a "maybe" but stands in for a confirmed shared twin (it hides that twin, see [dedupRemote]).
+     */
+    private fun alerts(b: Bump): Boolean = b.confidence(cfg) == Confidence.FULL || (b.id > 0 && remoteAll.any { r ->
+        abs(r.lat - b.lat) <= 0.0005 && abs(r.lon - b.lon) <= 0.0006 && r.confidence(cfg) == Confidence.FULL &&
+            Geo.distance(b.lat, b.lon, r.lat, r.lon) <= cfg.matchRadiusM && Geo.angleDiff(b.heading, r.heading) <= cfg.headingTolDeg
+    })
+
     /** Should this spot warn at all? Not when muted. */
     private fun warnable(b: Bump): Boolean = !b.isMuted(cfg) && !b.isRetired(cfg)
 
@@ -1703,7 +1712,7 @@ class BumpEngine(
             val ds = Geo.distance(f.lat, f.lon, s.lat, s.lon)
             if (ds > maxDist || ds < 8.0) continue
             if (approaches[s.id]?.beeped == true || !warnable(s)) continue
-            if (s.confidence(cfg) != Confidence.FULL) continue   // a "maybe" neither counts in a group nor raises it
+            if (!alerts(s)) continue   // a "maybe" neither counts in a group nor raises it
             if (Geo.angleDiff(heading, s.heading) > cfg.headingTolDeg) continue
             // "Further along the same road" is measured from the warned spot along its own direction of travel
             // (averaged over its hits), not along the car's GPS heading: a few degrees of GPS wobble would
