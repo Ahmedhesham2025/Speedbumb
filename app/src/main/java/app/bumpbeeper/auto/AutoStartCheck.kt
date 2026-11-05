@@ -38,7 +38,7 @@ class AutoStartCheck : JobService() {
             try {
                 if (js.getPendingJob(JOB_ID) != null) return
                 js.schedule(JobInfo.Builder(JOB_ID, ComponentName(ctx, AutoStartCheck::class.java))
-                    .setPeriodic(PERIOD_MS).setPersisted(false).build())
+                    .setPeriodic(PERIOD_MS).setPersisted(true).build())   // survives a restart of the phone
             } catch (_: Exception) {}
         }
 

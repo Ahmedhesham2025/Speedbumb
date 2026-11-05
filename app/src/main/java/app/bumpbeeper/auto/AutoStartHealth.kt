@@ -33,6 +33,8 @@ object AutoStartHealth {
         NO_NOTIFICATIONS(false, R.string.autostart_no_notifications),
         /** Battery optimisation on: Doze and the phone maker's battery saver may stop the watching service. */
         BATTERY_OPTIMISED(false, R.string.autostart_battery),
+        /** A phone maker that blocks start after a restart unless its own "Autostart" is allowed (can't be read). */
+        OEM_AUTOSTART(false, R.string.autostart_oem),
     }
 
     class Inputs(
@@ -44,6 +46,8 @@ object AutoStartHealth {
         val batteryExempt: Boolean,
         /** The watching service runs, a recording runs, or Google's in-vehicle detection is registered. */
         val detecting: Boolean,
+        /** This phone maker has its own "Autostart" switch ([oemAutostart]). */
+        val oemAutostart: Boolean = false,
     )
 
     /** Off (null), or the problems in the order to fix them: empty = ready. */
@@ -58,6 +62,7 @@ object AutoStartHealth {
         }
         if (!i.notifications) out += Problem.NO_NOTIFICATIONS
         if (!i.batteryExempt) out += Problem.BATTERY_OPTIMISED
+        if (i.oemAutostart) out += Problem.OEM_AUTOSTART
         return out
     }
 
@@ -74,15 +79,36 @@ object AutoStartHealth {
             notifications = ctx.getSystemService(NotificationManager::class.java)?.areNotificationsEnabled() != false,
             batteryExempt = ctx.getSystemService(PowerManager::class.java)?.isIgnoringBatteryOptimizations(ctx.packageName) == true,
             detecting = LiveState.watching || LiveState.recording || VehicleActivity.active(ctx),
+            oemAutostart = oemAutostart(ctx) != null,
         )
     }
 
     fun check(ctx: Context): List<Problem>? = decide(read(ctx))
 
+    /**
+     * Phone makers whose own "Autostart" / startup manager blocks the boot broadcast (and so auto start after a
+     * restart) unless the app is allowed there: their screen, when this phone has it.
+     */
+    private val OEM_AUTOSTART_SCREENS = listOf(
+        "com.miui.securitycenter" to "com.miui.permcenter.autostart.AutoStartManagementActivity",
+        "com.coloros.safecenter" to "com.coloros.safecenter.permission.startup.StartupAppListActivity",
+        "com.coloros.safecenter" to "com.coloros.safecenter.startupapp.StartupAppListActivity",
+        "com.oppo.safe" to "com.oppo.safe.permission.startup.StartupAppListActivity",
+        "com.vivo.permissionmanager" to "com.vivo.permissionmanager.activity.BgStartUpManagerActivity",
+        "com.huawei.systemmanager" to "com.huawei.systemmanager.startupmgr.ui.StartupNormalAppListActivity",
+        "com.oneplus.security" to "com.oneplus.security.chainlaunch.view.ChainLaunchAppListActivity",
+        "com.samsung.android.lool" to "com.samsung.android.sm.ui.battery.BatteryActivity",
+    )
+
+    fun oemAutostart(ctx: Context): Intent? = OEM_AUTOSTART_SCREENS.asSequence()
+        .map { (p, c) -> Intent().setComponent(android.content.ComponentName(p, c)) }
+        .firstOrNull { i -> try { i.resolveActivity(ctx.packageManager) != null } catch (_: Exception) { false } }
+
     /** The one settings screen that fixes [p] (the app's own page where Android has nothing more direct). */
     fun fix(ctx: Context, p: Problem): Intent {
         val pkg = Uri.parse("package:" + ctx.packageName)
         return when (p) {
+            Problem.OEM_AUTOSTART -> oemAutostart(ctx) ?: Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, pkg)
             Problem.BATTERY_OPTIMISED -> Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, pkg)
             Problem.NO_NOTIFICATIONS -> Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
                 .putExtra(Settings.EXTRA_APP_PACKAGE, ctx.packageName)

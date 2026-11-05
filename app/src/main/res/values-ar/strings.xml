@@ -582,6 +582,10 @@
     <string name="start_by_car">اشتغل من بلوتوث العربية</string>
     <string name="start_confirmed">المشوار اتأكد: ٣٠ ثانية سواقة</string>
     <string name="start_discarded">اتشال: مفيش ٣٠ ثانية سواقة</string>
+    <string name="start_kept_clear">اتحفظ واتبعت: مشوار عربية واضح (١ كم أو أكتر، ودقيقة أو أكتر فوق ٢٠ كم/س)</string>
+    <string name="start_asked">اتسأل “كان ده مشوار عربية؟”: قصير أو بطيء</string>
+    <string name="start_boot_rearmed">اتظبط تاني بعد ما الموبايل اتقفل واتفتح</string>
+    <string name="autostart_oem">الموبايل ده ممكن يوقف التطبيقات بعد إعادة التشغيل: اسمح لـ Bump Beeper في “التشغيل التلقائي” (أو “تطبيقات بدء التشغيل”).</string>
     <string name="start_blocked_permission">متوقف: إذن الموقع ناقص</string>
     <string name="start_refused">أندرويد رفض يشغّله في الخلفية</string>
     <string name="start_held_deleted">“كان ده مشوار عربية؟” ماحدّش ردّ عليه ٢٤ ساعة: بيانات المشوار اتمسحت من غير ما تتبعت</string>

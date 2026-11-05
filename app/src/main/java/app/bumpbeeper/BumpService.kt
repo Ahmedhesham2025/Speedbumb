@@ -806,9 +806,12 @@ class BumpService : Service(), SensorEventListener, LocationListener, EngineList
                 monitor?.stats?.let { LiveState.lastTripScore = it.score() }
             }
             PendingTrip.clear(this, tripId)   // deleted or kept: nothing left for the next start to clean up
-            // Started by itself and never confirmed: hold everything that would leave the phone (#49).
-            val ask = !short && unconfirmed && engine != null
-            if (ask) TripHold.hold(this, tripId)
+            // Started by itself and not confirmed by the car: a clear drive (TripConfirm.clearDrive) is kept and sent
+            // without asking, through the same path as "Yes, I drove"; anything shorter or slower is held and asked (#49).
+            val guessedTrip = !short && unconfirmed && engine != null
+            val clear = guessedTrip && tc?.clearDrive(distM) == true
+            val ask = guessedTrip && !clear
+            if (guessedTrip) TripHold.hold(this, tripId)
             // Only after the hold may the trip's research files be uploaded: the uploader then sees it held.
             if (!short) researchStamp?.let { ResearchQueue.tripEnded(this, it); ResearchUploader.scheduleNow(this) }
             // Privacy zone filter, then into the outbox; the upload runs later in the background.
@@ -836,7 +839,15 @@ class BumpService : Service(), SensorEventListener, LocationListener, EngineList
             live?.close()
             live = null
             LiveState.overLimit = 0
-            if (ask) TripCheck.ask(this, tripId)
+            // Everything of the trip is queued, held: a clear drive is released now, exactly as a "Yes" would.
+            if (clear) {
+                TripHold.confirm(this, tripId)
+                StartLog.add(this, StartLog.Reason.KEPT_CLEAR_DRIVE)
+            }
+            if (ask) {
+                TripCheck.ask(this, tripId)
+                StartLog.add(this, StartLog.Reason.ASKED)
+            }
             val last = engine?.lastFix
             Sync.afterTrip(this, last?.lat ?: Double.NaN, last?.lon ?: Double.NaN)
             engine = null
