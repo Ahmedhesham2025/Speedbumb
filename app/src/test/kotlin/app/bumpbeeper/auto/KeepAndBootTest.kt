@@ -35,6 +35,7 @@ class KeepAndBootTest {
         ctx.getSharedPreferences("start_log", 0).edit().clear().commit()
         ctx.getSharedPreferences("trip_hold", 0).edit().clear().commit()
         ctx.getSharedPreferences("trip_hold_done", 0).edit().clear().commit()
+        ctx.getSharedPreferences("oem_autostart", 0).edit().clear().commit()
     }
 
     @After fun tearDown() { BootReceiver.apply = realApply }
@@ -97,5 +98,16 @@ class KeepAndBootTest {
         BootReceiver.apply = { called = true; true }
         BootReceiver().onReceive(ctx, Intent(Intent.ACTION_BOOT_COMPLETED))
         assertFalse(called)
+    }
+
+    @Test fun theOemAutostartHintCanBeDismissedOnceOpened() {
+        assertFalse(AutoStartHealth.oemOpened(ctx))
+        assertFalse(AutoStartHealth.oemAllowed(ctx))
+        AutoStartHealth.setOemOpened(ctx)
+        AutoStartHealth.setOemAllowed(ctx)
+        assertTrue(AutoStartHealth.oemAllowed(ctx))
+        // Dismissed: not reported even on a phone with the maker's screen.
+        val i = AutoStartHealth.read(ctx)
+        assertFalse(i.oemAutostart)
     }
 }

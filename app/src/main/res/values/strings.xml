@@ -588,6 +588,7 @@
     <string name="diag_autostart_blocked">Blocked: %1$s</string>
     <string name="diag_autostart_warn">Ready, but: %1$s</string>
     <string name="diag_autostart_fix">Fix</string>
+    <string name="diag_autostart_oem_done">Done, I allowed it</string>
     <string name="diag_last_error">Last error: %1$s</string>
     <string name="diag_app">App %1$s (build %2$d, %3$s %4$s)</string>
     <string name="diag_mark">Mark</string>

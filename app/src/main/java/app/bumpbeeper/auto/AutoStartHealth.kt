@@ -79,7 +79,7 @@ object AutoStartHealth {
             notifications = ctx.getSystemService(NotificationManager::class.java)?.areNotificationsEnabled() != false,
             batteryExempt = ctx.getSystemService(PowerManager::class.java)?.isIgnoringBatteryOptimizations(ctx.packageName) == true,
             detecting = LiveState.watching || LiveState.recording || VehicleActivity.active(ctx),
-            oemAutostart = oemAutostart(ctx) != null,
+            oemAutostart = oemAutostart(ctx) != null && !oemAllowed(ctx),
         )
     }
 
@@ -99,6 +99,18 @@ object AutoStartHealth {
         "com.oneplus.security" to "com.oneplus.security.chainlaunch.view.ChainLaunchAppListActivity",
         "com.samsung.android.lool" to "com.samsung.android.sm.ui.battery.BatteryActivity",
     )
+
+    /**
+     * The maker's Autostart setting can't be read, so the hint would show forever: after the user opened that screen
+     * ([oemOpened]) and came back, "Done, I allowed it" ([setOemAllowed]) hides it. Per install: this file is not
+     * backed up or moved to a new phone (backup_rules, data_extraction_rules), where it must be allowed again.
+     */
+    private fun oem(ctx: Context) = ctx.getSharedPreferences("oem_autostart", Context.MODE_PRIVATE)
+
+    fun oemAllowed(ctx: Context): Boolean = oem(ctx).getBoolean("allowed", false)
+    fun setOemAllowed(ctx: Context) { oem(ctx).edit().putBoolean("allowed", true).apply() }
+    fun oemOpened(ctx: Context): Boolean = oem(ctx).getBoolean("opened", false)
+    fun setOemOpened(ctx: Context) { oem(ctx).edit().putBoolean("opened", true).apply() }
 
     fun oemAutostart(ctx: Context): Intent? = OEM_AUTOSTART_SCREENS.asSequence()
         .map { (p, c) -> Intent().setComponent(android.content.ComponentName(p, c)) }
