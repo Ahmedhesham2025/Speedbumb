@@ -118,6 +118,7 @@ object TripHold {
             if (now - since < MAX_AGE_MS) continue
             synchronized(lock) { if (isHeld(ctx, id) && dropHeld(ctx, id, expired)) n++ }
         }
+        if (n > 0) StartLog.add(ctx, StartLog.Reason.HELD_DELETED, now)
         try {
             synchronized(lock) {   // a "Yes" between reading and dropping would otherwise lose approved points
                 withStore(ctx) { s ->

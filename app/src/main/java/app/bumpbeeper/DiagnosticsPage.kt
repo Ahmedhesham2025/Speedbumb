@@ -20,6 +20,7 @@ import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
+import app.bumpbeeper.auto.AutoStartHealth
 import app.bumpbeeper.auto.StartLog
 import app.bumpbeeper.crash.CrashLog
 import app.bumpbeeper.research.ResearchUploader
@@ -38,6 +39,12 @@ class DiagnosticsPage(private val a: MainActivity, private val onClose: () -> Un
     private fun dp(v: Int) = Ui.dp(a, v)
     private val ui = Handler(Looper.getMainLooper())
     private lateinit var markBtn: TextView
+    private lateinit var autoText: TextView
+    private lateinit var autoFix: TextView
+    /** "Done, I allowed it": only for the maker's Autostart hint, after Fix opened that screen. */
+    private lateinit var autoDone: TextView
+    /** The problem the Fix button opens the settings for ([AutoStartHealth.fix]). */
+    private var autoProblem: AutoStartHealth.Problem? = null
     private lateinit var markWhy: TextView
     /** The newest saved crash, made short ([shortError]); read off the main thread in [onShow]. */
     @Volatile private var lastCrash = ""
@@ -79,6 +86,25 @@ class DiagnosticsPage(private val a: MainActivity, private val onClose: () -> Un
         })
         add(Ui.text(a, 13f, Ui.DIM, value = a.getString(R.string.diag_hint)).apply { setPadding(dp(4), 0, dp(4), 0) })
 
+        // Auto start: ready, or what blocks it, with the one settings screen that fixes it.
+        add(Ui.section(a, a.getString(R.string.diag_autostart_title)))
+        val auto = Ui.card(a)
+        autoText = Ui.text(a, 15f, Ui.TEXT)
+        autoFix = Ui.button(a, a.getString(R.string.diag_autostart_fix), Ui.Style.PRIMARY) {
+            autoProblem?.let { p ->
+                if (p == AutoStartHealth.Problem.OEM_AUTOSTART) AutoStartHealth.setOemOpened(a)
+                try { a.startActivity(AutoStartHealth.fix(a, p)) } catch (_: Exception) {}
+            }
+        }
+        autoDone = Ui.button(a, a.getString(R.string.diag_autostart_oem_done)) {
+            AutoStartHealth.setOemAllowed(a)
+            showAutoStart()
+        }
+        auto.addView(autoText)
+        auto.addView(autoFix, full(8))
+        auto.addView(autoDone, full(8))
+        add(auto)
+
         // Mark: a big button for the passenger on a test drive.
         add(Ui.section(a, a.getString(R.string.diag_group_mark)))   // not "Mark": the button alone has that text
         val mark = Ui.card(a)
@@ -112,6 +138,21 @@ class DiagnosticsPage(private val a: MainActivity, private val onClose: () -> Un
         return ScrollView(a).apply { setBackgroundColor(Ui.BG); addView(col) }
     }
 
+    private fun showAutoStart() {
+        val problems = AutoStartHealth.check(a)
+        val first = problems?.firstOrNull()
+        autoProblem = first
+        autoText.text = when {
+            problems == null -> a.getString(R.string.diag_autostart_off)
+            first == null -> a.getString(R.string.diag_autostart_ready)
+            first.blocks -> a.getString(R.string.diag_autostart_blocked, a.getString(first.text))
+            else -> a.getString(R.string.diag_autostart_warn, a.getString(first.text))
+        }
+        autoText.setTextColor(when { first == null -> Ui.TEXT; first.blocks -> Ui.ERR; else -> Ui.WARN })
+        autoFix.visibility = if (first == null) View.GONE else View.VISIBLE
+        autoDone.visibility = if (first == AutoStartHealth.Problem.OEM_AUTOSTART && AutoStartHealth.oemOpened(a)) View.VISIBLE else View.GONE
+    }
+
     private fun tapMark() {
         markBtn.performHapticFeedback(if (Build.VERSION.SDK_INT >= 30) HapticFeedbackConstants.CONFIRM else HapticFeedbackConstants.LONG_PRESS)
         val ok = BumpService.mark(a)
@@ -130,6 +171,7 @@ class DiagnosticsPage(private val a: MainActivity, private val onClose: () -> Un
     }
 
     override fun tick() {
+        showAutoStart()
         val markable = BumpService.markable()
         markBtn.isEnabled = markable
         markBtn.alpha = if (markable) 1f else 0.4f
