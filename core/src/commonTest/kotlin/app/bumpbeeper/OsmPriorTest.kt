@@ -16,7 +16,7 @@ class ListOsmSource(var bumps: List<OsmBump>) : OsmSource {
     }
 }
 
-/** OpenStreetMap bumps as a prior ([EngineConfig.osmWarnings]): evidence for a jolt, a soft "maybe" where we know nothing. */
+/** OpenStreetMap bumps as a prior ([EngineConfig.osmWarnings]): evidence for a jolt, a silent "maybe" where we know nothing. */
 class OsmPriorTest {
     private fun osmAt(sim: Simulator, p: Double, id: String = "n1", westbound: Boolean = false): OsmBump {
         val q = sim.point(p, westbound)
@@ -24,19 +24,23 @@ class OsmPriorTest {
     }
 
     private fun osmBeeps(store: MemoryStore) = store.events.filter { it.type == "beep" && it.note.startsWith("osm ") }
+    private fun osmMaybes(store: MemoryStore, trip: Long) =
+        store.events.filter { it.type == "beep_maybe" && it.tripId == trip && it.note.startsWith("osm ") }
 
-    @Test fun anUnknownOsmBumpWarnsSoftlyInBothDirections() {
+    /** An OSM "maybe" makes no sound at all (owner, beta9): logged as beep_maybe, never a warning. */
+    @Test fun anUnknownOsmBumpIsASilentMaybeInBothDirections() {
         val sim = Simulator(81)
         val store = MemoryStore()
         val src = ListOsmSource(listOf(osmAt(sim, 1000.0)))
         val east = sim.drive(store, DriveSpec(), tripId = 1, osmSource = src)
-        assertEquals(listOf(WarnSound.SOFT), east.warnings.map { it.sound }, "${store.events.map { it.type + " " + it.note }}")
-        assertTrue(BumpEngine.isOsmKey(east.warnings.single().spot.id))
-        assertEquals("osm n1 soft", osmBeeps(store).single().note)
-        assertEquals(-1L, osmBeeps(store).single().bumpId)
+        assertTrue(east.warnings.isEmpty(), "${store.events.map { it.type + " " + it.note }}")
+        assertTrue(osmBeeps(store).isEmpty())
+        assertEquals("osm n1", osmMaybes(store, 1).single().note)
+        assertEquals(-1L, osmMaybes(store, 1).single().bumpId)
         // No direction in OSM: the other way warns too (the westbound lane is 10 m away, within the match).
         val west = sim.drive(store, DriveSpec(westbound = true), tripId = 2, osmSource = src)
-        assertEquals(listOf(WarnSound.SOFT), west.warnings.map { it.sound })
+        assertTrue(west.warnings.isEmpty())
+        assertEquals(1, osmMaybes(store, 2).size)
         assertTrue(store.saved.isEmpty(), "an OSM bump is never stored as a spot")
     }
 
@@ -49,9 +53,10 @@ class OsmPriorTest {
             RemoteSpot(7, it[0], it[1], 270.0, BumpKind.BUMP, Side.UNKNOWN, 5.0, 2)   // the other way: any direction matches
         }))
         val r = sim.drive(store, DriveSpec(bumpsAt = listOf(1000.0)), tripId = 2, spotSource = shared, osmSource = src)
-        assertEquals(1, r.warnings.size, "${store.events.map { it.type + " " + it.note }}")
-        assertTrue(!BumpEngine.isOsmKey(r.warnings.single().spot.id))
-        assertTrue(osmBeeps(store).isEmpty())
+        // Your own spot (felt once: a maybe) stands in for n1, silently; the shared one (other way) for n2.
+        assertTrue(r.warnings.isEmpty(), "${store.events.map { it.type + " " + it.note }}")
+        assertTrue(osmMaybes(store, 2).isEmpty())
+        assertEquals(1, store.events.count { it.type == "beep_maybe" && it.tripId == 2L })
     }
 
     @Test fun threeCleanPassesQuietIt() {
@@ -60,12 +65,13 @@ class OsmPriorTest {
         val src = ListOsmSource(listOf(osmAt(sim, 1000.0)))
         for (trip in 1L..3L) {
             val r = sim.drive(store, DriveSpec(), tripId = trip, osmSource = src)
-            assertEquals(1, r.warnings.size, "trip $trip")
+            assertTrue(r.warnings.isEmpty(), "trip $trip")
+            assertEquals(1, osmMaybes(store, trip).size, "trip $trip")
             assertEquals(trip.toInt(), src.bumps.single().cleanPasses, "trip $trip")
         }
         assertEquals(3, store.events.count { it.type == "osm_clear" })
         val r = sim.drive(store, DriveSpec(), tripId = 4, osmSource = src)
-        assertTrue(r.warnings.isEmpty(), "quiet after 3 clean passes")
+        assertTrue(osmMaybes(store, 4).isEmpty(), "dropped after 3 clean passes")
     }
 
     @Test fun passesThatSayNothingAreNotClean() {
@@ -123,12 +129,14 @@ class OsmPriorTest {
         assertEquals(0, src.bumps.single().cleanPasses)
     }
 
-    @Test fun muteLastWarningQuietsItForGood() {
+    /** Silent, so never the "last warning": "Mute last warning" can't reach it, and it only counts its clean pass. */
+    @Test fun aSilentMaybeIsNeverTheLastWarning() {
         val sim = Simulator(86)
         val src = ListOsmSource(listOf(osmAt(sim, 1000.0)))
-        val r = sim.drive(MemoryStore(), DriveSpec(), tripId = 1, osmSource = src, muteEveryBeep = true)
-        assertEquals(1, r.warnings.size)
-        assertTrue(src.bumps.single().cleanPasses >= EngineConfig().osmQuietAfterPasses)
-        assertTrue(sim.drive(MemoryStore(), DriveSpec(), tripId = 2, osmSource = src).warnings.isEmpty())
+        val store = MemoryStore()
+        val r = sim.drive(store, DriveSpec(), tripId = 1, osmSource = src, muteEveryBeep = true)
+        assertTrue(r.warnings.isEmpty())
+        assertTrue(store.events.none { it.type == "user_mute" })
+        assertEquals(1, src.bumps.single().cleanPasses)
     }
 }
