@@ -41,6 +41,8 @@ class DiagnosticsPage(private val a: MainActivity, private val onClose: () -> Un
     private lateinit var markBtn: TextView
     private lateinit var autoText: TextView
     private lateinit var autoFix: TextView
+    /** "Done, I allowed it": only for the maker's Autostart hint, after Fix opened that screen. */
+    private lateinit var autoDone: TextView
     /** The problem the Fix button opens the settings for ([AutoStartHealth.fix]). */
     private var autoProblem: AutoStartHealth.Problem? = null
     private lateinit var markWhy: TextView
@@ -89,10 +91,18 @@ class DiagnosticsPage(private val a: MainActivity, private val onClose: () -> Un
         val auto = Ui.card(a)
         autoText = Ui.text(a, 15f, Ui.TEXT)
         autoFix = Ui.button(a, a.getString(R.string.diag_autostart_fix), Ui.Style.PRIMARY) {
-            autoProblem?.let { p -> try { a.startActivity(AutoStartHealth.fix(a, p)) } catch (_: Exception) {} }
+            autoProblem?.let { p ->
+                if (p == AutoStartHealth.Problem.OEM_AUTOSTART) AutoStartHealth.setOemOpened(a)
+                try { a.startActivity(AutoStartHealth.fix(a, p)) } catch (_: Exception) {}
+            }
+        }
+        autoDone = Ui.button(a, a.getString(R.string.diag_autostart_oem_done)) {
+            AutoStartHealth.setOemAllowed(a)
+            showAutoStart()
         }
         auto.addView(autoText)
         auto.addView(autoFix, full(8))
+        auto.addView(autoDone, full(8))
         add(auto)
 
         // Mark: a big button for the passenger on a test drive.
@@ -140,6 +150,7 @@ class DiagnosticsPage(private val a: MainActivity, private val onClose: () -> Un
         }
         autoText.setTextColor(when { first == null -> Ui.TEXT; first.blocks -> Ui.ERR; else -> Ui.WARN })
         autoFix.visibility = if (first == null) View.GONE else View.VISIBLE
+        autoDone.visibility = if (first == AutoStartHealth.Problem.OEM_AUTOSTART && AutoStartHealth.oemOpened(a)) View.VISIBLE else View.GONE
     }
 
     private fun tapMark() {

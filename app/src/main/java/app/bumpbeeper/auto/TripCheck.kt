@@ -17,6 +17,7 @@ import app.bumpbeeper.R
  *  - Yes, I drove: the held data is sent as usual.
  *  - No: the held data, the trip, its events and the spots only it found are deleted.
  *  - No answer within 24 h: the held data is deleted unsent, the trip stays on the phone; the question disappears.
+ * Only short or slow trips are asked: a clear drive ([TripConfirm.clearDrive]) is kept and sent at once (owner decision).
  * A trip during which the car's Bluetooth connected counts as confirmed and is never asked about.
  */
 object TripCheck {

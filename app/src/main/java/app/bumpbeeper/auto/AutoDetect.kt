@@ -68,8 +68,8 @@ object AutoDetect {
         else -> Status.PASSIVE_ONLY
     }
 
-    /** Make the running detection match the setting and permissions. Idempotent and cheap. */
-    fun apply(ctx: Context) {
+    /** Make the running detection match the setting and permissions. Idempotent and cheap. True: detection runs. */
+    fun apply(ctx: Context): Boolean {
         val app = ctx.applicationContext
         // The hourly health check runs while the switch is on, also while a permission is missing (it says so).
         if (enabled(app)) AutoStartCheck.schedule(app) else AutoStartCheck.cancel(app)
@@ -77,13 +77,13 @@ object AutoDetect {
             if (enabled(app)) StartLog.add(app, StartLog.Reason.BLOCKED_PERMISSION)
             VehicleActivity.stop(app)
             BumpService.unwatch(app)
-            return
+            return false
         }
         // Requested again on every call (app resume, boot, update): Google drops it when its data is cleared.
         VehicleActivity.start(app) {}
         // Our own detection runs too, also next to Google's: Google's in-vehicle transition comes late or not at all
         // on some phones (Doze, low confidence), and without the car's Bluetooth that was a missed trip.
-        BumpService.watch(app)
+        return BumpService.watch(app)
     }
 
     private fun hasMotionSensor(ctx: Context): Boolean =

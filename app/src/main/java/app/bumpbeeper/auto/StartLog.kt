@@ -25,6 +25,12 @@ object StartLog {
         STARTED_CAR(R.string.start_by_car),
         CONFIRMED(R.string.start_confirmed),
         DISCARDED(R.string.start_discarded),
+        /** An automatic trip so clearly a drive that it was kept and sent without asking. */
+        KEPT_CLEAR_DRIVE(R.string.start_kept_clear),
+        /** A short or slow automatic trip: "Was this a drive?" was asked. */
+        ASKED(R.string.start_asked),
+        /** After a restart of the phone: detection set up again. */
+        BOOT_REARMED(R.string.start_boot_rearmed),
         /** Switched on, but a location permission is missing (never given, or revoked as unused). */
         BLOCKED_PERMISSION(R.string.start_blocked_permission),
         /** Android refused to start detection or a trip from the background. */
