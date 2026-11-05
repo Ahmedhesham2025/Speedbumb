@@ -332,10 +332,12 @@ object Scenarios {
         describe("trip 2", t2)
         check(t2.newBumps == 0, "trip 2 must not record anything new (all spots are known), got ${t2.newBumps}")
         // E4: the bump was crossed in a V (40, 15, back to 40) with both axles: confirmed on its first pass too.
-        val firstSounds = listOf(WarnSound.MODERATE, WarnSound.STRONG, WarnSound.STRONG, WarnSound.SOFT)
-        check(t2.warnings.map { it.sound } == firstSounds, "trip 2: the strong dips and the V bump confirmed, the small dip soft: ${t2.warnings.map { it.sound }}")
+        // The small dip is still a "maybe" on the way in: silent (logged as beep_maybe), felt again, confirmed after.
+        val firstSounds = listOf(WarnSound.MODERATE, WarnSound.STRONG, WarnSound.STRONG)
+        check(t2.warnings.map { it.sound } == firstSounds, "trip 2: the strong dips and the V bump confirmed, the small dip silent: ${t2.warnings.map { it.sound }}")
         check(t2.stats.full == 4 && t2.stats.soft == 0, "felt again: all full, got soft=${t2.stats.soft} full=${t2.stats.full}")
-        check(t2.warnings.last().spot.id == small.id, "the last warning is the small dip")
+        check(t2.warnings.none { it.spot.id == small.id }, "the small dip (a maybe) must not alert")
+        check(store.events.any { it.type == "beep_maybe" && it.tripId == 2L && it.bumpId == small.id }, "the silent maybe is logged")
 
         val bands = listOf(300.0, 700.0, 1100.0, 1500.0).map { bandSound(nearest(store, sim, it), cfg) }
         val t3 = sim.drive(store, spec, tripId = 3)
@@ -898,18 +900,20 @@ object Scenarios {
     }
 
     /**
-     * Shared potholes are spots from before v2: whatever their jolt, both warn with the soft "maybe" beep (there is
-     * no "warn for potholes" switch any more).
+     * Shared potholes are spots from before v2: whatever their jolt, both are a silent "maybe" (there is no "warn for
+     * potholes" switch any more): no warning, only beep_maybe in the log.
      */
     fun remoteOldPotholesAreSoft() {
         log("remoteOldPotholesAreSoft")
         val sim = Simulator(63)
         val small = remoteAt(sim, 7, 700.0, BumpKind.POTHOLE, Side.RIGHT, severity = 4.2)
         val harsh = remoteAt(sim, 8, 1300.0, BumpKind.POTHOLE, Side.LEFT, severity = 7.0)
-        val t1 = sim.drive(MemoryStore(), DriveSpec(cruiseKmh = 40.0), tripId = 1, spotSource = ListSpotSource(listOf(small, harsh)))
+        val store = MemoryStore()
+        val t1 = sim.drive(store, DriveSpec(cruiseKmh = 40.0), tripId = 1, spotSource = ListSpotSource(listOf(small, harsh)))
         describe("trip 1", t1)
-        check(t1.beepBumpIds.map { BumpEngine.remoteSpotId(it) } == listOf(7L, 8L), "both shared potholes should warn, got ${t1.beepBumpIds}")
-        check(t1.warnings.map { it.sound } == listOf(WarnSound.SOFT, WarnSound.SOFT), "both soft: ${t1.warnings.map { it.sound }}")
+        check(t1.warnings.isEmpty() && t1.beepBumpIds.isEmpty(), "shared potholes (maybes) must not alert, got ${t1.beepBumpIds}")
+        val maybes = store.events.filter { it.type == "beep_maybe" }.map { it.bumpId }
+        check(maybes == listOf(7L, 8L), "both logged as silent maybes: $maybes")
     }
 
     /** The observation outbox gets jolt / known_hit / pass_clear with sane values, and nothing for crawled-over passes. */
@@ -1065,7 +1069,7 @@ object Scenarios {
         val t1 = sim.drive(MemoryStore(), DriveSpec(cruiseKmh = 50.0), tripId = 1, spotSource = source)
         describe("trip 1", t1)
         val sounds = t1.warnings.map { it.sound }
-        check(sounds == listOf(WarnSound.MILD, WarnSound.MODERATE, WarnSound.STRONG, WarnSound.SOFT), "sounds: $sounds")
+        check(sounds == listOf(WarnSound.MILD, WarnSound.MODERATE, WarnSound.STRONG), "sounds (the one-phone maybe is silent): $sounds")
         check(t1.warnings.all { it.cluster == null }, "spots 400 m apart are not a group")
     }
 

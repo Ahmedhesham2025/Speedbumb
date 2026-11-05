@@ -180,7 +180,7 @@ class EngineConfig {
     /**
      * OpenStreetMap bumps ([OsmSource], asked with the shared map): a jolt within [osmEvidenceM] of one is not
      * rejected for want of evidence in a pocket, but it only ever makes a "maybe": it never grades or confirms a hit. One that no spot of yours or the shared map has within [osmMatchM] (any direction: OSM has
-     * none) warns with the soft "maybe" beep, whichever way you drive, until this phone has passed it
+     * none) is a silent "maybe" (logged as beep_maybe, no sound), whichever way you drive, until this phone has passed it
      * [osmQuietAfterPasses] times at [minInformativeKmh] or faster with nothing felt and the phone not handled.
      * (setting: Warn for OpenStreetMap bumps; the evidence stays when it is off)
      */
@@ -359,7 +359,7 @@ class JoltShape(
  *  - [sampleSink] ("Help improve detection"): a [JoltSample] with the signal window for every jolt it judged
  *    (learned, hit, rejected), every miss and shared-spot pass_clear, and every mute. The default keeps nothing.
  *  - [osmSource]: OpenStreetMap bumps ([EngineConfig.osmWarnings]). A jolt near one is evidence; one no spot matches
- *    warns as a soft "maybe" (logged with bumpId -1 and "osm <id>" in the note), never stored, never confirmed.
+ *    is a silent "maybe" (beep_maybe, with bumpId -1 and "osm <id>" in the note), never stored, never confirmed.
  */
 class BumpEngine(
     val cfg: EngineConfig,
@@ -1465,7 +1465,7 @@ class BumpEngine(
             if (d > cfg.aheadRangeM || d < 1.0) continue
             val off = Geo.angleDiff(heading, Geo.bearing(f.lat, f.lon, s.lat, s.lon))
             if (off > (if (d <= cfg.approachRadiusM) cfg.aheadNearDeg else cfg.aheadFarDeg)) continue
-            out.add(SpotAhead(s, d, s.severity(cfg), s.confidence(cfg), soundFor(s)))
+            out.add(SpotAhead(s, d, s.severity(cfg), s.confidence(cfg), if (s.confidence(cfg) == Confidence.FULL) soundFor(s) else WarnSound.SOFT))
         }
         out.sortBy { it.distanceM }
         spotsAhead = out.take(2)
@@ -1550,6 +1550,13 @@ class BumpEngine(
             // Shared spots are logged with their server id, OSM bumps with -1 and their OSM id in the note.
             val logId = if (isOsmKey(b.id)) -1L else if (remote) remoteSpotId(b.id)!! else b.id
             val tag = osmIds[b.id]?.let { "osm $it" } ?: "remote"
+            if (b.confidence(cfg) != Confidence.FULL) {
+                // A "maybe" never alerts: no sound, voice, approach beeps, banner or beep count. It stays on the map
+                // and keeps learning; only the log says it was there.
+                a.beeped = true
+                log("beep_maybe", logId, f.lat, f.lon, speedKmh, Double.NaN, Double.NaN, d, if (remote) tag else "")
+                return
+            }
             if (speedKmh < cfg.quietBelowKmh) {
                 // Already slow: you have seen it. Stay quiet, but keep checking in case you speed up again.
                 if (!a.quietLogged) {
@@ -1579,7 +1586,7 @@ class BumpEngine(
                 // Approach beeps wait for this warning: a voice until it is spoken, beeps for a fixed hold.
                 val voice = sound.voice || cluster != null
                 approachHoldUntilMs = f.timeMs + if (voice) cfg.approachVoiceMaxMs else cfg.approachHoldMs
-                if (cfg.approachBeeps && sound != WarnSound.SOFT && speedKmh >= cfg.approachFastKmh) {
+                if (cfg.approachBeeps && speedKmh >= cfg.approachFastKmh) {
                     a.seqSpot = b; a.seqDist = d; a.seqMps = f.speedMps; a.seqFixMs = f.timeMs; a.seqDecel = 0.0
                     a.seqBrakeAtLag = brakeIntAt(f.timeMs - (cfg.approachGpsLagS * 1000).toLong()); a.seqRising = false
                     a.nextBeepMs = if (voice) f.timeMs else f.timeMs + cfg.approachDelayMs
@@ -1672,10 +1679,9 @@ class BumpEngine(
     /** Should this spot warn at all? Not when muted. */
     private fun warnable(b: Bump): Boolean = !b.isMuted(cfg) && !b.isRetired(cfg)
 
-    /** A "maybe" spot gets one soft beep whatever its severity; a confirmed one the sound of its band. */
+    /** A confirmed spot's sound: that of its band ("maybe" spots never get this far: they are silent). */
     private fun soundFor(b: Bump): WarnSound =
-        if (b.confidence(cfg) == Confidence.SOFT) WarnSound.SOFT
-        else if (b.shape == BumpShape.LONG_FLAT) WarnSound.STRONG   // "very hard or long": 3 beeps and the voice
+        if (b.shape == BumpShape.LONG_FLAT) WarnSound.STRONG   // "very hard or long": 3 beeps and the voice
         else when (b.severity(cfg)) {
             Severity.MILD -> WarnSound.MILD
             Severity.MODERATE -> WarnSound.MODERATE
@@ -1697,6 +1703,7 @@ class BumpEngine(
             val ds = Geo.distance(f.lat, f.lon, s.lat, s.lon)
             if (ds > maxDist || ds < 8.0) continue
             if (approaches[s.id]?.beeped == true || !warnable(s)) continue
+            if (s.confidence(cfg) != Confidence.FULL) continue   // a "maybe" neither counts in a group nor raises it
             if (Geo.angleDiff(heading, s.heading) > cfg.headingTolDeg) continue
             // "Further along the same road" is measured from the warned spot along its own direction of travel
             // (averaged over its hits), not along the car's GPS heading: a few degrees of GPS wobble would

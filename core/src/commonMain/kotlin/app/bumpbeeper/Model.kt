@@ -39,7 +39,7 @@ enum class BumpShape { SHORT_STEEP, LONG_FLAT, LOW;
     }
 }
 
-/** How sure the app is about a spot: a [SOFT] one warns with one soft beep ("maybe"), a [FULL] one by its severity. */
+/** How sure the app is about a spot: a [SOFT] one ("maybe") is shown but never alerts, a [FULL] one warns by its severity. */
 enum class Confidence(val label: String) {
     /** Felt once, or an old pothole spot ([Bump.legacy]) not felt since. */
     SOFT("soft"),
@@ -168,7 +168,7 @@ class Fix(
 class BumpEvent(
     val wallTime: Long,
     val tripId: Long,
-    /** new_bump, hit, hit_repeat, miss, pass_slow, pass_handled, beep, beep_quiet, beep_grouped, rejected, user_mute, osm_clear (a clean pass over an OpenStreetMap bump) */
+    /** new_bump, hit, hit_repeat, miss, pass_slow, pass_handled, beep, beep_quiet, beep_grouped, beep_maybe (a silent "maybe" ahead), rejected, user_mute, osm_clear (a clean pass over an OpenStreetMap bump) */
     val type: String,
     val bumpId: Long,
     val lat: Double,
@@ -210,7 +210,7 @@ interface BumpStore {
 
 /** How a warning should sound: [beeps] beeps, then the voice if [voice]. The engine picks it (so it can be tested); the app plays it. */
 enum class WarnSound(val beeps: Int, val voice: Boolean = false) {
-    /** A spot that is only a "maybe" ([Confidence.SOFT]), whatever its severity: one soft, short beep. */
+    /** No longer used for warnings: a "maybe" ([Confidence.SOFT]) is silent. Kept so stored settings and sounds still map. */
     SOFT(1),
     /** Mild bump: one beep. */
     MILD(1),
@@ -228,16 +228,17 @@ enum class WarnSound(val beeps: Int, val voice: Boolean = false) {
  * confirmed or only a "maybe", and how many beeps its warning plays ([WarnSound.beeps]).
  */
 class SpotAhead(val spot: Bump, val distanceM: Double, val severity: Severity, val confidence: Confidence, val sound: WarnSound) {
-    val beeps: Int get() = sound.beeps
+    /** 0 for a "maybe": it makes no sound. */
+    val beeps: Int get() = if (confidence == Confidence.FULL) sound.beeps else 0
 }
 
 /** Several known spots close together ahead: announced once by voice ("3 bumps ahead") instead of one sound each. */
 class HazardCluster(
     /** Spots in the group, the warned one included (at least 3). */
     val count: Int,
-    /** The strongest band in the group, "maybe" spots included. */
+    /** The strongest band in the group: confirmed spots only ("maybe" spots are left out of groups). */
     val maxSeverity: Severity,
-    /** At least one spot in the group is confirmed ([Confidence.FULL]). The app doesn't announce a group of maybes. */
+    /** At least one spot in the group is confirmed ([Confidence.FULL]); only confirmed spots are in a group now, so always true. */
     val anyFull: Boolean,
 )
 

@@ -6,7 +6,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 import kotlin.test.Test
 
-/** Warning sounds: first-pass tick, a sound per severity band (soft for a "maybe"), groups announced once, phrases. */
+/** Warning sounds: first-pass tick, a sound per severity band (none for a "maybe"), groups announced once, phrases. */
 class SoundsTest {
     @Test fun firstPassTick() = Scenarios.firstPassTick()
     @Test fun warningSounds() = Scenarios.warningSounds()
@@ -55,7 +55,7 @@ class SoundsTest {
 
     /**
      * Confirmed spots (2+ phones) sound by their band: mild one beep, moderate two, strong the voice. A "maybe" (one
-     * phone only, or a shared pothole from before v2) gets the soft beep whatever its jolt.
+     * phone only, or a shared pothole from before v2) is silent whatever its jolt: no warning, no beep count.
      */
     @Test fun soundPerBandAndConfidence() {
         val r = Run(listOf(
@@ -65,15 +65,63 @@ class SoundsTest {
         ))
         r.drive(0.0, 2000.0)
         assertEquals(
-            listOf(WarnSound.MILD, WarnSound.MODERATE, WarnSound.STRONG, WarnSound.SOFT, WarnSound.SOFT),
+            listOf(WarnSound.MILD, WarnSound.MODERATE, WarnSound.STRONG),
             r.warnings.map { it.sound }, r.describe(),
         )
         assertTrue(r.warnings.all { it.cluster == null })
-        assertEquals(listOf("mild", "moderate", "strong", "soft", "soft"), r.store.events.filter { it.type == "beep" }.map { it.note.removePrefix("remote ") })
+        assertEquals(listOf("mild", "moderate", "strong"), r.store.events.filter { it.type == "beep" }.map { it.note.removePrefix("remote ") })
+        assertEquals(2, r.store.events.count { it.type == "beep_maybe" })
     }
 
-    /** Three shared spots (old kinds bump, pothole, unsure) 60 m apart on an east-going road. */
-    private val three = listOf(shared(1, 800.0, BumpKind.BUMP), shared(2, 860.0, BumpKind.POTHOLE), shared(3, 920.0, BumpKind.UNSURE))
+    // ---------- "maybe" spots never alert (owner, beta9) ----------
+
+    /** A "maybe" ahead (one phone only): no warning, no beep and no beep count; only beep_maybe in the log. */
+    @Test fun aMaybeAheadMakesNoSound() {
+        val r = Run(listOf(shared(21, 800.0, BumpKind.BUMP, devices = 1)))
+        r.drive(0.0, 1200.0)
+        assertTrue(r.warnings.isEmpty(), r.describe())
+        assertEquals(0, r.count("beep"))
+        assertEquals(1, r.count("beep_maybe"))
+        assertEquals(0, r.e.trip.beeps)
+    }
+
+    /** The same spot confirmed (3 phones) still gives its sound, and counts. */
+    @Test fun aConfirmedSpotAheadStillWarns() {
+        val r = Run(listOf(shared(22, 800.0, BumpKind.BUMP, devices = 3)))
+        r.drive(0.0, 1200.0)
+        assertEquals(listOf(WarnSound.STRONG), r.warnings.map { it.sound }, r.describe())
+        assertEquals(1, r.e.trip.beeps)
+        assertEquals(0, r.count("beep_maybe"))
+    }
+
+    /**
+     * A mixed group counts only its confirmed spots: three mild confirmed ones with a strong "maybe" among them are
+     * "3 bumps ahead", mild (the maybe neither counts nor makes it strong), and the maybe stays silent.
+     */
+    @Test fun aMixedGroupCountsOnlyItsConfirmedSpots() {
+        val r = Run(listOf(
+            shared(31, 800.0, BumpKind.BUMP, severity = 3.0), shared(32, 860.0, BumpKind.BUMP, severity = 7.0, devices = 1),
+            shared(33, 920.0, BumpKind.BUMP, severity = 3.0), shared(34, 980.0, BumpKind.BUMP, severity = 3.0),
+        ))
+        r.drive(0.0, 1300.0)
+        assertEquals(1, r.warnings.size, r.describe())
+        val c = r.warnings.single().cluster!!
+        assertEquals(3, c.count)
+        assertEquals(Severity.MILD, c.maxSeverity)
+        assertEquals(1, r.count("beep_maybe"))
+        assertEquals(2, r.count("beep_grouped"))
+    }
+
+    /** A group of maybes only is silent: nothing is announced. */
+    @Test fun aGroupOfMaybesIsSilent() {
+        val r = Run((0 until 4).map { shared(41L + it, 800.0 + 60 * it, BumpKind.BUMP, devices = 1) })
+        r.drive(0.0, 1300.0)
+        assertTrue(r.warnings.isEmpty(), r.describe())
+        assertEquals(4, r.count("beep_maybe"))
+    }
+
+    /** Three confirmed shared spots (old kinds bump, unsure) 60 m apart on an east-going road. (A pothole is a "maybe".) */
+    private val three = listOf(shared(1, 800.0, BumpKind.BUMP), shared(2, 860.0, BumpKind.BUMP), shared(3, 920.0, BumpKind.UNSURE))
 
     private class Run(spots: List<RemoteSpot>, val cfg: EngineConfig = EngineConfig(), val store: MemoryStore = MemoryStore()) {
         val warnings = ArrayList<Warning>()
