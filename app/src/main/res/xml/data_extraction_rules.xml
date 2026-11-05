@@ -12,11 +12,13 @@
         <exclude domain="sharedpref" path="sync_auth.xml" />
         <exclude domain="sharedpref" path="trip_hold.xml" />
         <exclude domain="sharedpref" path="trip_hold_done.xml" />
+        <exclude domain="sharedpref" path="oem_autostart.xml" />
     </cloud-backup>
     <device-transfer>
         <exclude domain="file" path="crash/" />
         <exclude domain="sharedpref" path="sync_auth.xml" />
         <exclude domain="sharedpref" path="trip_hold.xml" />
         <exclude domain="sharedpref" path="trip_hold_done.xml" />
+        <exclude domain="sharedpref" path="oem_autostart.xml" />
     </device-transfer>
 </data-extraction-rules>

@@ -18,8 +18,15 @@ class TripConfirm(
     var confirmed = !automatic
         private set
 
+    /** Time at [CLEAR_KMH] or faster so far (gaps between fixes count up to [MAX_GAP_MS]). */
+    var fastMs = 0L
+        private set
+    private var lastFixMs = Long.MIN_VALUE
+
     /** A fix of the trip. True only at the fix that confirms it. */
     fun onFix(tMs: Long, kmh: Double): Boolean {
+        if (lastFixMs != Long.MIN_VALUE && tMs > lastFixMs && kmh >= CLEAR_KMH) fastMs += minOf(tMs - lastFixMs, MAX_GAP_MS)
+        lastFixMs = tMs
         if (confirmed || !gate.add(tMs, kmh)) return false
         confirmed = true
         return true
@@ -37,4 +44,20 @@ class TripConfirm(
 
     /** At the end: keep the trip only if it was confirmed and isn't too short. */
     fun keep(durationMs: Long, distanceM: Double): Boolean = confirmed && !ShortTrip.discard(durationMs, distanceM)
+
+    /**
+     * At the end: so clearly a drive that it is kept and uploaded without asking "Was this a drive?" (owner decision):
+     * at least [CLEAR_M] and [CLEAR_FAST_MS] at [CLEAR_KMH] or faster. A false start at home (seconds, metres), a walk
+     * with the phone or a short car-park move never gets there; a real drive does within a minute or two of town
+     * traffic. Shorter or slower trips still ask, and go unsent when unanswered.
+     */
+    fun clearDrive(distanceM: Double): Boolean = confirmed && distanceM >= CLEAR_M && fastMs >= CLEAR_FAST_MS
+
+    companion object {
+        const val CLEAR_M = 1000.0
+        const val CLEAR_KMH = 20.0
+        const val CLEAR_FAST_MS = 60_000L
+        /** A longer gap between fixes (a tunnel) counts as this much: the time above the speed isn't known. */
+        const val MAX_GAP_MS = 5_000L
+    }
 }

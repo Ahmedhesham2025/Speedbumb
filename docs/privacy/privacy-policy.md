@@ -1,6 +1,6 @@
 # Bump Beeper privacy policy
 
-*Draft for review (security-privacy). Last updated: 2026-10-08. Arabic version below.*
+*Draft for review (security-privacy). Last updated: 2026-11-05. Arabic version below.*
 
 Bump Beeper warns you about speed bumps and potholes and scores your driving. It is free, open source (GPL-3.0,
 <https://github.com/Ahmedhesham2025/Speedbumb>), and has **no ads, no analytics and no trackers**. You never sign up:
@@ -45,8 +45,11 @@ is closed or not in use**. Before Android asks for location, the app shows what 
 - **A recording that started by itself is like one you started:** the same data is kept on the phone, and the same
   features (shared map, real speed limits, help improve detection) apply. That includes the rough position (rounded to
   about 1 km) sent when a recording starts and when a trip ends, if you chose *Receive only* or *Share and receive*.
-- **It may start on a bus, a train or a bike.** So after such a trip the app asks **"Was this a drive?"**. Until you
-  answer *Yes, I drove*, the trip's bump points, its speed-limit route and its training samples **stay on the phone**.
+- **A clear car drive is kept and sent without asking:** at least **1 km** and at least **1 minute above 20 km/h**.
+  It is treated exactly as if you had answered *Yes, I drove*, and the 300 m trims at each end still apply.
+- **It may start on a bus, a train or a bike.** A bus or train ride can pass as a clear drive; turn the switch off,
+  or delete the trip, if that matters to you. For **shorter or slower trips** the app asks **"Was this a drive?"**.
+  Until you answer *Yes, I drove*, the trip's bump points, its speed-limit route and its training samples **stay on the phone**.
   *No* deletes them, together with the trip and the spots only it found. With no answer within **24 hours** they are
   never sent, and they are deleted at the next sync or app start after that (the trip itself stays on the phone). A trip during which your car's Bluetooth connected counts as
   confirmed. **Exception:** with *Live speed limit & warning* on, its lookups are sent during the trip, before you
@@ -145,7 +148,8 @@ to its notice. It sends compact learning samples so the detection of bumps and p
 - **When and how much:** uploaded **right after each drive** when the phone is online, so our server can tell roughly
   when a drive ended; about 30 to 90 KB per drive (consent version 2). A phone that agreed to version 1 kept its upload
   1 to 6 hours after a drive at a random time until it answers the update question, asked once when the app opens.
-  Trips that started by themselves are held until you answer "Was this a drive?" (see above).
+  Trips that started by themselves are sent without asking when they were a clear drive (at least 1 km, at least
+  1 minute above 20 km/h); shorter or slower ones are held until you answer "Was this a drive?" (see above).
 - **Why and who:** only to improve detection. The app's owner analyses the samples offline; they are never sold and
   never used for ads.
 - **Turning it off** or **Delete my shared data** deletes the samples and trip summaries on our server at once when
@@ -173,8 +177,9 @@ useful phone sensor during your trips so the detection can be improved offline.
   trip started is removed, and so is everything after the last point that is both more than 300 m driven before the
   end and more than 300 m from where the trip ended. So a phone parked at home sends nothing of that time, even if its
   GPS wanders. Nothing of a trip shorter than 600 m is sent. (A route that passes near the start or end again in the
-  middle of the trip is kept.) Trips that started by themselves are held until you answer "Was this a drive?"; *No*
-  deletes their recordings. About 27–32 MB per hour of driving, in files of about 5 MB.
+  middle of the trip is kept.) Trips that started by themselves are sent without asking when they were a clear drive
+  (at least 1 km, at least 1 minute above 20 km/h; a bus or train ride can pass); shorter or slower ones are held
+  until you answer "Was this a drive?", and *No* deletes their recordings. About 27–32 MB per hour of driving, in files of about 5 MB.
 - **Where and who:** to a private store on our server (Supabase, Frankfurt), in a folder named after your anonymous
   account ID, shown in Settings as your **Research ID**. Phones can only add files there, never read them. The app's
   owner downloads the files for research (at least weekly), which deletes them from the server, keeps the downloaded
@@ -206,7 +211,7 @@ Supabase sees the internet address a request comes from; its own sign-in records
 | Route waiting for a lookup (on the phone) | Until looked up; never sent after about 48 hours |
 | Training samples and trip summaries (server) | 12 months, or until you turn *Help improve detection* off or delete your shared data |
 | Training samples not sent yet (on the phone) | 7 days |
-| Data of a trip waiting for "Was this a drive?" (on the phone) | Until you answer; never sent after 24 hours, deleted at the next sync or app start. Exception: live speed-limit lookups are sent during the trip (nothing of them is kept) |
+| Data of a short or slow trip waiting for "Was this a drive?" (on the phone; a clear drive doesn't wait) | Until you answer; never sent after 24 hours, deleted at the next sync or app start. Exception: live speed-limit lookups are sent during the trip (nothing of them is kept) |
 | Daily upload counters for training samples (counts per device, no content) | 2 days |
 | Research recordings (on the phone, whole GPS route included) | 14 days, or 7 days after their upload; a zip you shared stays in Downloads until you delete it |
 | Research recordings (our server) | Until the owner downloads them (at least weekly); with *Delete my shared data*, erased at the owner's next run |
@@ -314,7 +319,10 @@ Notes for the Play Store *Data safety* form and the F-Droid listing (store-docs 
   يعرف إنك بتسوق ويسجّل المشوار.
 - التسجيل اللي بدأ لوحده زي اللي إنت بدأته: نفس البيانات ونفس الخصائص، ومنها المكان التقريبي (حوالي 1 كم) أول
   التسجيل وآخر الرحلة لو اخترت «استقبل بس» أو «شارك واستقبل».
-- **ممكن يبدأ في أتوبيس أو قطر أو عجلة**، فبعدها التطبيق بيسأل **«كنت إنت اللي سايق؟»**. لحد ما تقول «أيوه، أنا
+- **مشوار العربية الواضح بيتحفظ ويتبعت من غير ما يسألك:** على الأقل **1 كم** وعلى الأقل **دقيقة فوق 20 كم/س**.
+  بيتعامل بالظبط كأنك رديت «أيوه، أنا سقت»، وأول وآخر 300 متر بيتشالوا زي العادة.
+- **ممكن يبدأ في أتوبيس أو قطر أو عجلة**. مشوار الأتوبيس أو القطر ممكن يتحسب مشوار واضح؛ اقفل الخاصية، أو امسح
+  الرحلة، لو ده يفرق معاك. في **الرحلات الأقصر أو الأبطأ** التطبيق بيسأل **«كنت إنت اللي سايق؟»**. لحد ما تقول «أيوه، أنا
   سقت»، نقط المطبّات وطريق حدود السرعة وعيّنات التدريب بتاعة الرحلة **بتفضل على الموبايل**. «لأ» بيمسحهم مع الرحلة
   والأماكن اللي هي بس لقتها. ولو ما ردّتش خلال **24 ساعة** عمرهم ما بيتبعتوا، وبيتمسحوا أول مزامنة أو أول ما التطبيق
   يشتغل بعدها (والرحلة نفسها بتفضل على الموبايل). الرحلة اللي بلوتوث العربية اتوصّل فيها بتتحسب متأكّدة.
@@ -378,7 +386,8 @@ TomTom: <https://www.tomtom.com/privacy/>. سيرفرنا مش بيحتفظ بح
   تقفله)، والسجل ده مربوط كمان بمساهماته في الخريطة المتشاركة. العيّنات مش مربوطة بالرحلات.
 - بيترفع **على طول بعد كل مشوار** لما يبقى فيه نت، فسيرفرنا يقدر يعرف تقريبًا المشوار خلص إمتى؛ حوالي 30 لـ 90
   كيلوبايت (نسخة الموافقة 2). الموبايل اللي وافق على النسخة 1 بيفضل يرفع بعد المشوار بساعة لـ 6 ساعات في وقت عشوائي لحد
-  ما يرد على سؤال التحديث، اللي بيتسأل مرة لما التطبيق يتفتح. بيتحفظ 7 أيام على الموبايل لو ما اتبعتش، و12 شهر
+  ما يرد على سؤال التحديث، اللي بيتسأل مرة لما التطبيق يتفتح. الرحلات اللي بدأت لوحدها بتتبعت من غير سؤال لو كانت
+  مشوار واضح (1 كم أو أكتر، ودقيقة أو أكتر فوق 20 كم/س)، والأقصر أو الأبطأ بتستنى ردّك على «كنت إنت اللي سايق؟». بيتحفظ 7 أيام على الموبايل لو ما اتبعتش، و12 شهر
   على السيرفر، بس لتحسين الكشف، وصاحب التطبيق بيحلّله أوفلاين، وعمره ما بيتباع.
 - لو قفلته أو مسحت بياناتك المتشاركة بيتمسح من السيرفر على طول لو فيه نت، وإلا أول ما يتوصّل (الإعدادات بتقولك إنه
   مستني)، ما عدا نسخ مزوّد الخدمة الاحتياطية والسجلات اللي بتتمسح مع الوقت. ولو تسجيل الدخول المجهول اتغيّر، التطبيق
@@ -403,8 +412,9 @@ TomTom: <https://www.tomtom.com/privacy/>. سيرفرنا مش بيحتفظ بح
   اتسجّلت قبل ما العربية تكون مشيت 300 متر وبعدت 300 متر (خط مستقيم) عن مكان بداية الرحلة بتتشال، وكمان كل اللي بعد
   آخر نقطة بعيدة أكتر من 300 متر سواقة عن الآخر وأكتر من 300 متر عن مكان نهاية الرحلة. يعني الموبايل وهو راكن في البيت
   مش بيبعت أي حاجة من الوقت ده، حتى لو الـ GPS بيتهزّ. ومفيش حاجة من رحلة أقصر من 600 متر. (لو الطريق عدّى جنب
-  البداية أو النهاية تاني في نص الرحلة، الجزء ده بيفضل.) الرحلات اللي بدأت لوحدها بتستنى ردّك على «كنت إنت اللي
-  سايق؟»، و«لأ» بيمسح تسجيلاتها. حوالي 27–32 ميجا في كل ساعة سواقة.
+  البداية أو النهاية تاني في نص الرحلة، الجزء ده بيفضل.) الرحلات اللي بدأت لوحدها بتتبعت من غير سؤال لو كانت مشوار
+  واضح (1 كم أو أكتر، ودقيقة أو أكتر فوق 20 كم/س؛ ممكن أتوبيس أو قطر يعدّي)، والأقصر أو الأبطأ بتستنى ردّك على «كنت
+  إنت اللي سايق؟»، و«لأ» بيمسح تسجيلاتها. حوالي 27–32 ميجا في كل ساعة سواقة.
 - **فين ومين:** مخزن خاص على سيرفرنا (Supabase، فرانكفورت)، في فولدر باسم المُعرّف المجهول بتاعك، اللي بيظهر في
   الإعدادات باسم **رقم البحث**. الموبايل يقدر يضيف ملفات بس، عمره ما يقراها. صاحب التطبيق بينزّل الملفات للبحث (مرة في
   الأسبوع على الأقل) وده بيمسحها من السيرفر، وبيستخدمها بس لتحسين الكشف، وعمرها ما بتتباع ولا بتُستخدم للإعلانات.
@@ -420,8 +430,8 @@ TomTom: <https://www.tomtom.com/privacy/>. سيرفرنا مش بيحتفظ بح
 ما تمسح بياناتك المتشاركة أو تطلب المسح. التقارير بتتدمج في
 الخريطة وبتتمسح بعد حوالي يوم. سجل الموبايل، ومساهماته في الأماكن (عدد المرات، من غير أوقات)، وتقارير الأعطال بيفضلوا
 لحد ما تمسح بياناتك المتشاركة. عيّنات التدريب وملخّصات الرحلات: 12 شهر على السيرفر أو لحد ما تقفل «ساعد في تحسين
-الكشف» أو تمسح بياناتك المتشاركة؛ اللي لسه ما اتبعتش: 7 أيام على الموبايل. بيانات الرحلة المستنية «كنت إنت اللي
-سايق؟»: لحد ما ترد، وبعد 24 ساعة عمرها ما بتتبعت (ما عدا بحث حد السرعة المباشر، اللي بيتبعت أثناء الرحلة ومش بيتحفظ). عدّادات الرفع اليومية (أعداد بس): يومين.
+الكشف» أو تمسح بياناتك المتشاركة؛ اللي لسه ما اتبعتش: 7 أيام على الموبايل. بيانات الرحلة القصيرة أو البطيئة المستنية «كنت إنت اللي
+سايق؟» (المشوار الواضح مش بيستنى): لحد ما ترد، وبعد 24 ساعة عمرها ما بتتبعت (ما عدا بحث حد السرعة المباشر، اللي بيتبعت أثناء الرحلة ومش بيتحفظ). عدّادات الرفع اليومية (أعداد بس): يومين.
 
 **اختياراتك:**
 - تقدر تغيّر أو تلغي موافقتك في أي وقت من الإعدادات.

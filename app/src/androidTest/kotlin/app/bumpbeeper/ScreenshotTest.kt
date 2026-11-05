@@ -201,12 +201,17 @@ class ScreenshotTest {
         shot(dir, "09-trip-summary$suffix")
         scenario.onActivity { (it.pages[MainActivity.TAB_TRIPS] as TripsPage).back() }
 
+        // Auto start switched on for this shot only: the emulator has no "Allow all the time", so its row shows
+        // what blocks it, with the Fix button (the real check, AutoStartHealth). Set straight in the settings, so
+        // nothing is started or scheduled.
+        Prefs.sp(ctx).edit().putBoolean(Prefs.AUTO_DETECT, true).commit()
         scenario.onActivity { a ->
             a.select(MainActivity.TAB_SETTINGS)
             (a.pages[MainActivity.TAB_SETTINGS] as SettingsPage).openDiagnostics()
         }
         settle(1500)
         shot(dir, "10-diagnostics$suffix")
+        Prefs.sp(ctx).edit().putBoolean(Prefs.AUTO_DETECT, false).commit()
         instr.uiAutomation.performGlobalAction(android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_BACK)
         settle(800)
 
