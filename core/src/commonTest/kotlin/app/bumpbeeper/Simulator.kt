@@ -142,6 +142,8 @@ class DriveSpec(
      * there tipped. Put it where the car brakes ([hardBrakesAt]) or turns.
      */
     val seatSlidesAt: List<Pair<Double, Double>> = emptyList(),
+    /** The knock rebounds: a second, weaker impulse (seconds after the knock, m/s²); null = one knock. */
+    val seatKnockEcho: Pair<Double, Double>? = null,
     /** Sets the phone's own signals on every sample: (seconds driven, metres driven, speed m/s, the signals, sensor time ms). */
     val phoneSignals: ((Double, Double, Double, PhoneSignals, Long) -> Unit)? = null,
     /** The phone's own response: everything vertical it feels × [phoneGain], plus its own rattle (RMS [phoneNoise], m/s²). */
@@ -574,6 +576,8 @@ class Simulator(seed: Long) {
                     spike -= 6.0 * sin(PI * (k - 0.4) / 0.2)   // the knock into the seat back
                     av += pulse(k - 0.4, 6.0)
                 }
+                val echo = spec.seatKnockEcho
+                if (echo != null) av += pulse(k - 0.4 - echo.first, echo.second)
                 if (k < 0.8) shake = max(shake, 1.0)
             }
             if (spec.onSeat) {

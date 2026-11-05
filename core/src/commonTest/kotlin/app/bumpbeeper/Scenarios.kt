@@ -1194,7 +1194,8 @@ object Scenarios {
             describe("seat, slid $deg° in a brake", r)
             describeDriving("seat, slid $deg° in a brake, handled ${formatFixed(r.handledS, 1)} s", r.driving)
             check(r.newBumps == 0, "seat, $deg°: a slide is no bump: ${store.events.filter { it.type == "new_bump" }.map { it.note }}")
-            check("handled" in r.rejected, "seat, $deg°: the knock is felt and kept as the phone's: ${r.rejected}")
+            // A slide alone: its knock has no rear axle ("seat_slide"); tipped past tiltDeg it is handled like in a cup holder.
+            check("seat_slide" in r.rejected || "handled" in r.rejected, "seat, $deg°: the knock is felt and kept as the phone's: ${r.rejected}")
             check(r.driving.harshBrakes + r.driving.harshAccels + r.driving.harshCorners + r.driving.swerves == 0,
                 "seat, $deg°: no harsh event from the phone: brakes ${r.driving.harshBrakes} corners ${r.driving.harshCorners}")
             check(r.driving.phoneUse == 0, "seat, $deg°: a slide is no phone use, got ${r.driving.phoneUse}")
@@ -1223,6 +1224,42 @@ object Scenarios {
         check(pick.driving.phoneUse == 1, "seat: a pick-up with the screen on is phone use, got ${pick.driving.phoneUse}")
     }
 
+    /**
+     * The driver brakes for a hump and the phone slides on the seat (15°, under tiltDeg: a cup holder phone would not be
+     * handled). The hump the car crosses 6 or 9 m later, while the slide is still going on, is learned on both axles:
+     * before, the slide made every jolt the phone's. The slide's own knock (no rear axle) is still not a bump, and the
+     * slide is still no phone use.
+     */
+    fun seatBumpDuringSlideIsLearned() {
+        log("seatBumpDuringSlideIsLearned")
+        val seat = DrivingConfig().apply { placement = "seat" }
+        for (at in listOf(910.0, 913.0)) {
+            val store = MemoryStore()
+            val r = Simulator(84).drive(store, DriveSpec(onSeat = true, hardBrakesAt = listOf(900.0), hardBrakeMs2 = 3.0,
+                seatSlidesAt = listOf(904.0 to 15.0), bumpsAt = listOf(at), bumpKmh = 20.0, slowZonesAt = listOf(300.0)), drivingCfg = seat)
+            describe("seat, slid 15° in a brake, hump at $at m", r)
+            val notes = store.events.filter { it.type == "new_bump" }.map { it.note }
+            notes.forEach { log("    $it") }
+            check(r.handledS > 1.0, "seat, hump at $at m: the slide is handling: ${r.handledS} s")
+            check(r.newBumps == 1 && "axle=both" in notes.single(), "seat, hump at $at m: learned on both axles during the slide: $notes ${r.rejected}")
+            check("seat_slide" in r.rejected, "seat, hump at $at m: the slide's knock is the phone's: ${r.rejected}")
+            check(r.driving.phoneUse == 0, "seat, hump at $at m: a slide is no phone use, got ${r.driving.phoneUse}")
+        }
+        // A slide in a gentler brake whose knock rebounds a wheelbase later (0.3 s), too weakly for both axles: the axle
+        // check sees something (score at least axleEvidenceMin), but not both axles, so it is still the phone's knock,
+        // and the brake that slid it is no evidence.
+        val store = MemoryStore()
+        val r = Simulator(84).drive(store, DriveSpec(onSeat = true, hardBrakesAt = listOf(900.0), hardBrakeMs2 = 1.6,
+            seatSlidesAt = listOf(910.0 to 15.0), seatKnockEcho = 0.30 to 2.5, slowZonesAt = listOf(300.0)), drivingCfg = seat)
+        describe("seat, slid 15° in a brake, knock + weak rebound", r)
+        val knock = store.events.filter { it.type == "rejected" }.map { it.note }
+        knock.forEach { log("    $it") }
+        val score = knock.firstNotNullOfOrNull { Regex("axle=[a-z]+ ([0-9.]+)").find(it)?.groupValues?.get(1)?.toDouble() } ?: 0.0
+        check(score >= EngineConfig().axleEvidenceMin && knock.none { "axle=both" in it }, "seat, knock + rebound: axle seen, not both: $knock")
+        check(r.newBumps == 0, "seat, knock + rebound: no spot: ${store.events.filter { it.type == "new_bump" }.map { it.note }}")
+        check("seat_slide" in r.rejected, "seat, knock + rebound: the knock is the phone's: ${r.rejected}")
+    }
+
     fun all(): List<Pair<String, () -> Unit>> = listOf(
         "calmDrivingScoresHigh" to ::calmDrivingScoresHigh,
         "speedingAndHardBraking" to ::speedingAndHardBraking,
@@ -1247,6 +1284,7 @@ object Scenarios {
         "fastBumpVersusRoadJoint" to ::fastBumpVersusRoadJoint,
         "seatBumpsLearnedOnEvidence" to ::seatBumpsLearnedOnEvidence,
         "seatSlideIsNoBumpNoEventNoPhoneUse" to ::seatSlideIsNoBumpNoEventNoPhoneUse,
+        "seatBumpDuringSlideIsLearned" to ::seatBumpDuringSlideIsLearned,
         "dipIsNotABump" to ::dipIsNotABump,
         "severityCountsAndSounds" to ::severityCountsAndSounds,
         "noGyroStillLearns" to ::noGyroStillLearns,

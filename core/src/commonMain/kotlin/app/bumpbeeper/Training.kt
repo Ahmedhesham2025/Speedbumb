@@ -12,7 +12,11 @@ import kotlin.math.roundToLong
 class JoltSample(
     /** learned | hit | rejected | miss | pass_clear | user_mute ([DECISIONS]). */
     val decision: String,
-    /** Why, in `[a-z_]{1,24}` (e.g. the reject reason, `same_pass`), or null. */
+    /**
+     * Why, in `[a-z_]{1,24}` (e.g. the reject reason, `same_pass`), or null. A `miss` (a pass over your own spot, nothing
+     * felt) says `clean` when self-cleaning counted it, else why not: `beside_it`, `jolt_rejected`, `jolt_nearby`,
+     * `another_spot_hit`.
+     */
     val reason: String?,
     /**
      * This jolt's severity band (mild | moderate | strong, [Severity.label]), or the spot's band for a pass or mute;
