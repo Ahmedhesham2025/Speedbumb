@@ -653,7 +653,7 @@ class BumpEngine(
                 joltStartMs = -1
                 decide(start, joltPeak)
             }
-        } else if (abs(v) >= joltTrigger && (tMs >= refractoryUntilMs || (phoneJolt && !phone.untrusted(tMs, tMs)))) {
+        } else if (abs(v) >= joltTrigger && (tMs >= refractoryUntilMs || (phoneJolt && !phone.untrustedForJolts(tMs, tMs)))) {
             // A rejected jostle has no rear axle to wait for: a bump right after it (braking before it) still counts.
             joltStartMs = tMs
             joltPeak = abs(v)
@@ -682,6 +682,13 @@ class BumpEngine(
             }
             true
         } ?: false
+        // A seat slide alone doesn't make the phone untrusted for bumps, but its own knock (landing on the foam) is a jolt
+        // too: during one, only a jolt with the rear axle seen ([EngineConfig.axleEvidenceMin]) is the road's.
+        if (!overridden && phone.untrusted(tMs, lastAccelMs) && !(ax != null && ax.score >= cfg.axleEvidenceMin)) {
+            phoneJolt = phone.episodeStartMs <= tMs + cfg.phoneJoltLeadMs
+            reject(tMs, peak, "seat_slide", fix, axNote.trim())
+            return
+        }
         if (fix == null || abs(tMs - fix.timeMs) > cfg.maxFixAgeMs) { reject(tMs, peak, "no_gps", fix); return }
         if (fix.accuracyM > cfg.maxAccuracyM) { reject(tMs, peak, "weak_gps", fix); return }
         val speedKmh = fix.speedMps * 3.6
@@ -947,7 +954,7 @@ class BumpEngine(
      * A jostle in pocket mode is "phone_moving", anything else "handled". No new spot, no hit, in someone's hand.
      */
     private fun handledReason(tMs: Long): String? {
-        if (!phone.untrusted(tMs, lastAccelMs)) return null
+        if (!phone.untrustedForJolts(tMs, lastAccelMs)) return null
         return if (phone.pocketMode && phone.onlyJostles(tMs, lastAccelMs)) "phone_moving" else "handled"
     }
 
@@ -1732,7 +1739,7 @@ class BumpEngine(
         if (ring != null && !a.hit) nearMs[b.id] = Near(a.minDistMs, passKmh(a, f), a.maxJoltNear)
         val nearNote = "strongest jolt nearby ${formatFixed(a.maxJoltNear, 1)} m/s²"
         val near = phone.cfg.marginMs
-        if (!a.counted && !a.hit && phone.untrusted(a.minDistMs - near, a.minDistMs + near)) {
+        if (!a.counted && !a.hit && phone.untrustedForJolts(a.minDistMs - near, a.minDistMs + near)) {
             // The phone was in someone's hand over the spot: its jolts weren't trusted, so the pass says nothing.
             log("pass_handled", b.id, f.lat, f.lon, passKmh(a, f), a.maxJoltNear, Double.NaN, a.minDist, "not counted, phone handled")
             listener.onPassed(b, false)
@@ -1759,7 +1766,8 @@ class BumpEngine(
                 )
                 if (unclean == null && b.missStreak == cfg.retireAfterMisses) retire(b, "${b.missStreak} clean passes in a row")
                 observe("pass_clear", b.lat, b.lon, a.minSpeedNearMps * 3.6, a.maxJoltNear, 0.0, wallClock(), b.heading)
-                sample("miss", null, a.minDistMs, passKmh(a, f), a.maxJoltNear, null, b.severity(cfg), b.lat, b.lon, b.id, b.heading)
+                // The reason says whether the pass was clean (self-cleaning counts it) or why not: "clean", "beside_it"...
+                sample("miss", unclean?.replace(' ', '_') ?: "clean", a.minDistMs, passKmh(a, f), a.maxJoltNear, null, b.severity(cfg), b.lat, b.lon, b.id, b.heading)
             }
             store.updateBump(b)
         }
@@ -1785,7 +1793,7 @@ class BumpEngine(
     private fun finishOsmPass(b: Bump, a: Approach, osmId: String) {
         val near = phone.cfg.marginMs
         if (a.hit || notClean(b, a) != null || a.minSpeedNearMps * 3.6 < cfg.minInformativeKmh ||
-            phone.untrusted(a.minDistMs - near, a.minDistMs + near)) return
+            phone.untrustedForJolts(a.minDistMs - near, a.minDistMs + near)) return
         val o = osmAll.firstOrNull { it.osmId == osmId } ?: return
         osmAll = osmAll.map { if (it === o) it.copy(cleanPasses = it.cleanPasses + 1) else it }
         log("osm_clear", -1, o.lat, o.lon, a.minSpeedNearMps * 3.6, a.maxJoltNear, Double.NaN, a.minDist,

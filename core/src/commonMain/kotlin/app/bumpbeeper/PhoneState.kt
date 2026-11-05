@@ -138,8 +138,10 @@ class PhoneStateConfig {
     var movingKmh = 10.0
     /**
      * Placement "seat": the phone lies loose on the seat foam and slides or tips when the car brakes or corners. A turn
-     * of more than [seatSlideDeg] from where it rests is a SLIDE: the phone is HANDLED (its jolts and pushes are not
-     * the road's or the car's) until it rests again. A slide that began within [seatSlideBeforeMs] before to
+     * of more than [seatSlideDeg] from where it rests is a SLIDE: the phone is HANDLED (its pushes are not the car's:
+     * harsh events and phone use are judged on that) until it rests again. Its jolts still count for bumps
+     * ([PhoneStateDetector.untrustedForJolts]): a slide alone is judged as a cup holder would be, where only the tilt,
+     * rotation and other signs make the phone untrusted; the foam doesn't make a bump. A slide that began within [seatSlideBeforeMs] before to
      * [seatSlideAfterMs] after a GPS fix showing the car braking or speeding up by [seatSlideGpsMs2] or more, or turning
      * at [seatSlideTurnRads] or more, is no phone use unless a sign other than motion (screen, unlock, call) joins in
      * ([PhoneStateDetector.seatSlideExcused]).
@@ -281,6 +283,11 @@ class PhoneStateDetector(val cfg: PhoneStateConfig = PhoneStateConfig(), val sig
     private val wasJostle = BooleanArray(HISTORY)
     /** The episode was a seat slide that landed: no margin after it, like a jostle. */
     private val wasSlide = BooleanArray(HISTORY)
+    /**
+     * From when the episode distrusts jolts ([untrustedForJolts]): when a sign other than a seat slide first showed,
+     * as a cup holder phone would have begun it; [Long.MAX_VALUE] while it is only a slide.
+     */
+    private val joltsFrom = LongArray(HISTORY)
 
     /** True if the phone was HANDLED at any time from [fromMs] to [toMs]. */
     fun handledDuring(fromMs: Long, toMs: Long): Boolean {
@@ -297,10 +304,19 @@ class PhoneStateDetector(val cfg: PhoneStateConfig = PhoneStateConfig(), val sig
         return false
     }
 
-    /** Whatever makes [untrusted] true is a jostle (the episode going on: judged so far). */
+    /**
+     * [untrusted] for the bump engine's jolts: the same, except that a seat slide on its own ([PhoneStateConfig.seatSlideDeg])
+     * doesn't count, so on the seat only what would make a cup holder phone untrusted does (tilt, rotation, the screen...).
+     */
+    fun untrustedForJolts(fromMs: Long, toMs: Long): Boolean {
+        for (i in 0 until min(count, HISTORY)) if (joltsFrom[i] <= toMs && ends[i] >= fromMs - margin(i)) return true
+        return false
+    }
+
+    /** Whatever makes [untrustedForJolts] true is a jostle (the episode going on: judged so far). */
     fun onlyJostles(fromMs: Long, toMs: Long): Boolean {
         for (i in 0 until min(count, HISTORY)) {
-            if (starts[i] > toMs || ends[i] < fromMs - margin(i)) continue
+            if (joltsFrom[i] > toMs || ends[i] < fromMs - margin(i)) continue
             if (!(if (ends[i] == Long.MAX_VALUE) jostle else wasJostle[i])) return false
         }
         return true
@@ -464,16 +480,13 @@ class PhoneStateDetector(val cfg: PhoneStateConfig = PhoneStateConfig(), val sig
         var began = false
         if (signs != 0) {
             if (!handled) {
-                var start = t
-                if (tiltSince != NEVER) start = min(start, tiltSince)
-                if ((signs and GYRO) != 0) start = min(start, gyroSince)
-                if ((signs and SCREEN) != 0) start = min(start, screenSince)
-                if ((signs and UNLOCK) != 0) start = min(start, max(signals.unlockedAtMs, t - cfg.unlockMs))
-                if ((signs and SLIDE) != 0) start = min(start, slideSince)
-                begin(start, t, signs, moving)
+                begin(signStart(t, signs), t, signs, moving)
                 handled = true
                 began = true
             }
+            // A seat slide that a cup holder phone would also show (tilt, rotation, screen...): its jolts are not trusted.
+            val i = (count - 1) % HISTORY
+            if (joltsFrom[i] == Long.MAX_VALUE && (signs and SLIDE.inv()) != 0) joltsFrom[i] = signStart(t, signs and SLIDE.inv())
             lastSignMs = t
             causes = causes or signs
             if (moving) movingCauses = movingCauses or signs
@@ -526,6 +539,17 @@ class PhoneStateDetector(val cfg: PhoneStateConfig = PhoneStateConfig(), val sig
         }
     }
 
+    /** When the handling that [signs] show at [t] began. */
+    private fun signStart(t: Long, signs: Int): Long {
+        var start = t
+        if (tiltSince != NEVER) start = min(start, tiltSince)
+        if ((signs and GYRO) != 0) start = min(start, gyroSince)
+        if ((signs and SCREEN) != 0) start = min(start, screenSince)
+        if ((signs and UNLOCK) != 0) start = min(start, max(signals.unlockedAtMs, t - cfg.unlockMs))
+        if ((signs and SLIDE) != 0) start = min(start, slideSince)
+        return start
+    }
+
     private fun begin(start: Long, t: Long, signs: Int, moving: Boolean) {
         fromMount = state == PhoneState.STABLE_MOUNTED
         slideStart = (signs and SLIDE) != 0
@@ -551,6 +575,7 @@ class PhoneStateDetector(val cfg: PhoneStateConfig = PhoneStateConfig(), val sig
         ends[i] = Long.MAX_VALUE
         wasJostle[i] = false
         wasSlide[i] = false
+        joltsFrom[i] = if (signs == SLIDE) Long.MAX_VALUE else start
         count++
     }
 

@@ -82,6 +82,7 @@ class JoltSampleTest {
         val s3 = ArrayList<JoltSample>()
         drive(store, s3, 60, 8.33)
         assertEquals(listOf("miss"), s3.map { it.decision })
+        assertEquals("clean", s3[0].reason)                  // straight over it, nothing near: self-cleaning counts it
         checkWindow(s3[0])
         assertEquals(4 * 50 + 1, s3[0].window.accel.size)   // a pass has the full ±2 s
     }
