@@ -148,8 +148,8 @@ class ApproachBeepsTest {
         for ((sev, devices, want) in listOf(Triple(3.0, 3, true), Triple(4.2, 3, true), Triple(7.0, 1, false))) {
             val r = Run(listOf(spot(1, 1000.0, sev, devices)))
             r.drive(1100.0) { 14.0 }
-            assertEquals(1, r.warnings.size)
-            assertEquals(want, r.beeps.isNotEmpty(), "severity $sev, $devices phones: ${r.warnings[0].second.sound}")
+            assertEquals(if (want) 1 else 0, r.warnings.size)   // a maybe: no warning at all
+            assertEquals(want, r.beeps.isNotEmpty(), "severity $sev, $devices phones")
         }
         val off = Run(listOf(spot(1, 1000.0)), EngineConfig().apply { approachBeeps = false })
         off.drive(1100.0) { 14.0 }

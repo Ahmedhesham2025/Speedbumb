@@ -10,7 +10,7 @@ object Prefs {
     const val SENSITIVITY = "sensitivity"   // 0 = low, 1 = normal, 2 = high
     const val LOUD = "loud"
     const val CLICK_ON_NEW = "click_on_new"
-    /** "Warn for OpenStreetMap bumps": a soft "maybe" beep for bumps mapped on OSM that we don't know yet. */
+    /** "Show OpenStreetMap bumps": OSM bumps we don't know yet shown as silent "maybe" spots (evidence is always used). */
     const val OSM_WARNINGS = "osm_warnings"
     const val LEAD_SECONDS = "lead_seconds"
     const val QUIET_BELOW_KMH = "quiet_below_kmh"
