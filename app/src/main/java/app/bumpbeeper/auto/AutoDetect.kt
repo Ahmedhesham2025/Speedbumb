@@ -71,7 +71,10 @@ object AutoDetect {
     /** Make the running detection match the setting and permissions. Idempotent and cheap. */
     fun apply(ctx: Context) {
         val app = ctx.applicationContext
+        // The hourly health check runs while the switch is on, also while a permission is missing (it says so).
+        if (enabled(app)) AutoStartCheck.schedule(app) else AutoStartCheck.cancel(app)
         if (!enabled(app) || missingPermissions(app).isNotEmpty()) {
+            if (enabled(app)) StartLog.add(app, StartLog.Reason.BLOCKED_PERMISSION)
             VehicleActivity.stop(app)
             BumpService.unwatch(app)
             return

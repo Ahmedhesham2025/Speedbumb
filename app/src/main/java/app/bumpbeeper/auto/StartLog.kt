@@ -25,6 +25,12 @@ object StartLog {
         STARTED_CAR(R.string.start_by_car),
         CONFIRMED(R.string.start_confirmed),
         DISCARDED(R.string.start_discarded),
+        /** Switched on, but a location permission is missing (never given, or revoked as unused). */
+        BLOCKED_PERMISSION(R.string.start_blocked_permission),
+        /** Android refused to start detection or a trip from the background. */
+        START_REFUSED(R.string.start_refused),
+        /** An automatic trip's "Was this a drive?" went unanswered for 24 h: its data was deleted unsent. */
+        HELD_DELETED(R.string.start_held_deleted),
     }
 
     /** Newest last. The same reason twice in a row is kept once (motion fires again and again while walking). */
