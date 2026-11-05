@@ -44,6 +44,25 @@ class SharedMapTest {
         assertEquals(run(false), run(true))
     }
 
+    /**
+     * Your own "maybe" standing in for a confirmed shared twin alerts with the stronger band of the two: a confirmed
+     * strong hump felt once here as mild is announced as strong.
+     */
+    @Test fun ownMaybeTakesItsConfirmedTwinsStrongerBand() {
+        val sim = Simulator(67)
+        val store = MemoryStore()
+        val spec = DriveSpec(bumpsAt = listOf(800.0), cruiseKmh = 40.0)
+        sim.drive(store, spec, tripId = 1)
+        val cfg = EngineConfig()
+        val local = store.saved.single().apply { sevIndex = 3.0; lastBand = Severity.MILD; axleHits = 0; shape = null }
+        assertEquals(Severity.MILD, local.severity(cfg))
+        assertEquals(Confidence.SOFT, local.confidence(cfg))
+        val twin = ListSpotSource(listOf(RemoteSpot(4, local.lat, local.lon, local.heading, BumpKind.BUMP, Side.UNKNOWN, 7.0, 2)))
+        val r = sim.drive(store, spec, tripId = 2, spotSource = twin)
+        assertEquals(listOf(local.id), r.beepBumpIds)
+        assertEquals(listOf(WarnSound.STRONG), r.warnings.map { it.sound })
+    }
+
     /** A cache that throws must not stop the engine: it keeps warning for its own spots. */
     @Test fun brokenSourceIsIgnored() {
         val sim = Simulator(66)
