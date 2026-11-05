@@ -96,6 +96,12 @@
             android:name=".auto.TripCheck$Answer"
             android:exported="false" />
 
+        <!-- Auto-detect driving: the hourly "is auto start blocked?" check (AutoStartCheck). -->
+        <service
+            android:name=".auto.AutoStartCheck"
+            android:exported="false"
+            android:permission="android.permission.BIND_JOB_SERVICE" />
+
         <!-- Auto-detect driving: after a reboot or an update, start detecting again (only when switched on). -->
         <receiver
             android:name=".auto.BootReceiver"

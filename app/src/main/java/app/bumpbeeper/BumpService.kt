@@ -132,6 +132,7 @@ class BumpService : Service(), SensorEventListener, LocationListener, EngineList
             val i = Intent(ctx, BumpService::class.java).setAction(ACTION_START).putExtra(EXTRA_SOURCE, source)
             if (instance == null && !mayRecordInBackground(ctx)) {
                 // startForeground would throw after startForegroundService, and Android then kills the app.
+                StartLog.add(ctx, StartLog.Reason.START_REFUSED)
                 notifyTapToStart(ctx, tapText(ctx, source))
                 return
             }
@@ -140,6 +141,7 @@ class BumpService : Service(), SensorEventListener, LocationListener, EngineList
             } catch (e: Exception) {
                 // Android refused to start from the background (missing permission or battery restriction).
                 Log.w(TAG, "auto start refused", e)
+                StartLog.add(ctx, StartLog.Reason.START_REFUSED)
                 notifyTapToStart(ctx, tapText(ctx, source))
             }
         }
@@ -165,6 +167,7 @@ class BumpService : Service(), SensorEventListener, LocationListener, EngineList
                 true
             } catch (e: Exception) {
                 Log.w(TAG, "watching refused", e)
+                StartLog.add(ctx, StartLog.Reason.START_REFUSED)
                 false
             }
         }
@@ -408,6 +411,7 @@ class BumpService : Service(), SensorEventListener, LocationListener, EngineList
         } catch (e: Exception) {
             // Only reachable when permissions changed after the check in watch(), or on a sticky restart.
             Log.w(TAG, "watching: startForeground refused", e)
+            StartLog.add(this, StartLog.Reason.START_REFUSED)
             if (!running) {
                 if (restarted) notifyTapToStart(this, getString(R.string.notif_detection_paused), resume = true)
                 stopIfIdle()
