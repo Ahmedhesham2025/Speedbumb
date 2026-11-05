@@ -1226,6 +1226,19 @@ object Scenarios {
             check("seat_slide" in r.rejected, "seat, hump at $at m: the slide's knock is the phone's: ${r.rejected}")
             check(r.driving.phoneUse == 0, "seat, hump at $at m: a slide is no phone use, got ${r.driving.phoneUse}")
         }
+        // A slide in a gentler brake whose knock rebounds a wheelbase later (0.3 s), too weakly for both axles: the axle
+        // check sees something (score at least axleEvidenceMin), but not both axles, so it is still the phone's knock,
+        // and the brake that slid it is no evidence.
+        val store = MemoryStore()
+        val r = Simulator(84).drive(store, DriveSpec(onSeat = true, hardBrakesAt = listOf(900.0), hardBrakeMs2 = 1.6,
+            seatSlidesAt = listOf(910.0 to 15.0), seatKnockEcho = 0.30 to 2.5, slowZonesAt = listOf(300.0)), drivingCfg = seat)
+        describe("seat, slid 15° in a brake, knock + weak rebound", r)
+        val knock = store.events.filter { it.type == "rejected" }.map { it.note }
+        knock.forEach { log("    $it") }
+        val score = knock.firstNotNullOfOrNull { Regex("axle=[a-z]+ ([0-9.]+)").find(it)?.groupValues?.get(1)?.toDouble() } ?: 0.0
+        check(score >= EngineConfig().axleEvidenceMin && knock.none { "axle=both" in it }, "seat, knock + rebound: axle seen, not both: $knock")
+        check(r.newBumps == 0, "seat, knock + rebound: no spot: ${store.events.filter { it.type == "new_bump" }.map { it.note }}")
+        check("seat_slide" in r.rejected, "seat, knock + rebound: the knock is the phone's: ${r.rejected}")
     }
 
     fun all(): List<Pair<String, () -> Unit>> = listOf(

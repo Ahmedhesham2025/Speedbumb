@@ -141,7 +141,8 @@ class PhoneStateConfig {
      * of more than [seatSlideDeg] from where it rests is a SLIDE: the phone is HANDLED (its pushes are not the car's:
      * harsh events and phone use are judged on that) until it rests again. Its jolts still count for bumps
      * ([PhoneStateDetector.untrustedForJolts]): a slide alone is judged as a cup holder would be, where only the tilt,
-     * rotation and other signs make the phone untrusted; the foam doesn't make a bump. A slide that began within [seatSlideBeforeMs] before to
+     * rotation and other signs make the phone untrusted. The slide's own knock is a jolt too, so during one the engine
+     * takes only a jolt with both axles felt, and not the brake's slowdown as evidence. A slide that began within [seatSlideBeforeMs] before to
      * [seatSlideAfterMs] after a GPS fix showing the car braking or speeding up by [seatSlideGpsMs2] or more, or turning
      * at [seatSlideTurnRads] or more, is no phone use unless a sign other than motion (screen, unlock, call) joins in
      * ([PhoneStateDetector.seatSlideExcused]).

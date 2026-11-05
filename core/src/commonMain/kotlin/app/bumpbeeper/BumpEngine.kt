@@ -682,9 +682,11 @@ class BumpEngine(
             }
             true
         } ?: false
-        // A seat slide alone doesn't make the phone untrusted for bumps, but its own knock (landing on the foam) is a jolt
-        // too: during one, only a jolt with the rear axle seen ([EngineConfig.axleEvidenceMin]) is the road's.
-        if (!overridden && phone.untrusted(tMs, lastAccelMs) && !(ax != null && ax.score >= cfg.axleEvidenceMin)) {
+        // A seat slide alone doesn't make the phone untrusted for bumps, but its own knock (landing on the foam, ringing,
+        // rebounding) is a jolt too: during one, only a jolt with both axles felt (the handled override's bar) is the
+        // road's. And the brake that slid the phone is no evidence: its slowdown doesn't count for this jolt.
+        val slideJolt = !overridden && phone.untrusted(tMs, lastAccelMs)
+        if (slideJolt && ax?.verdict != AxleVerdict.BOTH) {
             phoneJolt = phone.episodeStartMs <= tMs + cfg.phoneJoltLeadMs
             reject(tMs, peak, "seat_slide", fix, axNote.trim())
             return
@@ -714,7 +716,7 @@ class BumpEngine(
         // A bump mapped on OpenStreetMap right here (no direction to check): enough for a "maybe" in a pocket, never a
         // grade. It must not confirm a spot, so the hit grades below stay on the car's own signature and the GPS.
         val osm = osmAll.any { Geo.distance(pos[0], pos[1], it.lat, it.lon) <= cfg.osmEvidenceM }
-        val slowed = drop >= cfg.speedEvidenceKmh
+        val slowed = !slideJolt && drop >= cfg.speedEvidenceKmh
         val axleSeen = ax != null && ax.score >= cfg.axleEvidenceMin
         // The axle check could not look (rear past the decision at a crawl, too fast, no data, the hit still ringing
         // where the rear would be): that is no evidence
@@ -741,8 +743,8 @@ class BumpEngine(
         val hump = ax?.let { bumpShape(tMs, it) }
         val hitInfo = HitInfo(sev.takeIf { !it.isNaN() }, ax?.score?.takeIf { !it.isNaN() }?.coerceIn(0.0, 1.0), hump?.first)
         val humpNote = " hump=" + (hump?.let { it.first.name.lowercase() + it.second } ?: "unknown")
-        val newOk = speedKmh <= cfg.fastNewMinKmh || ax?.verdict == AxleVerdict.BOTH || profile == CrossProfile.SLOWDOWN ||
-            gpsDropKmh(tMs) >= cfg.speedEvidenceKmh
+        val newOk = speedKmh <= cfg.fastNewMinKmh || ax?.verdict == AxleVerdict.BOTH ||
+            (!slideJolt && (profile == CrossProfile.SLOWDOWN || gpsDropKmh(tMs) >= cfg.speedEvidenceKmh))
         val rejectNew = if (newOk) null else { { reject(tMs, peak, "fast_unconfirmed", fix, (note + humpNote).trim(), shape) } }
         registerHit(tMs, pos[0], pos[1], speedKmh, peak, slowdownKmh, shape, grade, note + humpNote, hitInfo, rejectNew, pol == Polarity.DOWN_WEAK)
         val spot = lastSpot
