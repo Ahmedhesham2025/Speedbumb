@@ -461,7 +461,9 @@ object Scenarios {
         check(d.harshAccels == 0, "speeding up again normally is not harsh, got ${d.harshAccels}")
         check(d.speedingShare > 0.4, "most of the trip is above 90 km/h, got ${d.speedingShare}")
         check(store.events.any { it.type == "speeding" }, "a speeding episode should be logged")
-        check(d.score() in 0..70, "this trip should score 70 or less, got ${d.score()}")
+        // No road limits in the simulator: time over the fixed 90 km/h is a diagnostic, not speeding points.
+        check(d.scoreBreakdown()!![ScoreCategory.SPEEDING].points == 0, "no known limit, no speeding points")
+        check(d.score() in 70..95, "2 harsh brakes only, got ${d.score()}")
     }
 
     /**

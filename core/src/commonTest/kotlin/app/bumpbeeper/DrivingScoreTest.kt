@@ -8,13 +8,13 @@ class DrivingScoreTest {
     private fun trip(km: Double, minutes: Double, setup: DrivingStats.() -> Unit = {}) =
         DrivingStats().apply { distanceM = km * 1000; movingS = minutes * 60; setup() }
 
-    /** 0.2 km in 16 min (a parking lot), or 5 km in under 2 min of driving: no score ("Too short to score"), not 0. */
+    /** 0.2 km in 16 min (a parking lot), or 5 km in under a minute of driving: no score ("Too short to score"), not 0. */
     @Test fun aTinyTripGetsNoScore() {
         assertEquals(-1, trip(0.2, 16.0).score())
         assertEquals(-1, trip(0.9, 5.0).score())
-        assertEquals(-1, trip(5.0, 1.5).score())
+        assertEquals(-1, trip(5.0, 0.9).score())
         assertEquals(null, trip(0.2, 16.0).scoreBreakdown())
-        assertEquals(100, trip(1.0, 2.0).score())
+        assertEquals(100, trip(1.0, 1.0).score())
         assertEquals("Too short to score", DrivingStats.grade(-1))
     }
 

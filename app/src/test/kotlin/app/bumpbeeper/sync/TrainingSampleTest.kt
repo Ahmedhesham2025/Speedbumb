@@ -106,7 +106,7 @@ class TrainingSampleTest {
     }
 
     @Test fun tripSummaryAndBatch() {
-        val d = DrivingStats().apply { harshBrakes = 2; swerves = 1; speedingS = 33.4; distanceM = 12_345.0 }
+        val d = DrivingStats().apply { harshBrakes = 2; swerves = 1; speedingS = 33.4; distanceM = 12_345.0; movingS = 1500.0 }
         val t = TripStats().apply { beeps = 4; distanceM = 12_000.0 }
         val trip = TrainingJson.trip("t1", 1_759_000_000_000L, 1_759_000_000_000L + 1_800_000L, "cupholder",
             mapOf("learned" to 3, "miss" to 1), t, d, 80, 200)
@@ -120,6 +120,10 @@ class TrainingSampleTest {
         assertEquals(80, trip.getInt("battery_start"))
         assertTrue("out of range battery → null", trip.isNull("battery_end"))
         assertTrue(trip.getInt("score") in 0..100)
+        // Too short to score (0.2 km): no score, not 0.
+        val short = TrainingJson.trip("t3", 1_759_000_000_000L, 1_759_000_960_000L, "seat", emptyMap(), t,
+            DrivingStats().apply { distanceM = 200.0; movingS = 900.0 }, 80, 80)
+        assertTrue(short.isNull("score"))
         assertFalse(trip.has("lat") || trip.has("route"))
 
         val items = listOf(

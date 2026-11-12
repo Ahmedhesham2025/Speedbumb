@@ -206,7 +206,7 @@ class DrivingStats {
     companion object {
         /** A trip shorter than this, or with less than [MIN_SCORE_MOVING_S] of driving, gets no score. */
         const val MIN_SCORE_KM = 1.0
-        const val MIN_SCORE_MOVING_S = 120.0
+        const val MIN_SCORE_MOVING_S = 60.0
 
         /**
          * The score's weights: points per event per 10 km (short trips count as 5 km). Speeding is not per event: it is
