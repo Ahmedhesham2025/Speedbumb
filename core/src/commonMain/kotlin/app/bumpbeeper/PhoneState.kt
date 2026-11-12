@@ -152,6 +152,12 @@ class PhoneStateConfig {
     var seatSlideTurnRads = 0.15
     var seatSlideBeforeMs = 1500L
     var seatSlideAfterMs = 3000L
+    /**
+     * With a screen kept on (our Drive screen), a slide must also look like one: it moves once and lies still. It is
+     * held, not slid, if it moves again after it came to rest, or is still moving this long after the last GPS
+     * manoeuvre (and [seatSlideAfterMs] after it began). It lands no sooner than that.
+     */
+    var seatSlideHoldAfterMs = 2000L
 }
 
 /**
@@ -270,6 +276,8 @@ class PhoneStateDetector(val cfg: PhoneStateConfig = PhoneStateConfig(), val sig
     /** Fix times the GPS showed the car braking, speeding up or turning ([PhoneStateConfig.seatSlideGpsMs2]). */
     private val manoeuvres = ArrayDeque<Long>()
     private var slideSince = NEVER
+    private var slideRested = false   // the slide came to rest in this episode
+    private var slideHeld = false     // ...and then moved again, or kept moving past the manoeuvre: a hand
     private var gpsTurnRads = 0.0
     private var gpsSteady = true
     private var carSteady = true
@@ -339,11 +347,18 @@ class PhoneStateDetector(val cfg: PhoneStateConfig = PhoneStateConfig(), val sig
     fun seatSlideExcused(nowMs: Long): Boolean? {
         // A screen that was already on before the slide (kept on, e.g. our own Drive screen) is no sign of a hand.
         val signs = if (keptOnScreen) NOT_MOTION and SCREEN.inv() else NOT_MOTION
-        if (!slideStart || (causes and signs) != 0 || outOfPocket) return false
+        if (!slideStart || (causes and signs) != 0 || outOfPocket || (keptOnScreen && slideHeld)) return false
         val from = episodeStartMs - cfg.seatSlideBeforeMs
         val to = episodeStartMs + cfg.seatSlideAfterMs
         if (manoeuvres.any { it in from..to }) return true
         return if (nowMs > to) false else null
+    }
+
+    /** With a screen kept on, when a slide has to be over ([PhoneStateConfig.seatSlideHoldAfterMs]). */
+    private fun slideSettleBy(): Long {
+        val from = episodeStartMs - cfg.seatSlideBeforeMs
+        val last = manoeuvres.lastOrNull { it >= from } ?: from
+        return max(last + cfg.seatSlideHoldAfterMs, episodeStartMs + cfg.seatSlideAfterMs)
     }
 
     fun onFix(f: Fix) {
@@ -534,8 +549,14 @@ class PhoneStateDetector(val cfg: PhoneStateConfig = PhoneStateConfig(), val sig
             val rested = t - anchorMs >= cfg.resettleMs && !(signals.screenOn && tiltOver)
             // A seat slide in a brake or corner that has landed (still for restMs where it lies): it rests there now,
             // at once, so the bumps after it are trusted again ([seatSlideExcused]: nothing but motion).
+            if (slideStart && keptOnScreen) {
+                if (t - stillSinceMs >= cfg.restMs && stillSinceMs > episodeStartMs) slideRested = true
+                else if (slideRested && (rawOver || moved > cfg.screenTiltDeg)) slideHeld = true
+                if (stillSinceMs == t && t > slideSettleBy()) slideHeld = true
+            }
             val landed = slideStart && t - stillSinceMs >= cfg.restMs && t - anchorMs >= cfg.restMs &&
-                (signs and (GYRO or TURN or CALL)) == 0 && seatSlideExcused(t) == true
+                (signs and (GYRO or TURN or CALL)) == 0 && seatSlideExcused(t) == true &&
+                (!keptOnScreen || t >= slideSettleBy())
             if (landed) end(t)
             else if (signs != 0 && (signs and (GYRO or TURN or CALL)) == 0 && rested) end(t)
             else if (if (jostle) t - lastMotionMs >= cfg.jostleCalmMs else t - lastSignMs >= cfg.calmMs) end(t)
@@ -572,6 +593,8 @@ class PhoneStateDetector(val cfg: PhoneStateConfig = PhoneStateConfig(), val sig
     private fun begin(start: Long, t: Long, signs: Int, moving: Boolean) {
         fromMount = state == PhoneState.STABLE_MOUNTED
         slideStart = (signs and SLIDE) != 0
+        slideRested = false
+        slideHeld = false
         keptOnScreen = signals.screenOn && screenOnAtMs < start - cfg.seatSlideBeforeMs
         state = PhoneState.HANDLED
         episode++

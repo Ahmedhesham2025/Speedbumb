@@ -652,6 +652,26 @@ object Scenarios {
         check(r.driving.phoneUse == 0, "a glance at a stop and our kept-on screen are no phone use, got ${r.driving.phoneUse}")
     }
 
+    /**
+     * Review of #201: with the Drive screen kept on, a pick-up from the seat that starts in a gentle bend (0.17 rad/s, the
+     * GPS shows it) is held, not slid: it rests in the hand and moves again when put back, so it is phone use. A plain
+     * slide in the same bend lies where it landed and is still no phone use.
+     */
+    fun seatPickUpInABendWithDriveScreenIsPhoneUse() {
+        log("seatPickUpInABendWithDriveScreenIsPhoneUse")
+        val seat = DrivingConfig().apply { placement = "seat" }
+        for (pick in listOf(true, false)) {
+            val spec = DriveSpec(onSeat = true, bendsAt = listOf(700.0), slowZonesAt = listOf(300.0),
+                holdsAt = if (pick) listOf(705.0 to 3.0) else emptyList(),
+                seatSlidesAt = if (pick) emptyList() else listOf(705.0 to 35.0),
+                phoneSignals = { _, _, _, sig, _ -> sig.screenOn = true })   // the Drive screen, on all trip
+            val r = Simulator(86).drive(MemoryStore(), spec, drivingCfg = seat)
+            val what = if (pick) "picked up 3 s" else "slid 35°"
+            describeDriving("seat, Drive screen on, $what in a bend", r.driving)
+            check(r.driving.phoneUse == (if (pick) 1 else 0), "seat, Drive screen on, $what in a bend: phone use ${r.driving.phoneUse}")
+        }
+    }
+
     /** Unlocks and calls count by the speed at that moment: an unlock at a red light, or a call made while stopped, is not phone use. */
     fun stoppedIsNoPhoneUse() {
         log("stoppedIsNoPhoneUse")

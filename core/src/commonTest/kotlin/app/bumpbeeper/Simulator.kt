@@ -90,6 +90,10 @@ class DriveSpec(
     val swervesAt: List<Double> = emptyList(),
     /** Sharp turns: the car turns left at 0.45 rad/s for 2 s (≈ 52°, ≈ 6 m/s² at 50 km/h), and back right 6 s later. */
     val sharpTurnsAt: List<Double> = emptyList(),
+    /** Gentle bends: the car turns left at [bendRads] for [bendS] and drives on straight. */
+    val bendsAt: List<Double> = emptyList(),
+    val bendRads: Double = 0.17,
+    val bendS: Double = 4.0,
     /** The phone twists 50° about the vertical in 0.8 s (shifting in a pocket): the gyroscope turns, the car doesn't. */
     val pocketTwistsAt: List<Double> = emptyList(),
     /** The phone is jostled (tipped 60° for [jostleHeldS] and shaken), like a loose phone in a pocket. */
@@ -313,6 +317,7 @@ class Simulator(seed: Long) {
         val brakes = spec.hardBrakesAt.map { travel(it) }
         val swerves = spec.swervesAt.map { travel(it) }
         val turns = spec.sharpTurnsAt.map { travel(it) }
+        val bends = spec.bendsAt.map { travel(it) }
         val twists = spec.pocketTwistsAt.map { travel(it) }
         val jostles = spec.jostlesAt.map { travel(it) }
         val seams = spec.seamsAt.map { travel(it) }
@@ -345,6 +350,7 @@ class Simulator(seed: Long) {
         var forceBrakeUntil = -1.0
         var swerveStart = -1.0
         var turnStart = -1.0
+        var bendStart = -1.0
         var twistStart = -1.0
         var jostleStart = -1.0
         val seamHits = ArrayList<DoubleArray>()   // (time, amplitude)
@@ -384,6 +390,7 @@ class Simulator(seed: Long) {
             for (sb in brakes) if (s < sb && s + v * dt >= sb) forceBrakeUntil = t + 1.5
             for (sw in swerves) if (s < sw && s + v * dt >= sw) swerveStart = t
             for (st in turns) if (s < st && s + v * dt >= st) turnStart = t
+            for (sb in bends) if (s < sb && s + v * dt >= sb) bendStart = t
             for (sp in twists) if (s < sp && s + v * dt >= sp) twistStart = t
             for (sj in jostles) if (s < sj && s + v * dt >= sj) jostleStart = t
             for ((sh, secs) in holds) if (s < sh && s + v * dt >= sh) { holdStart = t; holdS = secs }
@@ -488,6 +495,7 @@ class Simulator(seed: Long) {
                 val k = t - turnStart
                 carTurn += when { k < 2.0 -> 0.45; k in 8.0..10.0 -> -0.45; else -> 0.0 }   // left, then back right
             }
+            if (bendStart >= 0 && t - bendStart < spec.bendS) carTurn += spec.bendRads
             yaw += carTurn
             carYaw += carTurn * dt
             // The phone turning in a pocket: only the gyroscope (and the phone's axes) see it.

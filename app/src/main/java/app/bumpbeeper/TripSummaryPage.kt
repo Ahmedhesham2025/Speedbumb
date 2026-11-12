@@ -157,7 +157,9 @@ class TripSummaryPage(private val a: MainActivity, private val onBack: () -> Uni
             ScoreCategory.PHONE_USE -> R.drawable.ic_phone to R.string.trips_fact_phone
             ScoreCategory.BUMPS_FAST -> R.drawable.ic_bump to R.string.trips_fact_bumps_fast
         }
-        val detail = if (item.category == ScoreCategory.SPEEDING) {
+        // No known road limit: no speeding points, so no share of time "over" next to them either.
+        val detail = if (item.category == ScoreCategory.SPEEDING && !d.usesSpeedLimits) a.getString(R.string.trips_bd_limit_unknown)
+        else if (item.category == ScoreCategory.SPEEDING) {
             val pct = a.getString(R.string.trips_fact_over_limit_value, String.format(Locale.US, "%.0f", bd.speedingPct))
             if (bd.maxOverKmh >= 1) pct + " · " + a.getString(R.string.trips_bd_max_over,
                 a.getString(R.string.limits_max_over_value, String.format(Locale.US, "%.0f", bd.maxOverKmh))) else pct

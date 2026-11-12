@@ -44,5 +44,6 @@ class BumpEngineTest {
     @Test fun seatBumpsLearnedOnEvidence() = Scenarios.seatBumpsLearnedOnEvidence()
     @Test fun seatSlideIsNoBumpNoEventNoPhoneUse() = Scenarios.seatSlideIsNoBumpNoEventNoPhoneUse()
     @Test fun seatGlanceAtOwnScreenAtAStopIsNoPhoneUse() = Scenarios.seatGlanceAtOwnScreenAtAStopIsNoPhoneUse()
+    @Test fun seatPickUpInABendWithDriveScreenIsPhoneUse() = Scenarios.seatPickUpInABendWithDriveScreenIsPhoneUse()
     @Test fun seatBumpDuringSlideIsLearned() = Scenarios.seatBumpDuringSlideIsLearned()
 }
