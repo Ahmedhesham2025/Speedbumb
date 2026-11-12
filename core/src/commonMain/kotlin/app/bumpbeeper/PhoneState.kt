@@ -153,9 +153,10 @@ class PhoneStateConfig {
     var seatSlideBeforeMs = 1500L
     var seatSlideAfterMs = 3000L
     /**
-     * With a screen kept on (our Drive screen), a slide must also look like one: it moves once and lies still. It is
-     * held, not slid, if it moves again after it came to rest, or is still moving this long after the last GPS
-     * manoeuvre (and [seatSlideAfterMs] after it began). It lands no sooner than that.
+     * With a screen kept on (our Drive screen), a slide must also look like one for phone use: it moves once and lies
+     * still. It is held, not slid, if it is still moving this long after the last GPS manoeuvre (and [seatSlideAfterMs]
+     * after it began), or if, landed, it is put back where it lay before the slide within that time: then the whole
+     * time from the slide is phone use. Landing (jolts trusted again) is not delayed by this.
      */
     var seatSlideHoldAfterMs = 2000L
 }
@@ -276,8 +277,12 @@ class PhoneStateDetector(val cfg: PhoneStateConfig = PhoneStateConfig(), val sig
     /** Fix times the GPS showed the car braking, speeding up or turning ([PhoneStateConfig.seatSlideGpsMs2]). */
     private val manoeuvres = ArrayDeque<Long>()
     private var slideSince = NEVER
-    private var slideRested = false   // the slide came to rest in this episode
-    private var slideHeld = false     // ...and then moved again, or kept moving past the manoeuvre: a hand
+    private var slideHeld = false     // with a kept-on screen: still moving past the manoeuvre, or put back (a hand)
+    // A landed slide with a kept-on screen ([PhoneStateConfig.seatSlideHoldAfterMs]): when it began, where the phone
+    // lay before it; and, for the episode that follows it in time, the slide it may put back.
+    private var landedFrom = NEVER
+    private var px = 0.0; private var py = 0.0; private var pz = 0.0
+    private var putBackOf = NEVER
     private var gpsTurnRads = 0.0
     private var gpsSteady = true
     private var carSteady = true
@@ -355,10 +360,10 @@ class PhoneStateDetector(val cfg: PhoneStateConfig = PhoneStateConfig(), val sig
     }
 
     /** With a screen kept on, when a slide has to be over ([PhoneStateConfig.seatSlideHoldAfterMs]). */
-    private fun slideSettleBy(): Long {
-        val from = episodeStartMs - cfg.seatSlideBeforeMs
+    private fun slideSettleBy(startMs: Long = episodeStartMs): Long {
+        val from = startMs - cfg.seatSlideBeforeMs
         val last = manoeuvres.lastOrNull { it >= from } ?: from
-        return max(last + cfg.seatSlideHoldAfterMs, episodeStartMs + cfg.seatSlideAfterMs)
+        return max(last + cfg.seatSlideHoldAfterMs, startMs + cfg.seatSlideAfterMs)
     }
 
     fun onFix(f: Fix) {
@@ -549,14 +554,20 @@ class PhoneStateDetector(val cfg: PhoneStateConfig = PhoneStateConfig(), val sig
             val rested = t - anchorMs >= cfg.resettleMs && !(signals.screenOn && tiltOver)
             // A seat slide in a brake or corner that has landed (still for restMs where it lies): it rests there now,
             // at once, so the bumps after it are trusted again ([seatSlideExcused]: nothing but motion).
-            if (slideStart && keptOnScreen) {
-                if (t - stillSinceMs >= cfg.restMs && stillSinceMs > episodeStartMs) slideRested = true
-                else if (slideRested && (rawOver || moved > cfg.screenTiltDeg)) slideHeld = true
+            if (slideStart && keptOnScreen && !slideHeld) {
                 if (stillSinceMs == t && t > slideSettleBy()) slideHeld = true
+                // Back where it lay before a slide that landed moments ago: that was a hand, not the seat.
+                if (putBackOf != NEVER && angle(cx, cy, cz, px, py, pz) < cfg.seatSlideDeg) {
+                    slideHeld = true
+                    if (moving) movingMs += episodeStartMs - putBackOf
+                }
             }
+            val putBack = slideHeld && putBackOf != NEVER
             val landed = slideStart && t - stillSinceMs >= cfg.restMs && t - anchorMs >= cfg.restMs &&
-                (signs and (GYRO or TURN or CALL)) == 0 && seatSlideExcused(t) == true &&
-                (!keptOnScreen || t >= slideSettleBy())
+                (signs and (GYRO or TURN or CALL)) == 0 && (seatSlideExcused(t) == true || putBack)
+            if (landed && keptOnScreen && !putBack && t < slideSettleBy()) {
+                landedFrom = episodeStartMs; px = bx; py = by; pz = bz
+            }
             if (landed) end(t)
             else if (signs != 0 && (signs and (GYRO or TURN or CALL)) == 0 && rested) end(t)
             else if (if (jostle) t - lastMotionMs >= cfg.jostleCalmMs else t - lastSignMs >= cfg.calmMs) end(t)
@@ -593,9 +604,10 @@ class PhoneStateDetector(val cfg: PhoneStateConfig = PhoneStateConfig(), val sig
     private fun begin(start: Long, t: Long, signs: Int, moving: Boolean) {
         fromMount = state == PhoneState.STABLE_MOUNTED
         slideStart = (signs and SLIDE) != 0
-        slideRested = false
         slideHeld = false
         keptOnScreen = signals.screenOn && screenOnAtMs < start - cfg.seatSlideBeforeMs
+        putBackOf = if (landedFrom != NEVER && keptOnScreen && slideStart && start <= slideSettleBy(landedFrom)) landedFrom else NEVER
+        landedFrom = NEVER
         state = PhoneState.HANDLED
         episode++
         episodeStartMs = start

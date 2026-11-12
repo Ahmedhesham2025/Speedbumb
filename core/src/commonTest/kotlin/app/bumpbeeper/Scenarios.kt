@@ -654,8 +654,8 @@ object Scenarios {
 
     /**
      * Review of #201: with the Drive screen kept on, a pick-up from the seat that starts in a gentle bend (0.17 rad/s, the
-     * GPS shows it) is held, not slid: it rests in the hand and moves again when put back, so it is phone use. A plain
-     * slide in the same bend lies where it landed and is still no phone use.
+     * GPS shows it) is held, not slid: it lands in the hand, but is put back where it lay within the manoeuvre, so it is
+     * phone use. A plain slide in the same bend lies where it landed and is still no phone use.
      */
     fun seatPickUpInABendWithDriveScreenIsPhoneUse() {
         log("seatPickUpInABendWithDriveScreenIsPhoneUse")
@@ -670,6 +670,18 @@ object Scenarios {
             describeDriving("seat, Drive screen on, $what in a bend", r.driving)
             check(r.driving.phoneUse == (if (pick) 1 else 0), "seat, Drive screen on, $what in a bend: phone use ${r.driving.phoneUse}")
         }
+        // The landing is not delayed by the screen (#200): a hump 21 m after a slide in a brake is learned as with the
+        // screen off, the phone handled no longer, and no phone use.
+        fun hump(screen: Boolean) = Simulator(84).drive(MemoryStore(), DriveSpec(onSeat = true, hardBrakesAt = listOf(900.0),
+            hardBrakeMs2 = 3.0, seatSlidesAt = listOf(904.0 to 35.0), bumpsAt = listOf(925.0), slowZonesAt = listOf(300.0),
+            phoneSignals = { _, _, _, sig, _ -> sig.screenOn = screen }), drivingCfg = seat)
+        val off = hump(false)
+        val on = hump(true)
+        describe("seat, Drive screen on, slid 35° in a brake, hump 21 m later", on)
+        check(on.newBumps == 1 && on.driving.phoneUse == 0, "seat, Drive screen on: the hump after a slide is learned, " +
+            "no phone use: new=${on.newBumps} rejected=${on.rejected} use=${on.driving.phoneUse}")
+        check(on.handledS <= off.handledS + 0.5, "seat, Drive screen on: the slide lands as soon as with the screen off: " +
+            "${on.handledS} s vs ${off.handledS} s")
     }
 
     /** Unlocks and calls count by the speed at that moment: an unlock at a red light, or a call made while stopped, is not phone use. */
