@@ -252,7 +252,7 @@ object TrainingJson {
         } else {
             o.put("harsh_brakes", n(d.harshBrakes)).put("harsh_accels", n(d.harshAccels)).put("harsh_corners", n(d.harshCorners))
                 .put("swerves", n(d.swerves)).put("bumps_fast", n(d.bumpsFast)).put("phone_use", n(d.phoneUse))
-                .put("speeding_s", d.speedingS.roundToInt().coerceIn(0, 86_400)).put("score", d.score().coerceIn(0, 100))
+                .put("speeding_s", d.speedingS.roundToInt().coerceIn(0, 86_400)).put("score", pct(d.score()))   // -1 (too short) is no score, not 0
         }
         return o
     }

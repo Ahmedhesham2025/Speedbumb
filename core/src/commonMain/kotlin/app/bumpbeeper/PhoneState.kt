@@ -276,6 +276,13 @@ class PhoneStateDetector(val cfg: PhoneStateConfig = PhoneStateConfig(), val sig
     private var steadyRunMs = 0L
     private var warm = false
     private var lastNear: Boolean? = null
+    // When the screen last turned on, and whether it was already on (kept on, e.g. our Drive screen) when the episode began.
+    private var screenOnAtMs = NEVER
+    private var lastScreenOn = false
+    private var keptOnScreen = false
+    // The last unlock seen, and whether the car was driving when it happened (an unlock at a red light stays one).
+    private var lastUnlockSeen = NEVER
+    private var unlockMoving = false
     private var farAtMs = NEVER; private var darkAtMs = NEVER; private var brightAtMs = NEVER; private var exitAtMs = NEVER
     private val jostles = ArrayDeque<Long>()
     private var autoPocket = false
@@ -330,7 +337,9 @@ class PhoneStateDetector(val cfg: PhoneStateConfig = PhoneStateConfig(), val sig
      * but motion: true, false, or null while a later fix (as of [nowMs]) could still show the manoeuvre.
      */
     fun seatSlideExcused(nowMs: Long): Boolean? {
-        if (!slideStart || (causes and NOT_MOTION) != 0 || outOfPocket) return false
+        // A screen that was already on before the slide (kept on, e.g. our own Drive screen) is no sign of a hand.
+        val signs = if (keptOnScreen) NOT_MOTION and SCREEN.inv() else NOT_MOTION
+        if (!slideStart || (causes and signs) != 0 || outOfPocket) return false
         val from = episodeStartMs - cfg.seatSlideBeforeMs
         val to = episodeStartMs + cfg.seatSlideAfterMs
         if (manoeuvres.any { it in from..to }) return true
@@ -435,6 +444,12 @@ class PhoneStateDetector(val cfg: PhoneStateConfig = PhoneStateConfig(), val sig
     }
 
     private fun step(t: Long, dtMs: Long) {
+        if (signals.screenOn && !lastScreenOn) screenOnAtMs = t
+        lastScreenOn = signals.screenOn
+        if (signals.unlockedAtMs != lastUnlockSeen) {
+            lastUnlockSeen = signals.unlockedAtMs
+            unlockMoving = speedKmh >= cfg.movingKmh
+        }
         var handled = state == PhoneState.HANDLED
         val loose = if (handled) !fromMount else state != PhoneState.STABLE_MOUNTED
         val gyro2 = cfg.gyroRads * cfg.gyroRads
@@ -490,11 +505,11 @@ class PhoneStateDetector(val cfg: PhoneStateConfig = PhoneStateConfig(), val sig
             if (joltsFrom[i] == Long.MAX_VALUE && (signs and SLIDE.inv()) != 0) joltsFrom[i] = signStart(t, signs and SLIDE.inv())
             lastSignMs = t
             causes = causes or signs
-            if (moving) movingCauses = movingCauses or signs
+            if (moving) movingCauses = movingCauses or drivingSigns(signs)
         }
         if (handled) {
             // The screen keeps the phone handled, but is handling time only while the phone moves (a slipped phone rests).
-            val notMotion = (signs and (if (still) NOT_MOTION and SCREEN.inv() else NOT_MOTION)) != 0
+            val notMotion = (drivingSigns(signs) and (if (still) NOT_MOTION and SCREEN.inv() else NOT_MOTION)) != 0
             if (tiltOver || gyroOver || (signs and TURN.inv()) != 0) lastMotionMs = t
             if (moving && (tiltOver || rawOver)) movedDriving = true
             if (max(farAtMs, brightAtMs) >= episodeStartMs - cfg.pocketExitMs) outOfPocket = true
@@ -540,6 +555,9 @@ class PhoneStateDetector(val cfg: PhoneStateConfig = PhoneStateConfig(), val sig
         }
     }
 
+    /** [signs] as they count while driving: an unlock made while stopped (a red light) is not driving use. */
+    private fun drivingSigns(signs: Int) = if (unlockMoving) signs else signs and UNLOCK.inv()
+
     /** When the handling that [signs] show at [t] began. */
     private fun signStart(t: Long, signs: Int): Long {
         var start = t
@@ -554,6 +572,7 @@ class PhoneStateDetector(val cfg: PhoneStateConfig = PhoneStateConfig(), val sig
     private fun begin(start: Long, t: Long, signs: Int, moving: Boolean) {
         fromMount = state == PhoneState.STABLE_MOUNTED
         slideStart = (signs and SLIDE) != 0
+        keptOnScreen = signals.screenOn && screenOnAtMs < start - cfg.seatSlideBeforeMs
         state = PhoneState.HANDLED
         episode++
         episodeStartMs = start
