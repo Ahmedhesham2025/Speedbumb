@@ -121,10 +121,32 @@ class DrivingStats {
     /** Short trips count as 5 km, so one event on a 1 km trip doesn't sink the score. */
     private val per10km: Double get() = 10.0 / max(distanceM / 1000.0, 5.0)
 
-    /** Road limits when known for enough of the trip ([SpeedLimitScoring.penalty]), else the fixed threshold. Both 0..40. */
-    private fun speedPenalty() =
-        if (usesSpeedLimits) SpeedLimitScoring.penalty(limitKnownS, overLimit10S, overLimit20S, overLimit30S)
-        else min(40.0, speedingShare * 60.0 + speedingShare * avgExcessKmh)
+    /**
+     * The speed part (0..[SpeedLimitScoring.MAX_PENALTY]): road limits when known for enough of the trip
+     * ([usesSpeedLimits], [SpeedLimitScoring.penalty], +10 km/h of slack). Otherwise 0: an unknown limit is no
+     * speeding. The fixed threshold ([DrivingConfig.speedLimitKmh], [speedingS]) gave a highway at 110 km/h a city-like
+     * 90 and is now only a diagnostic.
+     */
+    fun speedPenalty(): Double =
+        if (usesSpeedLimits) SpeedLimitScoring.penalty(limitKnownS, overLimit10S, overLimit20S, overLimit30S) else 0.0
+
+    /**
+     * Points lost per area, each capped ([CAPS]) so no one area takes the whole score. Events cost [WEIGHTS] points
+     * each per 10 km (a trip under 5 km counts as 5 km).
+     */
+    fun penalties(): Map<ScoreCategory, Double> {
+        val counts = eventCounts()
+        return ScoreCategory.values().associateWith { c ->
+            val raw = if (c == ScoreCategory.SPEEDING) speedPenalty() else counts.getValue(c) * WEIGHTS.getValue(c) * per10km
+            min(raw, CAPS.getValue(c))
+        }
+    }
+
+    private fun eventCounts() = mapOf(
+        ScoreCategory.SPEEDING to 0, ScoreCategory.HARSH_BRAKING to harshBrakes, ScoreCategory.HARSH_ACCEL to harshAccels,
+        ScoreCategory.CORNERING to harshCorners, ScoreCategory.SWERVES to swerves, ScoreCategory.PHONE_USE to phoneUse,
+        ScoreCategory.BUMPS_FAST to bumpsFast,
+    )
 
     /**
      * A copy of these stats rescored with road speed limits ([SpeedLimitScoring.evaluate] of this trip).
@@ -136,15 +158,10 @@ class DrivingStats {
         it.overLimit10S = r.over10S; it.overLimit20S = r.over20S; it.overLimit30S = r.over30S
         it.maxOverLimitKmh = r.maxExcessKmh
     }
-    private fun brakePenalty() = (harshBrakes * 5.0 + harshAccels * 3.0) * per10km
-    private fun steerPenalty() = (harshCorners * 4.0 + swerves * 6.0) * per10km
-    private fun bumpPenalty() = bumpsFast * 4.0 * per10km
-    private fun phonePenalty() = phoneUse * 6.0 * per10km
-
-    /** 0–100, or -1 if the trip is too short to judge (under 0.5 km). */
+    /** 0–100, or -1 (no score, "Too short to score") under [MIN_SCORE_KM] driven or [MIN_SCORE_MOVING_S] moving. */
     fun score(): Int {
-        if (distanceM < 500) return -1
-        val s = 100.0 - speedPenalty() - brakePenalty() - steerPenalty() - bumpPenalty() - phonePenalty()
+        if (distanceM < MIN_SCORE_KM * 1000 || movingS < MIN_SCORE_MOVING_S) return -1
+        val s = 100.0 - penalties().values.sum()
         return s.coerceIn(0.0, 100.0).roundToInt()
     }
 
@@ -152,21 +169,8 @@ class DrivingStats {
     fun scoreBreakdown(): ScoreBreakdown? {
         val score = score()
         if (score < 0) return null
-        val k = per10km
-        val raw = linkedMapOf(
-            ScoreCategory.SPEEDING to speedPenalty(),
-            ScoreCategory.HARSH_BRAKING to harshBrakes * 5.0 * k,
-            ScoreCategory.HARSH_ACCEL to harshAccels * 3.0 * k,
-            ScoreCategory.CORNERING to harshCorners * 4.0 * k,
-            ScoreCategory.SWERVES to swerves * 6.0 * k,
-            ScoreCategory.PHONE_USE to phoneUse * 6.0 * k,
-            ScoreCategory.BUMPS_FAST to bumpsFast * 4.0 * k,
-        )
-        val counts = mapOf(
-            ScoreCategory.SPEEDING to 0, ScoreCategory.HARSH_BRAKING to harshBrakes, ScoreCategory.HARSH_ACCEL to harshAccels,
-            ScoreCategory.CORNERING to harshCorners, ScoreCategory.SWERVES to swerves, ScoreCategory.PHONE_USE to phoneUse,
-            ScoreCategory.BUMPS_FAST to bumpsFast,
-        )
+        val raw = penalties()
+        val counts = eventCounts()
         val points = ScoreBreakdown.share(raw.values.toList(), 100 - score)
         val items = raw.keys.mapIndexed { i, c -> ScoreBreakdown.Item(c, counts.getValue(c), points[i], raw.getValue(c)) }
         val pct = if (usesSpeedLimits) (if (limitKnownS > 0) overLimit10S / limitKnownS else 0.0) else speedingShare
@@ -176,12 +180,14 @@ class DrivingStats {
     /** Each area on its own scale of 0–100 (100 = nothing to improve). */
     fun breakdown(): List<Pair<String, Int>> {
         fun sub(p: Double, worst: Double) = (100.0 * (1.0 - min(1.0, p / worst))).roundToInt()
+        val p = penalties()
+        fun area(vararg c: ScoreCategory) = sub(c.sumOf { p.getValue(it) }, c.sumOf { CAPS.getValue(it) })
         return listOf(
-            "Speed" to sub(speedPenalty(), 40.0),
-            "Braking & acceleration" to sub(brakePenalty(), 30.0),
-            "Steering & swerving" to sub(steerPenalty(), 30.0),
-            "Speed bumps" to sub(bumpPenalty(), 20.0),
-            "Phone use" to sub(phonePenalty(), 20.0),
+            "Speed" to area(ScoreCategory.SPEEDING),
+            "Braking & acceleration" to area(ScoreCategory.HARSH_BRAKING, ScoreCategory.HARSH_ACCEL),
+            "Steering & swerving" to area(ScoreCategory.CORNERING, ScoreCategory.SWERVES),
+            "Speed bumps" to area(ScoreCategory.BUMPS_FAST),
+            "Phone use" to area(ScoreCategory.PHONE_USE),
         )
     }
 
@@ -198,6 +204,27 @@ class DrivingStats {
     }
 
     companion object {
+        /** A trip shorter than this, or with less than [MIN_SCORE_MOVING_S] of driving, gets no score. */
+        const val MIN_SCORE_KM = 1.0
+        const val MIN_SCORE_MOVING_S = 60.0
+
+        /**
+         * The score's weights: points per event per 10 km (short trips count as 5 km). Speeding is not per event: it is
+         * [SpeedLimitScoring.penalty] (time over the road's limit by +10 / +20 / +30 km/h, per hour of known limit).
+         */
+        val WEIGHTS: Map<ScoreCategory, Double> = mapOf(
+            ScoreCategory.SPEEDING to 0.0, ScoreCategory.HARSH_BRAKING to 5.0, ScoreCategory.HARSH_ACCEL to 3.0,
+            ScoreCategory.CORNERING to 4.0, ScoreCategory.SWERVES to 6.0, ScoreCategory.PHONE_USE to 6.0,
+            ScoreCategory.BUMPS_FAST to 4.0,
+        )
+
+        /** The most each area can take off the 100 (they sum to 100: only a trip bad in every way scores 0). */
+        val CAPS: Map<ScoreCategory, Double> = mapOf(
+            ScoreCategory.SPEEDING to SpeedLimitScoring.MAX_PENALTY, ScoreCategory.HARSH_BRAKING to 15.0,
+            ScoreCategory.HARSH_ACCEL to 10.0, ScoreCategory.CORNERING to 10.0, ScoreCategory.SWERVES to 10.0,
+            ScoreCategory.PHONE_USE to 10.0, ScoreCategory.BUMPS_FAST to 5.0,
+        )
+
         fun grade(score: Int): String = when {
             score < 0 -> "Too short to score"
             score >= 90 -> "Excellent"

@@ -10,7 +10,6 @@ import app.bumpbeeper.sync.TrainingStore
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
-import kotlin.math.min
 import kotlin.math.roundToInt
 
 /**
@@ -285,10 +284,8 @@ class BumpDb(ctx: Context) : SQLiteOpenHelper(ctx, "bumps.db", null, 11), BumpSt
         return writableDatabase.update("trips", v, "id = ?", arrayOf(id.toString())) > 0
     }
 
-    /** The speed part of [DrivingStats.score] (0..40): road limits when used, else the fixed threshold (same formula). */
-    internal fun speedPenalty(d: DrivingStats): Double =
-        if (d.usesSpeedLimits) SpeedLimitScoring.penalty(d.limitKnownS, d.overLimit10S, d.overLimit20S, d.overLimit30S)
-        else min(40.0, d.speedingShare * 60.0 + d.speedingShare * d.avgExcessKmh)
+    /** The speed part of [DrivingStats.score] (0..40): road limits when used, else 0 (an unknown limit is no speeding). */
+    internal fun speedPenalty(d: DrivingStats): Double = d.speedPenalty()
 
     /**
      * One finished trip, for the Trips screen. Road speed limits are in [drive]: [DrivingStats.limitKnownShare]

@@ -43,5 +43,6 @@ class BumpEngineTest {
     @Test fun fastBumpVersusRoadJoint() = Scenarios.fastBumpVersusRoadJoint()
     @Test fun seatBumpsLearnedOnEvidence() = Scenarios.seatBumpsLearnedOnEvidence()
     @Test fun seatSlideIsNoBumpNoEventNoPhoneUse() = Scenarios.seatSlideIsNoBumpNoEventNoPhoneUse()
+    @Test fun seatGlanceAtOwnScreenAtAStopIsNoPhoneUse() = Scenarios.seatGlanceAtOwnScreenAtAStopIsNoPhoneUse()
     @Test fun seatBumpDuringSlideIsLearned() = Scenarios.seatBumpDuringSlideIsLearned()
 }

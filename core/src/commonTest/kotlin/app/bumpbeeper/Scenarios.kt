@@ -461,7 +461,9 @@ object Scenarios {
         check(d.harshAccels == 0, "speeding up again normally is not harsh, got ${d.harshAccels}")
         check(d.speedingShare > 0.4, "most of the trip is above 90 km/h, got ${d.speedingShare}")
         check(store.events.any { it.type == "speeding" }, "a speeding episode should be logged")
-        check(d.score() in 0..70, "this trip should score 70 or less, got ${d.score()}")
+        // No road limits in the simulator: time over the fixed 90 km/h is a diagnostic, not speeding points.
+        check(d.scoreBreakdown()!![ScoreCategory.SPEEDING].points == 0, "no known limit, no speeding points")
+        check(d.score() in 70..95, "2 harsh brakes only, got ${d.score()}")
     }
 
     /**
@@ -624,6 +626,30 @@ object Scenarios {
             check(r.phone?.state == want, "$place: expected $want after the slip, got ${r.phone?.state}")
             check(r.newBumps == 2, "$place: both bumps after the slip are learned: ${r.newBumps}, rejected ${r.rejected}")
         }
+    }
+
+    /**
+     * Owner, beta10 (phone on the seat, 6-12 phone uses a trip): a glance at our own Drive screen at a red light (an
+     * unlock 1.5 s before driving on) is no phone use, nor is the screen it keeps on: a later slide on the seat in a
+     * brake stays excused. A real pick-up while driving still counts (seatSlideIsNoBumpNoEventNoPhoneUse).
+     */
+    fun seatGlanceAtOwnScreenAtAStopIsNoPhoneUse() {
+        log("seatGlanceAtOwnScreenAtAStopIsNoPhoneUse")
+        var stoppedAt = -1.0
+        var glanced = false
+        val spec = DriveSpec(onSeat = true, stopsAt = listOf(800.0 to 7.0), hardBrakesAt = listOf(1300.0), hardBrakeMs2 = 3.0,
+            seatSlidesAt = listOf(1304.0 to 35.0), slowZonesAt = listOf(300.0), phoneSignals = { t, s, v, sig, tMs ->
+                if (stoppedAt < 0 && s >= 790.0 && v <= 0.0) stoppedAt = t
+                if (!glanced && stoppedAt >= 0 && t >= stoppedAt + 5.5) {
+                    sig.unlockedAtMs = tMs
+                    glanced = true
+                }
+                sig.screenOn = glanced   // the Drive screen stays on from then on
+            })
+        val r = Simulator(84).drive(MemoryStore(), spec, drivingCfg = DrivingConfig().apply { placement = "seat" })
+        describeDriving("seat, glanced at the Drive screen at a stop, slid in a brake later", r.driving)
+        check(stoppedAt > 0 && glanced, "the car should stop and the glance happen")
+        check(r.driving.phoneUse == 0, "a glance at a stop and our kept-on screen are no phone use, got ${r.driving.phoneUse}")
     }
 
     /** Unlocks and calls count by the speed at that moment: an unlock at a red light, or a call made while stopped, is not phone use. */
