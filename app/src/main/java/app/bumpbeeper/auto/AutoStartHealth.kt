@@ -117,10 +117,17 @@ object AutoStartHealth {
     fun oemOpened(ctx: Context): Boolean = oem(ctx).getBoolean("opened", false)
     fun setOemOpened(ctx: Context) { oem(ctx).edit().putBoolean("opened", true).apply() }
 
-    fun oemAutostart(ctx: Context): Intent? = OEM_AUTOSTART_SCREENS.asSequence()
-        .map { (p, c) -> Intent().setComponent(android.content.ComponentName(p, c)) }
-        .firstOrNull { i -> try { i.resolveActivity(ctx.packageManager) != null } catch (_: Exception) { false } }
-        ?: try { ctx.packageManager.getLaunchIntentForPackage(TRANSSION_MANAGER) } catch (_: Exception) { null }
+    fun oemAutostart(ctx: Context): Intent? = pickOemScreen(
+        resolves = { i -> try { i.resolveActivity(ctx.packageManager) != null } catch (_: Exception) { false } },
+        launch = { pkg -> try { ctx.packageManager.getLaunchIntentForPackage(pkg) } catch (_: Exception) { null } },
+    )
+
+    /** The first maker's screen that [resolves], else Phone Master's own [launch] intent (null: no maker's manager). */
+    internal fun pickOemScreen(resolves: (Intent) -> Boolean, launch: (String) -> Intent?): Intent? =
+        OEM_AUTOSTART_SCREENS.asSequence()
+            .map { (p, c) -> Intent().setComponent(android.content.ComponentName(p, c)) }
+            .firstOrNull(resolves)
+            ?: launch(TRANSSION_MANAGER)
 
     /** The one settings screen that fixes [p] (the app's own page where Android has nothing more direct). */
     fun fix(ctx: Context, p: Problem): Intent {
