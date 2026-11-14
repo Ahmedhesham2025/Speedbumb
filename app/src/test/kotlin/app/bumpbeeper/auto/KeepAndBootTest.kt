@@ -110,4 +110,21 @@ class KeepAndBootTest {
         val i = AutoStartHealth.read(ctx)
         assertFalse(i.oemAutostart)
     }
+
+    /** Infinix, Tecno, itel: Phone Master gets the Autostart tip, and Fix opens it (whatever its screens are called). */
+    @Test fun anInfinixPhoneGetsTheAutostartTipForPhoneMaster() {
+        val pm = "com.transsion.phonemaster"
+        val launcher = Intent(Intent.ACTION_MAIN).setComponent(android.content.ComponentName(pm, "$pm.Main"))
+        val phoneMaster: (String) -> Intent? = { if (it == pm) launcher else null }
+        // No maker's manager at all: no tip.
+        assertEquals(null, AutoStartHealth.pickOemScreen(resolves = { false }, launch = { null }))
+        // Phone Master's Autostart screen exists: that one.
+        val screen = AutoStartHealth.pickOemScreen(resolves = { it.component?.packageName == pm }, launch = phoneMaster)
+        assertEquals("com.cyin.himgr.autostart.AutoStartActivity", screen?.component?.className)
+        // A version with other screen names: Phone Master itself.
+        assertEquals(launcher, AutoStartHealth.pickOemScreen(resolves = { false }, launch = phoneMaster))
+        // Another maker's screen comes first.
+        val miui = AutoStartHealth.pickOemScreen(resolves = { it.component?.packageName == "com.miui.securitycenter" }, launch = phoneMaster)
+        assertEquals("com.miui.securitycenter", miui?.component?.packageName)
+    }
 }

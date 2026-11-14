@@ -98,7 +98,12 @@ object AutoStartHealth {
         "com.huawei.systemmanager" to "com.huawei.systemmanager.startupmgr.ui.StartupNormalAppListActivity",
         "com.oneplus.security" to "com.oneplus.security.chainlaunch.view.ChainLaunchAppListActivity",
         "com.samsung.android.lool" to "com.samsung.android.sm.ui.battery.BatteryActivity",
+        // Infinix, Tecno and itel (Transsion): Phone Master stops apps in the background, not only after a restart.
+        "com.transsion.phonemaster" to "com.cyin.himgr.autostart.AutoStartActivity",
     )
+
+    /** Phone Master's screen names differ by version: when none of the screens above resolves, open Phone Master. */
+    private const val TRANSSION_MANAGER = "com.transsion.phonemaster"
 
     /**
      * The maker's Autostart setting can't be read, so the hint would show forever: after the user opened that screen
@@ -112,9 +117,17 @@ object AutoStartHealth {
     fun oemOpened(ctx: Context): Boolean = oem(ctx).getBoolean("opened", false)
     fun setOemOpened(ctx: Context) { oem(ctx).edit().putBoolean("opened", true).apply() }
 
-    fun oemAutostart(ctx: Context): Intent? = OEM_AUTOSTART_SCREENS.asSequence()
-        .map { (p, c) -> Intent().setComponent(android.content.ComponentName(p, c)) }
-        .firstOrNull { i -> try { i.resolveActivity(ctx.packageManager) != null } catch (_: Exception) { false } }
+    fun oemAutostart(ctx: Context): Intent? = pickOemScreen(
+        resolves = { i -> try { i.resolveActivity(ctx.packageManager) != null } catch (_: Exception) { false } },
+        launch = { pkg -> try { ctx.packageManager.getLaunchIntentForPackage(pkg) } catch (_: Exception) { null } },
+    )
+
+    /** The first maker's screen that [resolves], else Phone Master's own [launch] intent (null: no maker's manager). */
+    internal fun pickOemScreen(resolves: (Intent) -> Boolean, launch: (String) -> Intent?): Intent? =
+        OEM_AUTOSTART_SCREENS.asSequence()
+            .map { (p, c) -> Intent().setComponent(android.content.ComponentName(p, c)) }
+            .firstOrNull(resolves)
+            ?: launch(TRANSSION_MANAGER)
 
     /** The one settings screen that fixes [p] (the app's own page where Android has nothing more direct). */
     fun fix(ctx: Context, p: Problem): Intent {
