@@ -571,7 +571,7 @@
     <string name="start_kept_clear">Kept and sent: a clear drive (1 km+, 1 min+ above 20 km/h)</string>
     <string name="start_asked">Asked “Was this a drive?”: short or slow</string>
     <string name="start_boot_rearmed">Set up again after the phone restarted</string>
-    <string name="autostart_oem">This phone may block apps after a restart: allow Bump Beeper under “Autostart” (or “startup apps”).</string>
+    <string name="autostart_oem">This phone\'s own battery manager may stop Bump Beeper in the background or after a restart. Allow it under “Autostart” (Phone Master on Infinix and Tecno), and lock it in the recent apps.</string>
     <string name="start_blocked_permission">Blocked: location permission missing</string>
     <string name="start_refused">Android refused to start it in the background</string>
     <string name="start_held_deleted">“Was this a drive?” unanswered for 24 h: trip data deleted unsent</string>
